@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sendMessage } from "../../cloudflare-worker/src/chat-safety-actions.js";
 import {
   applyContentFilter, normalizeFilterText, validateFilterConfig,
   defaultFilterConfig, contentFilterInternals,
@@ -96,4 +97,34 @@ test("allowlisted phrase does not disable a separate offending occurrence", () =
   })]);
   assert.equal(applyContentFilter("عبارة مفيدة ثم عبارة", p, "private_chat").text,
     "عبارة مفيدة ثم ***");
+});
+
+test("animated emoji requests cannot bypass the common private-message filter", async () => {
+  const active = policy([rule("rule_security_", "كلمة مؤذية", "block")]);
+  const db = {
+    readPaths: [],
+    transactions: 0,
+    async get(path) {
+      this.readPaths.push(path);
+      if (path === "system_config/content_filter")
+        return { exists: true, data: { ...active, version: 55 } };
+      throw Error("should_not_read_any_other_path");
+    },
+    async beginTransaction() {
+      this.transactions++;
+      throw Error("should_not_start_transaction");
+    },
+  };
+  await assert.rejects(
+    sendMessage(db, "sender-1", {
+      receiverId: "receiver-1",
+      conversationId: "conversation-1",
+      idempotencyKey: "emoji_moderation_unique_01",
+      animatedEmojiId: "vip_animated_emoji_1",
+      text: "كلمة مؤذية",
+    }),
+    (error) => error.code === "content_blocked" && error.status === 422,
+  );
+  assert.deepEqual(db.readPaths, ["system_config/content_filter"]);
+  assert.equal(db.transactions, 0);
 });
