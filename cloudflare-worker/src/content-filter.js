@@ -235,15 +235,22 @@ export function applyContentFilter(text, config, surface) {
     else ranges.push(...hits);
   }
   if (blocked) return { text: original, blocked, flagged, matchedRuleIds: [...matchedRuleIds] };
+  // Merge overlapping spans so a shorter rule cannot expose the tail
+  // of another, longer forbidden phrase.
   const selected = ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
-  let last = 0;
-  let masked = "";
+  const merged = [];
   for (const [start, end] of selected) {
-    if (start < last) continue;
-    masked += original.slice(last, start) + "***";
-    last = end;
+    const last = merged[merged.length - 1];
+    if (last && start < last[1]) last[1] = Math.max(last[1], end);
+    else merged.push([start, end]);
   }
-  masked += original.slice(last);
+  let offset = 0;
+  let masked = "";
+  for (const [start, end] of merged) {
+    masked += original.slice(offset, start) + "***";
+    offset = end;
+  }
+  masked += original.slice(offset);
   return { text: masked, blocked, flagged, matchedRuleIds: [...matchedRuleIds] };
 }
 
