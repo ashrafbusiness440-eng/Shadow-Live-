@@ -470,3 +470,6 @@ export async function releaseExpiredSuspensions(env) {
   }
   return { checked: rows.length, released };
 }
+
+// Reuse the same audited, permission-checked account action from reports.
+export { mutateAccount };
