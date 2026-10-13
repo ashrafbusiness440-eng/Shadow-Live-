@@ -52,6 +52,8 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
   bool _dirty = false;
   int _version = 0;
   int _visibleLimit = 30;
+  String _groupFilter = 'all';
+  String _stateFilter = 'all';
   String _testSurface = 'private_chat';
   String? _message;
   String? _preview;
@@ -686,6 +688,9 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     final term = _search.text.trim().toLowerCase();
     final matches = _rules.asMap().entries.where((entry) {
       final rule = entry.value;
+      if (_groupFilter != 'all' && rule['group'] != _groupFilter) return false;
+      if (_stateFilter == 'on' && rule['enabled'] != true) return false;
+      if (_stateFilter == 'off' && rule['enabled'] == true) return false;
       return term.isEmpty ||
           '${rule['pattern']}'.toLowerCase().contains(term) ||
           (_groups['${rule['group']}'] ?? '').contains(term);
@@ -775,9 +780,12 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('الكلمات المحظورة (${_rules.length})',
+                        Text('قائمة الكلمات (${_rules.length})',
                             style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.w800)),
+                        Text('المفعّلة: ${_rules.where((v) => v['enabled'] == true).length}'
+                            '  •  المتوقفة: ${_rules.where((v) => v['enabled'] != true).length}',
+                            style: const TextStyle(color: Colors.white70)),
                         const SizedBox(height: 6),
                         const Text('اختَر ما يحدث عند اكتشاف كل كلمة. '
                             'يمكنك إيقاف أي كلمة وحدها.'),
@@ -790,6 +798,60 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                             prefixIcon: Icon(Icons.search_rounded),
                             border: OutlineInputBorder(),
                           ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            SizedBox(
+                              width: 190,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(_groupFilter),
+                                initialValue: _groupFilter,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'التصنيف',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: 'all', child: Text('كل التصنيفات')),
+                                  for (final group in _groups.entries)
+                                    DropdownMenuItem(value: group.key,
+                                      child: Text(group.value)),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _groupFilter = v ?? 'all';
+                                  _visibleLimit = 30;
+                                }),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(_stateFilter),
+                                initialValue: _stateFilter,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'حالة الكلمة',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'all', child: Text('كل الكلمات')),
+                                  DropdownMenuItem(
+                                    value: 'on', child: Text('المفعّلة فقط')),
+                                  DropdownMenuItem(
+                                    value: 'off', child: Text('المتوقفة فقط')),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _stateFilter = v ?? 'all';
+                                  _visibleLimit = 30;
+                                }),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 10),
                         Wrap(
