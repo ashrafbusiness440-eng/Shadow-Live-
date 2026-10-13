@@ -242,3 +242,61 @@ test("rejected report accepts empty explanation, still notifies, and guards othe
     }), /invalid_reason/,
   );
 });
+
+test("authorized report action actually bans account before reporter gets a ban notice", async () => {
+  const db = new Db({
+    ...cases(),
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
+    reportId:"legacy_chat",status:"under_review",
+    reason:"بلاغ يحتاج مراجعة",idempotencyKey:"acct_review_11000000001",
+  });
+  const result = await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", {
+      reportId:"legacy_chat",accountAction:"ban",
+      reason:"إساءة مثبتة تستوجب الحظر",
+      idempotencyKey:"acct_action_11000000001",
+    },
+  );
+  assert.equal(result.status, "actioned");
+  assert.equal(db.docs.get("users/target").accountStatus, "banned");
+  const note = db.docs.get(
+    "notifications/report_result_acct_action_11000000001_resolution");
+  assert.equal(note.userId,"reporter");
+  assert.equal(note.actionKind,"account_banned");
+  assert.match(note.body,/حظر الحساب/);
+  const repeat = await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", {
+      reportId:"legacy_chat",accountAction:"ban",
+      reason:"إساءة مثبتة تستوجب الحظر",
+      idempotencyKey:"acct_action_11000000001",
+    });
+  assert.equal(repeat.code,"duplicate");
+  assert.equal([...db.docs.keys()].filter(x => x ===
+    "notifications/report_result_acct_action_11000000001_resolution").length,1);
+});
+
+test("reported user's owner protection blocks punishment and notification", async () => {
+  const db = new Db({
+    ...cases(),
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"owner",adminEnabled:true,accountStatus:"active"},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
+    reportId:"legacy_chat",status:"under_review",
+    reason:"فحص",idempotencyKey:"acct_owner_review_12345",
+  });
+  await assert.rejects(
+    () => generalReportsTestHooks.resolveWithAccountAction(
+      db,{}, {sub:"admin"}, "admin", {
+        reportId:"legacy_chat",accountAction:"ban",reason:"طلب حظر خاطئ",
+        idempotencyKey:"acct_owner_action_123456",
+      }),
+    /owner_protected/,
+  );
+  assert.equal(db.docs.get("users/target").accountStatus,"active");
+  assert.equal(db.docs.has(
+    "notifications/report_result_acct_owner_action_123456_resolution"),false);
+});
