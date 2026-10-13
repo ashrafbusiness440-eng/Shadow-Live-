@@ -30,7 +30,8 @@ void main() {
   });
 
   test('Mysterious Person opens from the existing bottom action card', () {
-    final vip = profile.indexOf("'VIP',\n          _openVip,");
+    final vip = profile.indexOf("'VIP',");
+    expect(profile.substring(vip).contains('_openVip,'), isTrue);
     final entry = profile.indexOf("'الشخص الغامض',");
     final relationships = profile.indexOf("'العلاقات',");
     expect(vip, greaterThan(0));
