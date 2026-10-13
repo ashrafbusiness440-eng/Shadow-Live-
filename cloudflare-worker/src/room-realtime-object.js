@@ -78,6 +78,7 @@ export class RoomRealtimeObject extends DurableObject {
     this.chatReportRateByUid = new Map();
     this._contentFilterSnapshot = null;
     this._contentFilterExpiresMs = 0;
+    this._contentFilterPending = null;
 
     recordRealtimeTelemetry(this.env, { event: "activate" });
 
@@ -1121,19 +1122,29 @@ export class RoomRealtimeObject extends DurableObject {
     const now = Date.now();
     if (this._contentFilterSnapshot && this._contentFilterExpiresMs > now)
       return this._contentFilterSnapshot;
-    if (!this.env?.ROOM_REALTIME) throw Error("room_filter_not_available");
-    const coordinator = this.env.ROOM_REALTIME.get(
-      this.env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
-    );
-    const response = await coordinator.fetch("https://internal/filter/snapshot");
-    if (!response.ok) throw Error("room_filter_not_available");
-    const body = await response.json();
-    const config = body?.config;
-    const checked = validateFilterConfig(config);
-    const policy = { ...checked, version: Number(config?.version || 0) };
-    this._contentFilterSnapshot = policy;
-    this._contentFilterExpiresMs = Date.now() + 60_000;
-    return policy;
+    if (this._contentFilterPending) return this._contentFilterPending;
+    // One bounded request at a time during room chat bursts.
+    const pending = (async () => {
+      if (!this.env?.ROOM_REALTIME) throw Error("room_filter_not_available");
+      const coordinator = this.env.ROOM_REALTIME.get(
+        this.env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+      );
+      const response = await coordinator.fetch("https://internal/filter/snapshot");
+      if (!response.ok) throw Error("room_filter_not_available");
+      const body = await response.json();
+      const config = body?.config;
+      const checked = validateFilterConfig(config);
+      const policy = { ...checked, version: Number(config?.version || 0) };
+      this._contentFilterSnapshot = policy;
+      this._contentFilterExpiresMs = Date.now() + 60_000;
+      return policy;
+    })();
+    this._contentFilterPending = pending;
+    try { return await pending; }
+    finally {
+      if (this._contentFilterPending === pending)
+        this._contentFilterPending = null;
+    }
   }
 
   #chatError(webSocket, requestId, code) {
