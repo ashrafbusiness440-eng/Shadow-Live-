@@ -15,7 +15,7 @@ String generalReportErrorMessage(Object error) {
     'recent_auth_required' => 'سجّل الدخول من جديد لتأكيد الإجراء.',
     'report_not_found' => 'هذا البلاغ غير موجود. حدّث القائمة.',
     'invalid_report_transition' => 'حالة البلاغ تغيرت. حدّث القائمة وحاول مجدداً.',
-    'invalid_reason' => 'اكتب سبباً واضحاً بين 3 و200 حرف.',
+    'invalid_reason' => 'اكتب سبباً واضحاً بين 3 و200 حرف، أو اترك سبب الرفض فارغًا.',
     'invalid_idempotency_key' => 'تعذّر تسجيل العملية. أعد المحاولة.',
     'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
@@ -188,7 +188,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
               controller: controller,
               maxLength: 200,
               maxLines: 3,
-              decoration: const InputDecoration(labelText: 'سبب القرار'),
+              decoration: InputDecoration(
+                labelText: nextStatus == 'rejected'
+                    ? 'سبب الرفض — اختياري'
+                    : 'سبب القرار',
+                helperText: nextStatus == 'rejected'
+                    ? 'إذا كتبت السبب، سيظهر لصاحب البلاغ في الإشعار.'
+                    : 'سيصل إشعار لصاحب البلاغ بعد حفظ القرار.',
+              ),
             ),
           ],
         ),
@@ -200,7 +207,10 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
           FilledButton(
             onPressed: () {
               final value = controller.text.trim();
-              if (value.length >= 3) Navigator.pop(dialogContext, value);
+              if (nextStatus == 'rejected' && value.isEmpty ||
+                  value.length >= 3) {
+                Navigator.pop(dialogContext, value);
+              }
             },
             child: const Text('تأكيد'),
           ),
@@ -214,7 +224,9 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       await GeneralReportsService.review(item.id, nextStatus, reason);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تحديث البلاغ')),
+        const SnackBar(content: Text(
+          'تم تحديث البلاغ وتسجيل إشعار لصاحب البلاغ.',
+        )),
       );
       await _load();
     } catch (error) {
