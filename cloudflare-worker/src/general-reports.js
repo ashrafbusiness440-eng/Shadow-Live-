@@ -140,6 +140,46 @@ async function listGeneralReports(db, body = {}) {
   };
 }
 
+// Archived/closed and current reports need a browsable history, but never
+// a full collection scan. Each explicit page reads at most 21 reports of ONE
+// selected category. __name__ is stable even for legacy records without dates.
+const HISTORY_FILTERS = Object.freeze({
+  user_report: [{ field: "type", op: "==", value: "user" }],
+  room_message_report: [{
+    field: "targetType", op: "==", value: "room_message",
+  }],
+  room_report: [{ field: "targetType", op: "==", value: "room" }],
+});
+const HISTORY_PAGE_SIZE = 20;
+
+async function listReportHistory(db, body = {}) {
+  const type = clean(body.type);
+  const filters = HISTORY_FILTERS[type];
+  if (!filters) throw new GeneralReportError("invalid_report_type", 400);
+  const cursor = clean(body.cursor);
+  if (cursor) safeId(cursor, "invalid_cursor");
+  const raw = await db.runQuery("reports", {
+    filters,
+    orderBy: [{ field: "__name__", direction: "desc" }],
+    ...(cursor ? { startAfter: [{ referencePath: "reports/" + cursor }] } : {}),
+    limit: HISTORY_PAGE_SIZE + 1,
+  });
+  const page = raw.slice(0, HISTORY_PAGE_SIZE);
+  const normalized = page
+    .map((row) => normalizeGeneralReport(row?.id || "", row?.data || {}))
+    .filter((item) => item?.type === type);
+  // The cursor advances by the *last read* document (including filtered
+  // legacy records), so no page becomes stuck on a foreign report.
+  return {
+    ok: true,
+    type,
+    items: await withGeneralReportProfiles(db, normalized),
+    nextCursor: raw.length > HISTORY_PAGE_SIZE ? clean(page.at(-1)?.id) : null,
+    hasMore: raw.length > HISTORY_PAGE_SIZE,
+    pageSize: HISTORY_PAGE_SIZE,
+  };
+}
+
 async function getGeneralReport(db, body = {}) {
   const reportId = safeId(body.reportId);
   const snap = await db.get("reports/" + reportId);
@@ -285,7 +325,9 @@ export async function generalReports(request, env) {
     const actor = await requireAdmin(db, decoded, action === "reviewReport");
     const result = action === "listReports"
       ? await listGeneralReports(db, body)
-      : action === "getReport"
+      : action === "listHistory"
+        ? await listReportHistory(db, body)
+        : action === "getReport"
         ? await getGeneralReport(db, body)
         : action === "reviewReport"
           ? await reviewGeneralReport(db, actor.uid, body)
@@ -307,6 +349,7 @@ export const generalReportsTestHooks = Object.freeze({
   generalReportType,
   normalizeGeneralReport,
   listGeneralReports,
+  listReportHistory,
   getGeneralReport,
   reviewGeneralReport,
 });
