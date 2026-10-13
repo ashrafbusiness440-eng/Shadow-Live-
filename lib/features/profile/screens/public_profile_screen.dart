@@ -477,28 +477,45 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: OutlinedButton.icon(
-                        onPressed: _sendingRelationship
-                            ? null
-                            : () async {
-                                if (_guest) {
-                                  await _guestAction();
-                                  return;
-                                }
-                                await _requestRelationship(name);
-                              },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFFFD54A),
-                          side: const BorderSide(color: Color(0xFF7B2DFF)),
-                          minimumSize: const Size.fromHeight(46),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 300),
+                          child: OutlinedButton.icon(
+                            onPressed: _sendingRelationship
+                                ? null
+                                : () async {
+                                    if (_guest) {
+                                      await _guestAction();
+                                      return;
+                                    }
+                                    await _requestRelationship(name);
+                                  },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFFFD54A),
+                              backgroundColor: const Color(0xFF161927),
+                              side: const BorderSide(
+                                color: Color(0xFF7352A1),
+                                width: .8,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              minimumSize: const Size(0, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            icon: _sendingRelationship
+                                ? const SizedBox.square(
+                                    dimension: 17,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.favorite_outline_rounded, size: 18),
+                            label: const Text('طلب علاقة'),
+                          ),
                         ),
-                        icon: _sendingRelationship
-                            ? const SizedBox.square(
-                                dimension: 17,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.favorite_outline_rounded),
-                        label: const Text('طلب علاقة'),
                       ),
                     ),
                   ),
@@ -660,14 +677,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
-        if (mood.isNotEmpty) ...[
-          _infoCard(
-            'الحالة',
-            mood,
-            Icons.sentiment_satisfied_alt_rounded,
-          ),
-          const SizedBox(height: 12),
-        ],
+        _infoCard(
+          'الحالة',
+          mood.isEmpty ? 'لم يضف حالة حتى الآن' : mood,
+          mood.isEmpty
+              ? Icons.sentiment_neutral_outlined
+              : Icons.sentiment_satisfied_alt_rounded,
+        ),
+        const SizedBox(height: 12),
         _infoCard(
           'نبذة',
           bio.isEmpty ? 'لا توجد نبذة بعد.' : bio,
