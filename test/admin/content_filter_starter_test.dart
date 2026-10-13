@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import '../../lib/admin/content_filter_starter.dart';
+import 'package:voice_chat_room/admin/content_filter_starter.dart';
 
 void main() {
   test('candidate library contains a bounded, grouped Arabic-first collection', () {
