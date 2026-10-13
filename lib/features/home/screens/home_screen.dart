@@ -43,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
   HomeDiscoveryData? _data;
   // Null means the server follow state has not been verified. No guessed
   // follow buttons and no individual person listeners on the home feed.
-  Set<String>? _followingSuggestions;
+  // Null: unverified. Never render a suggested profile before checking
+  // privacy, blocks and outgoing follow state on the existing backend.
+  Set<String>? _eligibleSuggestionIds;
+  int _suggestionRevision = 0;
   final Set<String> _changingFollows = <String>{};
   StreamSubscription<User?>? _authSub;
   String? _loadedForUid;
@@ -69,7 +72,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _data = null;
-        _followingSuggestions = null;
+        _eligibleSuggestionIds = null;
+        _suggestionRevision++;
         _changingFollows.clear();
       });
       unawaited(_load());
@@ -133,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadedForUid = requestUid;
       setState(() {
         _data = data;
-        _followingSuggestions = null;
+        _eligibleSuggestionIds = null;
       });
       unawaited(_refreshSuggestionFollows(
         data.suggestedPeople,
@@ -152,32 +156,40 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Existing follows collection, one bounded request for up to ten people.
-  /// An error leaves state unknown instead of showing incorrect unfollow UI.
+  /// At most three ten-person server checks for the original 24 Home
+  /// candidates. No per-avatar IO; failure leaves the people unlisted.
   Future<void> _refreshSuggestionFollows(
     List<DiscoveryPerson> people,
     String? expectedUid, {
     required int revision,
   }) async {
-    final current = FirebaseAuth.instance.currentUser;
-    if (current == null ||
-        current.isAnonymous ||
-        current.uid != expectedUid) {
+    final token = ++_suggestionRevision;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || user.uid != expectedUid) {
+      if (_isCurrentLoad(expectedUid, revision)) {
+        setState(() => _eligibleSuggestionIds = <String>{});
+      }
       return;
     }
     try {
-      final confirmed = await _followService.followingAmong(
-        people.take(10).map((person) => person.id),
-      );
-      if (!_isCurrentLoad(expectedUid, revision)) {
-        return;
+      final eligible = <String>{};
+      final candidates = people.take(24).toList(growable: false);
+      for (var start = 0; start < candidates.length; start += 10) {
+        final end = start + 10 < candidates.length
+            ? start + 10 : candidates.length;
+        eligible.addAll(await _followService.eligibleDiscoveryPeopleAmong(
+          candidates.sublist(start, end).map((p) => p.id),
+        ));
+        if (!_isCurrentLoad(expectedUid, revision) ||
+            token != _suggestionRevision) return;
       }
-      setState(() => _followingSuggestions = confirmed);
+      if (!_isCurrentLoad(expectedUid, revision) ||
+          token != _suggestionRevision) return;
+      setState(() => _eligibleSuggestionIds = eligible);
     } catch (_) {
-      if (!_isCurrentLoad(expectedUid, revision)) {
-        return;
-      }
-      setState(() => _followingSuggestions = null);
+      if (!_isCurrentLoad(expectedUid, revision) ||
+          token != _suggestionRevision) return;
+      setState(() => _eligibleSuggestionIds = null);
     }
   }
 
@@ -186,42 +198,32 @@ class _HomeScreenState extends State<HomeScreen> {
     return user != null &&
         !user.isAnonymous &&
         user.uid != person.id &&
-        _followingSuggestions != null;
+        _eligibleSuggestionIds?.contains(person.id) == true;
   }
 
   Future<void> _changeSuggestionFollow(DiscoveryPerson person) async {
     if (!_canFollowSuggestion(person) ||
-        _changingFollows.contains(person.id)) {
-      return;
-    }
-    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
-    final isFollowing = _followingSuggestions!.contains(person.id);
-    setState(() => _changingFollows.add(person.id));
+        !_changingFollows.add(person.id)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    setState(() {});
     try {
-      // Same authenticated server action as the existing public profile.
-      await _followService.setFollowing(person.id, !isFollowing);
-      if (!mounted || FirebaseAuth.instance.currentUser?.uid != ownerUid) {
-        return;
-      }
+      await _followService.setFollowing(person.id, true);
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
       setState(() {
-        final updated = <String>{...?_followingSuggestions};
-        if (isFollowing) {
-          updated.remove(person.id);
-        } else {
-          updated.add(person.id);
-        }
-        _followingSuggestions = updated;
+        // Hide immediately, but only after a confirmed successful follow.
+        _suggestionRevision++;
+        _eligibleSuggestionIds = <String>{...?_eligibleSuggestionIds}
+          ..remove(person.id);
       });
     } catch (_) {
-      if (mounted && FirebaseAuth.instance.currentUser?.uid == ownerUid) {
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == uid) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر تحديث المتابعة. حاول مرة أخرى.'),
-          ),
+          const SnackBar(content: Text('تعذر المتابعة. حاول مرة أخرى.')),
         );
       }
     } finally {
-      if (mounted) setState(() => _changingFollows.remove(person.id));
+      _changingFollows.remove(person.id);
+      if (mounted) setState(() {});
     }
   }
 
@@ -233,8 +235,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) await _load();
   }
 
-  void _showMorePeople() {
-    Navigator.of(context).push(
+  Future<void> _showMorePeople() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => HomeMorePeopleScreen(
           initiallyShownIds:
@@ -243,6 +246,12 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+    if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
+    unawaited(_refreshSuggestionFollows(
+      _data?.suggestedPeople ?? const <DiscoveryPerson>[],
+      uid,
+      revision: _homeLoadRevision,
+    ));
   }
 
   void _search() {
@@ -301,7 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
         textDirection: TextDirection.rtl,
         child: HomePersonActionsSheet(
           person: person,
-          isFollowing: _followingSuggestions?.contains(person.id),
+          isFollowing: false,
           onOpenProfile: () {
             Navigator.pop(sheetContext);
             unawaited(_openPerson(person));
@@ -355,7 +364,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final suggestedRooms = discovery?.suggested ?? const <DiscoveryRoom>[];
     final activeRooms = discovery?.otherActiveForHome ?? const <DiscoveryRoom>[];
     final suggestedPeople =
-        discovery?.suggestedPeople ?? const <DiscoveryPerson>[];
+        (discovery?.suggestedPeople ?? const <DiscoveryPerson>[])
+            .where((person) =>
+                _eligibleSuggestionIds?.contains(person.id) == true)
+            .take(10)
+            .toList(growable: false);
     final events = discovery?.events ?? const <Map<String, dynamic>>[];
     final ranking = discovery?.rankingPreview ?? const <Map<String, dynamic>>[];
 
@@ -427,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 8),
                       _activityRail(activeRooms),
                     ],
-                    if (suggestedPeople.isNotEmpty) ...[
+                    if (discovery?.suggestedPeople.isNotEmpty ?? false) ...[
                       const SizedBox(height: 16),
                       _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد', onMore: _showMorePeople),
                       const SizedBox(height: 8),
@@ -591,7 +604,7 @@ class _HomeScreenState extends State<HomeScreen> {
               (person) => HomeCompactPersonCard(
                 person: person,
                 onTap: () => _openPersonActions(person),
-                isFollowing: _followingSuggestions?.contains(person.id),
+                isFollowing: false,
                 followBusy: _changingFollows.contains(person.id),
                 onFollow: _canFollowSuggestion(person)
                     ? () => _changeSuggestionFollow(person)
