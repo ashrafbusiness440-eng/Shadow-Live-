@@ -34,6 +34,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     'insults': 'شتائم',
     'sexual': 'ألفاظ جنسية مسيئة',
     'bullying': 'تنمر',
+    'threats': 'تهديدات صريحة',
     'spam': 'إزعاج وتكرار',
     'ads': 'إعلانات',
     'links': 'روابط',
