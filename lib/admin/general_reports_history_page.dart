@@ -197,6 +197,8 @@ class _GeneralReportsHistoryPageState
               ),
             if ((message['text'] ?? '').toString().isNotEmpty)
               SelectableText('الرسالة المبلّغ عنها: ${message['text']}'),
+            if (report.actionLabel.isNotEmpty)
+              Text(report.actionLabel),
             if (report.field('reviewReason').isNotEmpty)
               Text('قرار الإدارة: ${report.field('reviewReason')}'),
             Row(children: [
