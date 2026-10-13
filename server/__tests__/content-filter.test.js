@@ -4,7 +4,7 @@ import { sendMessage } from "../../cloudflare-worker/src/chat-safety-actions.js"
 import { diaryCoreTestHooks } from "../../cloudflare-worker/src/diaries.js";
 import {
   applyContentFilter, normalizeFilterText, validateFilterConfig,
-  defaultFilterConfig, contentFilterInternals,
+  defaultFilterConfig, contentFilterInternals, primeContentFilter,
 } from "../../cloudflare-worker/src/content-filter.js";
 
 const surfaces = {
@@ -132,6 +132,7 @@ test("animated emoji requests cannot bypass the common private-message filter", 
 
 test("diary text and diary comments are blocked at the authoritative server entrypoints", async () => {
   const blocked = policy([rule("rule_diary_text", "عبارة ممنوعة", "block")]);
+  primeContentFilter({ ...blocked, version: 56 });
   const db = {
     reads: 0,
     transactions: 0,
