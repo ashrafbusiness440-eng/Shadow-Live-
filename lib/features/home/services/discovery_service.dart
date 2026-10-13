@@ -159,12 +159,17 @@ class DiscoveryPerson {
 /// must be enforced server-side before exposing the complete people directory.
 bool isPublicDiscoveryPerson(DiscoveryPerson person) {
   final data = person.data;
-  return data['isHidden'] != true &&
+  final visibility = (data['visibility'] ?? '').toString().toLowerCase();
+  final status = (data['status'] ?? '').toString().toLowerCase();
+  return !const {'hidden', 'private', 'friends'}.contains(visibility) &&
+      !const {'suspended', 'banned', 'deleted', 'disabled'}.contains(status) &&
+      data['isHidden'] != true &&
       data['isPrivate'] != true &&
       data['isDeleted'] != true &&
       data['isSuspended'] != true &&
       data['isBanned'] != true &&
       data['mysteriousEnabled'] != true &&
+      data['mysteriousMode'] != true &&
       data['hideFromDiscovery'] != true;
 }
 
