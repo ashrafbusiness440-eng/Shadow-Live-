@@ -1,6 +1,7 @@
 import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { filterContent } from "./content-filter.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import {
@@ -372,7 +373,10 @@ function isAnonymousToken(decoded) {
 }
 
 async function createDiary(db, uid, body) {
-  const text = diaryText(body.text);
+  const original = diaryText(body.text);
+  const checked = await filterContent(db, "diary_post", original);
+  if (checked.blocked) throw new DiaryApiError("content_blocked", 422);
+  const text = checked.text;
   const imageObjectIds = diaryImageIds(body.imageObjectIds);
   const commentsEnabled = body.commentsEnabled !== false;
   const operationKey = assertOperationKey(body.idempotencyKey);
@@ -468,6 +472,12 @@ async function createDiary(db, uid, body) {
         createdAt: now,
       }),
     ];
+    if (checked.flagged) {
+      writes.push(db.writeCreate(`content_filter_flags/${diaryId}`, {
+        actorUid: uid, surface: "diary_post", referenceId: diaryId,
+        ruleIds: checked.matchedRuleIds, status: "pending", createdAt: now,
+      }));
+    }
     for (const target of mentionTargets) {
       if (target.uid === uid) continue;
       writes.push(
@@ -762,7 +772,10 @@ function normalizeComment(id, data = {}) {
 
 async function createComment(db, uid, body) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
-  const text = diaryCommentText(body.text);
+  const original = diaryCommentText(body.text);
+  const checked = await filterContent(db, "diary_comment", original);
+  if (checked.blocked) throw new DiaryApiError("content_blocked", 422);
+  const text = checked.text;
   const operationKey = assertOperationKey(body.idempotencyKey);
 
   return runTransaction(db, async (transaction) => {
@@ -848,6 +861,14 @@ async function createComment(db, uid, body) {
         createdAt: now,
       }),
     ];
+
+    if (checked.flagged) {
+      writes.push(db.writeCreate(`content_filter_flags/${commentId}`, {
+        actorUid: uid, surface: "diary_comment", referenceId: commentId,
+        diaryId, ruleIds: checked.matchedRuleIds, status: "pending",
+        createdAt: now,
+      }));
+    }
 
     if (ownerUid !== uid) {
       writes.push(
