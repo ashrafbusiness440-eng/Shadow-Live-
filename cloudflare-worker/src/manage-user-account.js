@@ -22,6 +22,7 @@ const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const allowedActions = new Set([
   "suspend",
+  "warn",
   "ban",
   "unban",
   "disable",
@@ -78,6 +79,14 @@ function statusPatch(action, body, actorUid, now) {
     moderationReason: clean(body.reason),
   };
 
+  if (action === "warn") {
+    return {
+      ...base,
+      lastWarnedAt: now,
+      lastWarnedBy: actorUid,
+      lastWarningReason: clean(body.reason),
+    };
+  }
   if (action === "suspend") {
     const minutes = Number(body.durationMinutes);
     if (!Number.isInteger(minutes) || minutes < 10 || minutes > 43200) {
@@ -198,7 +207,7 @@ async function mutateAccount(db, env, actorPayload, body) {
   const allowedForActor =
     action === "deleteAccount"
       ? actorIsOwner
-      : action === "suspend"
+      : action === "suspend" || action === "warn"
         ? canSuspend
         : action === "enable"
           ? canManageUsers || hasCapability("suspendUsers")
@@ -271,9 +280,22 @@ async function mutateAccount(db, env, actorPayload, body) {
       await db.rollback(transaction);
       throw new ApiError("owner_protected", 409);
     }
+    // A warning must not modify another admin account or an inactive account.
+    if (action === "warn" && (
+        (freshTarget.adminEnabled === true && !actorIsOwner) ||
+        (clean(freshTarget.accountStatus || "active") !== "active") ||
+        freshTarget.authDeleted === true)) {
+      await db.rollback(transaction);
+      throw new ApiError("warning_target_unavailable", 409);
+    }
 
     const now = new Date();
     const patch = statusPatch(action, body, actorUid, now);
+    if (action === "warn") {
+      // Increment from the transaction snapshot; no unbounded warning query.
+      patch.warningCount = Math.min(1000000,
+        Math.max(0, Number(freshTarget.warningCount) || 0) + 1);
+    }
     const before = {
       accountStatus: clean(freshTarget.accountStatus || "active") || "active",
       suspendedUntil: freshTarget.suspendedUntil || null,
@@ -326,6 +348,18 @@ async function mutateAccount(db, env, actorPayload, body) {
         result: resultData,
         createdAt: now,
       }),
+      ...(action === "warn" ? [
+        db.writeCreate(`notifications/account_warning_${key}`, {
+          userId: targetUid,
+          type: "account_warning",
+          category: "social",
+          title: "تنبيه من إدارة شادو لايف",
+          body: "تم توجيه تحذير إلى حسابك. السبب: " + reason,
+          read: false,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ] : []),
       ...(action === "deleteAccount"
         ? [
             db.writeCreate(`storage_account_cleanup_jobs/${key}`, {

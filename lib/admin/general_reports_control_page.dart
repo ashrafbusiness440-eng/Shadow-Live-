@@ -20,6 +20,7 @@ String generalReportErrorMessage(Object error) {
     'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
     'invalid_account_action' => 'تحقق من الإجراء وسبب القرار.',
+    'warning_target_unavailable' => 'لا يمكن توجيه تحذير لهذا الحساب حاليًا.',
     'unverified_account_action' => 'تعذر تأكيد تنفيذ العقوبة؛ حدّث البلاغ.',
     'action_requires_execution' => 'لا يمكن تسجيل إجراء قبل تنفيذه. اختر العقوبة المناسبة أولًا.',
     'owner_protected' => 'حساب المالك محمي ولا يمكن حظره أو تعليقه.',
@@ -148,6 +149,7 @@ class GeneralReportsControlPage extends StatefulWidget {
 class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _loading = false;
   bool _canReview = false;
+  bool _canWarn = false;
   bool _canSuspend = false;
   bool _canBan = false;
   bool _capped = false;
@@ -179,6 +181,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       setState(() {
         _items = items;
         _canReview = result['canReview'] == true;
+        _canWarn = result['canWarn'] == true;
         _canSuspend = result['canSuspend'] == true;
         _canBan = result['canBan'] == true;
         _capped = result['capped'] == true;
@@ -267,7 +270,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   ) async {
     if (_busy.contains(item.id) || item.targetUid.isEmpty ||
         item.status != 'under_review') return;
-    if (action == 'suspend' && !_canSuspend ||
+    if (action == 'warn' && !_canWarn ||
+        action == 'suspend' && !_canSuspend ||
         action == 'ban' && !_canBan) return;
     final reason = TextEditingController();
     var minutes = 1440;
@@ -275,17 +279,19 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: Text(action == 'suspend'
-              ? 'تعليق الحساب المبلّغ عليه' : 'حظر الحساب المبلّغ عليه'),
+          title: Text(action == 'warn' ? 'تحذير الحساب المبلّغ عليه'
+              : action == 'suspend'
+                ? 'تعليق الحساب المبلّغ عليه' : 'حظر الحساب المبلّغ عليه'),
           content: SizedBox(
             width: 400,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'سيتم تنفيذ العقوبة فعلًا، ولن يصلك تأكيد حتى ينجح الخادم. '
-                  'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.',
-                ),
+                Text(action == 'warn'
+                    ? 'سيصل تحذير واضح وسببه إلى الحساب، دون إيقافه أو قطع جلسته. '
+                      'وسيصل لصاحب البلاغ إشعار بالقرار فقط بعد تسجيله بنجاح.'
+                    : 'سيتم تنفيذ العقوبة فعلًا، ولن يصلك تأكيد حتى ينجح الخادم. '
+                      'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.'),
                 if (action == 'suspend')
                   DropdownButtonFormField<int>(
                     initialValue: minutes,
@@ -485,6 +491,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                       onPressed: _busy.contains(item.id)
                           ? null : () => _review(item, 'rejected'),
                       child: const Text('رفض البلاغ'),
+                    ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canWarn)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'warn'),
+                      icon: const Icon(Icons.warning_amber_rounded),
+                      label: const Text('توجيه تحذير'),
                     ),
                   if (inReview && item.targetUid.isNotEmpty &&
                       _canSuspend)

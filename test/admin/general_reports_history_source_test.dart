@@ -12,6 +12,16 @@ void main() {
     expect(current.contains('action_requires_execution'), isTrue);
   });
 
+  test('verified warnings are available only via the existing admin action', () {
+    final source = File('lib/admin/general_reports_control_page.dart')
+        .readAsStringSync();
+    expect(source.contains("result['canWarn'] == true"), isTrue);
+    expect(source.contains("_takeAccountAction(item, 'warn')"), isTrue);
+    expect(source.contains("const Text('توجيه تحذير')"), isTrue);
+    expect(source.contains("action == 'warn'"), isTrue);
+    expect(source.contains("warning_target_unavailable"), isTrue);
+  });
+
   test('historical reports open from the existing reports page', () {
     final current = File('lib/admin/general_reports_control_page.dart')
         .readAsStringSync();

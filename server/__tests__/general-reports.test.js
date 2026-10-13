@@ -267,6 +267,93 @@ test("a report cannot claim actioned without a completed account-operation recei
   assert.equal(db.docs.has("admin_audit_logs/general_report_unverified_action_123456"), false);
 });
 
+test("warning is persisted and sent to the accused before report outcome", async () => {
+  const db = new Db({
+    ...cases(),
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active",warningCount:0},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
+    reportId:"legacy_chat",status:"under_review",
+    reason:"مراجعة البلاغ",idempotencyKey:"warn_review_12345678901",
+  });
+  const params = {reportId:"legacy_chat",accountAction:"warn",
+    reason:"تحذير بشأن الإساءة في المحادثة",idempotencyKey:"warn_action_12345678901"};
+  const result = await generalReportsTestHooks.resolveWithAccountAction(
+    db,{}, {sub:"admin"}, "admin", params);
+  assert.equal(result.status,"actioned");
+  assert.equal(result.moderationAction,"warning");
+  assert.equal(db.docs.get("reports/legacy_chat").moderationAction,"warning");
+  const accused = db.docs.get("users/target");
+  assert.equal(accused.accountStatus,"active");
+  assert.equal(accused.warningCount,1);
+  assert.equal(accused.lastWarnedBy,"admin");
+  assert.equal(accused.lastWarningReason,params.reason);
+  assert.equal(db.docs.get("control_operations/warn_action_12345678901_account").action,"warn");
+  const recipientNotice = db.docs.get("notifications/account_warning_warn_action_12345678901_account");
+  assert.equal(recipientNotice.userId,"target");
+  assert.match(recipientNotice.body,/تحذير بشأن الإساءة/);
+  const reporterNotice = db.docs.get(
+    "notifications/report_result_warn_action_12345678901_resolution");
+  assert.equal(reporterNotice.userId,"reporter");
+  assert.equal(reporterNotice.actionKind,"warning");
+  assert.match(reporterNotice.body,/تحذيري/);
+  const again = await generalReportsTestHooks.resolveWithAccountAction(
+    db,{}, {sub:"admin"}, "admin", params);
+  assert.equal(again.code,"duplicate");
+  assert.equal(db.docs.get("users/target").warningCount,1);
+  assert.equal([...db.docs.keys()].filter(p =>
+    p.startsWith("notifications/account_warning_warn_action_12345678901_")).length,1);
+});
+
+test("warning requires an actual receipt and respects protected roles", async () => {
+  const initial = cases();
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(
+      new Db(initial),"admin", {
+        reportId:"room_1",status:"actioned",reason:"تحذير مثبت",
+        idempotencyKey:"fake_warning_123456",
+      }, {actionKind:"warning",operationKey:"no_warning_receipt_123456"}),
+    /unverified_account_action/,
+  );
+  const ownerDb = new Db({
+    ...initial,
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"owner",accountStatus:"active"},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(ownerDb,"admin",{
+    reportId:"legacy_chat",status:"under_review",
+    reason:"مراجعة البلاغ",idempotencyKey:"warn_owner_review_123456",
+  });
+  await assert.rejects(() =>
+    generalReportsTestHooks.resolveWithAccountAction(
+      ownerDb,{}, {sub:"admin"},"admin", {
+        reportId:"legacy_chat",accountAction:"warn",
+        reason:"تحذير غير مسموح",idempotencyKey:"warn_owner_action_123456",
+      }), /owner_protected/);
+  assert.equal(ownerDb.docs.has(
+    "notifications/account_warning_warn_owner_action_123456_account"), false);
+
+  const limitedDb = new Db({
+    ...initial,
+    "users/admin": {role:"moderator",adminEnabled:true,capabilities:["reviewReports"]},
+    "users/target": {role:"user",accountStatus:"active"},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(limitedDb,"admin",{
+    reportId:"legacy_chat",status:"under_review",
+    reason:"مراجعة البلاغ",idempotencyKey:"warn_limited_review_123456",
+  });
+  await assert.rejects(() =>
+    generalReportsTestHooks.resolveWithAccountAction(
+      limitedDb,{}, {sub:"admin"},"admin", {
+        reportId:"legacy_chat",accountAction:"warn",
+        reason:"قرار دون صلاحية",idempotencyKey:"warn_limited_action_123456",
+      }), /forbidden/);
+  assert.equal(limitedDb.docs.get("reports/legacy_chat").status, "under_review");
+  assert.equal(limitedDb.docs.has(
+    "notifications/account_warning_warn_limited_action_123456_account"), false);
+});
+
 test("authorized report action actually bans account before reporter gets a ban notice", async () => {
   const db = new Db({
     ...cases(),
