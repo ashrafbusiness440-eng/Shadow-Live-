@@ -155,6 +155,31 @@ class DiscoveryPerson {
   bool get isOnline => data['isOnline'] == true;
 }
 
+/// This is only the public candidate filter. Bidirectional block checks
+/// must be enforced server-side before exposing the complete people directory.
+bool isPublicDiscoveryPerson(DiscoveryPerson person) {
+  final data = person.data;
+  return data['isHidden'] != true &&
+      data['isPrivate'] != true &&
+      data['isDeleted'] != true &&
+      data['isSuspended'] != true &&
+      data['isBanned'] != true &&
+      data['mysteriousEnabled'] != true &&
+      data['hideFromDiscovery'] != true;
+}
+
+class DiscoveryPeoplePage {
+  const DiscoveryPeoplePage({
+    required this.people,
+    required this.nextCursor,
+    required this.hasMore,
+  });
+
+  final List<DiscoveryPerson> people;
+  final DocumentSnapshot<Map<String, dynamic>>? nextCursor;
+  final bool hasMore;
+}
+
 class HomeDiscoveryData {
   const HomeDiscoveryData({
     required this.userData,
@@ -252,6 +277,41 @@ class DiscoveryService {
       AsyncTtlCache<Map<String, dynamic>>(
         ttl: const Duration(seconds: 60),
       );
+
+  /// Bounded public profile cursor, independent of the Home 24-person
+  /// suggestion preview. Candidate filtering never fetches each profile
+  /// separately. The same privacy and bidirectional block policies must
+  /// ultimately be enforced by the authoritative discovery backend.
+  Future<DiscoveryPeoplePage> loadPeoplePage({
+    DocumentSnapshot<Map<String, dynamic>>? after,
+    int pageSize = 10,
+  }) async {
+    final requestUid = _auth.currentUser?.uid;
+    final bounded = pageSize < 1 ? 1 : (pageSize > 10 ? 10 : pageSize);
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('public_profiles')
+        .orderBy(FieldPath.documentId)
+        .limit(bounded);
+    if (after != null) query = query.startAfterDocument(after);
+    final snapshot = await query.get();
+    if (_auth.currentUser?.uid != requestUid) {
+      return const DiscoveryPeoplePage(
+        people: <DiscoveryPerson>[],
+        nextCursor: null,
+        hasMore: false,
+      );
+    }
+    final people = snapshot.docs
+        .where((doc) => doc.id != requestUid)
+        .map((doc) => DiscoveryPerson(id: doc.id, data: doc.data()))
+        .where(isPublicDiscoveryPerson)
+        .toList(growable: false);
+    return DiscoveryPeoplePage(
+      people: List<DiscoveryPerson>.unmodifiable(people),
+      nextCursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
+      hasMore: snapshot.docs.length == bounded,
+    );
+  }
 
   Future<List<DiscoveryRoom>> hydrateRealtimeCounts(
     Iterable<DiscoveryRoom> source,
