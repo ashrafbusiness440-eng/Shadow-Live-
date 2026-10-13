@@ -175,3 +175,19 @@ test("room-chat messages must use the shared policy before broadcasting", async 
   assert.ok(code.includes("if (review.blocked)"), "Blocking is enforced");
   assert.ok(code.includes("text = review.text"), "Masking precedes broadcast");
 });
+
+test("invisible text controls do not defeat masking, and genuine word boundaries remain", () => {
+  const p = policy([rule("rule_invisible", "حقير", "mask")]);
+  assert.equal(applyContentFilter("يا ح\u200Dقير", p, "room_chat").text, "يا ***");
+  assert.equal(applyContentFilter("يا ح\u200Bقير", p, "private_chat").text, "يا ***");
+  assert.equal(applyContentFilter("هذا لاحقير", p, "room_chat").text, "هذا لاحقير");
+});
+
+test("deliberate repeated characters match once without masking partial words", () => {
+  const p = policy([rule("rule_repeat", "حقير", "mask")]);
+  assert.equal(applyContentFilter("يا حقيييير", p, "private_chat").text,
+    "يا ***");
+  assert.equal(applyContentFilter("الحقيري", p, "private_chat").text, "الحقيري");
+  assert.equal(applyContentFilter("ح ق ي ر", p, "private_chat").text,
+    "ح ق ي ر");
+});
