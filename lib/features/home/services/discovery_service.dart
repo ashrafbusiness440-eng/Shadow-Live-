@@ -124,6 +124,30 @@ String? homeIdentityLabel(
   return '${isMale ? 'الثروة' : 'الجاذبية'} $level';
 }
 
+/// Only publicly discoverable, active rooms can enter the browsing grid.
+/// A password-protected room can be listed, but its existing admission flow
+/// must still request the password. Restricted/hidden rooms are never listed.
+bool isDiscoverableRoom(DiscoveryRoom room) =>
+    room.isActive &&
+    !room.isHidden &&
+    room.data['isPrivate'] != true &&
+    const {'public', 'password'}.contains(room.visibility);
+
+/// Firestore document cursor rather than an offset or an expanded limit.
+/// The cursor covers raw documents, including filtered ones, so hidden rooms
+/// cannot make the same page repeat on the next request.
+class DiscoveryRoomPage {
+  const DiscoveryRoomPage({
+    required this.rooms,
+    required this.nextCursor,
+    required this.hasMore,
+  });
+
+  final List<DiscoveryRoom> rooms;
+  final DocumentSnapshot<Map<String, dynamic>>? nextCursor;
+  final bool hasMore;
+}
+
 class DiscoveryPerson {
   const DiscoveryPerson({
     required this.id,
@@ -304,6 +328,49 @@ class DiscoveryService {
     return future.whenComplete(() {
       if (identical(_roomsInFlight, future)) _roomsInFlight = null;
     });
+  }
+
+  /// Additional discovery pages are independent from the small Home cache.
+  /// Stable document-ID cursors avoid offsets, repeated reads of earlier
+  /// pages and any unbounded query. Priority is applied to fetched results;
+  /// the realtime service verifies headcounts in one request per page.
+  Future<DiscoveryRoomPage> loadRoomPage({
+    DocumentSnapshot<Map<String, dynamic>>? after,
+    int pageSize = 16,
+  }) async {
+    final requestUid = _auth.currentUser?.uid;
+    final boundedSize = pageSize.clamp(1, 24);
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('rooms')
+        .orderBy(FieldPath.documentId)
+        .limit(boundedSize);
+    if (after != null) query = query.startAfterDocument(after);
+    final snapshot = await query.get();
+    if (_auth.currentUser?.uid != requestUid) {
+      return const DiscoveryRoomPage(
+        rooms: <DiscoveryRoom>[],
+        nextCursor: null,
+        hasMore: false,
+      );
+    }
+    final candidates = snapshot.docs
+        .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
+        .where(isDiscoverableRoom)
+        .toList(growable: false);
+    final hydrated = await hydrateRealtimeCounts(candidates);
+    if (_auth.currentUser?.uid != requestUid) {
+      return const DiscoveryRoomPage(
+        rooms: <DiscoveryRoom>[],
+        nextCursor: null,
+        hasMore: false,
+      );
+    }
+    hydrated.sort(compareRoomsByDiscoveryPriority);
+    return DiscoveryRoomPage(
+      rooms: List<DiscoveryRoom>.unmodifiable(hydrated),
+      nextCursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
+      hasMore: snapshot.docs.length == boundedSize,
+    );
   }
 
   Future<Map<String, dynamic>?> _loadCurrentUserData(User? currentUser) async {
