@@ -78,6 +78,6 @@ test("rejects duplicates, arbitrary regex and oversized imports", () => {
   assert.throws(() => validateFilterConfig(policy(
     Array.from({ length: 301 }, (_, i) =>
       rule("rule_" + String(i).padStart(6, "0"), "شتيمة" + i),
-  )), /invalid_filter_config/);
+  ))), /invalid_filter_config/);
   assert.equal(contentFilterInternals.tokenMatches("لطيف", "طيف").length, 0);
 });
