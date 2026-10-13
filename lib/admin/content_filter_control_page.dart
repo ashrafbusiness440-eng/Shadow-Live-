@@ -396,7 +396,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
         .toSet();
     final known = _rules.map((e) => '${e['pattern']}'.toLowerCase()).toSet();
     final additions = words.where((v) => !known.contains(v.toLowerCase()))
-        .take((300 - _rules.length).clamp(0, 300))
+        .take(300 - _rules.length)
         .toList();
     _changed(() {
       for (final word in additions) {
