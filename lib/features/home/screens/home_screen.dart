@@ -241,8 +241,12 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute<void>(
         builder: (_) => HomeMorePeopleScreen(
           initiallyShownIds:
-              _data?.suggestedPeople.take(10).map((item) => item.id).toSet() ??
-              <String>{},
+              (_data?.suggestedPeople ?? const <DiscoveryPerson>[])
+                  .where((person) =>
+                      _eligibleSuggestionIds?.contains(person.id) == true)
+                  .take(10)
+                  .map((person) => person.id)
+                  .toSet(),
         ),
       ),
     );
@@ -1067,6 +1071,7 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
   final ScrollController _scroll = ScrollController();
   final List<DiscoveryPerson> _people = [];
   final Set<String> _seen = {};
+  final Set<String> _successfullyFollowed = {};
   final Set<String> _busyFollow = {};
   final Map<String, bool> _followState = {};
   DocumentSnapshot<Map<String, dynamic>>? _cursor;
@@ -1089,6 +1094,7 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
         _uid = user?.uid;
         _people.clear();
         _seen.clear();
+        _successfullyFollowed.clear();
         _followState.clear();
         _busyFollow.clear();
         _cursor = null;
@@ -1120,28 +1126,24 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
       if (!mounted || generation != _generation || requestUid != _uid) return;
       final next = page.people.where((person) =>
           !widget.initiallyShownIds.contains(person.id) &&
+          !_successfullyFollowed.contains(person.id) &&
           !_seen.contains(person.id)).toList(growable: false);
-      Set<String>? follows;
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !user.isAnonymous && user.uid == requestUid) {
-        try {
-          follows = await _follow.followingAmong(
-            next.map((person) => person.id),
-          );
-        } catch (_) {
-          // Never offer a follow/unfollow action on unknown server state.
-        }
-      }
+
+      // A single server batch checks both block directions, privacy,
+      // and outgoing follow status. Unknown state is never displayed.
+      final eligible = await _follow.eligibleDiscoveryPeopleAmong(
+        next.map((person) => person.id),
+      );
       if (!mounted || generation != _generation || requestUid != _uid) return;
       setState(() {
         _cursor = page.nextCursor;
         _hasMore = page.hasMore;
         for (final person in next) {
-          if (_seen.add(person.id)) {
+          if (eligible.contains(person.id) &&
+              !_successfullyFollowed.contains(person.id) &&
+              _seen.add(person.id)) {
             _people.add(person);
-            if (follows != null) {
-              _followState[person.id] = follows.contains(person.id);
-            }
+            _followState[person.id] = false;
           }
         }
       });
@@ -1169,12 +1171,15 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
     if (!_canFollow(person) || !_busyFollow.add(person.id)) return;
     final generation = _generation;
     final requestUid = _uid;
-    final following = _followState[person.id]!;
     setState(() {});
     try {
-      await _follow.setFollowing(person.id, !following);
+      await _follow.setFollowing(person.id, true);
       if (mounted && generation == _generation && requestUid == _uid) {
-        setState(() => _followState[person.id] = !following);
+        setState(() {
+          _successfullyFollowed.add(person.id);
+          _people.removeWhere((candidate) => candidate.id == person.id);
+          _followState.remove(person.id);
+        });
       }
     } catch (_) {
       if (mounted && generation == _generation && requestUid == _uid) {
@@ -1198,15 +1203,24 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
         builder: (_) => PublicProfileScreen(userId: person.id),
       ),
     );
-    if (!mounted || generation != _generation || uid != _uid ||
-        !_canFollow(person)) return;
+    if (!mounted || generation != _generation || uid != _uid) return;
     try {
-      final following = await _follow.followingAmong([person.id]);
+      final stillEligible =
+          await _follow.eligibleDiscoveryPeopleAmong([person.id]);
       if (!mounted || generation != _generation || uid != _uid) return;
-      setState(() => _followState[person.id] = following.contains(person.id));
+      if (!stillEligible.contains(person.id)) {
+        setState(() {
+          _successfullyFollowed.add(person.id);
+          _people.removeWhere((candidate) => candidate.id == person.id);
+          _followState.remove(person.id);
+        });
+      }
     } catch (_) {
       if (mounted && generation == _generation && uid == _uid) {
-        setState(() => _followState.remove(person.id));
+        setState(() {
+          _people.removeWhere((candidate) => candidate.id == person.id);
+          _followState.remove(person.id);
+        });
       }
     }
   }
@@ -1222,7 +1236,7 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
         textDirection: TextDirection.rtl,
         child: HomePersonActionsSheet(
           person: person,
-          isFollowing: _followState[person.id],
+          isFollowing: false,
           onOpenProfile: () {
             Navigator.pop(sheetContext);
             unawaited(_openPerson(person));
@@ -1298,7 +1312,7 @@ class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
                           key: ValueKey(person.id),
                           person: person,
                           onTap: () => _openActions(person),
-                          isFollowing: _followState[person.id],
+                          isFollowing: false,
                           followBusy: _busyFollow.contains(person.id),
                           onFollow: _canFollow(person)
                               ? () => _changeFollow(person)
