@@ -69,7 +69,7 @@ function compactMatchPositions(text) {
   // Only punctuation-separated letter sequences are eligible for
   // de-obfuscation. Ordinary spaces are never joined into unrelated words.
   const obfuscated = [];
-  const regexp = /[\\p{L}\\p{N}]+(?:[._*~\\-]+[\\p{L}\\p{N}]+)+/gu;
+  const regexp = /[\p{L}\p{N}]+(?:[._*~\-]+[\p{L}\p{N}]+)+/gu;
   for (const hit of source.matchAll(regexp)) {
     if (obfuscated.length >= 30) break;
     const normalized = normalizeFilterText(hit[0], { joinSeparators: true });
