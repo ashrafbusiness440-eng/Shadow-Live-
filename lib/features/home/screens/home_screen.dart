@@ -45,6 +45,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _changingFollows = <String>{};
   StreamSubscription<User?>? _authSub;
   String? _loadedForUid;
+  Future<void>? _pendingHomeLoad;
+  String? _pendingHomeUid;
+  int _homeLoadRevision = 0;
   bool _loading = true;
   String? _error;
 
@@ -80,20 +83,51 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _load({bool forceRefresh = false}) async {
+  /// One home read per account at a time. Pull-to-refresh and wallet-return
+  /// refresh await the same in-flight future instead of doubling Firestore IO.
+  /// A different signed-in account starts a new operation immediately.
+  Future<void> _load({bool forceRefresh = false}) {
     final requestUid = FirebaseAuth.instance.currentUser?.uid;
-    if (mounted) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
+    final pending = _pendingHomeLoad;
+    if (pending != null && _pendingHomeUid == requestUid) return pending;
+
+    final revision = ++_homeLoadRevision;
+    final operation = _performHomeLoad(
+      requestUid,
+      revision,
+      forceRefresh: forceRefresh,
+    );
+    _pendingHomeUid = requestUid;
+    _pendingHomeLoad = operation;
+    unawaited(operation.whenComplete(() {
+      if (identical(_pendingHomeLoad, operation)) {
+        _pendingHomeLoad = null;
+        _pendingHomeUid = null;
+      }
+    }));
+    return operation;
+  }
+
+  bool _isCurrentLoad(String? uid, int revision) =>
+      mounted &&
+      revision == _homeLoadRevision &&
+      FirebaseAuth.instance.currentUser?.uid == uid;
+
+  Future<void> _performHomeLoad(
+    String? requestUid,
+    int revision, {
+    required bool forceRefresh,
+  }) async {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final data =
           await _discoveryService.loadHome(forceRefresh: forceRefresh);
-      if (!mounted) return;
-      if (FirebaseAuth.instance.currentUser?.uid != requestUid) return;
+      if (!_isCurrentLoad(requestUid, revision)) return;
       _loadedForUid = requestUid;
       setState(() {
         _data = data;
@@ -102,13 +136,17 @@ class _HomeScreenState extends State<HomeScreen> {
       unawaited(_refreshSuggestionFollows(
         data.suggestedPeople,
         requestUid,
+        revision: revision,
       ));
     } catch (_) {
-      if (mounted) {
+      // A failed request for a previous account cannot change the new home.
+      if (_isCurrentLoad(requestUid, revision)) {
         setState(() => _error = 'تعذر تحديث الاستكشاف حالياً');
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (_isCurrentLoad(requestUid, revision)) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -116,8 +154,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// An error leaves state unknown instead of showing incorrect unfollow UI.
   Future<void> _refreshSuggestionFollows(
     List<DiscoveryPerson> people,
-    String? expectedUid,
-  ) async {
+    String? expectedUid, {
+    required int revision,
+  }) async {
     final current = FirebaseAuth.instance.currentUser;
     if (current == null ||
         current.isAnonymous ||
@@ -128,14 +167,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final confirmed = await _followService.followingAmong(
         people.take(10).map((person) => person.id),
       );
-      if (!mounted ||
-          FirebaseAuth.instance.currentUser?.uid != expectedUid) {
+      if (!_isCurrentLoad(expectedUid, revision)) {
         return;
       }
       setState(() => _followingSuggestions = confirmed);
     } catch (_) {
-      if (!mounted ||
-          FirebaseAuth.instance.currentUser?.uid != expectedUid) {
+      if (!_isCurrentLoad(expectedUid, revision)) {
         return;
       }
       setState(() => _followingSuggestions = null);
@@ -235,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(_refreshSuggestionFollows(
       _data?.suggestedPeople ?? const <DiscoveryPerson>[],
       FirebaseAuth.instance.currentUser?.uid,
+      revision: _homeLoadRevision,
     ));
   }
 
