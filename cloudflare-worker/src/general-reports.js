@@ -83,6 +83,7 @@ function normalizeGeneralReport(reportId, data = {}) {
       : null,
     createdAtMs: timestampMs(data.createdAt),
     reviewReason: clean(data.reviewReason),
+    moderationAction: clean(data.moderationAction),
     reviewedBy: clean(data.reviewedBy),
   };
 }
