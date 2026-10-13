@@ -16,6 +16,7 @@ import 'admin/control_api_endpoints.dart';
 import 'admin/control_firebase.dart';
 import 'admin/control_asset_manager_page.dart';
 import 'admin/auth_login_control_page.dart';
+import 'admin/content_filter_control_page.dart';
 import 'admin/control_relationship_types_page.dart';
 import 'admin/diary_reports_control_page.dart';
 import 'admin/general_reports_control_page.dart';
@@ -3030,6 +3031,8 @@ class MorePage extends StatelessWidget {
             const ControlItem('العلاقات / CP','إدارة أنواع العلاقات: الاسم وAsset والتفعيل والترتيب وإضافة أنواع جديدة',Icons.favorite_outline_rounded),
           if(canManageSystem)
             const ControlItem('تسجيل الدخول والربط','تفعيل وتعطيل Email / Google / Guest / Phone / Facebook / Apple وخطوة ربط الحسابات الاختيارية',Icons.login_rounded),
+           if(canManageSystem)
+             const ControlItem('فلترة الكلمات','تشغيل أو إيقاف الفلترة وإدارة الكلمات وتجربتها قبل الحفظ',Icons.shield_outlined),
           const ControlItem('إعدادات النظام','system_config — قراءة فقط، وEmergency Lock يبقى Backend فقط',Icons.settings_outlined),
           const ControlItem('سجل الإدارة','Audit Log للعمليات الحساسة — قراءة فقط',Icons.history_outlined),
         ];
@@ -3057,6 +3060,7 @@ class ControlList extends StatelessWidget {
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
     if (item.title == 'العلاقات / CP') return const ControlRelationshipTypesPage();
     if (item.title == 'تسجيل الدخول والربط') return const AuthLoginControlPage();
+     if (item.title == 'فلترة الكلمات') return const ContentFilterControlPage();
     if (item.title == 'إدارة VIP') return const VipLevelControlPage();
     if (item.title == 'عروض VIP السريعة') return const VipInformationControlPage();
     if (item.title == 'الشخص الغامض') return const MysteriousPersonControlPage();
