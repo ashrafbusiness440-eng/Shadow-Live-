@@ -14,6 +14,7 @@ import '../../room/widgets/discovery_room_password_dialog.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../../../shared/widgets/country_selector.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -482,20 +483,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (rooms.isEmpty) return _emptyRooms('لا توجد غرف مقترحة حالياً');
 
-    return SizedBox(
-      height: 126,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: rooms
-            .take(8)
-            .map(
-              (room) => HomeCompactRoomCard(
-                room: room,
-                onTap: () => _openRoom(room),
-              ),
-            )
-            .toList(),
-      ),
+    // Only four room images are built in the initial viewport. Use the same
+    // already loaded discovery snapshot; no per-tile Firestore/presence reads.
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      childAspectRatio: 1,
+      children: rooms.take(4).map((room) {
+        return HomeCompactRoomCard(
+          room: room,
+          onTap: () => _openRoom(room),
+        );
+      }).toList(growable: false),
     );
   }
 
@@ -1260,8 +1262,12 @@ class _RoomPreviewAvatar extends StatelessWidget {
   }
 }
 
+/// The default square Home room preview. Cosmetic room-card frames are a
+/// separate feature; this widget only uses the existing room surface image and
+/// room metadata from the single bounded discovery snapshot.
 class HomeCompactRoomCard extends StatelessWidget {
   const HomeCompactRoomCard({
+    super.key,
     required this.room,
     required this.onTap,
   });
@@ -1269,56 +1275,156 @@ class HomeCompactRoomCard extends StatelessWidget {
   final DiscoveryRoom room;
   final VoidCallback onTap;
 
+  ShadowCountryOption? get _country {
+    final raw = (room.data['country'] ??
+            room.data['countryName'] ??
+            room.data['countryCode'] ??
+            '')
+        .toString()
+        .trim();
+    if (raw.isEmpty) return null;
+    final named = shadowCountryByName(raw);
+    if (named != null && named.isoCode.isNotEmpty) return named;
+    final iso = raw.toUpperCase();
+    for (final option in shadowCountries) {
+      if (option.isoCode == iso && iso.isNotEmpty) return option;
+    }
+    return null;
+  }
+
+  String get _category {
+    final type = (room.data['roomType'] ?? room.data['type'] ?? '')
+        .toString()
+        .trim();
+    if (type == 'agency') return 'وكالة';
+    if (isOfficialRoomForDiscovery(room)) return 'رسمية';
+    final name = (room.data['category'] ?? '').toString().trim();
+    return name.isEmpty ? 'دردشة' : name;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final country = _country;
+    final imageUrl = roomSurfaceImageUrl(room.data);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: 124,
-        margin: const EdgeInsetsDirectional.only(end: 8),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF251A42), Color(0xFF10121D)],
-          ),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      borderRadius: BorderRadius.circular(18),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Row(
-              children: [
-                _RoomPreviewAvatar(
-                  room: room,
-                  radius: 23,
-                  fallbackIcon: Icons.mic_rounded,
+            const ColoredBox(color: Color(0xFF251A42)),
+            if (imageUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => const Center(
+                  child: Icon(Icons.mic_rounded,
+                      color: Color(0xFFFFD54A), size: 36),
                 ),
-                const Spacer(),
-                if (room.isFeatured)
-                  const Icon(
-                    Icons.star_rounded,
-                    color: Color(0xFFFFD54A),
-                    size: 17,
-                  ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              room.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
+                placeholder: (_, __) => const Center(
+                  child: Icon(Icons.mic_rounded,
+                      color: Color(0xFFFFD54A), size: 36),
+                ),
+              )
+            else
+              const Center(
+                child: Icon(Icons.mic_rounded,
+                    color: Color(0xFFFFD54A), size: 36),
+              ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xB3090718),
+                    Color(0x00090718),
+                    Color(0xED090718),
+                  ],
+                  stops: [0, .45, 1],
+                ),
               ),
             ),
-            Text(
-              room.hasAvailablePresence
-                  ? '${room.onlineCount} متصل'
-                  : 'الحضور غير متاح',
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            PositionedDirectional(
+              top: 9,
+              start: 9,
+              end: 56,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${country == null ? '' : '${country.flag} '}$_category',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (country != null)
+                    Text(
+                      country.nameAr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.white70,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            PositionedDirectional(
+              top: 8,
+              end: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xC0090718),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.people_alt_rounded,
+                          color: Color(0xFFFFD54A), size: 12),
+                      const SizedBox(width: 3),
+                      Text(
+                        room.hasAvailablePresence
+                            ? '${room.onlineCount}'
+                            : '—',
+                        semanticsLabel: room.hasAvailablePresence
+                            ? '${room.onlineCount} متصل'
+                            : 'الحضور غير متاح',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              start: 10,
+              end: 10,
+              bottom: 10,
+              child: Text(
+                room.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
             ),
           ],
         ),

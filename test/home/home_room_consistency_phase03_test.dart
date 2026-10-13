@@ -80,8 +80,10 @@ void main() {
     final discovery = File('lib/features/home/services/discovery_service.dart').readAsStringSync();
     expect(home.contains('roomSurfaceImageUrl(room.data)'), isTrue);
     expect(home.contains('_RoomPreviewAvatar('), isTrue);
-    expect(home.split('_RoomPreviewAvatar(').length - 1, 3,
-        reason: 'one shared widget definition plus two rail placements');
+    expect(home.split('_RoomPreviewAvatar(').length - 1, 2,
+        reason: 'one shared avatar definition and activity-rail placement; Home squares use the same roomSurfaceImageUrl directly');
+    expect(home.contains('class HomeCompactRoomCard'), isTrue);
+    expect(home.contains('rooms.take(4)'), isTrue);
     expect(home.contains('CachedNetworkImage('), isTrue);
     expect(rooms.contains('compareRoomsByDiscoveryPriority(a, b)'), isTrue);
     expect(discovery.contains('..sort(compareRoomsByDiscoveryPriority)'), isTrue);
