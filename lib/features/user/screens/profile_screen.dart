@@ -16,6 +16,7 @@ import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/user_level_badges.dart';
+import '../../profile/widgets/profile_action_grid.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
@@ -824,108 +825,101 @@ class _ProfileScreenState extends State<ProfileScreen>
                       )
                       .toList(growable: false),
                 ),
+                if (interests.length > 6)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      key: const Key('own-profile-interests-show-all'),
+                      onPressed: () => _showAllInterests(interests),
+                      child: Text(
+                        'عرض الكل (${interests.length})',
+                        style: const TextStyle(color: Color(0xFFFFD54A)),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
         ],
         const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: _action(
-                Icons.edit_rounded,
-                'تعديل الملف',
-                _openingEdit ? null : _edit,
+        // Each action retains its existing destination and permission rules.
+        // The shared grid only arranges cards; no extra reads or listeners.
+        ProfileActionGrid(
+          actions: [
+            _action(
+              Icons.edit_rounded,
+              'تعديل الملف',
+              _openingEdit ? null : _edit,
+            ),
+            _action(
+              Icons.add_card_rounded,
+              'شحن',
+              () => _recharge(0),
+            ),
+            _action(
+              Icons.settings_rounded,
+              'الإعدادات',
+              () => Navigator.pushNamed(context, AppRoutes.settings),
+            ),
+            _action(
+              Icons.inventory_2_rounded,
+              'مقتنياتي',
+              () => unawaited(_openMyItems()),
+            ),
+            _action(
+              Icons.workspace_premium_rounded,
+              'المستوى',
+              () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const UserLevelScreen(),
+                ),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _action(
-                Icons.add_card_rounded,
-                'شحن',
-                () => _recharge(0),
+            _action(
+              Icons.diamond_rounded,
+              'VIP',
+              _openVip,
+            ),
+            _action(
+              Icons.visibility_off_rounded,
+              'الشخص الغامض',
+              () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const MysteriousPersonScreen(),
+                ),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _action(
-                Icons.settings_rounded,
-                'الإعدادات',
-                () => Navigator.pushNamed(context, AppRoutes.settings),
+            _action(
+              Icons.favorite_rounded,
+              'العلاقات',
+              () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const RelationshipsPage(),
+                ),
               ),
             ),
+            _action(
+              Icons.apartment_rounded,
+              'وكالتي',
+              () => Navigator.pushNamed(
+                context,
+                AppRoutes.myAgency,
+              ).then((_) {
+                if (mounted) _load();
+              }),
+            ),
+            if (canGrantAgencyPackage)
+              _action(
+                Icons.card_giftcard_rounded,
+                'منح باكيج وكالة',
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AgencyPackageGrantPage(),
+                  ),
+                ),
+              ),
           ],
         ),
-        const SizedBox(height: 10),
-        _action(
-          Icons.inventory_2_rounded,
-          'مقتنياتي',
-          () => unawaited(_openMyItems()),
-        ),
-        const SizedBox(height: 10),
-        _action(
-          Icons.workspace_premium_rounded,
-          'المستوى',
-          () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const UserLevelScreen(),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 10),        _action(
-          Icons.diamond_rounded,
-          'VIP',
-          _openVip,
-        ),
-        const SizedBox(height: 10),
-        // Keep the former fourth profile tab accessible as a normal,
-        // full-screen destination from the expandable account action grid.
-        _action(
-          Icons.visibility_off_rounded,
-          'الشخص الغامض',
-          () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const MysteriousPersonScreen(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _action(
-          Icons.favorite_rounded,
-          'العلاقات',
-          () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const RelationshipsPage(),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 10),
-        _action(
-          Icons.apartment_rounded,
-          'وكالتي',
-          () => Navigator.pushNamed(
-            context,
-            AppRoutes.myAgency,
-          ).then((_) {
-            if (mounted) _load();
-          }),
-        ),
-        if (canGrantAgencyPackage) ...[
-          const SizedBox(height: 10),
-          _action(
-            Icons.card_giftcard_rounded,
-            'منح باكيج وكالة',
-            () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const AgencyPackageGrantPage(),
-              ),
-            ),
-          ),
-        ],
         const SizedBox(height: 16),
         _card(
           'الملف الشخصي',
@@ -968,6 +962,59 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  /// All interest tags come from the already loaded profile; no new query.
+  Future<void> _showAllInterests(List<String> interests) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101522),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * .7,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'الاهتمامات',
+                    style: TextStyle(
+                      color: Color(0xFFFFD54A),
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: [
+                      for (final interest in interests)
+                        Chip(
+                          label: Text(interest),
+                          labelStyle: const TextStyle(color: Colors.white),
+                          backgroundColor: const Color(0xFF20263A),
+                          side: BorderSide.none,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _stat(String value, String label) => Column(
         children: [
           Text(
@@ -998,6 +1045,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         color: const Color(0xFF111321),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
+          key: Key('profile-action-$label'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
