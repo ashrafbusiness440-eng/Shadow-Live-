@@ -23,6 +23,7 @@ import '../../profile/widgets/profile_gift_showcase.dart';
 import '../../room/services/room_action_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../profile/widgets/profile_identity_info_line.dart';
+import '../../profile/widgets/profile_section_tabs.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
 import '../../vip/screens/vip_screen.dart';
@@ -491,17 +492,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                         SliverPersistentHeader(
                           pinned: true,
                           delegate: _Delegate(
-                            TabBar(
+                            ProfileSectionTabs(
                               controller: _tabs,
-                              labelColor: const Color(0xFFFFD54A),
-                              unselectedLabelColor: Colors.white54,
-                              isScrollable: true,
-                              tabAlignment: TabAlignment.start,
-                              tabs: const [
-                                Tab(text: 'حول'),
-                                Tab(text: 'الغرف'),
-                                Tab(text: 'الهدايا'),
-                              ],
+                              labels: const ['حول', 'الغرف', 'الهدايا'],
                             ),
                           ),
                         ),
@@ -1166,7 +1159,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 }
 
 class _Delegate extends SliverPersistentHeaderDelegate {
-  final TabBar bar;
+  final PreferredSizeWidget bar;
 
   _Delegate(this.bar);
 
@@ -1182,10 +1175,7 @@ class _Delegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) =>
-      Container(
-        color: const Color(0xFF07111F),
-        child: bar,
-      );
+      bar;
 
   @override
   bool shouldRebuild(_Delegate oldDelegate) => false;
