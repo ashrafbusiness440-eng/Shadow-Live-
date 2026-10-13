@@ -3,6 +3,32 @@ import 'package:flutter/material.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../profile/widgets/level_asset_image.dart';
 
+/// Preserve the central face even when the equipped frame artwork is opaque.
+class AvatarFrameClearCenterClipper extends CustomClipper<Path> {
+  const AvatarFrameClearCenterClipper({required this.avatarDiameter});
+
+  final double avatarDiameter;
+
+  @override
+  Path getClip(Size size) {
+    final centerSize = (avatarDiameter * 0.84)
+        .clamp(0.0, size.shortestSide)
+        .toDouble();
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addOval(Rect.fromCenter(
+        center: size.center(Offset.zero),
+        width: centerSize,
+        height: centerSize,
+      ));
+  }
+
+  @override
+  bool shouldReclip(covariant AvatarFrameClearCenterClipper oldClipper) =>
+      avatarDiameter != oldClipper.avatarDiameter;
+}
+
 class VipAvatarFrame extends StatelessWidget {
   const VipAvatarFrame({
     super.key,
@@ -11,6 +37,7 @@ class VipAvatarFrame extends StatelessWidget {
     required this.child,
     this.frameLevel,
     this.resolveUri,
+    this.protectAvatarCenter = false,
   });
 
   final int vipLevel;
@@ -18,6 +45,7 @@ class VipAvatarFrame extends StatelessWidget {
   final double avatarDiameter;
   final Widget child;
   final LevelAssetUriResolver? resolveUri;
+  final bool protectAvatarCenter;
 
   @override
   Widget build(BuildContext context) {
@@ -41,11 +69,18 @@ class VipAvatarFrame extends StatelessWidget {
           ),
           Positioned.fill(
             child: IgnorePointer(
-              child: LevelAssetImage(
-                assetKey: ShadowAssetKeys.vipProfileFrame(level),
-                resolveUri: resolveUri,
-                fit: BoxFit.contain,
-                fallback: const SizedBox.shrink(),
+              child: ClipPath(
+                clipper: protectAvatarCenter
+                    ? AvatarFrameClearCenterClipper(
+                        avatarDiameter: avatarDiameter,
+                      )
+                    : null,
+                child: LevelAssetImage(
+                  assetKey: ShadowAssetKeys.vipProfileFrame(level),
+                  resolveUri: resolveUri,
+                  fit: BoxFit.contain,
+                  fallback: const SizedBox.shrink(),
+                ),
               ),
             ),
           ),

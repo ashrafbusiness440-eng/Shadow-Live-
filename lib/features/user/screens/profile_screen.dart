@@ -569,23 +569,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [Color(0xFFFFC84A), Color(0xFF8A3DFF)],
-                    ),
-                  ),
-                  child: ProfileAvatarWithFrame(
-                    diameter: 96,
+                ProfileAvatarWithFrame(
+                    diameter: 102,
                     frameScale: 1.12,
+                    protectAvatarCenter: true,
                     userId: uid,
                     backgroundColor: const Color(0xFF171D31),
                     placeholderColor: Colors.white54,
                     fallbackProfile: profile,
                   ),
-                ),
               ],
             ),
           ),
