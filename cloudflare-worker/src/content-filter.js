@@ -47,6 +47,11 @@ function compactMatchPositions(text) {
   for (let i = 0; i < source.length;) {
     const char = String.fromCodePoint(source.codePointAt(i));
     const size = char.length;
+    // Arabic vowel marks and kashida are invisible modifiers, not word gaps.
+    if (DIACRITICS.test(char)) {
+      i += size;
+      continue;
+    }
     const normalized = normalizeFilterText(char, { joinSeparators: true });
     if (normalized) {
       for (const letter of normalized) {
