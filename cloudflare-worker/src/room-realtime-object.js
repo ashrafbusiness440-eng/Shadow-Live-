@@ -1,4 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+  applyContentFilter, defaultFilterConfig,
+  validateFilterConfig, CONTENT_FILTER_COORDINATOR_ID,
+} from "./content-filter.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 import {
   applyCustomerServiceMicExpiries,
@@ -72,6 +76,9 @@ export class RoomRealtimeObject extends DurableObject {
     this.env = env;
     this.chatRateByUid = new Map();
     this.chatReportRateByUid = new Map();
+    this._contentFilterSnapshot = null;
+    this._contentFilterExpiresMs = 0;
+    this._contentFilterPending = null;
 
     recordRealtimeTelemetry(this.env, { event: "activate" });
 
@@ -315,6 +322,81 @@ export class RoomRealtimeObject extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
+    // Internal Worker -> DO calls only. No database authority inside a room instance.
+    if (url.pathname === "/filter/snapshot" && request.method === "GET") {
+      const stored = await this.ctx.storage.get("filter_policy_v1");
+      return Response.json({ ok: true, config: stored || defaultFilterConfig() });
+    }
+    if (url.pathname === "/filter/update" && request.method === "POST") {
+      const raw = await request.json().catch(() => null);
+      try {
+        const cleanPolicy = validateFilterConfig(raw);
+        const config = { ...cleanPolicy, version: Number(raw?.version || 0) };
+        const stored = await this.ctx.storage.get("filter_policy_v1");
+        if (Number(stored?.version || 0) <= config.version) {
+          await this.ctx.storage.put("filter_policy_v1", config);
+          this._contentFilterSnapshot = config;
+          this._contentFilterExpiresMs = Date.now() + 60_000;
+        }
+        return Response.json({ ok: true, version: config.version });
+      } catch {
+        return Response.json({ ok: false, code: "invalid_filter_config" }, { status: 400 });
+      }
+    }
+    if (url.pathname === "/filter/flag" && request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const uid = String(body?.actorUid || "").slice(0, 180);
+      const roomId = normalizeRoomId(body?.roomId);
+      const referenceId = String(body?.referenceId || "").slice(0, 120);
+      const ruleIds = Array.isArray(body?.ruleIds)
+        ? body.ruleIds.map((v) => String(v || "").slice(0, 80)).slice(0, 12)
+        : [];
+      if (!uid || !roomId || !referenceId || !ruleIds.length) {
+        return Response.json({ ok: false }, { status: 400 });
+      }
+      // Atomic fixed-size ring: no full text, unbounded scans or extra timers.
+      const next = await this.ctx.storage.transaction(async (tx) => {
+        const seq = (Number(await tx.get("filter_flag_sequence")) || 0) + 1;
+        await tx.put({
+          filter_flag_sequence: seq,
+          [`filter_flag_slot_${seq % 1000}`]: {
+            sequence: seq, actorUid: uid, roomId, referenceId, ruleIds,
+            surface: "room_chat", status: "pending", createdAtMs: Date.now(),
+          },
+        });
+        return seq;
+      });
+      return Response.json({ ok: true, sequence: next });
+    }
+    if (url.pathname === "/filter/flags" && request.method === "GET") {
+      const last = Number(await this.ctx.storage.get("filter_flag_sequence")) || 0;
+      const seqs = Array.from({ length: Math.min(30, last) }, (_, i) => last - i);
+      const stored = seqs.length
+        ? await this.ctx.storage.get(seqs.map((seq) => `filter_flag_slot_${seq % 1000}`))
+        : new Map();
+      const items = seqs.map((seq) => stored.get(`filter_flag_slot_${seq % 1000}`))
+        .filter((item) => item && Number.isSafeInteger(item.sequence))
+        .map((item) => ({ ...item, id: `room_${item.sequence}` }));
+      return Response.json({ ok: true, items });
+    }
+    if (url.pathname === "/filter/flag/review" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const sequence = Number(body.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence < 1) {
+        return Response.json({ ok: false, code: "invalid_flag" }, { status: 400 });
+      }
+      const key = `filter_flag_slot_${sequence % 1000}`;
+      const changed = await this.ctx.storage.transaction(async (tx) => {
+        const item = await tx.get(key);
+        if (!item || item.sequence !== sequence) return false;
+        if (item.status !== "reviewed") await tx.put(key, {
+          ...item, status: "reviewed", reviewedAtMs: Date.now(),
+        });
+        return true;
+      });
+      return Response.json({ ok: changed, code: changed ? "ok" : "flag_not_found" },
+        { status: changed ? 200 : 404 });
+    }
     if (url.pathname === "/ticket" && request.method === "POST") {
       return this.#issueTicket(request);
     }
@@ -1068,6 +1150,35 @@ export class RoomRealtimeObject extends DurableObject {
     return Response.json({ ok: true, roomId, chatEnabled, updated });
   }
 
+  async #contentFilterPolicy() {
+    const now = Date.now();
+    if (this._contentFilterSnapshot && this._contentFilterExpiresMs > now)
+      return this._contentFilterSnapshot;
+    if (this._contentFilterPending) return this._contentFilterPending;
+    // One bounded request at a time during room chat bursts.
+    const pending = (async () => {
+      if (!this.env?.ROOM_REALTIME) throw Error("room_filter_not_available");
+      const coordinator = this.env.ROOM_REALTIME.get(
+        this.env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+      );
+      const response = await coordinator.fetch("https://internal/filter/snapshot");
+      if (!response.ok) throw Error("room_filter_not_available");
+      const body = await response.json();
+      const config = body?.config;
+      const checked = validateFilterConfig(config);
+      const policy = { ...checked, version: Number(config?.version || 0) };
+      this._contentFilterSnapshot = policy;
+      this._contentFilterExpiresMs = Date.now() + 60_000;
+      return policy;
+    })();
+    this._contentFilterPending = pending;
+    try { return await pending; }
+    finally {
+      if (this._contentFilterPending === pending)
+        this._contentFilterPending = null;
+    }
+  }
+
   #chatError(webSocket, requestId, code) {
     safeSend(
       webSocket,
@@ -1078,7 +1189,7 @@ export class RoomRealtimeObject extends DurableObject {
     );
   }
 
-  #handleRoomChatMessage(webSocket, raw) {
+  async #handleRoomChatMessage(webSocket, raw) {
     let attachment = {};
     try {
       attachment = webSocket.deserializeAttachment() || {};
@@ -1101,7 +1212,7 @@ export class RoomRealtimeObject extends DurableObject {
     const roomId = normalizeRoomId(payload.roomId);
     const attachedRoomId = normalizeRoomId(attachment.roomId);
     const uid = String(attachment.uid || "").trim();
-    const text = String(payload.text || "").trim();
+    let text = String(payload.text || "").trim();
     const vipLevel = Math.max(
       0,
       Math.min(10, Number(attachment.vipLevel || 0)),
@@ -1140,6 +1251,21 @@ export class RoomRealtimeObject extends DurableObject {
       return true;
     }
 
+    // Resolve one shared, TTL-cached policy; never create a listener per room.
+    // A policy outage must not leak content that could require blocking.
+    let review = null;
+    try {
+      review = applyContentFilter(text, await this.#contentFilterPolicy(), "room_chat");
+    } catch {
+      this.#chatError(webSocket, requestId, "room_chat_filter_unavailable");
+      return true;
+    }
+    if (review.blocked) {
+      this.#chatError(webSocket, requestId, "content_blocked");
+      return true;
+    }
+    text = review.text;
+
     const nowMs = Date.now();
     const current = this.chatRateByUid.get(uid) || {
       windowStartedAtMs: nowMs,
@@ -1176,6 +1302,24 @@ export class RoomRealtimeObject extends DurableObject {
       .trim()
       .slice(0, 160);
     const messageId = crypto.randomUUID();
+    if (review.flagged) {
+      try {
+        const coordinator = this.env.ROOM_REALTIME.get(
+          this.env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+        );
+        const logged = await coordinator.fetch("https://internal/filter/flag", {
+          method: "POST",
+          body: JSON.stringify({
+            actorUid: uid, roomId, referenceId: messageId,
+            ruleIds: review.matchedRuleIds,
+          }),
+        });
+        if (!logged.ok) throw Error("room_filter_flag_failed");
+      } catch {
+        this.#chatError(webSocket, requestId, "room_chat_filter_unavailable");
+        return true;
+      }
+    }
 
     this.#broadcastEvent("room.chat_message", {
       roomId,
@@ -1260,7 +1404,7 @@ export class RoomRealtimeObject extends DurableObject {
     }
     if (
       typeof message === "string" &&
-      this.#handleRoomChatMessage(webSocket, message)
+      await this.#handleRoomChatMessage(webSocket, message)
     ) {
       return;
     }
