@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -42,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
   HomeDiscoveryData? _data;
   // Null means the server follow state has not been verified. No guessed
   // follow buttons and no individual person listeners on the home feed.
-  Set<String>? _followingSuggestions;
+  // Null: unverified. Never render a suggested profile before checking
+  // privacy, blocks and outgoing follow state on the existing backend.
+  Set<String>? _eligibleSuggestionIds;
+  int _suggestionRevision = 0;
   final Set<String> _changingFollows = <String>{};
   StreamSubscription<User?>? _authSub;
   String? _loadedForUid;
@@ -68,7 +72,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _data = null;
-        _followingSuggestions = null;
+        _eligibleSuggestionIds = null;
+        _suggestionRevision++;
         _changingFollows.clear();
       });
       unawaited(_load());
@@ -132,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadedForUid = requestUid;
       setState(() {
         _data = data;
-        _followingSuggestions = null;
+        _eligibleSuggestionIds = null;
       });
       unawaited(_refreshSuggestionFollows(
         data.suggestedPeople,
@@ -151,32 +156,40 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Existing follows collection, one bounded request for up to ten people.
-  /// An error leaves state unknown instead of showing incorrect unfollow UI.
+  /// At most three ten-person server checks for the original 24 Home
+  /// candidates. No per-avatar IO; failure leaves the people unlisted.
   Future<void> _refreshSuggestionFollows(
     List<DiscoveryPerson> people,
     String? expectedUid, {
     required int revision,
   }) async {
-    final current = FirebaseAuth.instance.currentUser;
-    if (current == null ||
-        current.isAnonymous ||
-        current.uid != expectedUid) {
+    final token = ++_suggestionRevision;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || user.uid != expectedUid) {
+      if (_isCurrentLoad(expectedUid, revision)) {
+        setState(() => _eligibleSuggestionIds = <String>{});
+      }
       return;
     }
     try {
-      final confirmed = await _followService.followingAmong(
-        people.take(10).map((person) => person.id),
-      );
-      if (!_isCurrentLoad(expectedUid, revision)) {
-        return;
+      final eligible = <String>{};
+      final candidates = people.take(24).toList(growable: false);
+      for (var start = 0; start < candidates.length; start += 10) {
+        final end = start + 10 < candidates.length
+            ? start + 10 : candidates.length;
+        eligible.addAll(await _followService.eligibleDiscoveryPeopleAmong(
+          candidates.sublist(start, end).map((p) => p.id),
+        ));
+        if (!_isCurrentLoad(expectedUid, revision) ||
+            token != _suggestionRevision) return;
       }
-      setState(() => _followingSuggestions = confirmed);
+      if (!_isCurrentLoad(expectedUid, revision) ||
+          token != _suggestionRevision) return;
+      setState(() => _eligibleSuggestionIds = eligible);
     } catch (_) {
-      if (!_isCurrentLoad(expectedUid, revision)) {
-        return;
-      }
-      setState(() => _followingSuggestions = null);
+      if (!_isCurrentLoad(expectedUid, revision) ||
+          token != _suggestionRevision) return;
+      setState(() => _eligibleSuggestionIds = null);
     }
   }
 
@@ -185,42 +198,32 @@ class _HomeScreenState extends State<HomeScreen> {
     return user != null &&
         !user.isAnonymous &&
         user.uid != person.id &&
-        _followingSuggestions != null;
+        _eligibleSuggestionIds?.contains(person.id) == true;
   }
 
   Future<void> _changeSuggestionFollow(DiscoveryPerson person) async {
     if (!_canFollowSuggestion(person) ||
-        _changingFollows.contains(person.id)) {
-      return;
-    }
-    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
-    final isFollowing = _followingSuggestions!.contains(person.id);
-    setState(() => _changingFollows.add(person.id));
+        !_changingFollows.add(person.id)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    setState(() {});
     try {
-      // Same authenticated server action as the existing public profile.
-      await _followService.setFollowing(person.id, !isFollowing);
-      if (!mounted || FirebaseAuth.instance.currentUser?.uid != ownerUid) {
-        return;
-      }
+      await _followService.setFollowing(person.id, true);
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
       setState(() {
-        final updated = <String>{...?_followingSuggestions};
-        if (isFollowing) {
-          updated.remove(person.id);
-        } else {
-          updated.add(person.id);
-        }
-        _followingSuggestions = updated;
+        // Hide immediately, but only after a confirmed successful follow.
+        _suggestionRevision++;
+        _eligibleSuggestionIds = <String>{...?_eligibleSuggestionIds}
+          ..remove(person.id);
       });
     } catch (_) {
-      if (mounted && FirebaseAuth.instance.currentUser?.uid == ownerUid) {
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == uid) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر تحديث المتابعة. حاول مرة أخرى.'),
-          ),
+          const SnackBar(content: Text('تعذر المتابعة. حاول مرة أخرى.')),
         );
       }
     } finally {
-      if (mounted) setState(() => _changingFollows.remove(person.id));
+      _changingFollows.remove(person.id);
+      if (mounted) setState(() {});
     }
   }
 
@@ -230,6 +233,29 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => RechargeScreen(initialTab: tab)),
     );
     if (mounted) await _load();
+  }
+
+  Future<void> _showMorePeople() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HomeMorePeopleScreen(
+          initiallyShownIds:
+              (_data?.suggestedPeople ?? const <DiscoveryPerson>[])
+                  .where((person) =>
+                      _eligibleSuggestionIds?.contains(person.id) == true)
+                  .take(10)
+                  .map((person) => person.id)
+                  .toSet(),
+        ),
+      ),
+    );
+    if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
+    unawaited(_refreshSuggestionFollows(
+      _data?.suggestedPeople ?? const <DiscoveryPerson>[],
+      uid,
+      revision: _homeLoadRevision,
+    ));
   }
 
   void _search() {
@@ -288,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
         textDirection: TextDirection.rtl,
         child: HomePersonActionsSheet(
           person: person,
-          isFollowing: _followingSuggestions?.contains(person.id),
+          isFollowing: false,
           onOpenProfile: () {
             Navigator.pop(sheetContext);
             unawaited(_openPerson(person));
@@ -342,7 +368,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final suggestedRooms = discovery?.suggested ?? const <DiscoveryRoom>[];
     final activeRooms = discovery?.otherActiveForHome ?? const <DiscoveryRoom>[];
     final suggestedPeople =
-        discovery?.suggestedPeople ?? const <DiscoveryPerson>[];
+        (discovery?.suggestedPeople ?? const <DiscoveryPerson>[])
+            .where((person) =>
+                _eligibleSuggestionIds?.contains(person.id) == true)
+            .take(10)
+            .toList(growable: false);
     final events = discovery?.events ?? const <Map<String, dynamic>>[];
     final ranking = discovery?.rankingPreview ?? const <Map<String, dynamic>>[];
 
@@ -414,9 +444,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 8),
                       _activityRail(activeRooms),
                     ],
-                    if (suggestedPeople.isNotEmpty) ...[
+                    if (discovery?.suggestedPeople.isNotEmpty ?? false) ...[
                       const SizedBox(height: 16),
-                      _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد'),
+                      _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد', onMore: _showMorePeople),
                       const SizedBox(height: 8),
                       _peopleRail(suggestedPeople),
                     ],
@@ -578,7 +608,7 @@ class _HomeScreenState extends State<HomeScreen> {
               (person) => HomeCompactPersonCard(
                 person: person,
                 onTap: () => _openPersonActions(person),
-                isFollowing: _followingSuggestions?.contains(person.id),
+                isFollowing: false,
                 followBusy: _changingFollows.contains(person.id),
                 onFollow: _canFollowSuggestion(person)
                     ? () => _changeSuggestionFollow(person)
@@ -985,7 +1015,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _sectionHeader(String title, String subtitle) {
+  Widget _sectionHeader(String title, String subtitle, {VoidCallback? onMore}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1006,7 +1036,304 @@ class _HomeScreenState extends State<HomeScreen> {
             style: const TextStyle(color: Colors.white38, fontSize: 10),
           ),
         ),
+        if (onMore != null)
+          TextButton(
+            onPressed: onMore,
+            style: TextButton.styleFrom(
+              foregroundColor: _gold,
+              minimumSize: const Size(68, 44),
+            ),
+            child: const Text('عرض المزيد',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+          ),
       ],
+    );
+  }
+}
+
+/// Additional public profiles. Fixed-size Firestore cursors and the existing
+/// HomeCompactPersonCard/FollowService are reused; no per-person listeners.
+class HomeMorePeopleScreen extends StatefulWidget {
+  const HomeMorePeopleScreen({
+    super.key,
+    required this.initiallyShownIds,
+  });
+
+  final Set<String> initiallyShownIds;
+
+  @override
+  State<HomeMorePeopleScreen> createState() => _HomeMorePeopleScreenState();
+}
+
+class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
+  final DiscoveryService _discovery = DiscoveryService();
+  final FollowService _follow = FollowService();
+  final ScrollController _scroll = ScrollController();
+  final List<DiscoveryPerson> _people = [];
+  final Set<String> _seen = {};
+  final Set<String> _successfullyFollowed = {};
+  final Set<String> _busyFollow = {};
+  final Map<String, bool> _followState = {};
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  StreamSubscription<User?>? _authSub;
+  String? _uid;
+  int _generation = 0;
+  bool _loading = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _scroll.addListener(_onScroll);
+    _authSub = FirebaseAuth.instance.userChanges().listen((user) {
+      if (user?.uid == _uid || !mounted) return;
+      setState(() {
+        _generation++;
+        _uid = user?.uid;
+        _people.clear();
+        _seen.clear();
+        _successfullyFollowed.clear();
+        _followState.clear();
+        _busyFollow.clear();
+        _cursor = null;
+        _hasMore = true;
+        _loading = false;
+        _error = null;
+      });
+      unawaited(_loadMore());
+    });
+    unawaited(_loadMore());
+  }
+
+  void _onScroll() {
+    if (_scroll.hasClients && _scroll.position.extentAfter < 380) {
+      unawaited(_loadMore());
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    final generation = _generation;
+    final requestUid = _uid;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await _discovery.loadPeoplePage(after: _cursor);
+      if (!mounted || generation != _generation || requestUid != _uid) return;
+      final next = page.people.where((person) =>
+          !widget.initiallyShownIds.contains(person.id) &&
+          !_successfullyFollowed.contains(person.id) &&
+          !_seen.contains(person.id)).toList(growable: false);
+
+      // A single server batch checks both block directions, privacy,
+      // and outgoing follow status. Unknown state is never displayed.
+      final eligible = await _follow.eligibleDiscoveryPeopleAmong(
+        next.map((person) => person.id),
+      );
+      if (!mounted || generation != _generation || requestUid != _uid) return;
+      setState(() {
+        _cursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        for (final person in next) {
+          if (eligible.contains(person.id) &&
+              !_successfullyFollowed.contains(person.id) &&
+              _seen.add(person.id)) {
+            _people.add(person);
+            _followState[person.id] = false;
+          }
+        }
+      });
+    } catch (_) {
+      if (mounted && generation == _generation && requestUid == _uid) {
+        setState(() => _error = 'تعذر تحميل الأشخاص. حاول مرة أخرى.');
+      }
+    } finally {
+      if (mounted && generation == _generation && requestUid == _uid) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  bool _canFollow(DiscoveryPerson person) {
+    final user = FirebaseAuth.instance.currentUser;
+    return user != null &&
+        !user.isAnonymous &&
+        user.uid == _uid &&
+        user.uid != person.id &&
+        _followState.containsKey(person.id);
+  }
+
+  Future<void> _changeFollow(DiscoveryPerson person) async {
+    if (!_canFollow(person) || !_busyFollow.add(person.id)) return;
+    final generation = _generation;
+    final requestUid = _uid;
+    setState(() {});
+    try {
+      await _follow.setFollowing(person.id, true);
+      if (mounted && generation == _generation && requestUid == _uid) {
+        setState(() {
+          _successfullyFollowed.add(person.id);
+          _people.removeWhere((candidate) => candidate.id == person.id);
+          _followState.remove(person.id);
+        });
+      }
+    } catch (_) {
+      if (mounted && generation == _generation && requestUid == _uid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تحديث المتابعة. حاول مرة أخرى.')),
+        );
+      }
+    } finally {
+      if (generation == _generation) {
+        _busyFollow.remove(person.id);
+        if (mounted) setState(() {});
+      }
+    }
+  }
+
+  Future<void> _openPerson(DiscoveryPerson person) async {
+    final generation = _generation;
+    final uid = _uid;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PublicProfileScreen(userId: person.id),
+      ),
+    );
+    if (!mounted || generation != _generation || uid != _uid) return;
+    try {
+      final stillEligible =
+          await _follow.eligibleDiscoveryPeopleAmong([person.id]);
+      if (!mounted || generation != _generation || uid != _uid) return;
+      if (!stillEligible.contains(person.id)) {
+        setState(() {
+          _successfullyFollowed.add(person.id);
+          _people.removeWhere((candidate) => candidate.id == person.id);
+          _followState.remove(person.id);
+        });
+      }
+    } catch (_) {
+      if (mounted && generation == _generation && uid == _uid) {
+        setState(() {
+          _people.removeWhere((candidate) => candidate.id == person.id);
+          _followState.remove(person.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _openActions(DiscoveryPerson person) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111321),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: HomePersonActionsSheet(
+          person: person,
+          isFollowing: false,
+          onOpenProfile: () {
+            Navigator.pop(sheetContext);
+            unawaited(_openPerson(person));
+          },
+          onFollow: _canFollow(person) ? () {
+            Navigator.pop(sheetContext);
+            unawaited(_changeFollow(person));
+          } : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _footer() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(child: CircularProgressIndicator(
+          color: Color(0xFF8A3DFF),
+        )),
+      );
+    }
+    if (_error != null) {
+      return Column(children: [
+        Text(_error!, style: const TextStyle(color: Colors.white70)),
+        TextButton(onPressed: _loadMore, child: const Text('إعادة المحاولة')),
+      ]);
+    }
+    if (_hasMore) {
+      // Manual continuation for a page containing only excluded/hidden users.
+      return TextButton(onPressed: _loadMore, child: const Text('تحميل المزيد'));
+    }
+    return const Padding(
+      padding: EdgeInsets.all(20),
+      child: Center(child: Text('وصلت إلى نهاية الأشخاص',
+          style: TextStyle(color: Colors.white54))),
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    _discovery.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF05060D),
+        appBar: AppBar(
+          title: const Text('أشخاص مقترحون'),
+          foregroundColor: const Color(0xFFFFD54A),
+          backgroundColor: const Color(0xFF111321),
+        ),
+        body: CustomScrollView(
+          controller: _scroll,
+          slivers: [
+            if (_people.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
+                sliver: SliverGrid(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final person = _people[index];
+                      return Center(
+                        child: HomeCompactPersonCard(
+                          key: ValueKey(person.id),
+                          person: person,
+                          onTap: () => _openActions(person),
+                          isFollowing: false,
+                          followBusy: _busyFollow.contains(person.id),
+                          onFollow: _canFollow(person)
+                              ? () => _changeFollow(person)
+                              : null,
+                        ),
+                      );
+                    },
+                    childCount: _people.length,
+                  ),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: width < 360 ? 2 : 3,
+                    mainAxisExtent: 126,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 4,
+                  ),
+                ),
+              ),
+            SliverToBoxAdapter(child: _footer()),
+          ],
+        ),
+      ),
     );
   }
 }

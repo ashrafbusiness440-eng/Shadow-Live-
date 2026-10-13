@@ -69,6 +69,49 @@ class FollowService {
     };
   }
 
+  /// Only people the viewer does not follow, who pass both block directions
+  /// and current visibility. One server-side batch, max ten candidates.
+  /// A failed response throws; callers must not expose unverified profiles.
+  Future<Set<String>> eligibleDiscoveryPeopleAmong(
+    Iterable<String> targetUids,
+  ) async {
+    final current = _auth.currentUser;
+    if (current == null || current.isAnonymous) return <String>{};
+    final targets = targetUids
+        .map((uid) => uid.trim())
+        .where((uid) => uid.isNotEmpty && uid != current.uid)
+        .toSet()
+        .take(10)
+        .toList(growable: false);
+    if (targets.isEmpty) return <String>{};
+    final token = await current.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    final response = await http.post(
+      Uri.parse('$_baseUrl/chat-actions'),
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({
+        'action': 'filterDiscoveryPeople',
+        'targetUserIds': targets,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw StateError('discovery_visibility_unavailable');
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map ||
+        decoded['ok'] != true ||
+        decoded['allowedIds'] is! List) {
+      throw const FormatException('invalid_discovery_visibility');
+    }
+    final allowed = Set<String>.from(
+      (decoded['allowedIds'] as List).whereType<String>(),
+    );
+    return allowed.intersection(targets.toSet());
+  }
+
   Future<void> setFollowing(String targetUid, bool value) async {
     final me = _auth.currentUser?.uid;
     if (me == null || me.isEmpty) throw StateError('not_signed_in');

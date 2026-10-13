@@ -169,9 +169,9 @@ void main() {
     final follow =
         File('lib/features/profile/services/follow_service.dart')
             .readAsStringSync();
-    expect(home.contains('_followService.followingAmong('), isTrue);
-    expect(home.contains('people.take(10)'), isTrue);
-    expect(home.contains('_followService.setFollowing(person.id, !isFollowing)'),
+    expect(home.contains('_followService.eligibleDiscoveryPeopleAmong('), isTrue);
+    expect(home.contains('people.take(24)'), isTrue);
+    expect(home.contains('_followService.setFollowing(person.id, true)'),
         isTrue);
     expect(home.contains('if (onFollow != null)'), isTrue);
     expect(home.contains('followBusy ? null : onFollow'), isTrue);

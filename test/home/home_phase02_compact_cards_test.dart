@@ -131,7 +131,9 @@ void main() {
     // The hero's real room CTA remains a full-size mobile tap target.
     expect(home.contains('height: 44,\n                        child: OutlinedButton.icon('), isTrue);
 
-    expect(home.contains('if (suggestedPeople.isNotEmpty) ...['), isTrue);
+    // Show entry to additional people even if the first page is entirely followed.
+    expect(home.contains('if (discovery?.suggestedPeople.isNotEmpty ?? false) ...['), isTrue);
+    expect(home.contains('_eligibleSuggestionIds?.contains(person.id) == true'), isTrue);
     expect(home.contains('if (events.isNotEmpty) ...['), isTrue);
     expect(home.contains('if (ranking.isNotEmpty) ...['), isTrue);
     expect(home.contains('childAspectRatio: 2.1'), isTrue);
