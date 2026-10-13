@@ -19,7 +19,7 @@ void main() {
     );
     expect(publicProfile.contains('if (!isSelf) ...['), isTrue);
     expect(publicProfile.contains("label: const Text('طلب علاقة')"), isTrue);
-    expect(publicProfile.contains("key: const Key('public-profile-copy-id')"), isTrue);
+    expect(publicProfile.contains("copyKey: const Key('public-profile-copy-id')"), isTrue);
     expect(publicProfile.contains("label: const FittedBox(fit: BoxFit.scaleDown, child: Text('هدية'"), isTrue);
 
     expect(
