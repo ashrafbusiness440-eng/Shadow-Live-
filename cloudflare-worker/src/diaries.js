@@ -1,6 +1,7 @@
 import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { publicMediaUrl } from "./public-media.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import {
@@ -323,7 +324,32 @@ function publicImageSnapshot(objectId, object = {}) {
   };
 }
 
-function normalizeDiary(id, data = {}) {
+function normalizeDiary(id, data = {}, request = null) {
+  const ownerUid = clean(data.ownerUid);
+  const images = Array.isArray(data.images)
+    ? data.images.map((image) => {
+        if (!image || typeof image !== "object") return null;
+        const ext = {
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/webp": "webp",
+          "image/gif": "gif",
+        }[clean(image.mimeType).toLowerCase()];
+        // Restore canonical public R2 media links without a new read or path.
+        const canonical = request && ownerUid && ext
+          ? publicMediaUrl(request, {
+              scope: "diary_image",
+              targetId: ownerUid,
+              objectId: clean(image.objectId),
+              extension: ext,
+            })
+          : null;
+        return {
+          ...image,
+          publicUrl: canonical || clean(image.publicUrl).slice(0, 1500),
+        };
+      }).filter(Boolean)
+    : [];
   return {
     diaryId: id,
     ownerUid: clean(data.ownerUid),
@@ -332,7 +358,7 @@ function normalizeDiary(id, data = {}) {
     ownerProfileImageUrl: clean(data.ownerProfileImageUrl),
     ownerProfileAvatarAsset: clean(data.ownerProfileAvatarAsset),
     text: clean(data.text),
-    images: Array.isArray(data.images) ? data.images : [],
+    images,
     commentsEnabled: data.commentsEnabled !== false,
     likeCount: Math.max(0, Number(data.likeCount || 0)),
     commentCount: Math.max(0, Number(data.commentCount || 0)),
@@ -1305,17 +1331,17 @@ async function reportComment(db, uid, body) {
   });
 }
 
-async function getDiary(db, body) {
+async function getDiary(db, body, request = null) {
   const diaryId = assertSafeId(body.diaryId, "invalid_diary_id");
   const diary = await db.get(`diaries/${diaryId}`);
   if (!diary.exists) throw new DiaryApiError("diary_not_found", 404);
   return {
     ok: true,
-    diary: normalizeDiary(diaryId, diary.data || {}),
+    diary: normalizeDiary(diaryId, diary.data || {}, request),
   };
 }
 
-async function listLatest(db, body) {
+async function listLatest(db, body, request = null) {
   const limit = pageLimit(body.limit);
   const cursor = parseCursor(body.cursor);
   const rows = await db.runQuery("diaries", {
@@ -1335,7 +1361,7 @@ async function listLatest(db, body) {
   const visible = rows.slice(0, limit);
   return {
     ok: true,
-    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    items: visible.map((row) => normalizeDiary(row.id, row.data, request)),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
@@ -1344,12 +1370,12 @@ async function listLatest(db, body) {
   };
 }
 
-async function listUser(db, body) {
+async function listUser(db, body, request = null) {
   const userId = assertSafeId(body.userId, "invalid_user");
   const limit = pageLimit(body.limit);
   const cursor = parseCursor(body.cursor);
   const collectionPath = `users/${userId}/diaries`;
-  const rows = await db.runQuery(collectionPath, {
+  let rows = await db.runQuery(collectionPath, {
     orderBy: [
       { field: "createdAtMs", direction: "desc" },
       { field: "__name__", direction: "desc" },
@@ -1362,11 +1388,25 @@ async function listUser(db, body) {
         ]
       : [],
   });
-  const hasMore = rows.length > limit;
+  // A single extra owner-filtered query only on an explicit refresh when an
+  // older published diary has no user subcollection mirror. No global scan.
+  let recoveredFromRoot = false;
+  if (!rows.length && !cursor && body.recoverMissing === true) {
+    const legacy = await db.runQuery("diaries", {
+      filters: [{ field: "ownerUid", op: "==", value: userId }],
+      limit: MAX_PAGE_SIZE,
+    });
+    rows = legacy.sort((a, b) =>
+      Number(b.data?.createdAtMs || 0) - Number(a.data?.createdAtMs || 0) ||
+      clean(b.id).localeCompare(clean(a.id)),
+    ).slice(0, limit);
+    recoveredFromRoot = true;
+  }
+  const hasMore = !recoveredFromRoot && rows.length > limit;
   const visible = rows.slice(0, limit);
   return {
     ok: true,
-    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    items: visible.map((row) => normalizeDiary(row.id, row.data, request)),
     nextCursor:
       hasMore && visible.length
         ? makeCursor(visible[visible.length - 1])
@@ -1375,7 +1415,7 @@ async function listUser(db, body) {
   };
 }
 
-async function listFollowing(db, uid, body) {
+async function listFollowing(db, uid, body, request = null) {
   const limit = pageLimit(body.limit);
   const cursor = parseCursor(body.cursor);
   const rows = await db.runQuery("diaries", {
@@ -1421,7 +1461,7 @@ async function listFollowing(db, uid, body) {
   );
   return {
     ok: true,
-    items: visible.map((row) => normalizeDiary(row.id, row.data)),
+    items: visible.map((row) => normalizeDiary(row.id, row.data, request)),
     nextCursor:
       hasMore && scanned.length
         ? makeCursor(scanned[scanned.length - 1])
@@ -1510,13 +1550,13 @@ export async function diaries(request, env) {
     annotatePressureRequest(request, { action: `diaries_${action || "unknown"}` });
 
     if (action === "getDiary") {
-      return json(request, env, await getDiary(auth.db, body));
+      return json(request, env, await getDiary(auth.db, body, request));
     }
     if (action === "listLatest") {
-      return json(request, env, await listLatest(auth.db, body));
+      return json(request, env, await listLatest(auth.db, body, request));
     }
     if (action === "listUser") {
-      return json(request, env, await listUser(auth.db, body));
+      return json(request, env, await listUser(auth.db, body, request));
     }
     if (action === "listComments") {
       return json(request, env, await listComments(auth.db, body));
@@ -1530,7 +1570,7 @@ export async function diaries(request, env) {
 
     if (action === "listFollowing") {
       if (auth.guest) throw new DiaryApiError("guest_restricted", 403);
-      return json(request, env, await listFollowing(auth.db, auth.uid, body));
+      return json(request, env, await listFollowing(auth.db, auth.uid, body, request));
     }
 
     if (auth.guest) {

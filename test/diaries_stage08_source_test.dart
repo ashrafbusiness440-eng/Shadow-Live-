@@ -12,7 +12,7 @@ void main() {
     ).readAsStringSync();
 
     expect(profile.contains('TabController(length: 4'), isTrue);
-    expect(profile.contains("Tab(text: 'يومياتي')"), isTrue);
+    expect(profile.contains("labels: const ['حول', 'يومياتي', 'الهدايا', 'الشارات']"), isTrue);
     expect(profile.contains('profileUserId: widget.userId'), isTrue);
     expect(profile.contains('embedded: true'), isTrue);
 
@@ -36,7 +36,7 @@ void main() {
     expect(service.contains("'userId': normalizedUserId"), isTrue);
     expect(service.contains("'limit': limit"), isTrue);
 
-    expect(backend.contains('async function listUser(db, body)'), isTrue);
+    expect(backend.contains('async function listUser(db, body, request = null)'), isTrue);
     expect(
       backend.contains(r'const collectionPath = `users/${userId}/diaries`;'),
       isTrue,

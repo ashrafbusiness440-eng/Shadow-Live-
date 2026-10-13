@@ -176,19 +176,19 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
           alignment: Alignment.center,
           clipBehavior: Clip.none,
           children: [
-            avatar,
+            // Keep the complete ornamental frame visible. The photo sits
+            // slightly farther inside the frame on large profile headers,
+            // rather than cutting a hole through the frame artwork.
+            Transform.scale(
+              scale: widget.protectAvatarCenter ? .82 : 1.0,
+              child: avatar,
+            ),
             Positioned.fill(
               child: IgnorePointer(
-                child: ClipPath(
-                  clipper: widget.protectAvatarCenter
-                      ? AvatarFrameClearCenterClipper(
-                          avatarDiameter: widget.diameter,
-                        )
-                      : null,
-                  child: AnimatedProfileFrameVisual(
-                    assetKey: frameAssetKey,
-                    imageUrl: frameImageUrl,
-                  ),
+                child: AnimatedProfileFrameVisual(
+                  assetKey: frameAssetKey,
+                  imageUrl: frameImageUrl,
+                  fit: BoxFit.contain,
                 ),
               ),
             ),

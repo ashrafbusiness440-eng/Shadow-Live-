@@ -11,13 +11,11 @@ void main() {
 
   test('profile keeps three compact header tabs and preserves their content', () {
     expect(profile.contains('TabController(length: 3, vsync: this)'), isTrue);
-    for (final tab in const [
-      "Tab(text: 'حول')",
-      "Tab(text: 'الغرف')",
-      "Tab(text: 'الهدايا')",
-    ]) {
-      expect(profile.contains(tab), isTrue, reason: tab);
-    }
+    expect(
+      profile.contains("labels: const ['حول', 'الغرف', 'الهدايا']"),
+      isTrue,
+      reason: 'Shared tabs must retain all three destinations',
+    );
     expect(profile.contains("Tab(text: 'الشخص الغامض')"), isFalse);
     expect(profile.contains('const MysteriousPersonScreen(embedded: true)'),
         isFalse);

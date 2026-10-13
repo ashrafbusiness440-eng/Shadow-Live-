@@ -249,6 +249,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
   Future<void> _load({
     required bool reset,
     bool? following,
+    bool recoverMissing = false,
   }) async {
     final targetFollowing = following ?? _showFollowing;
     if (!_profileMode && targetFollowing && _guest) return;
@@ -263,6 +264,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
         final page = await _service.listUser(
           widget.profileUserId!.trim(),
           cursor: reset ? null : _profileCursor,
+          recoverMissing: reset && recoverMissing,
         );
         if (!mounted) return;
         setState(() {
@@ -1405,7 +1407,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
           bottom: false,
           child: RefreshIndicator(
             color: const Color(0xFF8A3DFF),
-            onRefresh: () => _load(reset: true),
+            onRefresh: () => _load(reset: true, recoverMissing: _profileMode),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
@@ -1426,7 +1428,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
                         ),
                         IconButton(
                           tooltip: 'تحديث',
-                          onPressed: _loading ? null : () => _load(reset: true),
+                          onPressed: _loading ? null : () => _load(reset: true, recoverMissing: _profileMode),
                           icon: const Icon(
                             Icons.refresh_rounded,
                             color: Colors.white70,
@@ -1454,7 +1456,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
                         ),
                         IconButton(
                           tooltip: 'تحديث',
-                          onPressed: _loading ? null : () => _load(reset: true),
+                          onPressed: _loading ? null : () => _load(reset: true, recoverMissing: _profileMode),
                           icon: const Icon(
                             Icons.refresh_rounded,
                             color: Colors.white70,

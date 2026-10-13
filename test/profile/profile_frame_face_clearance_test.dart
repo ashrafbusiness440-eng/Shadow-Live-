@@ -20,7 +20,7 @@ void main() {
     )), isTrue);
   });
 
-  testWidgets('only opted-in equipped frames protect the face',
+  testWidgets('equipped profile frames retain their complete ornament',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final width in <double>[320, 360, 390, 430]) {
@@ -48,8 +48,10 @@ void main() {
       expect(
         clippers.any((clip) =>
             clip.clipper is AvatarFrameClearCenterClipper),
-        isTrue,
+        isFalse,
       );
+      // Asset resolution may render a placeholder on the first pump;
+      // the shared source guard below verifies the inset geometry.
       expect(find.byType(CircleAvatar), findsOneWidget);
       expect(tester.takeException(), isNull);
     }
@@ -79,7 +81,7 @@ void main() {
     );
   });
 
-  test('only public and own large headers opt into the new face cutout', () {
+  test('only public and own large headers use full-frame avatar inset', () {
     final own = File('lib/features/user/screens/profile_screen.dart')
         .readAsStringSync();
     final pub = File('lib/features/profile/screens/public_profile_screen.dart')
@@ -89,6 +91,8 @@ void main() {
     expect(own.contains('diameter: 102,\n                    frameScale: 1.12,\n                    protectAvatarCenter: true,'), isTrue);
     expect(pub.contains('diameter: 110,\n            protectAvatarCenter: true,'), isTrue);
     expect(shared.contains('AnimatedProfileFrameVisual('), isTrue);
+    expect(shared.contains('fit: BoxFit.contain'), isTrue);
+    expect(shared.contains('scale: widget.protectAvatarCenter ? .82 : 1.0'), isTrue);
     expect(shared.contains('VipAvatarFrame('), isTrue);
     expect(shared.contains('protectAvatarCenter: widget.protectAvatarCenter'), isTrue);
     expect(shared.contains('FirebaseFirestore'), isFalse);

@@ -26,6 +26,7 @@ import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
 import '../widgets/profile_avatar_with_frame.dart';
 import '../widgets/profile_identity_info_line.dart';
+import '../../profile/widgets/profile_section_tabs.dart';
 
 class PublicProfileScreen extends StatefulWidget {
   const PublicProfileScreen({super.key, required this.userId});
@@ -523,17 +524,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _TabHeaderDelegate(
-                    TabBar(
+                    ProfileSectionTabs(
                       controller: _tabs,
-                      labelColor: const Color(0xFFFFD54A),
-                      unselectedLabelColor: Colors.white54,
-                      indicatorColor: const Color(0xFFFFD54A),
-                      tabs: const [
-                        Tab(text: 'حول'),
-                        Tab(text: 'يومياتي'),
-                        Tab(text: 'الهدايا'),
-                        Tab(text: 'الشارات'),
-                      ],
+                      labels: const ['حول', 'يومياتي', 'الهدايا', 'الشارات'],
                     ),
                   ),
                 ),
@@ -881,14 +874,14 @@ class _Stat extends StatelessWidget {
 
 class _TabHeaderDelegate extends SliverPersistentHeaderDelegate {
   _TabHeaderDelegate(this.bar);
-  final TabBar bar;
+  final PreferredSizeWidget bar;
 
   @override
   double get minExtent => bar.preferredSize.height;
   @override
   double get maxExtent => bar.preferredSize.height;
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => Container(color: const Color(0xFF0B0D16), child: bar);
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => bar;
   @override
   bool shouldRebuild(covariant _TabHeaderDelegate oldDelegate) => false;
 }

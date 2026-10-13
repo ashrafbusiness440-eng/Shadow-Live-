@@ -469,6 +469,7 @@ class DiaryService {
     String userId, {
     String? cursor,
     int limit = 20,
+    bool recoverMissing = false,
   }) async {
     final normalizedUserId = userId.trim();
     if (normalizedUserId.isEmpty) {
@@ -477,6 +478,7 @@ class DiaryService {
     final body = await _post('listUser', <String, dynamic>{
       'userId': normalizedUserId,
       'limit': limit,
+      if (recoverMissing) 'recoverMissing': true,
       if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
     });
     return DiaryPage.fromMap(body);
