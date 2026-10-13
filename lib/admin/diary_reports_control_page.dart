@@ -49,6 +49,7 @@ class _DiaryReportItem {
     required this.ownerIdentity,
     required this.reasonLabel,
     required this.status,
+    required this.moderationAction,
     required this.evidence,
     required this.createdAtMs,
   });
@@ -66,6 +67,7 @@ class _DiaryReportItem {
   final AdminAccountIdentity ownerIdentity;
   final String reasonLabel;
   final String status;
+  final String moderationAction;
   final Map<String, dynamic> evidence;
   final int createdAtMs;
 
@@ -95,6 +97,7 @@ class _DiaryReportItem {
           AdminAccountIdentity.fromProfile(ownerUid, profile('diaryOwnerProfile')),
       reasonLabel: (data['reasonLabel'] ?? data['reason'] ?? '').toString().trim(),
       status: (data['status'] ?? 'new').toString().trim(),
+      moderationAction: (data['moderationAction'] ?? '').toString().trim(),
       evidence: rawEvidence is Map
           ? Map<String, dynamic>.from(rawEvidence)
           : const <String, dynamic>{},
@@ -486,6 +489,14 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                 Chip(label: Text(_statusLabel(item.status))),
               ],
             ),
+            if (item.moderationAction.isNotEmpty)
+              Text(switch (item.moderationAction) {
+                'diary_deleted' => 'الإجراء: حذف اليومية',
+                'diary_comment_deleted' => 'الإجراء: حذف التعليق',
+                'account_suspended' => 'الإجراء: تعليق الحساب',
+                'account_banned' => 'الإجراء: حظر الحساب',
+                _ => 'تم توثيق قرار الإدارة',
+              }),
             const SizedBox(height: 12),
             const Text(
               'الأطراف المرتبطة بالبلاغ',
