@@ -171,9 +171,9 @@ export async function sendMessage(db, uid, body) {
   }
 
   // One cached policy shared by all sending surfaces, before any write.
-  const review = animatedEmojiId
-    ? { text: message, blocked: false, flagged: false, matchedRuleIds: [] }
-    : await filterContent(db, "private_chat", message);
+  // Even an animated-emoji request can carry user-supplied text. Never
+  // bypass moderation based on a client-controlled asset identifier.
+  const review = await filterContent(db, "private_chat", message);
   if (review.blocked) throw new ApiError("content_blocked", 422);
   const safeMessage = review.text;
   const nowMs = Date.now();
