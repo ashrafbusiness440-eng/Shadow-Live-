@@ -114,6 +114,105 @@ async function syncRoomPolicy(env, policy) {
   }
 }
 
+function flagItem(id, data = {}) {
+  const date = data.createdAt;
+  const timestamp = date instanceof Date ? date.getTime() : Date.parse(String(date || ""));
+  return {
+    id,
+    surface: clean(data.surface),
+    actorUid: clean(data.actorUid),
+    referenceId: clean(data.referenceId),
+    conversationId: clean(data.conversationId),
+    roomId: clean(data.roomId),
+    diaryId: clean(data.diaryId),
+    ruleIds: Array.isArray(data.ruleIds) ? data.ruleIds.map(clean).slice(0, 12) : [],
+    status: clean(data.status) || "pending",
+    createdAtMs: Number.isFinite(data.createdAtMs)
+      ? data.createdAtMs : Number.isFinite(timestamp) ? timestamp : 0,
+  };
+}
+
+function roomFilterCoordinator(env) {
+  if (!env?.ROOM_REALTIME) throw new FilterControlError("room_filter_not_available", 503);
+  return env.ROOM_REALTIME.get(
+    env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+  );
+}
+
+async function listFlags(db, env) {
+  // Explicit admin action only: a fixed number of stored records, no watch.
+  const stored = await db.runQuery("content_filter_flags", {
+    orderBy: [{ field: "createdAt", direction: "desc" }],
+    limit: 30,
+  });
+  let roomItems = [];
+  let roomUnavailable = false;
+  try {
+    const response = await roomFilterCoordinator(env).fetch("https://internal/filter/flags");
+    if (!response.ok) throw Error("unavailable");
+    const body = await response.json();
+    roomItems = (Array.isArray(body?.items) ? body.items : []).slice(0, 30)
+      .map((data) => flagItem(clean(data.id), data));
+  } catch {
+    roomUnavailable = true;
+  }
+  const items = [
+    ...stored.map((entry) => flagItem(`saved_${entry.id}`, entry.data)),
+    ...roomItems,
+  ].sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, 40);
+  return { ok: true, items, roomUnavailable };
+}
+
+async function reviewFlag(db, env, actorUid, body) {
+  const id = clean(body.flagId);
+  const reason = clean(body.reason);
+  const key = clean(body.idempotencyKey);
+  if (!/^(?:saved_[A-Za-z0-9_-]{1,180}|room_[0-9]{1,16})$/.test(id) ||
+      !OP_KEY.test(key) || reason.length < 3 || reason.length > 180)
+    throw new FilterControlError("invalid_request");
+  const operationPath = `control_operations/${key}`;
+  const previous = await db.get(operationPath);
+  if (previous.exists) {
+    if (previous.data?.actorUid !== actorUid ||
+        previous.data?.flagId !== id ||
+        previous.data?.action !== "reviewContentFilterFlag")
+      throw new FilterControlError("idempotency_conflict", 409);
+    return { ok: true, code: "duplicate" };
+  }
+  const now = new Date();
+  const writes = [
+    db.writeCreate(`admin_audit_logs/content_filter_flag_${key}`, {
+      action: "reviewContentFilterFlag", actorUid, flagId: id,
+      reason, createdAt: now,
+    }),
+    db.writeCreate(operationPath, {
+      action: "reviewContentFilterFlag", actorUid,
+      flagId: id, status: "completed", createdAt: now,
+    }),
+  ];
+  if (id.startsWith("saved_")) {
+    const path = `content_filter_flags/${id.slice(6)}`;
+    const item = await db.get(path);
+    if (!item.exists) throw new FilterControlError("flag_not_found", 404);
+    writes.push(db.writeUpdate(path, {
+      status: "reviewed", reviewedAt: now, reviewedBy: actorUid,
+    }, ["status", "reviewedAt", "reviewedBy"]));
+    await db.commit(null, writes);
+  } else {
+    const sequence = Number(id.slice(5));
+    if (!Number.isSafeInteger(sequence) || sequence < 1)
+      throw new FilterControlError("invalid_request");
+    const response = await roomFilterCoordinator(env).fetch("https://internal/filter/flag/review", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sequence }),
+    });
+    if (!response.ok) throw new FilterControlError("flag_not_found", 404);
+    // Room state is updated before the audit record; retry remains safe.
+    await db.commit(null, writes);
+  }
+  return { ok: true, code: "ok" };
+}
+
 export async function contentFilterControl(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -153,6 +252,10 @@ export async function contentFilterControl(request, env) {
           roomSynced: await syncRoomPolicy(env, result.config),
         });
       }
+      case "listFlags":
+        return json(request, env, await listFlags(db, env));
+      case "reviewFlag":
+        return json(request, env, await reviewFlag(db, env, actor.uid, body));
       default:
         throw new FilterControlError("invalid_action");
     }
@@ -168,5 +271,5 @@ export async function contentFilterControl(request, env) {
 }
 
 export const contentFilterControlInternals = Object.freeze({
-  savePolicy,
+  savePolicy, listFlags, reviewFlag,
 });
