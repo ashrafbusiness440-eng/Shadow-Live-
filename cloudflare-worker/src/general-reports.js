@@ -246,12 +246,13 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
     if (trustedAction) {
       const opKey = clean(verified.operationKey);
       if (!/^[A-Za-z0-9_-]{12,180}$/.test(opKey) ||
-          !["account_suspended", "account_banned"].includes(trustedAction) ||
+          !["warning", "account_suspended", "account_banned"].includes(trustedAction) ||
           status !== "actioned") {
         throw new GeneralReportError("invalid_verified_action", 400);
       }
       const verifiedOperation = await db.get("control_operations/" + opKey, trx);
-      const expected = trustedAction === "account_banned" ? "ban" : "suspend";
+      const expected = trustedAction === "account_banned" ? "ban"
+        : trustedAction === "warning" ? "warn" : "suspend";
       if (!verifiedOperation.exists ||
           clean(verifiedOperation.data?.action) !== expected ||
           clean(verifiedOperation.data?.actorUid) !== actorUid ||
@@ -339,7 +340,7 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
   const accountAction = clean(body.accountAction);
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
-  if (!["suspend", "ban"].includes(accountAction) ||
+  if (!["warn", "suspend", "ban"].includes(accountAction) ||
       reason.length < 3 || reason.length > 160 ||
       !/^[A-Za-z0-9_-]{12,148}$/.test(key)) {
     throw new GeneralReportError("invalid_account_action", 400);
@@ -376,7 +377,8 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
     idempotencyKey: reviewKey,
   }, {
     operationKey: accountKey,
-    actionKind: accountAction === "ban" ? "account_banned" : "account_suspended",
+    actionKind: accountAction === "warn" ? "warning"
+      : accountAction === "ban" ? "account_banned" : "account_suspended",
   });
 }
 
@@ -400,6 +402,8 @@ async function requireAdmin(db, decoded, write = false) {
   if (!allowed) throw new GeneralReportError("forbidden", 403);
   return {
     uid, canReview: owner || caps.includes("reviewReports"),
+    canWarn: owner || (data.adminEnabled === true &&
+      (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
     canSuspend: owner || (data.adminEnabled === true &&
       (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
     canBan: owner || (data.adminEnabled === true && caps.includes("manageUsers")),
@@ -433,6 +437,7 @@ export async function generalReports(request, env) {
     if (!result) throw new GeneralReportError("unsupported_action", 400);
     return json(request, env, {
       ...result, canReview: actor.canReview,
+      canWarn: actor.canWarn,
       canSuspend: actor.canSuspend, canBan: actor.canBan,
     });
   } catch (error) {
