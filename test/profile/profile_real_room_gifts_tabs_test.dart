@@ -106,10 +106,10 @@ void main() {
       'ProfileGiftShowcase(userId: widget.userId)',
     ), isTrue);
     expect(own.contains('ProfileGiftShowcase(userId: currentUid)'), isTrue);
-    for (final src in <String>[shared, publicProfile, own]) {
-      expect(src.contains('public_gift_showcases').toString().isNotEmpty,
-          isTrue); // No hidden second backend.
-    }
+    // Both callers reuse the single shared query, not parallel implementations.
+    expect(publicProfile.contains(".collection('public_gift_showcases')"),
+        isFalse);
+    expect(own.contains(".collection('public_gift_showcases')"), isFalse);
     expect(shared.contains("collection('users')"), isFalse);
     expect(shared.contains("collection('wallet_ledger')"), isFalse);
     expect(shared.contains('Timer.periodic'), isFalse);
