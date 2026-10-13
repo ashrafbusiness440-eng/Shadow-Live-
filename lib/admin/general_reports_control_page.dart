@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'admin_account_identity_tile.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'general_reports_history_page.dart';
 
 String generalReportErrorMessage(Object error) {
   final raw = error.toString().replaceFirst('Bad state: ', '');
@@ -16,6 +17,8 @@ String generalReportErrorMessage(Object error) {
     'invalid_report_transition' => 'حالة البلاغ تغيرت. حدّث القائمة وحاول مجدداً.',
     'invalid_reason' => 'اكتب سبباً واضحاً بين 3 و200 حرف.',
     'invalid_idempotency_key' => 'تعذّر تسجيل العملية. أعد المحاولة.',
+    'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
+    'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
     _ => 'تعذّر تنفيذ الطلب. تحقق من الاتصال وأعد المحاولة.',
   };
 }
@@ -90,6 +93,13 @@ class GeneralReportsService {
       reportId == null || reportId.isEmpty
           ? _post('listReports', const <String, dynamic>{'limit': 25})
           : _post('getReport', <String, dynamic>{'reportId': reportId});
+
+  static Future<Map<String, dynamic>> history({
+    required String type, String? cursor,
+  }) => _post('listHistory', <String, dynamic>{
+    'type': type,
+    if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+  });
 
   static Future<void> review(String reportId, String status, String reason) async {
     // Never append a potentially long report ID to the idempotency key.
@@ -255,6 +265,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
               Chip(label: Text(item.statusLabel)),
             ]),
             const SizedBox(height: 8),
+            if (item.data['createdAtMs'] is num &&
+                (item.data['createdAtMs'] as num) > 0)
+              Text(
+                'تاريخ البلاغ: ' + DateTime.fromMillisecondsSinceEpoch(
+                  (item.data['createdAtMs'] as num).toInt(),
+                ).toLocal().toString().substring(0, 16),
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
             Text('السبب: ' + item.reasonLabel),
             if (details.isNotEmpty) Text('التفاصيل: ' + details),
             const SizedBox(height: 10),
@@ -367,6 +385,16 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     appBar: AppBar(
       title: const Text('بلاغات المستخدمين والغرف'),
       actions: [
+        if (widget.initialReportId == null)
+          IconButton(
+            tooltip: 'سجل البلاغات السابقة',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const GeneralReportsHistoryPage(),
+              ),
+            ),
+            icon: const Icon(Icons.history_rounded),
+          ),
         IconButton(
           tooltip: 'تحديث',
           onPressed: _loading ? null : _load,
@@ -381,6 +409,19 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         children: [
           const Text('بلاغات المحادثات والغرف',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          if (widget.initialReportId == null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const GeneralReportsHistoryPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('البلاغات السابقة والمغلقة'),
+              ),
+            ),
           const SizedBox(height: 6),
           const Text(
             'اضغط على بيانات الحساب لعرض الهوية العامة ونسخ ID. '
