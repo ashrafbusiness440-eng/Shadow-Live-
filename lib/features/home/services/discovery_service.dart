@@ -149,6 +149,18 @@ class HomeDiscoveryData {
     return result;
   }
 
+  /// Home shows up to eight suggested rooms. Avoid repeating those same
+  /// cards in the activity rail: both lists reuse the same bounded snapshot.
+  /// Sorting and filtering are in memory; this performs no additional reads.
+  List<DiscoveryRoom> get otherActiveForHome {
+    final visibleRoomIds =
+        suggested.take(8).map((room) => room.id).toSet();
+    return mostActive
+        .where((room) => !visibleRoomIds.contains(room.id))
+        .take(10)
+        .toList(growable: false);
+  }
+
   List<DiscoveryPerson> get suggestedPeople {
     final result = [...people]
       ..sort((a, b) {
