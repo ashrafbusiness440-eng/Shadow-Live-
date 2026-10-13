@@ -649,6 +649,8 @@ String diaryErrorMessage(Object error) {
     case 'guest_restricted':
     case 'auth_required':
       return 'سجّل الدخول لاستخدام هذه الميزة.';
+    case 'content_blocked':
+      return 'النص يحتوي على كلمات غير مسموح بنشرها. عدّله وحاول مرة ثانية.';
     case 'empty_diary':
       return 'اكتب نصاً أو أضف صورة قبل النشر.';
     case 'diary_text_too_long':
