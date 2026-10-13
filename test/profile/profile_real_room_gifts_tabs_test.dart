@@ -51,7 +51,7 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await tester.pump(); // Active spinner never settles until the operation completes.
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('own-profile-open-personal-room')),
     );
