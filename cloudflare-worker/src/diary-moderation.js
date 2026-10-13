@@ -5,6 +5,7 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
+import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -198,7 +199,9 @@ async function reviewReport(db, actorUid, body) {
   const nextStatus = clean(body.status);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
-  if (!reason || reason.length < 3 || reason.length > 200) {
+  if (reason.length > 200 ||
+      (nextStatus !== "rejected" && reason.length < 3) ||
+      (reason.length > 0 && reason.length < 3)) {
     throw new ModerationApiError("invalid_reason", 400);
   }
 
@@ -238,6 +241,15 @@ async function reviewReport(db, actorUid, body) {
     await db.commit(transaction, [
       db.writeUpdate(reportPath, patch, mask),
       db.writeUpdate(globalPath, patch, mask),
+      ...reporterReportNotificationWrites(db, {
+        reportId,
+        reporterUid: report.data?.reporterUid,
+        status: nextStatus,
+        reason: nextStatus === "rejected" ? reason : "",
+        operationKey: key,
+        now,
+        subject: clean(report.data?.targetType || "diary"),
+      }),
       db.writeCreate(`admin_audit_logs/diary_report_${key}`, {
         actorUid,
         action: "reviewDiaryReport",
@@ -270,7 +282,7 @@ async function reviewReport(db, actorUid, body) {
   }
 }
 
-async function markReportActioned(db, actorUid, reportId, reason, key) {
+async function markReportActioned(db, actorUid, reportId, reason, key, actionKind) {
   if (!reportId) return;
   const reportPath = `diary_reports/${reportId}`;
   const legacyPath = adminInboxLegacyIndexPath("diary_report", reportId);
@@ -287,6 +299,11 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
       await db.rollback(transaction);
       return;
     }
+    // The final notice must describe a genuinely completed deletion only.
+    if (clean(report.data?.status) === "actioned") {
+      await db.rollback(transaction);
+      return;
+    }
     const now = new Date();
     const patch = {
       status: "actioned",
@@ -299,6 +316,15 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
     await db.commit(transaction, [
       db.writeUpdate(reportPath, patch, mask),
       db.writeUpdate(`reports/${reportId}`, patch, mask),
+      ...reporterReportNotificationWrites(db, {
+        reportId,
+        reporterUid: report.data?.reporterUid,
+        status: "actioned",
+        actionKind,
+        operationKey: key,
+        now,
+        subject: clean(report.data?.targetType || "diary"),
+      }),
       db.writeCreate(`admin_audit_logs/diary_report_action_${key}`, {
         actorUid,
         action: "actionDiaryReport",
@@ -349,7 +375,7 @@ async function deleteDiaryTarget(db, actorUid, body) {
       createdAt: new Date(),
     }),
   ]);
-  await markReportActioned(db, actorUid, reportId, reason, key);
+  await markReportActioned(db, actorUid, reportId, reason, key, "diary_deleted");
   return { ok: true, code: result.code || "ok", ...result };
 }
 
@@ -386,7 +412,8 @@ async function deleteCommentTarget(db, actorUid, body) {
       createdAt: new Date(),
     }),
   ]);
-  await markReportActioned(db, actorUid, reportId, reason, key);
+  await markReportActioned(db, actorUid, reportId, reason, key,
+    "diary_comment_deleted");
   return { ok: true, code: result.code || "ok", ...result };
 }
 
