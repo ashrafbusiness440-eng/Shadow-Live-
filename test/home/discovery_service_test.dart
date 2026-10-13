@@ -98,7 +98,7 @@ void main() {
     expect(discovery.otherActiveForHome, isEmpty);
   });
 
-  test('suggested people rank VIP and level without trusting stale online flags', () {
+  test('suggested people rank verified VIP without trusting stale online flags or level', () {
     const data = HomeDiscoveryData(
       userData: null,
       config: {},
@@ -106,7 +106,7 @@ void main() {
       people: [
         DiscoveryPerson(
           id: 'offline-vip',
-          data: {'displayName': 'A', 'vipLevel': 9, 'level': 50},
+          data: {'displayName': 'A', 'effectiveVipLevel': 9, 'vipExpiresAt': '2099-01-01T00:00:00Z'},
         ),
         DiscoveryPerson(
           id: 'online-basic',
@@ -114,7 +114,7 @@ void main() {
         ),
         DiscoveryPerson(
           id: 'online-vip',
-          data: {'displayName': 'C', 'isOnline': true, 'vipLevel': 2, 'level': 1},
+          data: {'displayName': 'C', 'isOnline': true, 'effectiveVipLevel': 2, 'vipExpiresAt': '2099-01-01T00:00:00Z'},
         ),
       ],
     );
