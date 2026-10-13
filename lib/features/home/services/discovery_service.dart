@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../vip/utils/vip_public_state.dart';
 import '../../room/services/room_realtime_query_service.dart';
 import 'home_async_cache.dart';
 
@@ -91,6 +92,38 @@ DiscoveryRoom roomWithVerifiedPresence(
       },
     );
 
+/// Never infer public level visibility from an absent privacy field.
+/// Own-account headers can show the user's own level without that restriction.
+int homeVisibleGenderLevel(
+  Map<String, dynamic> profile, {
+  bool isOwnAccount = false,
+}) {
+  final gender = (profile['gender'] ?? '').toString().trim().toLowerCase();
+  final male = gender == 'ذكر' || gender == 'male';
+  final female = gender == 'أنثى' || gender == 'female';
+  if (!male && !female) return 0;
+  final privacyKey = male ? 'hideWealthLevel' : 'hideAttractionLevel';
+  if (!isOwnAccount && profile[privacyKey] != false) return 0;
+  final value = profile[male ? 'wealthLevel' : 'attractionLevel'];
+  final parsed = value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+  return parsed != null && parsed > 0 ? parsed : 0;
+}
+
+/// The generic account level was retired. The home identity line may show
+/// verified VIP or a permitted gender-specific level, but never legacy LV.
+String? homeIdentityLabel(
+  Map<String, dynamic> profile, {
+  bool isOwnAccount = false,
+}) {
+  final vip = effectivePublicVipLevel(profile);
+  if (vip > 0) return 'VIP $vip';
+  final level = homeVisibleGenderLevel(profile, isOwnAccount: isOwnAccount);
+  if (level <= 0) return null;
+  final gender = (profile['gender'] ?? '').toString().trim().toLowerCase();
+  final isMale = gender == 'ذكر' || gender == 'male';
+  return '${isMale ? 'الثروة' : 'الجاذبية'} $level';
+}
+
 class DiscoveryPerson {
   const DiscoveryPerson({
     required this.id,
@@ -108,15 +141,16 @@ class DiscoveryPerson {
 
   String get avatarUrl => (data['profileImageUrl'] ?? '').toString().trim();
 
-  int get level {
-    final value = data['level'] ?? 0;
-    return value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
-  }
+  /// Verified VIP entitlement; never use the legacy, potentially expired
+  /// vipLevel field as proof of a current badge.
+  int get vipLevel => effectivePublicVipLevel(data);
 
-  int get vipLevel {
-    final value = data['vipLevel'] ?? 0;
-    return value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
-  }
+  /// A publicly visible rank is supplied only when the level's visibility
+  /// has been explicitly confirmed in the existing profile snapshot.
+  /// Missing visibility is unknown, not permission to expose a hidden level.
+  int get visibleGenderLevel => homeVisibleGenderLevel(data);
+
+  String? get identityLabel => homeIdentityLabel(data);
 
   bool get isOnline => data['isOnline'] == true;
 }
@@ -168,7 +202,7 @@ class HomeDiscoveryData {
         // live server presence lease. Do not rank people by that signal.
         final vipCompare = b.vipLevel.compareTo(a.vipLevel);
         if (vipCompare != 0) return vipCompare;
-        final levelCompare = b.level.compareTo(a.level);
+        final levelCompare = b.visibleGenderLevel.compareTo(a.visibleGenderLevel);
         if (levelCompare != 0) return levelCompare;
         return a.id.compareTo(b.id);
       });
