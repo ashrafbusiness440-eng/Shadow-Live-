@@ -112,7 +112,7 @@ test("review changes are idempotent, guarded and audit-logged", async () => {
     db,"admin",{reportId:"legacy_chat",status,
       reason:"قرار إشرافي واضح",idempotencyKey:key});
   await assert.rejects(() => call("actioned","invalid_step_123456"),
-    /invalid_report_transition/);
+    /action_requires_execution/);
   const updated = await call("under_review","review_case_1234567");
   assert.equal(updated.status,"under_review");
   assert.equal(db.docs.get("reports/legacy_chat").reviewedBy,"admin");
