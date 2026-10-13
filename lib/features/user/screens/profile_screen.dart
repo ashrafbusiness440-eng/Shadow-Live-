@@ -16,6 +16,7 @@ import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/user_level_badges.dart';
+import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/profile_action_grid.dart';
 import '../../profile/widgets/profile_personal_room_tab.dart';
 import '../../profile/widgets/profile_gift_showcase.dart';
@@ -42,6 +43,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _openingEdit = false;
   bool _openingOwnRoom = false;
   final RoomActionService _personalRoomActions = RoomActionService();
+  final FollowService _followService = FollowService();
+  Future<FollowCounts>? _followCountsFuture;
+  String? _followCountsUid;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
   StreamSubscription<User?>? _authSub;
   String? _boundUid;
@@ -55,6 +59,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       final nextUid = user?.uid;
       if (nextUid == _boundUid) return;
       _boundUid = nextUid;
+      // A previous account's future is never reused by the next user.
+      _followCountsFuture = null;
+      _followCountsUid = null;
       unawaited(_profileSub?.cancel());
       _profileSub = null;
       if (!mounted) return;
@@ -123,6 +130,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (uid != null && uid.isNotEmpty) {
       context.read<UserBloc>().add(LoadUserProfile(uid));
     }
+  }
+
+  /// Exactly one existing FollowService aggregate request per opened account.
+  /// Rebuilds of tabs/profile snapshots reuse the same future.
+  Future<FollowCounts> _countsFor(String uid) {
+    if (_followCountsFuture == null || _followCountsUid != uid) {
+      _followCountsUid = uid;
+      _followCountsFuture = _followService.counts(uid);
+    }
+    return _followCountsFuture!;
   }
 
   Future<void> _openMyItems() async {
@@ -757,9 +774,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _about(Map<String, dynamic> profile) {
-    final followers = _num(profile, ['followersCount', 'followers']);
-    final following = _num(profile, ['followingCount', 'following']);
     final rooms = _num(profile, ['roomsCount']);
+    final statsUid = _boundUid;
     final gifts = _num(profile, ['giftsCount', 'totalGiftsReceived']);
     final moodEmoji = _text(profile, 'moodEmoji', '').trim();
     final moodText = _text(profile, 'moodText', '').trim();
@@ -793,13 +809,29 @@ class _ProfileScreenState extends State<ProfileScreen>
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.white.withValues(alpha: .06)),
           ),
-          child: Row(
-            children: [
-              Expanded(child: _stat(formatCompactAmount(followers), 'متابعون')),
-              Expanded(child: _stat(formatCompactAmount(following), 'أتابع')),
-              Expanded(child: _stat(formatCompactAmount(rooms), 'غرف')),
-              Expanded(child: _stat(formatCompactAmount(gifts), 'هدايا')),
-            ],
+          child: FutureBuilder<FollowCounts>(
+            future: statsUid == null || statsUid.isEmpty
+                ? null
+                : _countsFor(statsUid),
+            builder: (context, snapshot) {
+              // Never present a cached profile number as a verified follow
+              // count; the same follows collection powers public profiles.
+              final counts = snapshot.data;
+              return Row(
+                children: [
+                  Expanded(child: _stat(
+                    counts == null ? '—' : formatCompactAmount(counts.followers),
+                    'متابعون',
+                  )),
+                  Expanded(child: _stat(
+                    counts == null ? '—' : formatCompactAmount(counts.following),
+                    'أتابع',
+                  )),
+                  Expanded(child: _stat(formatCompactAmount(rooms), 'غرف')),
+                  Expanded(child: _stat(formatCompactAmount(gifts), 'هدايا')),
+                ],
+              );
+            },
           ),
         ),
         if (mood.isNotEmpty) ...[
