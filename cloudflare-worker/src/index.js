@@ -3,6 +3,7 @@ import { corsHeaders, json } from "./http.js";
 import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
 import { authConfig } from "./auth-config.js";
+import { contentFilterControl } from "./content-filter-control.js";
 import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { manageUserAccess } from "./manage-user-access.js";
@@ -84,6 +85,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/auth-config") {
     return authConfig(request, env);
+  }
+  if (url.pathname === "/api/content-filter-control") {
+    return contentFilterControl(request, env);
   }
   if (url.pathname === "/api/change-public-id") {
     annotatePressureRequest(request, { action: "changePublicId" });
