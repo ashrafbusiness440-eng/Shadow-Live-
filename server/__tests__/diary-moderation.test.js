@@ -358,3 +358,46 @@ test("moderation refuses mismatched report reference before deleting content", a
   ), /report_target_mismatch/);
   await diaryModerationTestHooks.assertReportTarget(db, "another_report", "diary_1");
 });
+
+test("real suspension on reported diary account precedes owner's report notice", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_suspend": report("report_suspend", 6000, "under_review"),
+    "reports/report_suspend": report("report_suspend", 6000, "under_review"),
+    "users/admin_uid": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/owner": {role:"user",accountStatus:"active"},
+  });
+  const result = await diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db, {}, {sub:"admin_uid"}, "admin_uid", {
+      reportId:"report_suspend",accountAction:"suspend",
+      durationMinutes:60,reason:"مخالفة واضحة في المحتوى",
+      idempotencyKey:"diary_suspend_123456",
+    },
+  );
+  assert.equal(result.status,"actioned");
+  assert.equal(db.docs.get("users/owner").accountStatus,"suspended");
+  assert.equal(db.docs.get("diary_reports/report_suspend").status,"actioned");
+  const message = db.docs.get(
+    "notifications/report_result_diary_suspend_123456");
+  assert.equal(message.userId,"reporter");
+  assert.equal(message.actionKind,"account_suspended");
+  assert.match(message.body,/تعليق الحساب/);
+});
+
+test("missing or mismatched reported target prevents account punishment", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_missing_target": {
+      ...report("report_missing_target", 9000, "under_review"),
+      targetOwnerUid:"", targetAuthorUid:"",
+    },
+    "users/admin_uid": {role:"owner",adminEnabled:true},
+  });
+  await assert.rejects(
+    () => diaryModerationTestHooks.resolveDiaryWithAccountAction(
+      db, {}, {sub:"admin_uid"}, "admin_uid", {
+        reportId:"report_missing_target",accountAction:"ban",
+        reason:"مخالفة أخرى",idempotencyKey:"diary_no_target_123456",
+      }),
+    /report_target_mismatch/,
+  );
+  assert.equal(db.docs.has("notifications/report_result_diary_no_target_123456"),false);
+});
