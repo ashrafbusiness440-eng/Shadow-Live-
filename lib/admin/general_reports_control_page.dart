@@ -37,6 +37,12 @@ class GeneralReportItem {
   String get status => field('status');
   String get reporterUid => field('reporterUid');
   String get targetUid => field('targetUid');
+  String get actionLabel => switch (field('moderationAction')) {
+    'account_suspended' => 'القرار: تعليق الحساب',
+    'account_banned' => 'القرار: حظر الحساب',
+    'warning' => 'القرار: تحذير الحساب',
+    _ => '',
+  };
   Map<String, dynamic> mapField(String key) {
     final value = data[key];
     return value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
@@ -439,6 +445,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                     ),
                 ],
               ),
+            if (item.actionLabel.isNotEmpty) Text(item.actionLabel),
             if (item.field('reviewReason').isNotEmpty)
               Text('قرار سابق: ' + item.field('reviewReason')),
             Row(
