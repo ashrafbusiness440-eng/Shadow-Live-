@@ -243,6 +243,30 @@ test("rejected report accepts empty explanation, still notifies, and guards othe
   );
 });
 
+test("a report cannot claim actioned without a completed account-operation receipt", async () => {
+  const db = new Db(cases());
+  const params = {
+    reportId: "room_1", status: "actioned",
+    reason: "تم اتخاذ إجراء يستلزم التحقق من التنفيذ",
+    idempotencyKey: "unverified_action_123456",
+  };
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(db, "admin", params),
+    /action_requires_execution/,
+  );
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(
+      db, "admin", params, {
+        actionKind: "account_banned",
+        operationKey: "missing_receipt_123456",
+      }),
+    /unverified_account_action/,
+  );
+  assert.equal(db.docs.get("reports/room_1").status, "under_review");
+  assert.equal(db.docs.has("notifications/report_result_unverified_action_123456"), false);
+  assert.equal(db.docs.has("admin_audit_logs/general_report_unverified_action_123456"), false);
+});
+
 test("authorized report action actually bans account before reporter gets a ban notice", async () => {
   const db = new Db({
     ...cases(),
