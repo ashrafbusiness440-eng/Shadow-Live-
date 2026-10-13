@@ -120,6 +120,10 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
                       ? 'أرسلت رسائل بسرعة كبيرة.'
                       : code == 'room_chat_disabled'
                           ? 'دردشة الغرفة متوقفة.'
+                          : code == 'content_blocked'
+                              ? 'الرسالة تحتوي على كلمات غير مسموح بإرسالها.'
+                              : code == 'room_chat_filter_unavailable'
+                                  ? 'تعذر التحقق من الرسالة الآن. حاول مرة ثانية.'
                           : RegExp(r'^[a-z][a-z0-9_]{1,39}$').hasMatch(code)
                               ? 'تعذر الإرسال. رمز السبب: $code'
                               : 'تعذر إرسال الرسالة حاليًا.';
@@ -1454,6 +1458,10 @@ class _RoomChatComposerState extends State<RoomChatComposer> {
                       ? 'أرسلت رسائل بسرعة كبيرة.'
                       : code == 'room_chat_disabled'
                           ? 'دردشة الغرفة متوقفة.'
+                          : code == 'content_blocked'
+                              ? 'الرسالة تحتوي على كلمات غير مسموح بإرسالها.'
+                              : code == 'room_chat_filter_unavailable'
+                                  ? 'تعذر التحقق من الرسالة الآن. حاول مرة ثانية.'
                           : RegExp(r'^[a-z][a-z0-9_]{1,39}$').hasMatch(code)
                               ? 'تعذر الإرسال. رمز السبب: $code'
                               : 'تعذر إرسال الرسالة حاليًا.';
