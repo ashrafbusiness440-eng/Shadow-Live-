@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
-import { firestoreClient } from "./firestore.js";
-import { filterContent } from "./content-filter.js";
+import {
+  applyContentFilter, defaultFilterConfig,
+  validateFilterConfig, CONTENT_FILTER_COORDINATOR_ID,
+} from "./content-filter.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 import {
   applyCustomerServiceMicExpiries,
@@ -74,6 +76,8 @@ export class RoomRealtimeObject extends DurableObject {
     this.env = env;
     this.chatRateByUid = new Map();
     this.chatReportRateByUid = new Map();
+    this._contentFilterSnapshot = null;
+    this._contentFilterExpiresMs = 0;
 
     recordRealtimeTelemetry(this.env, { event: "activate" });
 
@@ -317,6 +321,49 @@ export class RoomRealtimeObject extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
+    // Internal Worker -> DO calls only. No Firestore access from a room DO.
+    if (url.pathname === "/filter/snapshot" && request.method === "GET") {
+      const stored = await this.ctx.storage.get("filter_policy_v1");
+      return Response.json({ ok: true, config: stored || defaultFilterConfig() });
+    }
+    if (url.pathname === "/filter/update" && request.method === "POST") {
+      const raw = await request.json().catch(() => null);
+      try {
+        const cleanPolicy = validateFilterConfig(raw);
+        const config = { ...cleanPolicy, version: Number(raw?.version || 0) };
+        const stored = await this.ctx.storage.get("filter_policy_v1");
+        if (Number(stored?.version || 0) <= config.version) {
+          await this.ctx.storage.put("filter_policy_v1", config);
+          this._contentFilterSnapshot = config;
+          this._contentFilterExpiresMs = Date.now() + 60_000;
+        }
+        return Response.json({ ok: true, version: config.version });
+      } catch {
+        return Response.json({ ok: false, code: "invalid_filter_config" }, { status: 400 });
+      }
+    }
+    if (url.pathname === "/filter/flag" && request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const uid = String(body?.actorUid || "").slice(0, 180);
+      const roomId = normalizeRoomId(body?.roomId);
+      const referenceId = String(body?.referenceId || "").slice(0, 120);
+      const ruleIds = Array.isArray(body?.ruleIds)
+        ? body.ruleIds.map((v) => String(v || "").slice(0, 80)).slice(0, 12)
+        : [];
+      if (!uid || !roomId || !referenceId || !ruleIds.length) {
+        return Response.json({ ok: false }, { status: 400 });
+      }
+      // Fixed-size ring: no unbounded room/central log or private text retention.
+      const next = (Number(await this.ctx.storage.get("filter_flag_sequence")) || 0) + 1;
+      await this.ctx.storage.put({
+        filter_flag_sequence: next,
+        [`filter_flag_slot_${next % 1000}`]: {
+          actorUid: uid, roomId, referenceId, ruleIds,
+          surface: "room_chat", createdAtMs: Date.now(),
+        },
+      });
+      return Response.json({ ok: true });
+    }
     if (url.pathname === "/ticket" && request.method === "POST") {
       return this.#issueTicket(request);
     }
@@ -1070,6 +1117,25 @@ export class RoomRealtimeObject extends DurableObject {
     return Response.json({ ok: true, roomId, chatEnabled, updated });
   }
 
+  async #contentFilterPolicy() {
+    const now = Date.now();
+    if (this._contentFilterSnapshot && this._contentFilterExpiresMs > now)
+      return this._contentFilterSnapshot;
+    if (!this.env?.ROOM_REALTIME) throw Error("room_filter_not_available");
+    const coordinator = this.env.ROOM_REALTIME.get(
+      this.env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+    );
+    const response = await coordinator.fetch("https://internal/filter/snapshot");
+    if (!response.ok) throw Error("room_filter_not_available");
+    const body = await response.json();
+    const config = body?.config;
+    const checked = validateFilterConfig(config);
+    const policy = { ...checked, version: Number(config?.version || 0) };
+    this._contentFilterSnapshot = policy;
+    this._contentFilterExpiresMs = Date.now() + 60_000;
+    return policy;
+  }
+
   #chatError(webSocket, requestId, code) {
     safeSend(
       webSocket,
@@ -1145,10 +1211,8 @@ export class RoomRealtimeObject extends DurableObject {
     // Resolve one shared, TTL-cached policy; never create a listener per room.
     // A policy outage must not leak content that could require blocking.
     let review = null;
-    let policyDb = null;
     try {
-      policyDb = firestoreClient(this.env);
-      review = await filterContent(policyDb, "room_chat", text);
+      review = applyContentFilter(text, await this.#contentFilterPolicy(), "room_chat");
     } catch {
       this.#chatError(webSocket, requestId, "room_chat_filter_unavailable");
       return true;
@@ -1197,13 +1261,17 @@ export class RoomRealtimeObject extends DurableObject {
     const messageId = crypto.randomUUID();
     if (review.flagged) {
       try {
-        await policyDb.commit(null, [
-          policyDb.writeCreate(`content_filter_flags/${messageId.replaceAll("-", "")}`, {
-            actorUid: uid, roomId, surface: "room_chat",
-            referenceId: messageId, ruleIds: review.matchedRuleIds,
-            status: "pending", createdAt: new Date(),
+        const coordinator = this.env.ROOM_REALTIME.get(
+          this.env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+        );
+        const logged = await coordinator.fetch("https://internal/filter/flag", {
+          method: "POST",
+          body: JSON.stringify({
+            actorUid: uid, roomId, referenceId: messageId,
+            ruleIds: review.matchedRuleIds,
           }),
-        ]);
+        });
+        if (!logged.ok) throw Error("room_filter_flag_failed");
       } catch {
         this.#chatError(webSocket, requestId, "room_chat_filter_unavailable");
         return true;
