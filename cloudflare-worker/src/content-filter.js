@@ -1,7 +1,7 @@
 import { readThroughConfigCache, primeConfigCache } from "./config-cache.js";
 
 export const CONTENT_FILTER_PATH = "system_config/content_filter";
-export const CONTENT_FILTER_COORDINATOR_ID = "__shadow_content_filter_policy_v1";
+export const CONTENT_FILTER_COORDINATOR_ID = "!shadow_content_filter_policy:internal/v1";
 const CACHE_KEY = "config:content_filter";
 export const CONTENT_FILTER_SURFACES = Object.freeze([
   "private_chat", "room_chat", "diary_post", "diary_comment",
