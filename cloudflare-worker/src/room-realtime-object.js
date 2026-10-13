@@ -354,16 +354,48 @@ export class RoomRealtimeObject extends DurableObject {
       if (!uid || !roomId || !referenceId || !ruleIds.length) {
         return Response.json({ ok: false }, { status: 400 });
       }
-      // Fixed-size ring: no unbounded room/central log or private text retention.
-      const next = (Number(await this.ctx.storage.get("filter_flag_sequence")) || 0) + 1;
-      await this.ctx.storage.put({
-        filter_flag_sequence: next,
-        [`filter_flag_slot_${next % 1000}`]: {
-          actorUid: uid, roomId, referenceId, ruleIds,
-          surface: "room_chat", createdAtMs: Date.now(),
-        },
+      // Atomic fixed-size ring: no full text, unbounded scans or extra timers.
+      const next = await this.ctx.storage.transaction(async (tx) => {
+        const seq = (Number(await tx.get("filter_flag_sequence")) || 0) + 1;
+        await tx.put({
+          filter_flag_sequence: seq,
+          [`filter_flag_slot_${seq % 1000}`]: {
+            sequence: seq, actorUid: uid, roomId, referenceId, ruleIds,
+            surface: "room_chat", status: "pending", createdAtMs: Date.now(),
+          },
+        });
+        return seq;
       });
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, sequence: next });
+    }
+    if (url.pathname === "/filter/flags" && request.method === "GET") {
+      const last = Number(await this.ctx.storage.get("filter_flag_sequence")) || 0;
+      const seqs = Array.from({ length: Math.min(30, last) }, (_, i) => last - i);
+      const stored = seqs.length
+        ? await this.ctx.storage.get(seqs.map((seq) => `filter_flag_slot_${seq % 1000}`))
+        : new Map();
+      const items = seqs.map((seq) => stored.get(`filter_flag_slot_${seq % 1000}`))
+        .filter((item) => item && Number.isSafeInteger(item.sequence))
+        .map((item) => ({ ...item, id: `room_${item.sequence}` }));
+      return Response.json({ ok: true, items });
+    }
+    if (url.pathname === "/filter/flag/review" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const sequence = Number(body.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence < 1) {
+        return Response.json({ ok: false, code: "invalid_flag" }, { status: 400 });
+      }
+      const key = `filter_flag_slot_${sequence % 1000}`;
+      const changed = await this.ctx.storage.transaction(async (tx) => {
+        const item = await tx.get(key);
+        if (!item || item.sequence !== sequence) return false;
+        if (item.status !== "reviewed") await tx.put(key, {
+          ...item, status: "reviewed", reviewedAtMs: Date.now(),
+        });
+        return true;
+      });
+      return Response.json({ ok: changed, code: changed ? "ok" : "flag_not_found" },
+        { status: changed ? 200 : 404 });
     }
     if (url.pathname === "/ticket" && request.method === "POST") {
       return this.#issueTicket(request);
