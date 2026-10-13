@@ -7,48 +7,58 @@ import 'package:voice_chat_room/features/home/services/discovery_service.dart';
 import 'package:voice_chat_room/features/profile/widgets/profile_avatar_with_frame.dart';
 
 void main() {
-  testWidgets('compact room card fits narrow RTL screens and opens only on tap',
+  testWidgets('four square rooms fit a 2x2 RTL grid without stale counts',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    for (final width in <double>[360, 390, 430]) {
-      await tester.binding.setSurfaceSize(Size(width, 760));
+    for (final width in <double>[320, 360, 390, 430]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
       var opens = 0;
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: Directionality(
             textDirection: TextDirection.rtl,
-            child: Align(
-              alignment: Alignment.topRight,
-              child: SizedBox(
-                height: 126,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1,
+                children: [
+                  for (var i = 0; i < 4; i++)
                     HomeCompactRoomCard(
-                      room: const DiscoveryRoom(
-                        id: 'room',
+                      room: DiscoveryRoom(
+                        id: 'room-$i',
                         data: {
                           'name': 'غرفة عربية باسم طويل جداً للاختبار',
-                          'presenceState': 'unavailable',
-                          'onlineCount': 39,
+                          'roomType': 'agency',
+                          'country': 'الإمارات',
+                          'presenceState': i == 0 ? 'unavailable' : 'live',
+                          'onlineCount': i == 0 ? 39 : i,
                           'isFeatured': true,
                         },
                       ),
                       onTap: () => opens++,
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
           ),
         ),
       ));
-      expect(find.text('الحضور غير متاح'), findsOneWidget);
-      final card = find.byType(HomeCompactRoomCard);
-      expect(card, findsOneWidget);
-      expect(tester.getSize(card).width, lessThanOrEqualTo(140));
+      final cards = find.byType(HomeCompactRoomCard);
+      expect(cards, findsNWidgets(4));
+      final size = tester.getSize(cards.first);
+      expect((size.width - size.height).abs(), lessThan(1));
+      expect(find.textContaining('وكالة'), findsNWidgets(4));
+      expect(find.text('الإمارات العربية المتحدة'), findsNWidgets(4));
+      // The first room has no verified presence, so its stale 39 is hidden.
+      expect(find.text('39'), findsNothing);
+      expect(find.text('—'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.tap(card);
+      await tester.tap(cards.first);
       expect(opens, 1);
     }
   });
@@ -125,7 +135,8 @@ void main() {
     expect(home.contains('if (events.isNotEmpty) ...['), isTrue);
     expect(home.contains('if (ranking.isNotEmpty) ...['), isTrue);
     expect(home.contains('childAspectRatio: 2.1'), isTrue);
-    expect(home.contains('height: 126,'), isTrue);
+    expect(home.contains('GridView.count('), isTrue);
+    expect(home.contains('rooms.take(4)'), isTrue);
     expect(home.contains('height: 110,'), isTrue);
     expect(home.contains('roomSurfaceImageUrl(room.data)'), isTrue);
     expect(home.contains('snapshotOnly: true,'), isTrue);
