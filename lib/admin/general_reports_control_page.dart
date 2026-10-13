@@ -21,6 +21,7 @@ String generalReportErrorMessage(Object error) {
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
     'invalid_account_action' => 'تحقق من الإجراء وسبب القرار.',
     'unverified_account_action' => 'تعذر تأكيد تنفيذ العقوبة؛ حدّث البلاغ.',
+    'action_requires_execution' => 'لا يمكن تسجيل إجراء قبل تنفيذه. اختر العقوبة المناسبة أولًا.',
     'owner_protected' => 'حساب المالك محمي ولا يمكن حظره أو تعليقه.',
     'not_found' => 'الحساب المبلّغ عليه غير موجود.',
     'invalid_suspend_duration' => 'مدة التعليق غير صحيحة.',
@@ -195,7 +196,6 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     final label = switch (nextStatus) {
       'under_review' => 'وضع البلاغ قيد المراجعة',
       'rejected' => 'رفض البلاغ',
-      'actioned' => 'تسجيل إجراء نُفّذ بالفعل',
       'closed' => 'إغلاق البلاغ',
       _ => 'تحديث البلاغ',
     };
@@ -206,11 +206,6 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (nextStatus == 'actioned')
-              const Text(
-                'هذا يوثّق إجراءً نُفّذ سابقاً؛ لا يحظر أي حساب تلقائياً.',
-                style: TextStyle(color: Colors.amber),
-              ),
             TextField(
               controller: controller,
               maxLength: 200,
@@ -506,12 +501,6 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _takeAccountAction(item, 'ban'),
                       icon: const Icon(Icons.block_rounded),
                       label: const Text('حظر الحساب'),
-                    ),
-                  if (inReview)
-                    TextButton(
-                      onPressed: _busy.contains(item.id)
-                          ? null : () => _review(item, 'actioned'),
-                      child: const Text('توثيق إجراء نُفّذ سابقًا'),
                     ),
                   if (inReview || item.status == 'actioned')
                     OutlinedButton(

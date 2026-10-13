@@ -112,7 +112,7 @@ test("review changes are idempotent, guarded and audit-logged", async () => {
     db,"admin",{reportId:"legacy_chat",status,
       reason:"قرار إشرافي واضح",idempotencyKey:key});
   await assert.rejects(() => call("actioned","invalid_step_123456"),
-    /invalid_report_transition/);
+    /action_requires_execution/);
   const updated = await call("under_review","review_case_1234567");
   assert.equal(updated.status,"under_review");
   assert.equal(db.docs.get("reports/legacy_chat").reviewedBy,"admin");
@@ -241,6 +241,30 @@ test("rejected report accepts empty explanation, still notifies, and guards othe
       idempotencyKey: "review_empty_reason_123456",
     }), /invalid_reason/,
   );
+});
+
+test("a report cannot claim actioned without a completed account-operation receipt", async () => {
+  const db = new Db(cases());
+  const params = {
+    reportId: "room_1", status: "actioned",
+    reason: "تم اتخاذ إجراء يستلزم التحقق من التنفيذ",
+    idempotencyKey: "unverified_action_123456",
+  };
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(db, "admin", params),
+    /action_requires_execution/,
+  );
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(
+      db, "admin", params, {
+        actionKind: "account_banned",
+        operationKey: "missing_receipt_123456",
+      }),
+    /unverified_account_action/,
+  );
+  assert.equal(db.docs.get("reports/room_1").status, "under_review");
+  assert.equal(db.docs.has("notifications/report_result_unverified_action_123456"), false);
+  assert.equal(db.docs.has("admin_audit_logs/general_report_unverified_action_123456"), false);
 });
 
 test("authorized report action actually bans account before reporter gets a ban notice", async () => {
