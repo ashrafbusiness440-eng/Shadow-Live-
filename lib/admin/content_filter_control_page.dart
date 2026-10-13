@@ -136,7 +136,12 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     try {
       final response = await _send({'action': 'load'});
       if (!mounted) return;
-      setState(() => _apply(Map<String, dynamic>.from(response['config'] as Map)));
+      setState(() {
+        _apply(Map<String, dynamic>.from(response['config'] as Map));
+        if (response['roomSynced'] != true) {
+          _message = 'إعدادات رسائل الغرف لم تتحدّث بعد. اضغط تحديث لاحقًا للتأكد.';
+        }
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = _errorLabel(
@@ -165,7 +170,9 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
       if (!mounted) return;
       setState(() {
         _apply(Map<String, dynamic>.from(response['config'] as Map));
-        _message = 'تم حفظ إعدادات الفلترة بنجاح.';
+        _message = response['roomSynced'] == true
+            ? 'تم حفظ إعدادات الفلترة بنجاح. قد تستغرق رسائل الغرف دقيقة لتحديثها.'
+            : 'انحفظت الإعدادات، لكن تطبيقها في الغرف لم يتأكد. حدّث الصفحة قبل الاعتماد عليها.';
       });
     } catch (error) {
       if (!mounted) return;
