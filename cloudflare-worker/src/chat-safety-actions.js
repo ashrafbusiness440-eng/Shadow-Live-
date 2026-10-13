@@ -1729,11 +1729,17 @@ export async function filterDiscoveryPeople(db, viewerUid, body) {
         outgoingFollow?.exists) continue;
     const profile = publicProfile.data || {};
     const account = user.data || {};
-    const restricted = (value) =>
-      value?.isHidden === true || value?.isPrivate === true ||
-      value?.hideFromDiscovery === true || value?.isDeleted === true ||
-      value?.isSuspended === true || value?.isBanned === true ||
-      value?.mysteriousEnabled === true || value?.disabled === true;
+    const restricted = (value) => {
+      const visibility = clean(value?.visibility).toLowerCase();
+      const status = clean(value?.status).toLowerCase();
+      return ["hidden", "private", "friends"].includes(visibility) ||
+        ["suspended", "banned", "deleted", "disabled"].includes(status) ||
+        value?.isHidden === true || value?.isPrivate === true ||
+        value?.hideFromDiscovery === true || value?.isDeleted === true ||
+        value?.isSuspended === true || value?.isBanned === true ||
+        value?.mysteriousEnabled === true || value?.mysteriousMode === true ||
+        value?.disabled === true;
+    };
     if (restricted(profile) || restricted(account)) continue;
     allowedIds.push(ids[i]);
   }
