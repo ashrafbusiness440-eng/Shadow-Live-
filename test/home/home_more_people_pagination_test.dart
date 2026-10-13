@@ -60,9 +60,9 @@ void main() {
 
     expect(follow.contains("'action': 'filterDiscoveryPeople'"), isTrue);
     expect(backend.contains('case "filterDiscoveryPeople":'), isTrue);
-    expect(backend.contains('follows/${viewerUid}__${id}'), isTrue);
+    expect(backend.contains(r'follows/${viewerUid}__${id}'), isTrue);
     expect(backend.contains('outgoingFollow?.exists'), isTrue);
-    expect(backend.contains('user_blocks/${id}/items/${viewerUid}'), isTrue);
+    expect(backend.contains(r'user_blocks/${id}/items/${viewerUid}'), isTrue);
     expect(backend.contains('paths = ids.flatMap'), isTrue);
     expect(backend.contains('const results = await db.getMany(paths);'), isTrue);
   });
