@@ -224,6 +224,24 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     }
   }
 
+  String _flagDescription(Map<String, dynamic> flag) {
+    final ids = flag['ruleIds'] is List ? flag['ruleIds'] as List : const [];
+    final labels = ids.map((ruleId) {
+      for (final rule in _rules) {
+        if ('${rule['id']}' == '$ruleId') return '${rule['pattern']}';
+      }
+      return 'كلمة محفوظة سابقًا';
+    }).take(3).join('، ');
+    final millis = (flag['createdAtMs'] as num?)?.toInt() ?? 0;
+    final when = millis > 0
+        ? DateTime.fromMillisecondsSinceEpoch(millis)
+            .toLocal().toString().substring(0, 16)
+        : 'غير محدد';
+    return 'الحساب: ${flag['actorUid'] ?? 'غير معروف'}\n'
+        'وقت الرصد: $when'
+        '${labels.isNotEmpty ? '\nالكلمات: $labels' : ''}';
+  }
+
   Future<void> _loadFlags() async {
     if (_flagsBusy || _busy) return;
     setState(() { _flagsBusy = true; _flagsMessage = null; });
@@ -848,27 +866,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                               contentPadding: EdgeInsets.zero,
                               title: Text(_surfaces['${flag['surface']}']
                                   ?? 'محتوى داخل التطبيق'),
-                              subtitle: Text(() {
-                                final ids = flag['ruleIds'] is List
-                                    ? flag['ruleIds'] as List : const [];
-                                final labels = ids.map((ruleId) {
-                                  for (final rule in _rules) {
-                                    if ('${rule['id']}' == '$ruleId') {
-                                      return '${rule['pattern']}';
-                                    }
-                                  }
-                                  return 'كلمة محفوظة سابقًا';
-                                }).take(3).join('، ');
-                                final millis =
-                                    (flag['createdAtMs'] as num?)?.toInt() ?? 0;
-                                final when = millis > 0
-                                    ? DateTime.fromMillisecondsSinceEpoch(millis)
-                                        .toLocal().toString().substring(0, 16)
-                                    : 'غير محدد';
-                                return 'الحساب: ${flag['actorUid'] ?? 'غير معروف'}'
-                                    '\\nوقت الرصد: $when'
-                                    '${labels.isNotEmpty ? '\\nالكلمات: $labels' : ''}';
-                              }()),
+                              subtitle: Text(_flagDescription(flag)),
                               isThreeLine: true,
                               trailing: flag['status'] == 'reviewed'
                                   ? const Icon(Icons.check_circle_outline,
