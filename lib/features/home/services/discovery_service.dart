@@ -339,7 +339,7 @@ class DiscoveryService {
     int pageSize = 16,
   }) async {
     final requestUid = _auth.currentUser?.uid;
-    final boundedSize = pageSize.clamp(1, 24);
+    final boundedSize = pageSize < 1 ? 1 : (pageSize > 24 ? 24 : pageSize);
     Query<Map<String, dynamic>> query = _firestore
         .collection('rooms')
         .orderBy(FieldPath.documentId)
