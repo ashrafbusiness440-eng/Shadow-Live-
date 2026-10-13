@@ -31,7 +31,13 @@ class Db {
       id: key.substring(collection.length + 1), data: structuredClone(data),
     })).filter(row => (options.filters || []).every(filter =>
       filter.op === "==" && row.data?.[filter.field] === filter.value
-    )).slice(0, options.limit || 100);
+    )).sort((a, b) => options.orderBy?.length
+      ? b.id.localeCompare(a.id) : 0)
+      .filter(row => !options.startAfter?.length ||
+        row.id.localeCompare(
+          String(options.startAfter[0]?.referencePath || "").split("/").pop(),
+        ) < 0)
+      .slice(0, options.limit || 100);
   }
   writeCreate(path, fields) { return {kind:"create",path,fields:structuredClone(fields)}; }
   writeUpdate(path, fields) { return {kind:"update",path,fields:structuredClone(fields)}; }
@@ -150,4 +156,63 @@ test("room complaint checks real session presence and creates one inbox item", (
   assert.equal(room.includes("adminInboxUpsertWrite(db"),true);
   assert.equal(ui.includes("'إبلاغ عن الغرفة'"),true);
   assert.equal(ui.includes("_roomActions.reportRoom("),true);
+});
+
+test("history fetches one category per bounded page and includes closed reports", async () => {
+  const seed = {};
+  for (let i = 0; i < 45; i++) {
+    const id = "legacy_" + String(i).padStart(3, "0");
+    seed["reports/" + id] = {
+      type: "user", source: "private_chat",
+      reporterUid: "alice", targetUid: "bob",
+      status: i % 3 === 0 ? "closed" : i % 3 === 1 ? "rejected" : "under_review",
+      reason: "abuse", createdAt: new Date(1000 + i),
+    };
+  }
+  seed["reports/unrelated_999"] = {
+    targetType: "diary", status: "new", createdAt: new Date(90000),
+  };
+  const db = new Db(seed);
+  const page1 = await generalReportsTestHooks.listReportHistory(db, {
+    type: "user_report",
+  });
+  assert.equal(page1.items.length, 20);
+  assert.equal(page1.items[0].reportId, "legacy_044");
+  assert.ok(page1.items.some(x => x.status === "closed"));
+  assert.equal(page1.hasMore, true);
+  assert.equal(page1.nextCursor, "legacy_025");
+  assert.equal(db.queryCalls, 1);
+  const page2 = await generalReportsTestHooks.listReportHistory(db, {
+    type: "user_report", cursor: page1.nextCursor,
+  });
+  assert.equal(page2.items.length, 20);
+  assert.equal(page2.items[0].reportId, "legacy_024");
+  assert.equal(page2.nextCursor, "legacy_005");
+  const page3 = await generalReportsTestHooks.listReportHistory(db, {
+    type: "user_report", cursor: page2.nextCursor,
+  });
+  assert.equal(page3.items.length, 5);
+  assert.equal(page3.hasMore, false);
+  const all = [...page1.items, ...page2.items, ...page3.items];
+  assert.equal(new Set(all.map(x => x.reportId)).size, 45);
+  assert.equal(db.queryCalls, 3);
+});
+
+test("history refuses arbitrary queries, cursor injection and unknown category", async () => {
+  const db = new Db(cases());
+  await assert.rejects(
+    () => generalReportsTestHooks.listReportHistory(db, { type: "diary" }),
+    /invalid_report_type/,
+  );
+  await assert.rejects(
+    () => generalReportsTestHooks.listReportHistory(db, {
+      type: "user_report", cursor: "abc/def",
+    }), /invalid_cursor/,
+  );
+  assert.equal(db.queryCalls, 0);
+  const out = await generalReportsTestHooks.listReportHistory(db, {
+    type: "room_report",
+  });
+  assert.equal(out.items.length, 1);
+  assert.equal(out.items[0].targetProfile.displayName, "صاحب الغرفة");
 });
