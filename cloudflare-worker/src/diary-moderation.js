@@ -329,6 +329,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
           clean(receipt.data?.targetId) !== expectedUid ||
           clean(receipt.data?.status) !== "completed" ||
           clean(receipt.data?.result?.targetUid) !== expectedUid ||
+          clean(receipt.data?.result?.linkedReportId) !== reportId ||
           clean(receipt.data?.result?.action) !== expectedAction) {
         throw new ModerationApiError("unverified_account_action", 409);
       }
@@ -412,6 +413,7 @@ async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
   await mutateAccount(db, env, decoded, {
     targetUid,
     accountAction: action,
+    linkedReportId: reportId,
     durationMinutes: body.durationMinutes,
     reason,
     idempotencyKey: accountKey,
