@@ -401,3 +401,18 @@ test("missing or mismatched reported target prevents account punishment", async 
   );
   assert.equal(db.docs.has("notifications/report_result_diary_no_target_123456"),false);
 });
+
+test("a plain review request cannot falsely claim a diary punishment", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_not_actioned": report("report_not_actioned", 7000, "under_review"),
+    "reports/report_not_actioned": report("report_not_actioned", 7000, "under_review"),
+  });
+  await assert.rejects(() => reviewReport(db, "admin_uid", {
+    reportId: "report_not_actioned", status: "actioned",
+    reason: "نفذنا إجراء", idempotencyKey: "fake_action_12345678",
+  }), /action_requires_execution/);
+  assert.equal(db.docs.get("diary_reports/report_not_actioned").status,
+    "under_review");
+  assert.equal([...db.docs.keys()].filter(k =>
+    k.startsWith("notifications/report_result_fake_action_")).length, 0);
+});
