@@ -6,6 +6,7 @@ import {
 import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
+import { mutateAccount } from "./manage-user-account.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -282,7 +283,8 @@ async function reviewReport(db, actorUid, body) {
   }
 }
 
-async function markReportActioned(db, actorUid, reportId, reason, key, actionKind) {
+async function markReportActioned(db, actorUid, reportId, reason, key, actionKind,
+  verifiedAccountKey = "") {
   if (!reportId) return;
   const reportPath = `diary_reports/${reportId}`;
   const legacyPath = adminInboxLegacyIndexPath("diary_report", reportId);
@@ -306,6 +308,23 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
     }
     if (!["new", "under_review"].includes(clean(report.data?.status || "new"))) {
       throw new ModerationApiError("invalid_report_transition", 409);
+    }
+    if (verifiedAccountKey) {
+      const receipt = await db.get("control_operations/" + verifiedAccountKey,
+        transaction);
+      const expectedAction = actionKind === "account_banned"
+        ? "ban" : "suspend";
+      const expectedUid = clean(
+        report.data?.targetAuthorUid || report.data?.targetOwnerUid);
+      if (!receipt.exists ||
+          clean(receipt.data?.action) !== expectedAction ||
+          clean(receipt.data?.actorUid) !== actorUid ||
+          clean(receipt.data?.targetId) !== expectedUid ||
+          clean(receipt.data?.status) !== "completed" ||
+          clean(receipt.data?.result?.targetUid) !== expectedUid ||
+          clean(receipt.data?.result?.action) !== expectedAction) {
+        throw new ModerationApiError("unverified_account_action", 409);
+      }
     }
     const now = new Date();
     const patch = {
@@ -361,6 +380,43 @@ async function assertReportTarget(db, reportId, diaryId, commentId = "") {
       !["new", "under_review"].includes(clean(item.status || "new"))) {
     throw new ModerationApiError("report_target_mismatch", 409);
   }
+}
+
+async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
+  const reportId = safeReportId(body.reportId);
+  const action = clean(body.accountAction);
+  const reason = clean(body.reason);
+  const key = operationKey(body.idempotencyKey);
+  if (!["suspend", "ban"].includes(action) ||
+      reason.length < 3 || reason.length > 160 || key.length > 148) {
+    throw new ModerationApiError("invalid_account_action", 400);
+  }
+  const snap = await db.get("diary_reports/" + reportId);
+  if (!snap.exists) throw new ModerationApiError("report_not_found", 404);
+  const data = snap.data || {};
+  if (clean(data.status) !== "under_review") {
+    throw new ModerationApiError("invalid_report_transition", 409);
+  }
+  const targetUid = clean(data.targetType) === "diary_comment"
+    ? clean(data.targetAuthorUid) : clean(data.targetOwnerUid);
+  if (!targetUid) throw new ModerationApiError("report_target_mismatch", 409);
+  const accountKey = key + "_account";
+  await mutateAccount(db, env, decoded, {
+    targetUid,
+    accountAction: action,
+    durationMinutes: body.durationMinutes,
+    reason,
+    idempotencyKey: accountKey,
+  });
+  await markReportActioned(db, actorUid, reportId, reason, key,
+    action === "ban" ? "account_banned" : "account_suspended", accountKey);
+  return {
+    ok: true,
+    code: "ok",
+    reportId,
+    status: "actioned",
+    moderationAction: action === "ban" ? "account_banned" : "account_suspended",
+  };
 }
 
 async function deleteDiaryTarget(db, actorUid, body) {
@@ -475,6 +531,13 @@ export async function diaryModeration(request, env) {
       });
       return json(request, env, await reviewReport(db, actor.uid, body));
     }
+    if (action === "applyAccountAction") {
+      const actor = await requireCapability(db, decoded, "reviewReports", {
+        recentAuth: true,
+      });
+      return json(request, env,
+        await resolveDiaryWithAccountAction(db, env, decoded, actor.uid, body));
+    }
     if (action === "deleteDiary") {
       const actor = await requireCapability(db, decoded, "manageDiaries", {
         recentAuth: true,
@@ -506,6 +569,7 @@ export const diaryModerationTestHooks = Object.freeze({
   getReport,
   reviewReport,
   assertReportTarget,
+  resolveDiaryWithAccountAction,
   deleteDiaryTarget,
   deleteCommentTarget,
   normalizeReport,
