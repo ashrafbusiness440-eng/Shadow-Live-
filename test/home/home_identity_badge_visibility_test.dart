@@ -97,8 +97,8 @@ void main() {
     final source = File('lib/features/home/screens/home_screen.dart')
         .readAsStringSync();
     expect(source.contains("userData?['level']"), isFalse);
-    expect(source.contains("'LV.$level'"), isFalse);
-    expect(source.contains("'LV.${person.level}'"), isFalse);
+    expect(source.contains(r"'LV.$level'"), isFalse);
+    expect(source.contains(r"'LV.${person.level}'"), isFalse);
     expect(source.contains('المستوى غير متاح'), isFalse);
     expect(source.contains('homeIdentityLabel('), isTrue);
   });
