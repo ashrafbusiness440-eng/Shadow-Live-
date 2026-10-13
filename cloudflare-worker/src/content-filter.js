@@ -66,7 +66,7 @@ function compactMatchPositions(text) {
 
 function tokenMatches(text, pattern) {
   // Only complete words or consecutive words: no false positives inside names.
-  const source = compactMatchPositions(text);
+  const source = typeof text === "string" ? compactMatchPositions(text) : text;
   const search = normalizeFilterText(pattern);
   if (!search) return [];
   const ranges = [];
@@ -164,6 +164,8 @@ export function applyContentFilter(text, config, surface) {
   if (!config?.enabled || config.surfaces?.[surface] !== true) {
     return { text: original, blocked: false, flagged: false, matchedRuleIds: [] };
   }
+  // Normalize the incoming text once regardless of the number of rules.
+  const prepared = compactMatchPositions(original);
   const ranges = [];
   const matchedRuleIds = new Set();
   let blocked = false;
@@ -171,8 +173,8 @@ export function applyContentFilter(text, config, surface) {
   for (const rule of config.rules || []) {
     if (!rule.enabled || !rule.surfaces?.includes(surface)) continue;
     if (rule.exceptions?.some((exception) =>
-      tokenMatches(original, exception).length > 0)) continue;
-    const hits = tokenMatches(original, rule.pattern);
+      tokenMatches(prepared, exception).length > 0)) continue;
+    const hits = tokenMatches(prepared, rule.pattern);
     if (!hits.length) continue;
     matchedRuleIds.add(rule.id);
     if (rule.action === "block") blocked = true;
