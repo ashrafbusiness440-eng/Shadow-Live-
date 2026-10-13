@@ -84,7 +84,7 @@ function compactMatchPositions(text) {
   const repeated = [];
   // Catch deliberate 3+ character elongation in complete words only.
   // Never compress regular doubled letters (e.g. genuine Arabic/English words).
-  const repeatedPattern = /(.)\\1{2,}/gu;
+  const repeatedPattern = /(.)\1{2,}/gu;
   const tokens = /[^ ]+/gu;
   for (const hit of normalized.matchAll(tokens)) {
     if (repeated.length >= 30) break;
