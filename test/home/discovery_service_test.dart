@@ -53,7 +53,7 @@ void main() {
     ]);
   });
 
-  test('home active rail never repeats any of its eight visible suggested rooms', () {
+  test('home active rail never repeats any of its four visible square rooms', () {
     final rooms = List<DiscoveryRoom>.generate(
       12,
       (index) => DiscoveryRoom(
@@ -75,10 +75,10 @@ void main() {
       people: const [],
       rooms: rooms,
     );
-    final suggested = discovery.suggested.take(8).map((r) => r.id).toSet();
+    final suggested = discovery.suggested.take(4).map((r) => r.id).toSet();
     expect(suggested, contains('room-11'));
     final other = discovery.otherActiveForHome;
-    expect(other.map((r) => r.id), ['room-7', 'room-8', 'room-9', 'room-10']);
+    expect(other.map((r) => r.id), ['room-3', 'room-4', 'room-5', 'room-6', 'room-7', 'room-8', 'room-9', 'room-10']);
     expect(other.every((r) => !suggested.contains(r.id)), isTrue);
     expect(discovery.mostActive.length, 12); // other clients unchanged
   });
