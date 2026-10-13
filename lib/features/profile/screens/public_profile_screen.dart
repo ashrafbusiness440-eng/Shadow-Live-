@@ -42,6 +42,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   late final ProfileVisitService _profileVisits;
   late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
   late Future<UserLevelSummary> _levelFuture;
+  late Future<FollowCounts> _followCountsFuture;
   bool _changingFollow = false;
   bool _sendingRelationship = false;
 
@@ -151,6 +152,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         .doc(widget.userId)
         .get();
     _levelFuture = _levelService.loadForUser(widget.userId);
+    // Reuse one aggregate future instead of querying followers on rebuild.
+    _followCountsFuture = _follow.counts(widget.userId);
   }
 
   @override
@@ -646,7 +649,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Widget _stats(String userId) {
     return FutureBuilder<FollowCounts>(
-      future: _follow.counts(userId),
+      future: _followCountsFuture,
       builder: (context, snapshot) {
         final counts = snapshot.data;
         return Container(
