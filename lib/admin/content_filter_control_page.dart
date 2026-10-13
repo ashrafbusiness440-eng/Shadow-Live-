@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'content_filter_import.dart';
+import 'content_filter_starter.dart';
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
@@ -517,6 +518,108 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     });
   }
 
+
+  Future<void> _addStarterSuggestions() async {
+    if (_rules.length >= 300 || _busy) return;
+    final checked = <String>{};
+    final sections = <String, int>{};
+    for (final suggestion in filterStarterSuggestions) {
+      sections[suggestion.group] = (sections[suggestion.group] ?? 0) + 1;
+    }
+    final chosen = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, refresh) => AlertDialog(
+          title: const Text('كلمات مقترحة للمراجعة'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'اختر التصنيفات التي تريد مراجعتها. '
+                    'الكلمات ستُضاف متوقفة ولن تحجب أي رسالة تلقائيًا.',
+                  ),
+                  const SizedBox(height: 10),
+                  for (final group in sections.entries)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(_groups[group.key] ?? group.key),
+                      subtitle: Text('${group.value} كلمة أو عبارة مقترحة'),
+                      value: checked.contains(group.key),
+                      onChanged: (selected) => refresh(() {
+                        if (selected == true) {
+                          checked.add(group.key);
+                        } else {
+                          checked.remove(group.key);
+                        }
+                      }),
+                    ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'بعد الإضافة، افتح الكلمات وعدّل أو احذف أي عبارة '
+                    'غير مناسبة، ثم فعّل ما تريده بنفسك واحفظ.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: checked.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, {...checked}),
+              child: const Text('إضافة للمراجعة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || chosen == null || chosen.isEmpty) return;
+    final known = _rules
+        .map((rule) => normalizeStarterPhrase('${rule['pattern']}'))
+        .toSet();
+    final availableSlots = 300 - _rules.length;
+    if (availableSlots <= 0) return;
+    final additions = <FilterStarterSuggestion>[];
+    for (final suggestion in filterStarterSuggestions) {
+      if (!chosen.contains(suggestion.group)) continue;
+      final key = normalizeStarterPhrase(suggestion.phrase);
+      if (key.isEmpty || !known.add(key)) continue;
+      additions.add(suggestion);
+      if (additions.length >= availableSlots) break;
+    }
+    if (additions.isEmpty) {
+      setState(() => _message = 'كل الكلمات المختارة موجودة بالقائمة مسبقًا.');
+      return;
+    }
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    _changed(() {
+      for (var i = 0; i < additions.length; i++) {
+        final suggestion = additions[i];
+        _rules.add({
+          'id': 'starter_${stamp}_$i',
+          'pattern': suggestion.phrase,
+          'group': suggestion.group,
+          'action': suggestion.action,
+          'enabled': false,
+          'surfaces': _surfaces.keys.toList(growable: false),
+          'exceptions': <String>[],
+        });
+      }
+      _message = 'أُضيفت ${additions.length} كلمة للمراجعة وهي متوقفة. '
+          'راجعها وفعّل ما تختاره، ثم احفظ التغييرات.';
+    });
+  }
+
   Future<void> _importFile() async {
     if (_rules.length >= 300 || _busy) return;
     try {
@@ -703,6 +806,12 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                                   ? null : _bulkAdd,
                               icon: const Icon(Icons.library_add_outlined),
                               label: const Text('إضافة عدة كلمات'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _busy || _rules.length >= 300
+                                  ? null : _addStarterSuggestions,
+                              icon: const Icon(Icons.library_books_outlined),
+                              label: const Text('كلمات مقترحة'),
                             ),
                             OutlinedButton.icon(
                               onPressed: _busy || _rules.length >= 300
