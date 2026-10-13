@@ -42,13 +42,14 @@ void main() {
     expect(home.contains('revision: _homeLoadRevision,'), isTrue);
     // A changed identity clears the prior person's snapshot immediately.
     expect(home.contains('_data = null;'), isTrue);
-    expect(home.contains('_followingSuggestions = null;'), isTrue);
+    expect(home.contains('_eligibleSuggestionIds = null;'), isTrue);
+    expect(home.contains('_suggestionRevision++;'), isTrue);
   });
 
   test('follow read respects the same request revision and existing batch cap',
       () {
-    expect(home.contains('people.take(10).map((person) => person.id)'), isTrue);
-    expect(home.contains('_followService.followingAmong('), isTrue);
+    expect(home.contains('people.take(24).toList(growable: false)'), isTrue);
+    expect(home.contains('_followService.eligibleDiscoveryPeopleAmong('), isTrue);
     expect(home.contains('_isCurrentLoad(expectedUid, revision)'), isTrue);
     expect(home.contains('_followService.isFollowing('), isFalse);
     expect(home.contains('RoomRealtimeQueryService('), isFalse);
