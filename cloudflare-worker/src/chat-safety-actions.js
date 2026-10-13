@@ -1698,6 +1698,54 @@ async function setFollow(db, uid, body) {
   });
 }
 
+// A single authenticated, bounded batch checks both directions of blocking
+// and the canonical public/user privacy state. Fail closed on missing records.
+export async function filterDiscoveryPeople(db, viewerUid, body) {
+  const requested = body?.targetUserIds;
+  if (!Array.isArray(requested) || requested.length > 10 ||
+      requested.some((value) => typeof value !== "string" ||
+        !/^[A-Za-z0-9_-]{3,128}$/.test(value))) {
+    throw new ApiError("invalid_request", 400);
+  }
+  const ids = [...new Set(requested.map(clean))]
+    .filter((value) => value !== viewerUid);
+  if (!ids.length) return { ok: true, allowedIds: [] };
+  const paths = ids.flatMap((id) => [
+    `public_profiles/${id}`,
+    `users/${id}`,
+    `user_blocks/${viewerUid}/items/${id}`,
+    `user_blocks/${id}/items/${viewerUid}`,
+    `follows/${viewerUid}__${id}`,
+  ]);
+  // At most 50 documents, in one existing Firestore batchGet.
+  const results = await db.getMany(paths);
+  const allowedIds = [];
+  for (let i = 0; i < ids.length; i++) {
+    const [publicProfile, user, outgoingBlock, incomingBlock, outgoingFollow] =
+      results.slice(i * 5, i * 5 + 5);
+    // Suggestions must exclude everyone the viewer already follows.
+    if (!publicProfile?.exists || !user?.exists ||
+        outgoingBlock?.exists || incomingBlock?.exists ||
+        outgoingFollow?.exists) continue;
+    const profile = publicProfile.data || {};
+    const account = user.data || {};
+    const restricted = (value) => {
+      const visibility = clean(value?.visibility).toLowerCase();
+      const status = clean(value?.status).toLowerCase();
+      return ["hidden", "private", "friends"].includes(visibility) ||
+        ["suspended", "banned", "deleted", "disabled"].includes(status) ||
+        value?.isHidden === true || value?.isPrivate === true ||
+        value?.hideFromDiscovery === true || value?.isDeleted === true ||
+        value?.isSuspended === true || value?.isBanned === true ||
+        value?.mysteriousEnabled === true || value?.mysteriousMode === true ||
+        value?.disabled === true;
+    };
+    if (restricted(profile) || restricted(account)) continue;
+    allowedIds.push(ids[i]);
+  }
+  return { ok: true, allowedIds };
+}
+
 async function safetyStatus(db, uid, body) {
   const targetUserId = clean(body.targetUserId);
   if (!targetUserId || targetUserId === uid) {
@@ -2023,6 +2071,9 @@ export async function chatSafetyActions(request, env, ctx) {
         break;
       case "safetyStatus":
         result = await safetyStatus(db, decoded.sub, body);
+        break;
+      case "filterDiscoveryPeople":
+        result = await filterDiscoveryPeople(db, decoded.sub, body);
         break;
       case "setBlock":
         result = await setBlock(db, decoded.sub, body);
