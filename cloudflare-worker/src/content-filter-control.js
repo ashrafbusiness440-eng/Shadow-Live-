@@ -5,8 +5,8 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import {
-  CONTENT_FILTER_PATH, defaultFilterConfig, validateFilterConfig,
-  loadContentFilter, applyContentFilter, primeContentFilter,
+  CONTENT_FILTER_PATH, CONTENT_FILTER_COORDINATOR_ID,
+  validateFilterConfig, loadContentFilter, applyContentFilter, primeContentFilter,
 } from "./content-filter.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -97,6 +97,23 @@ async function savePolicy(db, actorUid, body) {
   }
 }
 
+async function syncRoomPolicy(env, policy) {
+  try {
+    if (!env?.ROOM_REALTIME) return false;
+    const object = env.ROOM_REALTIME.get(
+      env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+    );
+    const response = await object.fetch("https://internal/filter/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(policy),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function contentFilterControl(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -106,11 +123,13 @@ export async function contentFilterControl(request, env) {
     const actor = await requireManager(request, env, db);
     const body = await readJson(request);
     switch (clean(body.action)) {
-      case "load":
+      case "load": {
+        const config = await loadContentFilter(db, { fresh: true });
         return json(request, env, {
-          ok: true,
-          config: await loadContentFilter(db, { fresh: true }),
+          ok: true, config,
+          roomSynced: await syncRoomPolicy(env, config),
         });
+      }
       case "preview": {
         const source = clean(body.text).slice(0, 2000);
         const surface = clean(body.surface);
@@ -123,8 +142,13 @@ export async function contentFilterControl(request, env) {
         const result = applyContentFilter(source, config, surface);
         return json(request, env, { ok: true, result });
       }
-      case "save":
-        return json(request, env, await savePolicy(db, actor.uid, body));
+      case "save": {
+        const result = await savePolicy(db, actor.uid, body);
+        return json(request, env, {
+          ...result,
+          roomSynced: await syncRoomPolicy(env, result.config),
+        });
+      }
       default:
         throw new FilterControlError("invalid_action");
     }
