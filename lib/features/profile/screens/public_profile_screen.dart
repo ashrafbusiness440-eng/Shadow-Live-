@@ -290,6 +290,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           padding: const EdgeInsets.only(top: 10),
           child: UserLevelBadges(
             summary: summary,
+            iconOnly: true,
             onTap: _openLevel,
           ),
         );
