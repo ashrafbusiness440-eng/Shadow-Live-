@@ -403,6 +403,21 @@ async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
   const snap = await db.get("diary_reports/" + reportId);
   if (!snap.exists) throw new ModerationApiError("report_not_found", 404);
   const data = snap.data || {};
+  const actionKind = action === "warn" ? "warning"
+    : action === "ban" ? "account_banned" : "account_suspended";
+  if (clean(data.status) === "actioned") {
+    // A retry of this same confirmed decision is harmless. A different key,
+    // target or decision must not inherit an old sanction receipt.
+    const previous = await db.get("admin_audit_logs/diary_report_action_" + key);
+    if (previous.exists &&
+        clean(previous.data?.reportId) === reportId &&
+        clean(previous.data?.actorUid) === actorUid &&
+        clean(previous.data?.reason) === reason &&
+        clean(previous.data?.after?.moderationAction) === actionKind) {
+      return { ok: true, code: "duplicate", reportId,
+        status: "actioned", moderationAction: actionKind };
+    }
+  }
   if (clean(data.status) !== "under_review") {
     throw new ModerationApiError("invalid_report_transition", 409);
   }
