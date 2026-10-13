@@ -11,6 +11,7 @@ import {
   adminInboxUpsertWrite,
 } from "./admin-inbox-index.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
+import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 
 const clean = (value) => String(value ?? "").trim();
 const ACTIVE_STATUSES = new Set(["open", "new", "under_review"]);
@@ -199,7 +200,10 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
   if (!/^[A-Za-z0-9_-]{12,180}$/.test(key)) {
     throw new GeneralReportError("invalid_idempotency_key", 400);
   }
-  if (reason.length < 3 || reason.length > 200) {
+  // A rejection explanation is optional; other admin decisions still
+  // require a clear internal audit reason.
+  if (reason.length > 200 || (status !== "rejected" && reason.length < 3) ||
+      (reason.length > 0 && reason.length < 3)) {
     throw new GeneralReportError("invalid_reason", 400);
   }
   if (![...TERMINAL_STATUSES, "under_review"].includes(status)) {
@@ -262,6 +266,15 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
     await db.commit(trx, [
       db.writeUpdate(reportPath, patch, Object.keys(patch)),
       ...indexWrites,
+      ...reporterReportNotificationWrites(db, {
+        reportId,
+        reporterUid: item.reporterUid,
+        status,
+        reason: status === "rejected" ? reason : "",
+        operationKey: key,
+        subject: item.type,
+        now,
+      }),
       db.writeCreate("admin_audit_logs/general_report_" + key, {
         action: "reviewGeneralReport",
         actorUid,
