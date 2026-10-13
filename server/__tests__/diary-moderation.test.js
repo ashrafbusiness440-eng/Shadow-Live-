@@ -446,6 +446,35 @@ test("warning on a reported comment targets its writer, not diary owner", async 
   assert.equal(db.docs.get("notifications/report_result_" + key).userId,"reporter");
 });
 
+test("a warning receipt cannot resolve a different diary report about the same account", async () => {
+  const key = "diary_replayed_warning_123456";
+  const reportOne = {...report("first_report", 8000, "under_review"),
+    targetOwnerUid:"writer",targetAuthorUid:"writer"};
+  const reportTwo = {...report("second_report", 9000, "under_review"),
+    targetOwnerUid:"writer",targetAuthorUid:"writer"};
+  const db = new FakeDb({
+    "diary_reports/first_report": reportOne,
+    "reports/first_report": reportOne,
+    "diary_reports/second_report": reportTwo,
+    "reports/second_report": reportTwo,
+    "users/admin_uid": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/writer": {role:"user",accountStatus:"active"},
+  });
+  const input = {accountAction:"warn",reason:"تحذير مثبت لمخالفة محددة",
+    idempotencyKey:key};
+  await diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db,{}, {sub:"admin_uid"}, "admin_uid", {...input,reportId:"first_report"});
+  assert.equal(db.docs.get("control_operations/" + key + "_account")
+    .result.linkedReportId,"first_report");
+  await assert.rejects(() => diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db,{}, {sub:"admin_uid"}, "admin_uid", {...input,reportId:"second_report"}),
+    /unverified_account_action/);
+  assert.equal(db.docs.get("diary_reports/second_report").status,"under_review");
+  assert.equal(db.docs.get("users/writer").warningCount,1);
+  assert.equal([...db.docs.keys()].filter(k =>
+    k === "notifications/report_result_" + key).length,1);
+});
+
 test("diary warning rejects owner targets and reviewers without sanction capabilities", async () => {
   const ownerItem = report("report_protected", 8000, "under_review");
   const db = new FakeDb({
