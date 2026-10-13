@@ -66,7 +66,20 @@ function compactMatchPositions(text) {
     }
     i += size;
   }
-  return { text: chars.join(""), offsets, ends };
+  // Only punctuation-separated letter sequences are eligible for
+  // de-obfuscation. Ordinary spaces are never joined into unrelated words.
+  const obfuscated = [];
+  const regexp = /[\\p{L}\\p{N}]+(?:[._*~\\-]+[\\p{L}\\p{N}]+)+/gu;
+  for (const hit of source.matchAll(regexp)) {
+    if (obfuscated.length >= 30) break;
+    const normalized = normalizeFilterText(hit[0], { joinSeparators: true });
+    if (normalized.length >= 4 && normalized.length <= 80) {
+      obfuscated.push({
+        start: hit.index, end: hit.index + hit[0].length, normalized,
+      });
+    }
+  }
+  return { text: chars.join(""), offsets, ends, obfuscated, original: source };
 }
 
 function tokenMatches(text, pattern) {
@@ -86,6 +99,17 @@ function tokenMatches(text, pattern) {
       source.offsets[i], source.ends[i + search.length - 1],
     ]);
     from = i + search.length;
+  }
+  if (!search.includes(" ") && search.length >= 4) {
+    for (const item of source.obfuscated || []) {
+      if (item.normalized !== search) continue;
+      const before = source.original.slice(0, item.start).slice(-1);
+      const after = source.original.slice(item.end, item.end + 1);
+      if ((!before || !LETTER_OR_NUMBER.test(before)) &&
+          (!after || !LETTER_OR_NUMBER.test(after))) {
+        ranges.push([item.start, item.end]);
+      }
+    }
   }
   return ranges;
 }
@@ -177,9 +201,12 @@ export function applyContentFilter(text, config, surface) {
   let flagged = false;
   for (const rule of config.rules || []) {
     if (!rule.enabled || !rule.surfaces?.includes(surface)) continue;
-    if (rule.exceptions?.some((exception) =>
-      tokenMatches(prepared, exception).length > 0)) continue;
-    const hits = tokenMatches(prepared, rule.pattern);
+    // Exempt only occurrences covered by an allowed phrase, not the
+    // whole message: a safe phrase cannot bypass another abusive match.
+    const excluded = (rule.exceptions || []).flatMap((exception) =>
+      tokenMatches(prepared, exception));
+    const hits = tokenMatches(prepared, rule.pattern).filter(([start, end]) =>
+      !excluded.some(([a, b]) => a <= start && b >= end));
     if (!hits.length) continue;
     matchedRuleIds.add(rule.id);
     if (rule.action === "block") blocked = true;
