@@ -102,7 +102,6 @@ int homeVisibleGenderLevel(
   final male = gender == 'ذكر' || gender == 'male';
   final female = gender == 'أنثى' || gender == 'female';
   if (!male && !female) return 0;
-  final metric = male ? 'wealth' : 'attraction';
   final privacyKey = male ? 'hideWealthLevel' : 'hideAttractionLevel';
   if (!isOwnAccount && profile[privacyKey] != false) return 0;
   final value = profile[male ? 'wealthLevel' : 'attractionLevel'];
