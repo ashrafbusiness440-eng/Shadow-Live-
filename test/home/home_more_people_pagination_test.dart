@@ -11,6 +11,9 @@ void main() {
     for (final data in <Map<String, dynamic>>[
       {'isHidden': true},
       {'isPrivate': true},
+      {'visibility': 'private'},
+      {'status': 'suspended'},
+      {'mysteriousMode': true},
       {'isSuspended': true},
       {'isDeleted': true},
       {'isBanned': true},
