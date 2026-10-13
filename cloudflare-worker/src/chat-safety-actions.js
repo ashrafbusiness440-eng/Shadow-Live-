@@ -1,6 +1,7 @@
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { filterContent } from "./content-filter.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import {
@@ -169,6 +170,12 @@ export async function sendMessage(db, uid, body) {
     throw new ApiError("invalid_request", 400);
   }
 
+  // One cached policy shared by all sending surfaces, before any write.
+  const review = animatedEmojiId
+    ? { text: message, blocked: false, flagged: false, matchedRuleIds: [] }
+    : await filterContent(db, "private_chat", message);
+  if (review.blocked) throw new ApiError("content_blocked", 422);
+  const safeMessage = review.text;
   const nowMs = Date.now();
 
   return runTransaction(db, async (transaction) => {
@@ -313,7 +320,7 @@ export async function sendMessage(db, uid, body) {
         updatedAt: now,
       }, ["windowStartedAt", "count", "updatedAt"]),
       db.writeUpdate(conversationPath, {
-        lastMessage: animatedEmoji ? animatedEmoji.fallbackGlyph : message,
+        lastMessage: animatedEmoji ? animatedEmoji.fallbackGlyph : safeMessage,
         lastSenderId: uid,
         updatedAt: now,
         unreadCounts: counts,
@@ -321,7 +328,7 @@ export async function sendMessage(db, uid, body) {
       db.writeCreate(messagePath, {
         senderId: uid,
         receiverId,
-        text: message,
+        text: safeMessage,
         type: animatedEmoji ? "animated_emoji" : "text",
         vipLevel: senderVip,
         animatedEmojiId: animatedEmoji?.id || "",
@@ -331,6 +338,15 @@ export async function sendMessage(db, uid, body) {
         createdAt: now,
       }),
     ];
+
+    if (review.flagged) {
+      writes.push(db.writeCreate(`content_filter_flags/${messageId}`, {
+        actorUid: uid, surface: "private_chat",
+        referenceId: messageId, conversationId,
+        ruleIds: review.matchedRuleIds, status: "pending",
+        createdAt: now,
+      }));
+    }
 
     if (mutual) {
       writes.push(
