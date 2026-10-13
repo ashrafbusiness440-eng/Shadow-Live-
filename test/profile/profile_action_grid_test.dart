@@ -83,9 +83,7 @@ void main() {
     expect(screen.contains('const AgencyPackageGrantPage()'), isTrue);
     expect(screen.contains('const UserLevelScreen()'), isTrue);
     expect(screen.contains('AppRoutes.myAgency'), isTrue);
-    expect(screen.contains("Key('profile-action-$label')"), isFalse,
-        reason: 'The action key should derive dynamically, not use a fixed label');
-    expect(screen.contains("Key('profile-action-\$label')"), isTrue);
+    expect(screen.contains(r"Key('profile-action-$label')"), isTrue);
     expect(grid.contains('.snapshots()'), isFalse);
     expect(grid.contains('FirebaseFirestore'), isFalse);
     expect(grid.contains('Timer.periodic'), isFalse);
