@@ -191,3 +191,11 @@ test("deliberate repeated characters match once without masking partial words", 
   assert.equal(applyContentFilter("ح ق ي ر", p, "private_chat").text,
     "ح ق ي ر");
 });
+
+test("overlapping masked phrases never leak the tail of a longer forbidden phrase", () => {
+  const p = policy([
+    rule("rule_short_mask", "يا حقير", "mask"),
+    rule("rule_long_mask", "حقير للغاية", "mask"),
+  ]);
+  assert.equal(applyContentFilter("يا حقير للغاية", p, "room_chat").text, "***");
+});
