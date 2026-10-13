@@ -7,6 +7,7 @@ import '../../../shared/widgets/country_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/assets/shadow_asset_registry.dart';
 import '../widgets/profile_gift_showcase.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../diaries/screens/diaries_screen.dart';
@@ -339,7 +340,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
-            final provider = _avatar(data);
             final isSelf = _isSelf;
 
             return NestedScrollView(
