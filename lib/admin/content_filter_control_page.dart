@@ -266,7 +266,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: group,
+                    initialValue: group,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'التصنيف', border: OutlineInputBorder(),
@@ -279,7 +279,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: action,
+                    initialValue: action,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'ماذا يحدث عند اكتشافها؟',
@@ -363,8 +363,11 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     exceptions.dispose();
     if (saved == null || !mounted) return;
     _changed(() {
-      if (index == null) _rules.add(saved);
-      else _rules[index] = saved;
+      if (index == null) {
+        _rules.add(saved);
+      } else {
+        _rules[index] = saved;
+      }
     });
   }
 
@@ -635,7 +638,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
-                          value: _testSurface,
+                          initialValue: _testSurface,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'وين بدك تجرب؟',
