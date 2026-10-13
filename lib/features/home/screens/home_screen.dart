@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -232,6 +233,18 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) await _load();
   }
 
+  void _showMorePeople() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HomeMorePeopleScreen(
+          initiallyShownIds:
+              _data?.suggestedPeople.take(10).map((item) => item.id).toSet() ??
+              <String>{},
+        ),
+      ),
+    );
+  }
+
   void _search() {
     Navigator.push(
       context,
@@ -416,7 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                     if (suggestedPeople.isNotEmpty) ...[
                       const SizedBox(height: 16),
-                      _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد'),
+                      _sectionHeader('أشخاص مقترحون', 'اكتشف أعضاء جدد', onMore: _showMorePeople),
                       const SizedBox(height: 8),
                       _peopleRail(suggestedPeople),
                     ],
@@ -985,7 +998,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _sectionHeader(String title, String subtitle) {
+  Widget _sectionHeader(String title, String subtitle, {VoidCallback? onMore}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1006,7 +1019,294 @@ class _HomeScreenState extends State<HomeScreen> {
             style: const TextStyle(color: Colors.white38, fontSize: 10),
           ),
         ),
+        if (onMore != null)
+          TextButton(
+            onPressed: onMore,
+            style: TextButton.styleFrom(
+              foregroundColor: _gold,
+              minimumSize: const Size(68, 44),
+            ),
+            child: const Text('عرض المزيد',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+          ),
       ],
+    );
+  }
+}
+
+/// Additional public profiles. Fixed-size Firestore cursors and the existing
+/// HomeCompactPersonCard/FollowService are reused; no per-person listeners.
+class HomeMorePeopleScreen extends StatefulWidget {
+  const HomeMorePeopleScreen({
+    super.key,
+    required this.initiallyShownIds,
+  });
+
+  final Set<String> initiallyShownIds;
+
+  @override
+  State<HomeMorePeopleScreen> createState() => _HomeMorePeopleScreenState();
+}
+
+class _HomeMorePeopleScreenState extends State<HomeMorePeopleScreen> {
+  final DiscoveryService _discovery = DiscoveryService();
+  final FollowService _follow = FollowService();
+  final ScrollController _scroll = ScrollController();
+  final List<DiscoveryPerson> _people = [];
+  final Set<String> _seen = {};
+  final Set<String> _busyFollow = {};
+  final Map<String, bool> _followState = {};
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  StreamSubscription<User?>? _authSub;
+  String? _uid;
+  int _generation = 0;
+  bool _loading = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _scroll.addListener(_onScroll);
+    _authSub = FirebaseAuth.instance.userChanges().listen((user) {
+      if (user?.uid == _uid || !mounted) return;
+      setState(() {
+        _generation++;
+        _uid = user?.uid;
+        _people.clear();
+        _seen.clear();
+        _followState.clear();
+        _busyFollow.clear();
+        _cursor = null;
+        _hasMore = true;
+        _loading = false;
+        _error = null;
+      });
+      unawaited(_loadMore());
+    });
+    unawaited(_loadMore());
+  }
+
+  void _onScroll() {
+    if (_scroll.hasClients && _scroll.position.extentAfter < 380) {
+      unawaited(_loadMore());
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    final generation = _generation;
+    final requestUid = _uid;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await _discovery.loadPeoplePage(after: _cursor);
+      if (!mounted || generation != _generation || requestUid != _uid) return;
+      final next = page.people.where((person) =>
+          !widget.initiallyShownIds.contains(person.id) &&
+          !_seen.contains(person.id)).toList(growable: false);
+      Set<String>? follows;
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && !user.isAnonymous && user.uid == requestUid) {
+        try {
+          follows = await _follow.followingAmong(
+            next.map((person) => person.id),
+          );
+        } catch (_) {
+          // Never offer a follow/unfollow action on unknown server state.
+        }
+      }
+      if (!mounted || generation != _generation || requestUid != _uid) return;
+      setState(() {
+        _cursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        for (final person in next) {
+          if (_seen.add(person.id)) {
+            _people.add(person);
+            if (follows != null) {
+              _followState[person.id] = follows.contains(person.id);
+            }
+          }
+        }
+      });
+    } catch (_) {
+      if (mounted && generation == _generation && requestUid == _uid) {
+        setState(() => _error = 'تعذر تحميل الأشخاص. حاول مرة أخرى.');
+      }
+    } finally {
+      if (mounted && generation == _generation && requestUid == _uid) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  bool _canFollow(DiscoveryPerson person) {
+    final user = FirebaseAuth.instance.currentUser;
+    return user != null &&
+        !user.isAnonymous &&
+        user.uid == _uid &&
+        user.uid != person.id &&
+        _followState.containsKey(person.id);
+  }
+
+  Future<void> _changeFollow(DiscoveryPerson person) async {
+    if (!_canFollow(person) || !_busyFollow.add(person.id)) return;
+    final generation = _generation;
+    final requestUid = _uid;
+    final following = _followState[person.id]!;
+    setState(() {});
+    try {
+      await _follow.setFollowing(person.id, !following);
+      if (mounted && generation == _generation && requestUid == _uid) {
+        setState(() => _followState[person.id] = !following);
+      }
+    } catch (_) {
+      if (mounted && generation == _generation && requestUid == _uid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تحديث المتابعة. حاول مرة أخرى.')),
+        );
+      }
+    } finally {
+      if (generation == _generation) {
+        _busyFollow.remove(person.id);
+        if (mounted) setState(() {});
+      }
+    }
+  }
+
+  Future<void> _openPerson(DiscoveryPerson person) async {
+    final generation = _generation;
+    final uid = _uid;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PublicProfileScreen(userId: person.id),
+      ),
+    );
+    if (!mounted || generation != _generation || uid != _uid ||
+        !_canFollow(person)) return;
+    try {
+      final following = await _follow.followingAmong([person.id]);
+      if (!mounted || generation != _generation || uid != _uid) return;
+      setState(() => _followState[person.id] = following.contains(person.id));
+    } catch (_) {
+      if (mounted && generation == _generation && uid == _uid) {
+        setState(() => _followState.remove(person.id));
+      }
+    }
+  }
+
+  Future<void> _openActions(DiscoveryPerson person) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111321),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: HomePersonActionsSheet(
+          person: person,
+          isFollowing: _followState[person.id],
+          onOpenProfile: () {
+            Navigator.pop(sheetContext);
+            unawaited(_openPerson(person));
+          },
+          onFollow: _canFollow(person) ? () {
+            Navigator.pop(sheetContext);
+            unawaited(_changeFollow(person));
+          } : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _footer() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(child: CircularProgressIndicator(
+          color: Color(0xFF8A3DFF),
+        )),
+      );
+    }
+    if (_error != null) {
+      return Column(children: [
+        Text(_error!, style: const TextStyle(color: Colors.white70)),
+        TextButton(onPressed: _loadMore, child: const Text('إعادة المحاولة')),
+      ]);
+    }
+    if (_hasMore) {
+      // Manual continuation for a page containing only excluded/hidden users.
+      return TextButton(onPressed: _loadMore, child: const Text('تحميل المزيد'));
+    }
+    return const Padding(
+      padding: EdgeInsets.all(20),
+      child: Center(child: Text('وصلت إلى نهاية الأشخاص',
+          style: TextStyle(color: Colors.white54))),
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    _discovery.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF05060D),
+        appBar: AppBar(
+          title: const Text('أشخاص مقترحون'),
+          foregroundColor: const Color(0xFFFFD54A),
+          backgroundColor: const Color(0xFF111321),
+        ),
+        body: CustomScrollView(
+          controller: _scroll,
+          slivers: [
+            if (_people.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
+                sliver: SliverGrid(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final person = _people[index];
+                      return Center(
+                        child: HomeCompactPersonCard(
+                          key: ValueKey(person.id),
+                          person: person,
+                          onTap: () => _openActions(person),
+                          isFollowing: _followState[person.id],
+                          followBusy: _busyFollow.contains(person.id),
+                          onFollow: _canFollow(person)
+                              ? () => _changeFollow(person)
+                              : null,
+                        ),
+                      );
+                    },
+                    childCount: _people.length,
+                  ),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: width < 360 ? 2 : 3,
+                    mainAxisExtent: 126,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 4,
+                  ),
+                ),
+              ),
+            SliverToBoxAdapter(child: _footer()),
+          ],
+        ),
+      ),
     );
   }
 }
