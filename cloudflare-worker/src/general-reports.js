@@ -202,6 +202,11 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
   if (!/^[A-Za-z0-9_-]{12,180}$/.test(key)) {
     throw new GeneralReportError("invalid_idempotency_key", 400);
   }
+  // Never let a normal review request claim a completed sanction. Only
+  // resolveWithAccountAction may reach this status with an authorized receipt.
+  if (status === "actioned" && !clean(verified.actionKind)) {
+    throw new GeneralReportError("action_requires_execution", 409);
+  }
   // A rejection explanation is optional; other admin decisions still
   // require a clear internal audit reason.
   if (reason.length > 200 || (status !== "rejected" && reason.length < 3) ||
