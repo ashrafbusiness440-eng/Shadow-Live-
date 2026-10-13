@@ -22,6 +22,7 @@ class ProfileAvatarWithFrame extends StatefulWidget {
     this.placeholderIcon = Icons.person_rounded,
     this.useVipFallback = false,
     this.frameScale = 1.22,
+    this.protectAvatarCenter = false,
   });
 
   final double diameter;
@@ -38,6 +39,9 @@ class ProfileAvatarWithFrame extends StatefulWidget {
   final IconData placeholderIcon;
   final bool useVipFallback;
   final double frameScale;
+  /// Profile header only. Keep ornate art away from the central face while
+  /// preserving its animation and existing visual-identity cache.
+  final bool protectAvatarCenter;
 
   @override
   State<ProfileAvatarWithFrame> createState() => _ProfileAvatarWithFrameState();
@@ -175,9 +179,16 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
             avatar,
             Positioned.fill(
               child: IgnorePointer(
-                child: AnimatedProfileFrameVisual(
-                  assetKey: frameAssetKey,
-                  imageUrl: frameImageUrl,
+                child: ClipPath(
+                  clipper: widget.protectAvatarCenter
+                      ? AvatarFrameClearCenterClipper(
+                          avatarDiameter: widget.diameter,
+                        )
+                      : null,
+                  child: AnimatedProfileFrameVisual(
+                    assetKey: frameAssetKey,
+                    imageUrl: frameImageUrl,
+                  ),
                 ),
               ),
             ),
@@ -191,6 +202,7 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
         vipLevel: widget.vipLevel,
         frameLevel: widget.vipFrameLevel,
         avatarDiameter: widget.diameter,
+        protectAvatarCenter: widget.protectAvatarCenter,
         child: _baseAvatar(profile),
       );
     }
