@@ -8,7 +8,7 @@ export const CONTENT_FILTER_SURFACES = Object.freeze([
 ]);
 export const CONTENT_FILTER_ACTIONS = Object.freeze(["mask", "block", "flag"]);
 export const CONTENT_FILTER_GROUPS = Object.freeze([
-  "insults", "sexual", "bullying", "spam", "ads", "links", "other",
+  "insults", "sexual", "bullying", "threats", "spam", "ads", "links", "other",
 ]);
 const MAX_RULES = 300;
 const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'content_filter_import.dart';
+import 'content_filter_starter.dart';
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
@@ -34,6 +35,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     'insults': 'شتائم',
     'sexual': 'ألفاظ جنسية مسيئة',
     'bullying': 'تنمر',
+    'threats': 'تهديدات صريحة',
     'spam': 'إزعاج وتكرار',
     'ads': 'إعلانات',
     'links': 'روابط',
@@ -50,6 +52,8 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
   bool _dirty = false;
   int _version = 0;
   int _visibleLimit = 30;
+  String _groupFilter = 'all';
+  String _stateFilter = 'all';
   String _testSurface = 'private_chat';
   String? _message;
   String? _preview;
@@ -516,6 +520,108 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     });
   }
 
+
+  Future<void> _addStarterSuggestions() async {
+    if (_rules.length >= 300 || _busy) return;
+    final checked = <String>{};
+    final sections = <String, int>{};
+    for (final suggestion in filterStarterSuggestions) {
+      sections[suggestion.group] = (sections[suggestion.group] ?? 0) + 1;
+    }
+    final chosen = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, refresh) => AlertDialog(
+          title: const Text('كلمات مقترحة للمراجعة'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'اختر التصنيفات التي تريد مراجعتها. '
+                    'الكلمات ستُضاف متوقفة ولن تحجب أي رسالة تلقائيًا.',
+                  ),
+                  const SizedBox(height: 10),
+                  for (final group in sections.entries)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(_groups[group.key] ?? group.key),
+                      subtitle: Text('${group.value} كلمة أو عبارة مقترحة'),
+                      value: checked.contains(group.key),
+                      onChanged: (selected) => refresh(() {
+                        if (selected == true) {
+                          checked.add(group.key);
+                        } else {
+                          checked.remove(group.key);
+                        }
+                      }),
+                    ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'بعد الإضافة، افتح الكلمات وعدّل أو احذف أي عبارة '
+                    'غير مناسبة، ثم فعّل ما تريده بنفسك واحفظ.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: checked.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, {...checked}),
+              child: const Text('إضافة للمراجعة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || chosen == null || chosen.isEmpty) return;
+    final known = _rules
+        .map((rule) => normalizeStarterPhrase('${rule['pattern']}'))
+        .toSet();
+    final availableSlots = 300 - _rules.length;
+    if (availableSlots <= 0) return;
+    final additions = <FilterStarterSuggestion>[];
+    for (final suggestion in filterStarterSuggestions) {
+      if (!chosen.contains(suggestion.group)) continue;
+      final key = normalizeStarterPhrase(suggestion.phrase);
+      if (key.isEmpty || !known.add(key)) continue;
+      additions.add(suggestion);
+      if (additions.length >= availableSlots) break;
+    }
+    if (additions.isEmpty) {
+      setState(() => _message = 'كل الكلمات المختارة موجودة بالقائمة مسبقًا.');
+      return;
+    }
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    _changed(() {
+      for (var i = 0; i < additions.length; i++) {
+        final suggestion = additions[i];
+        _rules.add({
+          'id': 'starter_${stamp}_$i',
+          'pattern': suggestion.phrase,
+          'group': suggestion.group,
+          'action': suggestion.action,
+          'enabled': false,
+          'surfaces': _surfaces.keys.toList(growable: false),
+          'exceptions': <String>[],
+        });
+      }
+      _message = 'أُضيفت ${additions.length} كلمة للمراجعة وهي متوقفة. '
+          'راجعها وفعّل ما تختاره، ثم احفظ التغييرات.';
+    });
+  }
+
   Future<void> _importFile() async {
     if (_rules.length >= 300 || _busy) return;
     try {
@@ -582,6 +688,9 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
     final term = _search.text.trim().toLowerCase();
     final matches = _rules.asMap().entries.where((entry) {
       final rule = entry.value;
+      if (_groupFilter != 'all' && rule['group'] != _groupFilter) return false;
+      if (_stateFilter == 'on' && rule['enabled'] != true) return false;
+      if (_stateFilter == 'off' && rule['enabled'] == true) return false;
       return term.isEmpty ||
           '${rule['pattern']}'.toLowerCase().contains(term) ||
           (_groups['${rule['group']}'] ?? '').contains(term);
@@ -671,9 +780,12 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('الكلمات المحظورة (${_rules.length})',
+                        Text('قائمة الكلمات (${_rules.length})',
                             style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.w800)),
+                        Text('المفعّلة: ${_rules.where((v) => v['enabled'] == true).length}'
+                            '  •  المتوقفة: ${_rules.where((v) => v['enabled'] != true).length}',
+                            style: const TextStyle(color: Colors.white70)),
                         const SizedBox(height: 6),
                         const Text('اختَر ما يحدث عند اكتشاف كل كلمة. '
                             'يمكنك إيقاف أي كلمة وحدها.'),
@@ -686,6 +798,60 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                             prefixIcon: Icon(Icons.search_rounded),
                             border: OutlineInputBorder(),
                           ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            SizedBox(
+                              width: 190,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(_groupFilter),
+                                initialValue: _groupFilter,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'التصنيف',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: 'all', child: Text('كل التصنيفات')),
+                                  for (final group in _groups.entries)
+                                    DropdownMenuItem(value: group.key,
+                                      child: Text(group.value)),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _groupFilter = v ?? 'all';
+                                  _visibleLimit = 30;
+                                }),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey(_stateFilter),
+                                initialValue: _stateFilter,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'حالة الكلمة',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'all', child: Text('كل الكلمات')),
+                                  DropdownMenuItem(
+                                    value: 'on', child: Text('المفعّلة فقط')),
+                                  DropdownMenuItem(
+                                    value: 'off', child: Text('المتوقفة فقط')),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _stateFilter = v ?? 'all';
+                                  _visibleLimit = 30;
+                                }),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 10),
                         Wrap(
@@ -702,6 +868,12 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                                   ? null : _bulkAdd,
                               icon: const Icon(Icons.library_add_outlined),
                               label: const Text('إضافة عدة كلمات'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _busy || _rules.length >= 300
+                                  ? null : _addStarterSuggestions,
+                              icon: const Icon(Icons.library_books_outlined),
+                              label: const Text('كلمات مقترحة'),
                             ),
                             OutlinedButton.icon(
                               onPressed: _busy || _rules.length >= 300
