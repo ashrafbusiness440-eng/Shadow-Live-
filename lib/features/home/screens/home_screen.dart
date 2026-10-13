@@ -241,7 +241,6 @@ class _HomeScreenState extends State<HomeScreen> {
           discoveryService: _discoveryService,
           initiallyShownRoomIds:
               _data?.suggested.take(4).map((room) => room.id).toSet() ?? <String>{},
-          onOpenRoom: _openRoom,
         ),
       ),
     );
@@ -254,26 +253,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _openRoom(DiscoveryRoom room) async {
-    final args = room.toNavigationArguments();
-    final ownerUid =
-        (room.data['ownerUid'] ?? room.data['ownerId'] ?? room.data['hostId'] ?? '')
-            .toString();
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
-    final isOwner = currentUid != null && ownerUid == currentUid;
-
-    if (room.isPasswordProtected && !isOwner) {
-      final password =
-          await showDiscoveryRoomPasswordPrompt(context, room.title);
-      if (!mounted || password == null) return;
-      args['roomPassword'] = password;
-    }
-
-    NavigationService.navigateTo(
-      AppRoutes.voiceChatRoom,
-      arguments: args,
-    );
-  }
+  Future<void> _openRoom(DiscoveryRoom room) =>
+      openDiscoveryRoomFromContext(context, room);
 
   Future<void> _openPerson(DiscoveryPerson person) async {
     await Navigator.push(
@@ -1037,6 +1018,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Share the established room route and password dialog between the Home
+/// snapshot and the dedicated paginated screen. The dialog belongs to the
+/// page the visitor can currently see, not a route underneath it.
+Future<void> openDiscoveryRoomFromContext(
+  BuildContext context,
+  DiscoveryRoom room,
+) async {
+  final arguments = room.toNavigationArguments();
+  final ownerId =
+      (room.data['ownerUid'] ?? room.data['ownerId'] ?? room.data['hostId'] ?? '')
+          .toString();
+  final viewerUid = FirebaseAuth.instance.currentUser?.uid;
+  final isOwner = viewerUid != null && viewerUid == ownerId;
+  if (room.isPasswordProtected && !isOwner) {
+    final password = await showDiscoveryRoomPasswordPrompt(context, room.title);
+    if (!context.mounted || password == null) return;
+    if (FirebaseAuth.instance.currentUser?.uid != viewerUid) return;
+    arguments['roomPassword'] = password;
+  }
+  if (!context.mounted) return;
+  NavigationService.navigateTo(AppRoutes.voiceChatRoom, arguments: arguments);
+}
+
 /// Lazy document-cursor room directory. The same HomeCompactRoomCard and
 /// existing navigation/password flow are reused without per-room listeners.
 class HomeMoreRoomsScreen extends StatefulWidget {
@@ -1044,12 +1048,10 @@ class HomeMoreRoomsScreen extends StatefulWidget {
     super.key,
     required this.discoveryService,
     required this.initiallyShownRoomIds,
-    required this.onOpenRoom,
   });
 
   final DiscoveryService discoveryService;
   final Set<String> initiallyShownRoomIds;
-  final Future<void> Function(DiscoveryRoom) onOpenRoom;
 
   @override
   State<HomeMoreRoomsScreen> createState() => _HomeMoreRoomsScreenState();
@@ -1062,6 +1064,7 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
   DocumentSnapshot<Map<String, dynamic>>? _cursor;
   StreamSubscription<User?>? _authSub;
   String? _uid;
+  int _accountRevision = 0;
   bool _loading = false;
   bool _hasMore = true;
   String? _error;
@@ -1079,6 +1082,8 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
       if (user?.uid == _uid || !mounted) return;
       setState(() {
         _uid = user?.uid;
+        _accountRevision++;
+        _openingIds.clear();
         _rooms.clear();
         _cursor = null;
         _hasMore = true;
@@ -1093,10 +1098,11 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
     final uid = _uid;
+    final revision = _accountRevision;
     setState(() { _loading = true; _error = null; });
     try {
       final page = await widget.discoveryService.loadRoomPage(after: _cursor);
-      if (!mounted || uid != _uid) return;
+      if (!mounted || uid != _uid || revision != _accountRevision) return;
       setState(() {
         _cursor = page.nextCursor;
         _hasMore = page.hasMore;
@@ -1112,36 +1118,39 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
           ..addAll(merged);
       });
     } catch (_) {
-      if (mounted && uid == _uid) {
+      if (mounted && uid == _uid && revision == _accountRevision) {
         setState(() => _error = 'تعذر تحميل الغرف. حاول مرة أخرى.');
       }
     } finally {
-      if (mounted && uid == _uid) setState(() => _loading = false);
+      if (mounted && uid == _uid && revision == _accountRevision) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _enterRoom(DiscoveryRoom room) async {
     if (!_openingIds.add(room.id)) return;
     final uid = _uid;
+    final revision = _accountRevision;
     try {
       // One fresh check only when the user taps a room.
       final current = await widget.discoveryService.findRoomForEntry(room.id);
-      if (!mounted || uid != _uid) return;
+      if (!mounted || uid != _uid || revision != _accountRevision) return;
       if (current == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('هذه الغرفة غير متاحة الآن.')),
         );
         return;
       }
-      await widget.onOpenRoom(current);
+      await openDiscoveryRoomFromContext(context, current);
     } catch (_) {
-      if (mounted && uid == _uid) {
+      if (mounted && uid == _uid && revision == _accountRevision) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('تعذر فتح الغرفة. حاول مرة أخرى.')),
         );
       }
     } finally {
-      _openingIds.remove(room.id);
+      if (revision == _accountRevision) _openingIds.remove(room.id);
     }
   }
 
