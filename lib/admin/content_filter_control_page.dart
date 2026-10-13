@@ -55,6 +55,11 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
   String? _preview;
   bool _previewBlocked = false;
   bool _previewFlagged = false;
+  bool _flagsBusy = false;
+  bool _flagsLoaded = false;
+  bool _roomFlagsUnavailable = false;
+  String? _flagsMessage;
+  List<Map<String, dynamic>> _flags = [];
   Map<String, bool> _areas = {
     for (final k in _surfaces.keys) k: true,
   };
@@ -216,6 +221,72 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _loadFlags() async {
+    if (_flagsBusy || _busy) return;
+    setState(() { _flagsBusy = true; _flagsMessage = null; });
+    try {
+      final response = await _send({'action': 'listFlags'});
+      if (!mounted) return;
+      setState(() {
+        _flags = (response['items'] is List ? response['items'] as List : [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item)).toList();
+        _flagsLoaded = true;
+        _roomFlagsUnavailable = response['roomUnavailable'] == true;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _flagsMessage =
+          'تعذر تحميل المخالفات. تأكد من الاتصال وحاول مرة ثانية.');
+      }
+    } finally {
+      if (mounted) setState(() => _flagsBusy = false);
+    }
+  }
+
+  Future<void> _reviewFlag(Map<String, dynamic> flag) async {
+    if (_flagsBusy || _busy) return;
+    final id = '${flag['id'] ?? ''}';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد مراجعة المخالفة'),
+        content: const Text(
+          'هل انتهيت من مراجعة هذا السجل؟ '
+          'وضع علامة تمت المراجعة لا يعاقب المستخدم.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('تمت المراجعة')),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() { _flagsBusy = true; _flagsMessage = null; });
+    try {
+      await _send({
+        'action': 'reviewFlag',
+        'flagId': id,
+        'reason': 'تأكيد مراجعة سجل فلترة الكلمات',
+        'idempotencyKey': 'filter_review_${DateTime.now().microsecondsSinceEpoch}',
+      });
+      if (!mounted) return;
+      setState(() {
+        _flags = _flags.map((item) => '${item['id']}' == id
+            ? <String, dynamic>{...item, 'status': 'reviewed'}
+            : item).toList();
+        _flagsMessage = 'تم حفظ المراجعة بنجاح.';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _flagsMessage =
+          'تعذر تأكيد المراجعة. حدّث القائمة وحاول مرة ثانية.');
+    } finally {
+      if (mounted) setState(() => _flagsBusy = false);
     }
   }
 
@@ -728,6 +799,86 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                                   ? 'النتيجة: تُرسل وتُسجّل للمراجعة\n$_preview'
                                   : 'النتيجة: $_preview'),
                         ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('المخالفات التي تحتاج مراجعة',
+                            style: TextStyle(fontSize: 18,
+                              fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 6),
+                        const Text('اعرض آخر السجلات عند الحاجة فقط. '
+                          'ما منعرض نصوص الرسائل الخاصة هون حفاظًا على الخصوصية.'),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _busy || _flagsBusy ? null : _loadFlags,
+                          icon: _flagsBusy
+                              ? const SizedBox(width: 16, height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.fact_check_outlined),
+                          label: Text(_flagsBusy ? 'جارٍ التحميل...'
+                              : _flagsLoaded ? 'تحديث المخالفات' : 'عرض المخالفات'),
+                        ),
+                        if (_roomFlagsUnavailable)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text('تعذّر عرض أحدث سجلات الغرف حاليًا. '
+                              'تقدر تجرب التحديث مرة ثانية.'),
+                          ),
+                        if (_flagsMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(_flagsMessage!),
+                          ),
+                        if (_flagsLoaded && _flags.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text('ما في مخالفات ضمن آخر السجلات المتاحة.'),
+                          ),
+                        if (_flagsLoaded)
+                          for (final flag in _flags)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(_surfaces['${flag['surface']}']
+                                  ?? 'محتوى داخل التطبيق'),
+                              subtitle: Text(() {
+                                final ids = flag['ruleIds'] is List
+                                    ? flag['ruleIds'] as List : const [];
+                                final labels = ids.map((ruleId) {
+                                  for (final rule in _rules) {
+                                    if ('${rule['id']}' == '$ruleId') {
+                                      return '${rule['pattern']}';
+                                    }
+                                  }
+                                  return 'كلمة محفوظة سابقًا';
+                                }).take(3).join('، ');
+                                final millis =
+                                    (flag['createdAtMs'] as num?)?.toInt() ?? 0;
+                                final when = millis > 0
+                                    ? DateTime.fromMillisecondsSinceEpoch(millis)
+                                        .toLocal().toString().substring(0, 16)
+                                    : 'غير محدد';
+                                return 'الحساب: ${flag['actorUid'] ?? 'غير معروف'}'
+                                    '\\nوقت الرصد: $when'
+                                    '${labels.isNotEmpty ? '\\nالكلمات: $labels' : ''}';
+                              }()),
+                              isThreeLine: true,
+                              trailing: flag['status'] == 'reviewed'
+                                  ? const Icon(Icons.check_circle_outline,
+                                      color: Color(0xFFD7B85A))
+                                  : TextButton(
+                                      onPressed: _flagsBusy
+                                          ? null : () => _reviewFlag(flag),
+                                      child: const Text('تمت المراجعة'),
+                                    ),
+                            ),
                       ],
                     ),
                   ),
