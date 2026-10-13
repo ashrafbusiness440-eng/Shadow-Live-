@@ -304,6 +304,9 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
       await db.rollback(transaction);
       return;
     }
+    if (!["new", "under_review"].includes(clean(report.data?.status || "new"))) {
+      throw new ModerationApiError("invalid_report_transition", 409);
+    }
     const now = new Date();
     const patch = {
       status: "actioned",
@@ -344,6 +347,22 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
     throw error;
   }
 }
+// A report reference cannot be used to claim moderation of unrelated content.
+// Check before deleting anything; enforce matching type and target even when
+// a moderator has broader diary permissions.
+async function assertReportTarget(db, reportId, diaryId, commentId = "") {
+  if (!reportId) return;
+  const snap = await db.get(`diary_reports/${reportId}`);
+  if (!snap.exists) throw new ModerationApiError("report_not_found", 404);
+  const item = snap.data || {};
+  if (clean(item.diaryId) !== diaryId ||
+      clean(item.targetType) !== (commentId ? "diary_comment" : "diary") ||
+      (commentId && clean(item.commentId) !== commentId) ||
+      !["new", "under_review"].includes(clean(item.status || "new"))) {
+    throw new ModerationApiError("report_target_mismatch", 409);
+  }
+}
+
 async function deleteDiaryTarget(db, actorUid, body) {
   const diaryId = safeId(body.diaryId, "invalid_diary_id");
   const reportId = clean(body.reportId);
@@ -353,6 +372,7 @@ async function deleteDiaryTarget(db, actorUid, body) {
   if (reason.length < 3 || reason.length > 200) {
     throw new ModerationApiError("invalid_reason", 400);
   }
+  await assertReportTarget(db, reportId, diaryId);
   const result = await deleteDiary(
     db,
     actorUid,
@@ -389,6 +409,7 @@ async function deleteCommentTarget(db, actorUid, body) {
   if (reason.length < 3 || reason.length > 200) {
     throw new ModerationApiError("invalid_reason", 400);
   }
+  await assertReportTarget(db, reportId, diaryId, commentId);
   const result = await deleteComment(
     db,
     actorUid,
@@ -484,6 +505,7 @@ export const diaryModerationTestHooks = Object.freeze({
   listReports,
   getReport,
   reviewReport,
+  assertReportTarget,
   deleteDiaryTarget,
   deleteCommentTarget,
   normalizeReport,
