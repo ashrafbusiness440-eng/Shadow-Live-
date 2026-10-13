@@ -76,7 +76,8 @@ void main() {
                         data: {
                           'displayName': 'مستخدم عربي باسم طويل جداً',
                           'level': 7,
-                          'vipLevel': 4,
+                          'effectiveVipLevel': 4,
+                          'vipExpiresAt': '2099-01-01T00:00:00Z',
                           'isOnline': true,
                         },
                       ),
@@ -98,7 +99,8 @@ void main() {
         ).snapshotOnly,
         isTrue,
       );
-      expect(find.text('VIP 4 • LV.7'), findsOneWidget);
+      expect(find.text('VIP 4'), findsOneWidget);
+      expect(find.text('LV.7'), findsNothing);
       expect(tester.getSize(card).width, lessThanOrEqualTo(120));
       expect(tester.takeException(), isNull);
       await tester.tap(card);
