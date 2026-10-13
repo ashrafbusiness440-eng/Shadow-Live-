@@ -800,6 +800,35 @@ class _ProfileScreenState extends State<ProfileScreen>
               _row('الآن', mood),
             ],
           ),
+        ] else ...[
+          const SizedBox(height: 14),
+          Material(
+            color: const Color(0xFF0C1728),
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.sentiment_neutral_outlined,
+                    size: 19,
+                    color: Colors.white54,
+                  ),
+                  const SizedBox(width: 9),
+                  const Expanded(
+                    child: Text(
+                      'لم تضف حالة بعد',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _openingEdit ? null : _edit,
+                    child: const Text('إضافة حالة'),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
         if (interests.isNotEmpty) ...[
           const SizedBox(height: 14),
