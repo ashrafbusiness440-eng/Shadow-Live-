@@ -325,7 +325,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ? 'ضيف Shadow'
         : (userData?['displayName'] ?? userData?['username'] ?? 'صديقنا')
             .toString();
-    final level = userData?['level']?.toString() ?? '—';
+    final identityLabel = homeIdentityLabel(
+      userData ?? const <String, dynamic>{},
+      isOwnAccount: true,
+    );
     // These are the existing signed-in user's wallet snapshot fields, not
     // guessed balances. The profile screen also accepts the legacy 'balance'.
     final rawCoins = userData?['coins'] ?? userData?['balance'];
@@ -364,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   HomeAccountHeader(
                     name: name,
-                    level: level,
+                    identityLabel: identityLabel,
                     coins: coins,
                     diamonds: diamonds,
                     profile: userData ?? const <String, dynamic>{},
@@ -1013,7 +1016,7 @@ class HomeAccountHeader extends StatelessWidget {
   const HomeAccountHeader({
     super.key,
     required this.name,
-    required this.level,
+    this.identityLabel,
     required this.coins,
     required this.diamonds,
     required this.profile,
@@ -1024,7 +1027,7 @@ class HomeAccountHeader extends StatelessWidget {
   });
 
   final String name;
-  final String level;
+  final String? identityLabel;
   final String coins;
   final String diamonds;
   final Map<String, dynamic> profile;
@@ -1078,15 +1081,17 @@ class HomeAccountHeader extends StatelessWidget {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                level == '—' ? 'المستوى غير متاح' : 'LV.$level',
-                                style: const TextStyle(
-                                  color: _gold,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
+                              if (identityLabel != null) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  identityLabel!,
+                                  style: const TextStyle(
+                                    color: _gold,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ],
                           ),
                         ),
@@ -1463,21 +1468,21 @@ class HomeCompactPersonCard extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              person.vipLevel > 0
-                  ? 'VIP ${person.vipLevel} • LV.${person.level}'
-                  : 'LV.${person.level}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: person.vipLevel > 0
-                    ? const Color(0xFFFFD54A)
-                    : Colors.white38,
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
+            if (person.identityLabel != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                person.identityLabel!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: person.vipLevel > 0
+                      ? const Color(0xFFFFD54A)
+                      : Colors.white70,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
