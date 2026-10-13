@@ -39,20 +39,25 @@ void main() {
     expect(find.text('🌐'), findsNothing);
   });
 
-  test('all full and quick profiles reuse same flag widget without new IO', () {
+  test('all full and quick profiles reuse the canonical flag without new IO', () {
     for (final file in const [
       'lib/features/user/screens/profile_screen.dart',
       'lib/features/profile/screens/public_profile_screen.dart',
-      'lib/features/profile/widgets/quick_profile_sheet.dart',
     ]) {
       final source = File(file).readAsStringSync();
-      expect(source.contains("import '../../../shared/widgets/country_selector.dart';"),
-          isTrue, reason: file);
-      expect(source.contains('ShadowProfileCountryFlag('), isTrue,
-          reason: file);
+      expect(source.contains('ProfileIdentityInfoLine('), isTrue,
+          reason: 'Shared identity line must be used by $file');
       expect(source.contains('ProfileAvatarWithFrame('), isTrue,
           reason: 'Preserve existing avatar/frame in $file');
     }
+    final quick = File('lib/features/profile/widgets/quick_profile_sheet.dart')
+        .readAsStringSync();
+    expect(quick.contains('ShadowProfileCountryFlag('), isTrue);
+    expect(quick.contains('ProfileAvatarWithFrame('), isTrue);
+    final identity = File('lib/features/profile/widgets/profile_identity_info_line.dart')
+        .readAsStringSync();
+    expect(identity.contains('ShadowProfileCountryFlag('), isTrue);
+    expect(identity.contains('FirebaseFirestore'), isFalse);
     final picker = File('lib/shared/widgets/country_selector.dart')
         .readAsStringSync();
     expect(picker.contains('final country = shadowCountryByName(location);'),

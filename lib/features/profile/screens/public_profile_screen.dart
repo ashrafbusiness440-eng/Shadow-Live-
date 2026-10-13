@@ -25,6 +25,7 @@ import '../../vip/widgets/vip_profile_identity.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
 import '../widgets/profile_avatar_with_frame.dart';
+import '../widgets/profile_identity_info_line.dart';
 
 class PublicProfileScreen extends StatefulWidget {
   const PublicProfileScreen({super.key, required this.userId});
@@ -596,38 +597,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'ID: ${fancyId.isNotEmpty ? fancyId : publicId}',
-                textDirection: TextDirection.ltr,
-                style: const TextStyle(color: Colors.white60),
-              ),
-              ShadowProfileCountryFlag(
-                location: (profile['location'] ??
-                        profile['country'] ??
-                        '')
-                    .toString(),
-                fontSize: 20,
-                padding: const EdgeInsetsDirectional.only(start: 6),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                key: const Key('public-profile-copy-id'),
-                tooltip: 'نسخ ID',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _copyUserIds(
-                  publicId: publicId,
-                  fancyId: fancyId,
-                ),
-                icon: const Icon(
-                  Icons.copy_rounded,
-                  size: 16,
-                  color: Color(0xFFFFD54A),
-                ),
-              ),
-            ],
+          ProfileIdentityInfoLine(
+            id: fancyId.isNotEmpty ? fancyId : publicId,
+            location: (profile['location'] ?? profile['country'] ?? '').toString(),
+            copyKey: const Key('public-profile-copy-id'),
+            onCopy: () => _copyUserIds(
+              publicId: publicId,
+              fancyId: fancyId,
+            ),
           ),
           if (vip > 0 || badges.isNotEmpty) ...[
             const SizedBox(height: 10),
