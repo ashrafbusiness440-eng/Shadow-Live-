@@ -334,7 +334,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             final vip = effectivePublicVipLevel(data);
             final vipFrameLevel =
                 (data['vipProfileFrameLevel'] as num?)?.toInt() ?? vip;
-            final online = data['isOnline'] == true;
+            // The cached public profile has no verified realtime presence.
+            // Never claim that a user is online from its legacy isOnline flag.
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
@@ -356,7 +357,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                       publicId: publicId,
                       fancyId: fancyId,
                       cover: cover,
-                      online: online,
                       vip: vip,
                       vipFrameLevel: vipFrameLevel,
                       badges: badges,
@@ -548,7 +548,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     required String publicId,
     required String fancyId,
     required String cover,
-    required bool online,
     required int vip,
     required int vipFrameLevel,
     required List<String> badges,
@@ -572,32 +571,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              ProfileAvatarWithFrame(
-                diameter: 110,
-                userId: widget.userId,
-                fallbackProfile: profile,
-                vipLevel: vip,
-                vipFrameLevel: vipFrameLevel,
-                useVipFallback: true,
-              ),
-              if (online)
-                Positioned(
-                  left: 3,
-                  bottom: 3,
-                  child: Container(
-                    width: 19,
-                    height: 19,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF38D996),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF07111F), width: 3),
-                    ),
-                  ),
-                ),
-            ],
+          ProfileAvatarWithFrame(
+            diameter: 110,
+            userId: widget.userId,
+            fallbackProfile: profile,
+            vipLevel: vip,
+            vipFrameLevel: vipFrameLevel,
+            useVipFallback: true,
           ),
           const SizedBox(height: 11),
           VipStyledName(
