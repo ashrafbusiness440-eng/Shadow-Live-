@@ -22,6 +22,7 @@ import '../../profile/widgets/profile_personal_room_tab.dart';
 import '../../profile/widgets/profile_gift_showcase.dart';
 import '../../room/services/room_action_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
+import '../../profile/widgets/profile_identity_info_line.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
 import '../../vip/screens/vip_screen.dart';
@@ -610,55 +611,12 @@ class _ProfileScreenState extends State<ProfileScreen>
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 7),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              InkWell(
-                onTap: () => _copyId(profile),
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'ID: $id',
-                        textDirection: TextDirection.ltr,
-                        style: const TextStyle(
-                          color: Color(0xFFFFD54A),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.copy_rounded,
-                        size: 15,
-                        color: Color(0xFFFFD54A),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              ShadowProfileCountryFlag(
-                location: location,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-              ),
-              if (gender == 'ذكر' || gender == 'أنثى')
-                Text(
-                  gender == 'ذكر' ? '♂' : '♀',
-                  style: TextStyle(
-                    color: gender == 'ذكر'
-                        ? const Color(0xFF42A5F5)
-                        : const Color(0xFFFF69B4),
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-            ],
+          ProfileIdentityInfoLine(
+            id: id,
+            location: location,
+            gender: gender,
+            copyKey: const Key('own-profile-copy-id'),
+            onCopy: () => _copyId(profile),
           ),
           if (bio.isNotEmpty) ...[
             const SizedBox(height: 7),
