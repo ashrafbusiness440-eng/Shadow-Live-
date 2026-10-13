@@ -31,6 +31,29 @@ void main() {
     expect(sorted.last.hasAvailablePresence, isFalse);
   });
 
+  test('paged merge deduplicates, excludes initial home cards and reprioritizes', () {
+    const old = DiscoveryRoom(id: 'same', data: {
+      'name': 'Old', 'onlineCount': 0, 'presenceState': 'live',
+    });
+    const updated = DiscoveryRoom(id: 'same', data: {
+      'name': 'New', 'onlineCount': 20, 'presenceState': 'live',
+    });
+    const pinned = DiscoveryRoom(id: 'pin', data: {
+      'name': 'Official', 'systemOwned': true, 'isPinned': true,
+      'onlineCount': 1, 'presenceState': 'live',
+    });
+    const skipped = DiscoveryRoom(id: 'home-tile', data: {});
+    const hidden = DiscoveryRoom(id: 'secret', data: {'visibility': 'hidden'});
+    final result = mergeDiscoveryRoomPages(
+      [old],
+      [updated, pinned, skipped, hidden],
+      excludedIds: {'home-tile'},
+    );
+    expect(result.map((room) => room.id), ['pin', 'same']);
+    expect(result.last.title, 'New');
+    expect(result.any((room) => room.id == 'secret'), isFalse);
+  });
+
   test('additional rooms use a bounded document cursor, not a bigger Home limit', () {
     final service = File('lib/features/home/services/discovery_service.dart')
         .readAsStringSync();
@@ -48,7 +71,7 @@ void main() {
     expect(screen.contains('crossAxisCount: 2'), isTrue);
     expect(screen.contains('HomeCompactRoomCard('), isTrue);
     expect(screen.contains('extentAfter < 450'), isTrue);
-    expect(screen.contains('_seenIds.add(room.id)'), isTrue);
+    expect(screen.contains('mergeDiscoveryRoomPages('), isTrue);
     expect(screen.contains("child: const Text('إعادة المحاولة')"), isTrue);
     expect(screen.contains('findRoomForEntry(room.id)'), isTrue);
     expect(screen.contains('RoomRealtimeQueryService('), isFalse);
