@@ -383,6 +383,102 @@ test("real suspension on reported diary account precedes owner's report notice",
   assert.match(message.body,/تعليق الحساب/);
 });
 
+
+test("warning reported diary owner uses audited account action and notifies both parties", async () => {
+  const key = "diary_warning_123456789";
+  const db = new FakeDb({
+    "diary_reports/report_warning": report("report_warning", 8000, "under_review"),
+    "reports/report_warning": report("report_warning", 8000, "under_review"),
+    "users/admin_uid": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/owner": {role:"user",accountStatus:"active",warningCount:0},
+  });
+  const body = {reportId:"report_warning",accountAction:"warn",
+    reason:"تحذير بسبب محتوى غير مناسب",idempotencyKey:key};
+  const result = await diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db, {}, {sub:"admin_uid"}, "admin_uid", body);
+  assert.equal(result.moderationAction,"warning");
+  assert.equal(db.docs.get("diary_reports/report_warning").status,"actioned");
+  assert.equal(db.docs.get("reports/report_warning").moderationAction,"warning");
+  const target = db.docs.get("users/owner");
+  assert.equal(target.accountStatus,"active");
+  assert.equal(target.warningCount,1);
+  assert.equal(target.lastWarnedBy,"admin_uid");
+  assert.equal(target.lastWarningReason,body.reason);
+  const accountReceipt = db.docs.get("control_operations/" + key + "_account");
+  assert.equal(accountReceipt.action,"warn");
+  assert.equal(accountReceipt.status,"completed");
+  const targetNotification = db.docs.get("notifications/account_warning_" + key + "_account");
+  assert.equal(targetNotification.userId,"owner");
+  assert.match(targetNotification.body,/تحذير بسبب محتوى/);
+  const reporterNotification = db.docs.get("notifications/report_result_" + key);
+  assert.equal(reporterNotification.userId,"reporter");
+  assert.equal(reporterNotification.actionKind,"warning");
+  assert.match(reporterNotification.body,/تحذيري/);
+  const repeated = await diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db, {}, {sub:"admin_uid"}, "admin_uid", body);
+  assert.equal(repeated.status,"actioned");
+  assert.equal(db.docs.get("users/owner").warningCount,1);
+  assert.equal([...db.docs.keys()].filter(k=>k.startsWith(
+    "notifications/account_warning_" + key)).length,1);
+});
+
+test("warning on a reported comment targets its writer, not diary owner", async () => {
+  const key = "diary_comment_warn_123456789";
+  const item = {...report("report_comment_warning", 9000, "under_review"),
+    targetType:"diary_comment",commentId:"comment_1",
+    targetAuthorUid:"comment_writer",targetOwnerUid:"diary_owner"};
+  const db = new FakeDb({
+    "diary_reports/report_comment_warning": item,
+    "reports/report_comment_warning": item,
+    "users/admin_uid": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/comment_writer": {role:"user",accountStatus:"active"},
+    "users/diary_owner": {role:"user",accountStatus:"active"},
+  });
+  const result = await diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db, {}, {sub:"admin_uid"}, "admin_uid", {
+      reportId:"report_comment_warning",accountAction:"warn",
+      reason:"تعليق مسيء يستحق التحذير",idempotencyKey:key,
+    });
+  assert.equal(result.moderationAction,"warning");
+  assert.equal(db.docs.get("users/comment_writer").warningCount,1);
+  assert.equal(db.docs.get("users/diary_owner").warningCount,undefined);
+  assert.equal(db.docs.get("notifications/account_warning_" + key + "_account").userId,"comment_writer");
+  assert.equal(db.docs.get("notifications/report_result_" + key).userId,"reporter");
+});
+
+test("diary warning rejects owner targets and reviewers without sanction capabilities", async () => {
+  const ownerItem = report("report_protected", 8000, "under_review");
+  const db = new FakeDb({
+    "diary_reports/report_protected": ownerItem,
+    "reports/report_protected": ownerItem,
+    "users/admin_uid": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/owner": {role:"owner",adminEnabled:true,accountStatus:"active"},
+  });
+  await assert.rejects(() => diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db, {}, {sub:"admin_uid"}, "admin_uid", {
+      reportId:"report_protected",accountAction:"warn",
+      reason:"تحذير غير مسموح",idempotencyKey:"diary_protected_warn_123456",
+    }), /owner_protected/);
+  assert.equal(db.docs.get("diary_reports/report_protected").status,"under_review");
+  assert.equal(db.docs.has("notifications/report_result_diary_protected_warn_123456"),false);
+
+  const reviewer = new FakeDb({
+    "diary_reports/report_reviewer": report("report_reviewer", 9000, "under_review"),
+    "reports/report_reviewer": report("report_reviewer", 9000, "under_review"),
+    "users/reviewer": {role:"moderator",adminEnabled:true,
+      capabilities:["reviewReports"],accountStatus:"active"},
+    "users/owner": {role:"user",accountStatus:"active"},
+  });
+  await assert.rejects(() => diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    reviewer, {}, {sub:"reviewer"}, "reviewer", {
+      reportId:"report_reviewer",accountAction:"warn",
+      reason:"تحذير دون صلاحية",idempotencyKey:"diary_reviewer_warn_123456",
+    }), /forbidden/);
+  assert.equal(reviewer.docs.get("diary_reports/report_reviewer").status,"under_review");
+  assert.equal(reviewer.docs.get("users/owner").warningCount,undefined);
+  assert.equal(reviewer.docs.has("notifications/report_result_diary_reviewer_warn_123456"),false);
+});
+
 test("missing or mismatched reported target prevents account punishment", async () => {
   const db = new FakeDb({
     "diary_reports/report_missing_target": {
