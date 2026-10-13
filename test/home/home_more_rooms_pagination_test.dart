@@ -74,6 +74,16 @@ void main() {
     expect(screen.contains('mergeDiscoveryRoomPages('), isTrue);
     expect(screen.contains("child: const Text('إعادة المحاولة')"), isTrue);
     expect(screen.contains('findRoomForEntry(room.id)'), isTrue);
+    // The password prompt must belong to the active paginated screen,
+    // never the Home route obscured by the new screen.
+    expect(screen.contains('openDiscoveryRoomFromContext(context, current)'), isTrue);
+    expect(screen.contains('onOpenRoom: _openRoom'), isFalse);
+    expect(screen.contains('showDiscoveryRoomPasswordPrompt(context, room.title)'), isTrue);
+    // A-B-A account transitions cannot accept a stale asynchronous result.
+    expect(screen.contains('int _accountRevision = 0;'), isTrue);
+    expect(screen.contains('_accountRevision++;'), isTrue);
+    expect(screen.contains('revision != _accountRevision'), isTrue);
+    expect(screen.contains('_openingIds.clear();'), isTrue);
     expect(screen.contains('RoomRealtimeQueryService('), isFalse);
   });
 }
