@@ -11,6 +11,12 @@ function fakeDb() {
     data, writes,
     async beginTransaction() { return "fake_tx"; },
     async rollback() {},
+    async runQuery(path, { limit } = {}) {
+      return Array.from(data.entries())
+        .filter(([key]) => key.startsWith(path + "/"))
+        .slice(0, limit || 30)
+        .map(([key, value]) => ({ id: key.split("/").pop(), data: value }));
+    },
     async get(path) {
       return {
         exists: data.has(path),
@@ -99,4 +105,52 @@ test("room coordinator remains the only room filter data source", async () => {
   assert.equal(room.includes('"/filter/snapshot"'), true);
   assert.equal(room.includes('"/filter/update"'), true);
   assert.equal(room.includes('await this.#contentFilterPolicy()'), true);
+});
+
+test("admin reads only bounded flagged metadata and can review a stored item", async () => {
+  const db = fakeDb();
+  db.data.set("content_filter_flags/item_01", {
+    actorUid: "u1", surface: "private_chat", referenceId: "msg_01",
+    conversationId: "conversation_01", ruleIds: ["rule_abc123"],
+    status: "pending", createdAt: new Date("2026-10-13T15:00:00Z"),
+  });
+  const env = { ROOM_REALTIME: {
+    idFromName(name) { assert.ok(name.startsWith("!")); return name; },
+    get() { return {
+      async fetch(url) {
+        assert.equal(url, "https://internal/filter/flags");
+        return Response.json({ ok: true, items: [{
+          id: "room_5", actorUid: "room_sender", roomId: "r1",
+          referenceId: "msg_room", ruleIds: ["rule_abc123"],
+          sequence: 5, status: "pending", createdAtMs: 1720000000000,
+        }] });
+      },
+    }; },
+  }};
+  const list = await contentFilterControlInternals.listFlags(db, env);
+  assert.equal(list.roomUnavailable, false);
+  assert.equal(list.items.length, 2);
+  assert.equal(list.items[0].id, "saved_item_01");
+  assert.equal(list.items[0].surface, "private_chat");
+  const result = await contentFilterControlInternals.reviewFlag(db, env,
+    "owner_01", {
+      flagId: "saved_item_01", reason: "تمت المراجعة من الإدارة",
+      idempotencyKey: "filter_review_item_01",
+    });
+  assert.equal(result.ok, true);
+  assert.equal(db.data.get("content_filter_flags/item_01").status, "reviewed");
+  assert.ok(db.data.has("admin_audit_logs/content_filter_flag_filter_review_item_01"));
+  const duplicate = await contentFilterControlInternals.reviewFlag(db, env,
+    "owner_01", {
+      flagId: "saved_item_01", reason: "تمت المراجعة من الإدارة",
+      idempotencyKey: "filter_review_item_01",
+    });
+  assert.equal(duplicate.code, "duplicate");
+});
+
+test("flag history reports partial availability without inventing room results", async () => {
+  const db = fakeDb();
+  const result = await contentFilterControlInternals.listFlags(db, {});
+  assert.equal(result.roomUnavailable, true);
+  assert.deepEqual(result.items, []);
 });
