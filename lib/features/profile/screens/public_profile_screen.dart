@@ -501,7 +501,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                       ),
                     ),
                   ),
-                SliverToBoxAdapter(child: _stats(widget.userId)),
+                SliverToBoxAdapter(child: _stats()),
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _TabHeaderDelegate(
@@ -647,7 +647,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     ));
   }
 
-  Widget _stats(String userId) {
+  Widget _stats() {
     return FutureBuilder<FollowCounts>(
       future: _followCountsFuture,
       builder: (context, snapshot) {
