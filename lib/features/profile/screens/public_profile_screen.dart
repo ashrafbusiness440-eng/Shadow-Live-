@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../widgets/profile_gift_showcase.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../diaries/screens/diaries_screen.dart';
 import '../services/follow_service.dart';
@@ -339,7 +340,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
-            final provider = _avatar(data);
             final isSelf = _isSelf;
 
             return NestedScrollView(
@@ -811,47 +811,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     );
   }
 
-  Widget _gifts() {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('public_gift_showcases')
-          .doc(widget.userId)
-          .collection('items')
-          .orderBy('updatedAt', descending: true)
-          .limit(60)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text('لا توجد هدايا عامة لعرضها حالياً', style: TextStyle(color: Colors.white54)));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
-        }
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.card_giftcard_rounded, size: 50, color: Colors.white30),
-                SizedBox(height: 10),
-                Text('لم يستلم هدايا معروضة بعد', style: TextStyle(color: Colors.white54)),
-              ],
-            ),
-          );
-        }
-        return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: .78),
-          itemCount: docs.length,
-          itemBuilder: (_, index) {
-            final data = docs[index].data();
-            return _GiftTile(data: data);
-          },
-        );
-      },
-    );
-  }
+  Widget _gifts() => ProfileGiftShowcase(userId: widget.userId);
 
   Widget _badges(int vip, List<String> badges) {
     final entries = <MapEntry<String, String>>[
@@ -903,49 +863,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           ],
         ),
       );
-}
-
-class _GiftTile extends StatelessWidget {
-  const _GiftTile({required this.data});
-  final Map<String, dynamic> data;
-
-  @override
-  Widget build(BuildContext context) {
-    final name = (data['name'] ?? data['giftName'] ?? 'هدية').toString();
-    final count = (data['count'] as num?)?.toInt() ?? 1;
-    final imageUrl = (data['imageUrl'] ?? '').toString().trim();
-    final assetKey = (data['assetKey'] ?? '').toString().trim();
-
-    Widget fallback() => const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A), size: 42);
-
-    Widget image;
-    if (imageUrl.isNotEmpty) {
-      image = Image.network(imageUrl, fit: BoxFit.contain, errorBuilder: (_, __, ___) => fallback());
-    } else if (assetKey.isNotEmpty) {
-      image = FutureBuilder<Uri?>(
-        future: ShadowAssetRegistry.remoteUrl(assetKey),
-        builder: (_, snap) => snap.data == null
-            ? fallback()
-            : Image.network(snap.data.toString(), fit: BoxFit.contain, errorBuilder: (_, __, ___) => fallback()),
-      );
-    } else {
-      image = fallback();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: const Color(0xFF101522), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white10)),
-      child: Column(
-        children: [
-          Expanded(child: Center(child: image)),
-          const SizedBox(height: 6),
-          Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
-          const SizedBox(height: 3),
-          Text('×$count', style: const TextStyle(color: Color(0xFFFFD54A), fontWeight: FontWeight.w900)),
-        ],
-      ),
-    );
-  }
 }
 
 class _Stat extends StatelessWidget {

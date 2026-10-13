@@ -25,8 +25,12 @@ void main() {
         reason: 'Removing fourth tab also removes its rebuild listener');
     expect(profile.contains('_tabs.addListener('), isFalse);
     expect(profile.contains('_tabs.dispose()'), isTrue);
-    expect(profile.contains('const Center(\n                            child: Text('),
-        isTrue, reason: 'Room and gift tab placeholders are not removed');
+    expect(profile.contains('ProfilePersonalRoomTab('), isTrue,
+        reason: 'Personal room uses existing authoritative service');
+    expect(profile.contains('ProfileGiftShowcase(userId: currentUid)'), isTrue,
+        reason: 'Own gifts show the existing bounded public showcase');
+    expect(profile.contains("'غرف المستخدم'"), isFalse);
+    expect(profile.contains("'هدايا المستخدم'"), isFalse);
   });
 
   test('Mysterious Person opens from the existing bottom action card', () {

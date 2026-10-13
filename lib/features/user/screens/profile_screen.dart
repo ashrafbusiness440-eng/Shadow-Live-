@@ -17,6 +17,9 @@ import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/user_level_badges.dart';
 import '../../profile/widgets/profile_action_grid.dart';
+import '../../profile/widgets/profile_personal_room_tab.dart';
+import '../../profile/widgets/profile_gift_showcase.dart';
+import '../../room/services/room_action_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../agency/screens/agency_package_grant_page.dart';
 import '../../relationships/screens/relationships_page.dart';
@@ -37,6 +40,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   late final TabController _tabs;
   bool _loggingOut = false;
   bool _openingEdit = false;
+  bool _openingOwnRoom = false;
+  final RoomActionService _personalRoomActions = RoomActionService();
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
   StreamSubscription<User?>? _authSub;
   String? _boundUid;
@@ -67,6 +72,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
+    _personalRoomActions.close();
     _authSub?.cancel();
     _profileSub?.cancel();
     _tabs.dispose();
@@ -153,6 +159,36 @@ class _ProfileScreenState extends State<ProfileScreen>
         builder: (_) => const VipScreen(),
       ),
     );
+  }
+
+  Future<void> _openOwnPersonalRoom() async {
+    if (_openingOwnRoom) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || _guest) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('فتح غرفتك يحتاج حساباً مسجلاً.')),
+      );
+      return;
+    }
+    setState(() => _openingOwnRoom = true);
+    try {
+      // Authoritative personalRoom voice-session command; no extra room reads.
+      final room = await _personalRoomActions.openPersonalRoom();
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != user.uid) {
+        return;
+      }
+      NavigationService.navigateTo(
+        AppRoutes.voiceChatRoom,
+        arguments: room.toNavigationArguments(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح غرفتك حالياً. أعد المحاولة.')),
+      );
+    } finally {
+      if (mounted) setState(() => _openingOwnRoom = false);
+    }
   }
 
   Future<void> _recharge(int tab) async {
@@ -456,18 +492,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                         controller: _tabs,
                         children: [
                           _about(profile),
-                          const Center(
-                            child: Text(
-                              'غرف المستخدم',
-                              style: TextStyle(color: Colors.white54),
+                          ProfilePersonalRoomTab(
+                            opening: _openingOwnRoom,
+                            onOpenPersonalRoom: _openOwnPersonalRoom,
+                            onBrowseRooms: () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.roomList,
                             ),
                           ),
-                          const Center(
-                            child: Text(
-                              'هدايا المستخدم',
-                              style: TextStyle(color: Colors.white54),
-                            ),
-                          ),
+                          ProfileGiftShowcase(userId: currentUid),
                         ],
                       ),
                     );
