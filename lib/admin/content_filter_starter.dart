@@ -167,7 +167,7 @@ const filterStarterSuggestions = <FilterStarterSuggestion>[
   FilterStarterSuggestion('هفضح صورك', 'threats', 'flag'),
   FilterStarterSuggestion('بنشر صورك', 'threats', 'flag'),
   FilterStarterSuggestion('رح اوذي عائلتك', 'threats', 'flag'),
-  FilterStarterSuggestion('رح أؤذي عائلتك', 'threats', 'flag'),
+  FilterStarterSuggestion('راح احرق بيتك', 'threats', 'flag'),
   FilterStarterSuggestion('سأؤذي عائلتك', 'threats', 'flag'),
   FilterStarterSuggestion('انا هقتلك', 'threats', 'flag'),
   FilterStarterSuggestion('i will kill you', 'threats', 'flag'),
