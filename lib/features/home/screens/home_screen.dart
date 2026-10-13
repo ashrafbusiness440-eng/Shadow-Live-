@@ -1058,7 +1058,6 @@ class HomeMoreRoomsScreen extends StatefulWidget {
 class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
   final ScrollController _scroll = ScrollController();
   final List<DiscoveryRoom> _rooms = [];
-  final Set<String> _seenIds = {};
   final Set<String> _openingIds = {};
   DocumentSnapshot<Map<String, dynamic>>? _cursor;
   StreamSubscription<User?>? _authSub;
@@ -1081,7 +1080,6 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
       setState(() {
         _uid = user?.uid;
         _rooms.clear();
-        _seenIds.clear();
         _cursor = null;
         _hasMore = true;
         _loading = false;
@@ -1102,13 +1100,16 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
       setState(() {
         _cursor = page.nextCursor;
         _hasMore = page.hasMore;
-        for (final room in page.rooms) {
-          if (!widget.initiallyShownRoomIds.contains(room.id) &&
-              _seenIds.add(room.id)) {
-            _rooms.add(room);
-          }
-        }
-        _rooms.sort(compareRoomsByDiscoveryPriority);
+        // A single pure merge handles duplicate IDs and pinned priority
+        // across the pages fetched so far; it creates no new Firestore work.
+        final merged = mergeDiscoveryRoomPages(
+          _rooms,
+          page.rooms,
+          excludedIds: widget.initiallyShownRoomIds,
+        );
+        _rooms
+          ..clear()
+          ..addAll(merged);
       });
     } catch (_) {
       if (mounted && uid == _uid) {
