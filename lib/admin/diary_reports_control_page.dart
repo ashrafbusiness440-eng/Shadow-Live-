@@ -49,6 +49,7 @@ class _DiaryReportItem {
     required this.ownerIdentity,
     required this.reasonLabel,
     required this.status,
+    required this.moderationAction,
     required this.evidence,
     required this.createdAtMs,
   });
@@ -66,6 +67,7 @@ class _DiaryReportItem {
   final AdminAccountIdentity ownerIdentity;
   final String reasonLabel;
   final String status;
+  final String moderationAction;
   final Map<String, dynamic> evidence;
   final int createdAtMs;
 
@@ -95,6 +97,7 @@ class _DiaryReportItem {
           AdminAccountIdentity.fromProfile(ownerUid, profile('diaryOwnerProfile')),
       reasonLabel: (data['reasonLabel'] ?? data['reason'] ?? '').toString().trim(),
       status: (data['status'] ?? 'new').toString().trim(),
+      moderationAction: (data['moderationAction'] ?? '').toString().trim(),
       evidence: rawEvidence is Map
           ? Map<String, dynamic>.from(rawEvidence)
           : const <String, dynamic>{},
@@ -125,6 +128,12 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
 
   bool get _canReview =>
       _owner || _capabilities.contains('reviewReports');
+  bool get _canSuspend =>
+      _canReview && (_owner ||
+      _capabilities.contains('suspendUsers') ||
+      _capabilities.contains('manageUsers'));
+  bool get _canBan =>
+      _canReview && (_owner || _capabilities.contains('manageUsers'));
   bool get _canDeleteDiary =>
       _owner || _capabilities.contains('manageDiaries');
   bool get _canDeleteComment =>
@@ -250,9 +259,9 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     }
   }
 
-  Future<String?> _reasonDialog(String title) async {
+  Future<String?> _reasonDialog(String title, {bool optional = false}) async {
     final controller = TextEditingController(
-      text: 'مراجعة بلاغ يوميات من Shadow Control',
+      text: optional ? '' : 'مراجعة بلاغ يوميات من Shadow Control',
     );
     final result = await showDialog<String>(
       context: context,
@@ -263,9 +272,12 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
           minLines: 2,
           maxLines: 4,
           maxLength: 200,
-          decoration: const InputDecoration(
-            labelText: 'سبب القرار',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: optional ? 'سبب الرفض — اختياري' : 'سبب القرار',
+            helperText: optional
+                ? 'إذا كتبت السبب، سيصل لصاحب البلاغ في الإشعار.'
+                : 'يصل إشعار لصاحب البلاغ بعد نجاح الإجراء.',
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -276,7 +288,9 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
           FilledButton(
             onPressed: () {
               final value = controller.text.trim();
-              if (value.length >= 3) Navigator.pop(dialogContext, value);
+              if ((optional && value.isEmpty) || value.length >= 3) {
+                Navigator.pop(dialogContext, value);
+              }
             },
             child: const Text('تنفيذ'),
           ),
@@ -291,6 +305,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     if (!_canReview || _busyId != null) return;
     final reason = await _reasonDialog(
       status == 'rejected' ? 'رفض البلاغ' : 'بدء مراجعة البلاغ',
+      optional: status == 'rejected',
     );
     if (!mounted || reason == null) return;
     setState(() => _busyId = item.reportId);
@@ -343,6 +358,101 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     }
   }
 
+  Future<void> _moderateReportedAccount(
+      _DiaryReportItem item, String action) async {
+    if (_busyId != null || item.status != 'under_review') return;
+    if (action == 'ban' && !_canBan ||
+        action == 'suspend' && !_canSuspend) return;
+    final target = item.targetType == 'diary_comment'
+        ? item.targetAuthorUid : item.targetOwnerUid;
+    if (target.isEmpty) return;
+    final controller = TextEditingController();
+    var minutes = 1440;
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text(action == 'ban'
+              ? 'حظر الحساب المبلّغ عليه' : 'تعليق الحساب المبلّغ عليه'),
+          content: SizedBox(
+            width: 410,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'يتم تطبيق العقوبة على الحساب فعليًا بعد التأكيد. '
+                  'لن يُبلَّغ مقدّم البلاغ إلا بعد نجاح التنفيذ.',
+                ),
+                if (action == 'suspend')
+                  DropdownButtonFormField<int>(
+                    initialValue: minutes,
+                    decoration: const InputDecoration(labelText: 'مدة التعليق'),
+                    items: const [
+                      DropdownMenuItem(value: 60, child: Text('ساعة')),
+                      DropdownMenuItem(value: 1440, child: Text('يوم')),
+                      DropdownMenuItem(value: 10080, child: Text('أسبوع')),
+                      DropdownMenuItem(value: 43200, child: Text('30 يومًا')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) update(() => minutes = v);
+                    },
+                  ),
+                TextField(
+                  controller: controller,
+                  maxLength: 160,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب العقوبة — مطلوب',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, controller.text.trim());
+                }
+              },
+              child: const Text('تأكيد التنفيذ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (!mounted || reason == null) return;
+    setState(() => _busyId = item.reportId);
+    try {
+      await _post('applyAccountAction', {
+        'reportId': item.reportId,
+        'accountAction': action,
+        'reason': reason,
+        if (action == 'suspend') 'durationMinutes': minutes,
+        'idempotencyKey': _operationKey('account'),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تم تنفيذ العقوبة وإشعار مقدّم البلاغ.'),
+        ));
+      }
+      await _load(reset: true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(diaryReportActionMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   String _statusLabel(String status) => switch (status) {
         'new' => 'جديد',
         'under_review' => 'قيد المراجعة',
@@ -379,6 +489,14 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                 Chip(label: Text(_statusLabel(item.status))),
               ],
             ),
+            if (item.moderationAction.isNotEmpty)
+              Text(switch (item.moderationAction) {
+                'diary_deleted' => 'الإجراء: حذف اليومية',
+                'diary_comment_deleted' => 'الإجراء: حذف التعليق',
+                'account_suspended' => 'الإجراء: تعليق الحساب',
+                'account_banned' => 'الإجراء: حظر الحساب',
+                _ => 'تم توثيق قرار الإدارة',
+              }),
             const SizedBox(height: 12),
             const Text(
               'الأطراف المرتبطة بالبلاغ',
@@ -491,6 +609,26 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                           ? 'حذف التعليق'
                           : 'حذف اليومية',
                     ),
+                  ),
+                if (item.status == 'under_review' &&
+                    (item.targetType == 'diary_comment'
+                        ? item.targetAuthorUid : item.targetOwnerUid).isNotEmpty &&
+                    _canSuspend)
+                  OutlinedButton.icon(
+                    onPressed: busy ? null
+                        : () => _moderateReportedAccount(item, 'suspend'),
+                    icon: const Icon(Icons.pause_circle_outline),
+                    label: const Text('تعليق الحساب'),
+                  ),
+                if (item.status == 'under_review' &&
+                    (item.targetType == 'diary_comment'
+                        ? item.targetAuthorUid : item.targetOwnerUid).isNotEmpty &&
+                    _canBan)
+                  OutlinedButton.icon(
+                    onPressed: busy ? null
+                        : () => _moderateReportedAccount(item, 'ban'),
+                    icon: const Icon(Icons.block_rounded),
+                    label: const Text('حظر الحساب'),
                   ),
                 if (busy)
                   const SizedBox(

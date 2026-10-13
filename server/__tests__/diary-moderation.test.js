@@ -172,6 +172,16 @@ test("report review transition updates mirror and global record with audit", asy
     db.docs.get("control_operations/review_report_0000000001").status,
     "completed",
   );
+  const notice = db.docs.get("notifications/report_result_review_report_0000000001");
+  assert.equal(notice.userId, "reporter");
+  assert.match(notice.body, /قيد المراجعة/);
+  const repeated = await reviewReport(db, "admin_uid", {
+    reportId: "report_review", status: "under_review",
+    reason: "manual review", idempotencyKey: "review_report_0000000001",
+  });
+  assert.equal(repeated.code, "duplicate");
+  assert.equal([...db.docs.keys()].filter(x => x ===
+    "notifications/report_result_review_report_0000000001").length, 1);
 });
 
 test("invalid report transition is rejected", async () => {
@@ -311,4 +321,98 @@ test("rejecting one long report preserves another reporter's colliding legacy al
     idempotencyKey: "diaryctl_reject_report_B_123456",
   });
   assert.equal(db.docs.has(legacyPath), false);
+});
+
+test("diary rejection reason is optional and reporter alone is notified", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_rejected": report("report_rejected", 6000),
+    "reports/report_rejected": report("report_rejected", 6000),
+  });
+  const out = await reviewReport(db, "admin_uid", {
+    reportId: "report_rejected", status: "rejected", reason: "",
+    idempotencyKey: "diary_reject_optional_123456",
+  });
+  assert.equal(out.status, "rejected");
+  const note = db.docs.get("notifications/report_result_diary_reject_optional_123456");
+  assert.equal(note.userId, "reporter");
+  assert.equal(note.reportStatus, "rejected");
+  assert.doesNotMatch(note.body, /السبب:/);
+  await assert.rejects(() => reviewReport(new FakeDb({
+    "diary_reports/r1": report("r1", 5000),
+    "reports/r1": report("r1", 5000),
+  }), "admin", {
+    reportId: "r1", status: "under_review", reason: "",
+    idempotencyKey: "diary_review_bad_123456",
+  }), /invalid_reason/);
+});
+
+test("moderation refuses mismatched report reference before deleting content", async () => {
+  const db = new FakeDb({
+    "diary_reports/another_report": report("another_report", 6000),
+  });
+  await assert.rejects(() => diaryModerationTestHooks.assertReportTarget(
+    db, "another_report", "someone_elses_diary",
+  ), /report_target_mismatch/);
+  await assert.rejects(() => diaryModerationTestHooks.assertReportTarget(
+    db, "another_report", "diary_1", "wrong_comment",
+  ), /report_target_mismatch/);
+  await diaryModerationTestHooks.assertReportTarget(db, "another_report", "diary_1");
+});
+
+test("real suspension on reported diary account precedes owner's report notice", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_suspend": report("report_suspend", 6000, "under_review"),
+    "reports/report_suspend": report("report_suspend", 6000, "under_review"),
+    "users/admin_uid": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/owner": {role:"user",accountStatus:"active"},
+  });
+  const result = await diaryModerationTestHooks.resolveDiaryWithAccountAction(
+    db, {}, {sub:"admin_uid"}, "admin_uid", {
+      reportId:"report_suspend",accountAction:"suspend",
+      durationMinutes:60,reason:"مخالفة واضحة في المحتوى",
+      idempotencyKey:"diary_suspend_123456",
+    },
+  );
+  assert.equal(result.status,"actioned");
+  assert.equal(db.docs.get("users/owner").accountStatus,"suspended");
+  assert.equal(db.docs.get("diary_reports/report_suspend").status,"actioned");
+  const message = db.docs.get(
+    "notifications/report_result_diary_suspend_123456");
+  assert.equal(message.userId,"reporter");
+  assert.equal(message.actionKind,"account_suspended");
+  assert.match(message.body,/تعليق الحساب/);
+});
+
+test("missing or mismatched reported target prevents account punishment", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_missing_target": {
+      ...report("report_missing_target", 9000, "under_review"),
+      targetOwnerUid:"", targetAuthorUid:"",
+    },
+    "users/admin_uid": {role:"owner",adminEnabled:true},
+  });
+  await assert.rejects(
+    () => diaryModerationTestHooks.resolveDiaryWithAccountAction(
+      db, {}, {sub:"admin_uid"}, "admin_uid", {
+        reportId:"report_missing_target",accountAction:"ban",
+        reason:"مخالفة أخرى",idempotencyKey:"diary_no_target_123456",
+      }),
+    /report_target_mismatch/,
+  );
+  assert.equal(db.docs.has("notifications/report_result_diary_no_target_123456"),false);
+});
+
+test("a plain review request cannot falsely claim a diary punishment", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_not_actioned": report("report_not_actioned", 7000, "under_review"),
+    "reports/report_not_actioned": report("report_not_actioned", 7000, "under_review"),
+  });
+  await assert.rejects(() => reviewReport(db, "admin_uid", {
+    reportId: "report_not_actioned", status: "actioned",
+    reason: "نفذنا إجراء", idempotencyKey: "fake_action_12345678",
+  }), /action_requires_execution/);
+  assert.equal(db.docs.get("diary_reports/report_not_actioned").status,
+    "under_review");
+  assert.equal([...db.docs.keys()].filter(k =>
+    k.startsWith("notifications/report_result_fake_action_")).length, 0);
 });

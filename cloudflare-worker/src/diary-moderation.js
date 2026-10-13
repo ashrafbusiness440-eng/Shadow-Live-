@@ -5,6 +5,8 @@ import {
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
+import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
+import { mutateAccount } from "./manage-user-account.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -125,6 +127,7 @@ function normalizeReport(id, data = {}) {
     updatedAt: data.updatedAt || null,
     reviewedBy: clean(data.reviewedBy),
     reviewReason: clean(data.reviewReason),
+    moderationAction: clean(data.moderationAction),
   };
 }
 
@@ -198,7 +201,14 @@ async function reviewReport(db, actorUid, body) {
   const nextStatus = clean(body.status);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
-  if (!reason || reason.length < 3 || reason.length > 200) {
+  // Do not allow a client to mark a report 'actioned' with a note alone:
+  // only the verified delete/account-moderation paths can do that.
+  if (nextStatus === "actioned") {
+    throw new ModerationApiError("action_requires_execution", 409);
+  }
+  if (reason.length > 200 ||
+      (nextStatus !== "rejected" && reason.length < 3) ||
+      (reason.length > 0 && reason.length < 3)) {
     throw new ModerationApiError("invalid_reason", 400);
   }
 
@@ -238,6 +248,15 @@ async function reviewReport(db, actorUid, body) {
     await db.commit(transaction, [
       db.writeUpdate(reportPath, patch, mask),
       db.writeUpdate(globalPath, patch, mask),
+      ...reporterReportNotificationWrites(db, {
+        reportId,
+        reporterUid: report.data?.reporterUid,
+        status: nextStatus,
+        reason: nextStatus === "rejected" ? reason : "",
+        operationKey: key,
+        now,
+        subject: clean(report.data?.targetType || "diary"),
+      }),
       db.writeCreate(`admin_audit_logs/diary_report_${key}`, {
         actorUid,
         action: "reviewDiaryReport",
@@ -270,7 +289,8 @@ async function reviewReport(db, actorUid, body) {
   }
 }
 
-async function markReportActioned(db, actorUid, reportId, reason, key) {
+async function markReportActioned(db, actorUid, reportId, reason, key, actionKind,
+  verifiedAccountKey = "") {
   if (!reportId) return;
   const reportPath = `diary_reports/${reportId}`;
   const legacyPath = adminInboxLegacyIndexPath("diary_report", reportId);
@@ -287,9 +307,36 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
       await db.rollback(transaction);
       return;
     }
+    // The final notice must describe a genuinely completed deletion only.
+    if (clean(report.data?.status) === "actioned") {
+      await db.rollback(transaction);
+      return;
+    }
+    if (!["new", "under_review"].includes(clean(report.data?.status || "new"))) {
+      throw new ModerationApiError("invalid_report_transition", 409);
+    }
+    if (verifiedAccountKey) {
+      const receipt = await db.get("control_operations/" + verifiedAccountKey,
+        transaction);
+      const expectedAction = actionKind === "account_banned"
+        ? "ban" : "suspend";
+      const expectedUid = clean(report.data?.targetType) === "diary_comment"
+        ? clean(report.data?.targetAuthorUid)
+        : clean(report.data?.targetOwnerUid);
+      if (!receipt.exists ||
+          clean(receipt.data?.action) !== expectedAction ||
+          clean(receipt.data?.actorUid) !== actorUid ||
+          clean(receipt.data?.targetId) !== expectedUid ||
+          clean(receipt.data?.status) !== "completed" ||
+          clean(receipt.data?.result?.targetUid) !== expectedUid ||
+          clean(receipt.data?.result?.action) !== expectedAction) {
+        throw new ModerationApiError("unverified_account_action", 409);
+      }
+    }
     const now = new Date();
     const patch = {
       status: "actioned",
+      moderationAction: actionKind,
       reviewedBy: actorUid,
       reviewReason: reason,
       reviewedAt: now,
@@ -299,6 +346,15 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
     await db.commit(transaction, [
       db.writeUpdate(reportPath, patch, mask),
       db.writeUpdate(`reports/${reportId}`, patch, mask),
+      ...reporterReportNotificationWrites(db, {
+        reportId,
+        reporterUid: report.data?.reporterUid,
+        status: "actioned",
+        actionKind,
+        operationKey: key,
+        now,
+        subject: clean(report.data?.targetType || "diary"),
+      }),
       db.writeCreate(`admin_audit_logs/diary_report_action_${key}`, {
         actorUid,
         action: "actionDiaryReport",
@@ -307,7 +363,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
         reportId,
         reason,
         before: { status: clean(report.data?.status || "new") },
-        after: { status: "actioned" },
+        after: { status: "actioned", moderationAction: actionKind },
         operationId: key,
         createdAt: now,
       }),
@@ -318,6 +374,59 @@ async function markReportActioned(db, actorUid, reportId, reason, key) {
     throw error;
   }
 }
+// A report reference cannot be used to claim moderation of unrelated content.
+// Check before deleting anything; enforce matching type and target even when
+// a moderator has broader diary permissions.
+async function assertReportTarget(db, reportId, diaryId, commentId = "") {
+  if (!reportId) return;
+  const snap = await db.get(`diary_reports/${reportId}`);
+  if (!snap.exists) throw new ModerationApiError("report_not_found", 404);
+  const item = snap.data || {};
+  if (clean(item.diaryId) !== diaryId ||
+      clean(item.targetType) !== (commentId ? "diary_comment" : "diary") ||
+      (commentId && clean(item.commentId) !== commentId) ||
+      !["new", "under_review"].includes(clean(item.status || "new"))) {
+    throw new ModerationApiError("report_target_mismatch", 409);
+  }
+}
+
+async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
+  const reportId = safeReportId(body.reportId);
+  const action = clean(body.accountAction);
+  const reason = clean(body.reason);
+  const key = operationKey(body.idempotencyKey);
+  if (!["suspend", "ban"].includes(action) ||
+      reason.length < 3 || reason.length > 160 || key.length > 148) {
+    throw new ModerationApiError("invalid_account_action", 400);
+  }
+  const snap = await db.get("diary_reports/" + reportId);
+  if (!snap.exists) throw new ModerationApiError("report_not_found", 404);
+  const data = snap.data || {};
+  if (clean(data.status) !== "under_review") {
+    throw new ModerationApiError("invalid_report_transition", 409);
+  }
+  const targetUid = clean(data.targetType) === "diary_comment"
+    ? clean(data.targetAuthorUid) : clean(data.targetOwnerUid);
+  if (!targetUid) throw new ModerationApiError("report_target_mismatch", 409);
+  const accountKey = key + "_account";
+  await mutateAccount(db, env, decoded, {
+    targetUid,
+    accountAction: action,
+    durationMinutes: body.durationMinutes,
+    reason,
+    idempotencyKey: accountKey,
+  });
+  await markReportActioned(db, actorUid, reportId, reason, key,
+    action === "ban" ? "account_banned" : "account_suspended", accountKey);
+  return {
+    ok: true,
+    code: "ok",
+    reportId,
+    status: "actioned",
+    moderationAction: action === "ban" ? "account_banned" : "account_suspended",
+  };
+}
+
 async function deleteDiaryTarget(db, actorUid, body) {
   const diaryId = safeId(body.diaryId, "invalid_diary_id");
   const reportId = clean(body.reportId);
@@ -327,6 +436,7 @@ async function deleteDiaryTarget(db, actorUid, body) {
   if (reason.length < 3 || reason.length > 200) {
     throw new ModerationApiError("invalid_reason", 400);
   }
+  await assertReportTarget(db, reportId, diaryId);
   const result = await deleteDiary(
     db,
     actorUid,
@@ -349,7 +459,7 @@ async function deleteDiaryTarget(db, actorUid, body) {
       createdAt: new Date(),
     }),
   ]);
-  await markReportActioned(db, actorUid, reportId, reason, key);
+  await markReportActioned(db, actorUid, reportId, reason, key, "diary_deleted");
   return { ok: true, code: result.code || "ok", ...result };
 }
 
@@ -363,6 +473,7 @@ async function deleteCommentTarget(db, actorUid, body) {
   if (reason.length < 3 || reason.length > 200) {
     throw new ModerationApiError("invalid_reason", 400);
   }
+  await assertReportTarget(db, reportId, diaryId, commentId);
   const result = await deleteComment(
     db,
     actorUid,
@@ -386,7 +497,8 @@ async function deleteCommentTarget(db, actorUid, body) {
       createdAt: new Date(),
     }),
   ]);
-  await markReportActioned(db, actorUid, reportId, reason, key);
+  await markReportActioned(db, actorUid, reportId, reason, key,
+    "diary_comment_deleted");
   return { ok: true, code: result.code || "ok", ...result };
 }
 
@@ -427,6 +539,13 @@ export async function diaryModeration(request, env) {
       });
       return json(request, env, await reviewReport(db, actor.uid, body));
     }
+    if (action === "applyAccountAction") {
+      const actor = await requireCapability(db, decoded, "reviewReports", {
+        recentAuth: true,
+      });
+      return json(request, env,
+        await resolveDiaryWithAccountAction(db, env, decoded, actor.uid, body));
+    }
     if (action === "deleteDiary") {
       const actor = await requireCapability(db, decoded, "manageDiaries", {
         recentAuth: true,
@@ -457,6 +576,8 @@ export const diaryModerationTestHooks = Object.freeze({
   listReports,
   getReport,
   reviewReport,
+  assertReportTarget,
+  resolveDiaryWithAccountAction,
   deleteDiaryTarget,
   deleteCommentTarget,
   normalizeReport,
