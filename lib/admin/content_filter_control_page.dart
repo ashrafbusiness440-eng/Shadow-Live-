@@ -430,17 +430,24 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
   Future<void> _importFile() async {
     if (_rules.length >= 300 || _busy) return;
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom, allowedExtensions: const ['txt', 'csv'],
-        withData: true, allowMultiple: false,
       );
-      if (picked == null || picked.files.isEmpty || !mounted) return;
-      final file = picked.files.single;
-      if (file.bytes == null || file.size > 64 * 1024) {
-        setState(() => _message = 'الملف كبير أو تعذر فتحه. اختر ملفًا أصغر من 64 كيلوبايت.');
+      if (file == null || !mounted) return;
+      final length = file.lengthSync() ?? await file.length();
+      if (length == null || length > 64 * 1024) {
+        setState(() => _message =
+          'الملف كبير أو تعذر فتحه. اختر ملفًا أصغر من 64 كيلوبايت.');
         return;
       }
-      final words = parseImportedFilterWords(file.bytes!, fileName: file.name);
+      final bytes = await file.readAsBytes();
+      if (bytes.lengthInBytes > 64 * 1024) {
+        if (mounted) setState(() =>
+          _message = 'الملف كبير. اختر ملفًا أصغر من 64 كيلوبايت.');
+        return;
+      }
+      if (!mounted) return;
+      final words = parseImportedFilterWords(bytes, fileName: file.name);
       _addUnreviewedWords(words);
     } on FormatException {
       if (mounted) setState(() => _message = 'تعذر قراءة الملف. استخدم قائمة كلمات أو جدولًا محفوظًا بالعربية.');
