@@ -319,7 +319,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
       const receipt = await db.get("control_operations/" + verifiedAccountKey,
         transaction);
       const expectedAction = actionKind === "account_banned"
-        ? "ban" : "suspend";
+        ? "ban" : actionKind === "warning" ? "warn" : "suspend";
       const expectedUid = clean(report.data?.targetType) === "diary_comment"
         ? clean(report.data?.targetAuthorUid)
         : clean(report.data?.targetOwnerUid);
@@ -395,7 +395,7 @@ async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
   const action = clean(body.accountAction);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
-  if (!["suspend", "ban"].includes(action) ||
+  if (!["warn", "suspend", "ban"].includes(action) ||
       reason.length < 3 || reason.length > 160 || key.length > 148) {
     throw new ModerationApiError("invalid_account_action", 400);
   }
@@ -417,13 +417,13 @@ async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
     idempotencyKey: accountKey,
   });
   await markReportActioned(db, actorUid, reportId, reason, key,
-    action === "ban" ? "account_banned" : "account_suspended", accountKey);
+    action === "warn" ? "warning" : action === "ban" ? "account_banned" : "account_suspended", accountKey);
   return {
     ok: true,
     code: "ok",
     reportId,
     status: "actioned",
-    moderationAction: action === "ban" ? "account_banned" : "account_suspended",
+    moderationAction: action === "warn" ? "warning" : action === "ban" ? "account_banned" : "account_suspended",
   };
 }
 
