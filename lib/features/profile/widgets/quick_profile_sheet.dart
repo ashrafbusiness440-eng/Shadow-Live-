@@ -240,7 +240,8 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final vip = effectivePublicVipLevel(data);
             final vipFrameLevel =
                 (data['vipProfileFrameLevel'] as num?)?.toInt() ?? vip;
-            final online = data['isOnline'] == true;
+            // The cached public profile has no verified realtime presence.
+            // Never claim that a user is online from its legacy isOnline flag.
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
@@ -260,31 +261,13 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                   InkWell(
                     borderRadius: BorderRadius.circular(70),
                     onTap: _openFull,
-                    child: Stack(
-                      children: [
-                        ProfileAvatarWithFrame(
-                          diameter: 96,
-                          userId: widget.userId,
-                          fallbackProfile: data,
-                          vipLevel: vip,
-                          vipFrameLevel: vipFrameLevel,
-                          useVipFallback: true,
-                        ),
-                        if (online)
-                          Positioned(
-                            left: 3,
-                            bottom: 3,
-                            child: Container(
-                              width: 17,
-                              height: 17,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF38D996),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: const Color(0xFF0C101A), width: 3),
-                              ),
-                            ),
-                          ),
-                      ],
+                    child: ProfileAvatarWithFrame(
+                      diameter: 96,
+                      userId: widget.userId,
+                      fallbackProfile: data,
+                      vipLevel: vip,
+                      vipFrameLevel: vipFrameLevel,
+                      useVipFallback: true,
                     ),
                   ),
                   const SizedBox(height: 10),
