@@ -127,6 +127,7 @@ function normalizeReport(id, data = {}) {
     updatedAt: data.updatedAt || null,
     reviewedBy: clean(data.reviewedBy),
     reviewReason: clean(data.reviewReason),
+    moderationAction: clean(data.moderationAction),
   };
 }
 
@@ -314,8 +315,9 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
         transaction);
       const expectedAction = actionKind === "account_banned"
         ? "ban" : "suspend";
-      const expectedUid = clean(
-        report.data?.targetAuthorUid || report.data?.targetOwnerUid);
+      const expectedUid = clean(report.data?.targetType) === "diary_comment"
+        ? clean(report.data?.targetAuthorUid)
+        : clean(report.data?.targetOwnerUid);
       if (!receipt.exists ||
           clean(receipt.data?.action) !== expectedAction ||
           clean(receipt.data?.actorUid) !== actorUid ||
@@ -329,6 +331,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
     const now = new Date();
     const patch = {
       status: "actioned",
+      moderationAction: actionKind,
       reviewedBy: actorUid,
       reviewReason: reason,
       reviewedAt: now,
@@ -355,7 +358,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
         reportId,
         reason,
         before: { status: clean(report.data?.status || "new") },
-        after: { status: "actioned" },
+        after: { status: "actioned", moderationAction: actionKind },
         operationId: key,
         createdAt: now,
       }),
