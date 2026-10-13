@@ -139,7 +139,11 @@ export async function contentFilterControl(request, env) {
         let config;
         try { config = validateFilterConfig(body.config); }
         catch { throw new FilterControlError("invalid_filter_config"); }
-        const result = applyContentFilter(source, config, surface);
+        // A preview is always a safe dry run, including while the
+        // global switch is still OFF before the curated list is approved.
+        const result = applyContentFilter(source, {
+          ...config, enabled: true,
+        }, surface);
         return json(request, env, { ok: true, result });
       }
       case "save": {
