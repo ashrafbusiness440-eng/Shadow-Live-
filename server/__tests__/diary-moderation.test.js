@@ -172,6 +172,16 @@ test("report review transition updates mirror and global record with audit", asy
     db.docs.get("control_operations/review_report_0000000001").status,
     "completed",
   );
+  const notice = db.docs.get("notifications/report_result_review_report_0000000001");
+  assert.equal(notice.userId, "reporter");
+  assert.match(notice.body, /قيد المراجعة/);
+  const repeated = await reviewReport(db, "admin_uid", {
+    reportId: "report_review", status: "under_review",
+    reason: "manual review", idempotencyKey: "review_report_0000000001",
+  });
+  assert.equal(repeated.code, "duplicate");
+  assert.equal([...db.docs.keys()].filter(x => x ===
+    "notifications/report_result_review_report_0000000001").length, 1);
 });
 
 test("invalid report transition is rejected", async () => {
@@ -311,4 +321,40 @@ test("rejecting one long report preserves another reporter's colliding legacy al
     idempotencyKey: "diaryctl_reject_report_B_123456",
   });
   assert.equal(db.docs.has(legacyPath), false);
+});
+
+test("diary rejection reason is optional and reporter alone is notified", async () => {
+  const db = new FakeDb({
+    "diary_reports/report_rejected": report("report_rejected", 6000),
+    "reports/report_rejected": report("report_rejected", 6000),
+  });
+  const out = await reviewReport(db, "admin_uid", {
+    reportId: "report_rejected", status: "rejected", reason: "",
+    idempotencyKey: "diary_reject_optional_123456",
+  });
+  assert.equal(out.status, "rejected");
+  const note = db.docs.get("notifications/report_result_diary_reject_optional_123456");
+  assert.equal(note.userId, "reporter");
+  assert.equal(note.reportStatus, "rejected");
+  assert.doesNotMatch(note.body, /السبب:/);
+  await assert.rejects(() => reviewReport(new FakeDb({
+    "diary_reports/r1": report("r1", 5000),
+    "reports/r1": report("r1", 5000),
+  }), "admin", {
+    reportId: "r1", status: "under_review", reason: "",
+    idempotencyKey: "diary_review_bad_123456",
+  }), /invalid_reason/);
+});
+
+test("moderation refuses mismatched report reference before deleting content", async () => {
+  const db = new FakeDb({
+    "diary_reports/another_report": report("another_report", 6000),
+  });
+  await assert.rejects(() => diaryModerationTestHooks.assertReportTarget(
+    db, "another_report", "someone_elses_diary",
+  ), /report_target_mismatch/);
+  await assert.rejects(() => diaryModerationTestHooks.assertReportTarget(
+    db, "another_report", "diary_1", "wrong_comment",
+  ), /report_target_mismatch/);
+  await diaryModerationTestHooks.assertReportTarget(db, "another_report", "diary_1");
 });
