@@ -250,9 +250,9 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     }
   }
 
-  Future<String?> _reasonDialog(String title) async {
+  Future<String?> _reasonDialog(String title, {bool optional = false}) async {
     final controller = TextEditingController(
-      text: 'مراجعة بلاغ يوميات من Shadow Control',
+      text: optional ? '' : 'مراجعة بلاغ يوميات من Shadow Control',
     );
     final result = await showDialog<String>(
       context: context,
@@ -263,9 +263,12 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
           minLines: 2,
           maxLines: 4,
           maxLength: 200,
-          decoration: const InputDecoration(
-            labelText: 'سبب القرار',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: optional ? 'سبب الرفض — اختياري' : 'سبب القرار',
+            helperText: optional
+                ? 'إذا كتبت السبب، سيصل لصاحب البلاغ في الإشعار.'
+                : 'يصل إشعار لصاحب البلاغ بعد نجاح الإجراء.',
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -276,7 +279,9 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
           FilledButton(
             onPressed: () {
               final value = controller.text.trim();
-              if (value.length >= 3) Navigator.pop(dialogContext, value);
+              if ((optional && value.isEmpty) || value.length >= 3) {
+                Navigator.pop(dialogContext, value);
+              }
             },
             child: const Text('تنفيذ'),
           ),
@@ -291,6 +296,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     if (!_canReview || _busyId != null) return;
     final reason = await _reasonDialog(
       status == 'rejected' ? 'رفض البلاغ' : 'بدء مراجعة البلاغ',
+      optional: status == 'rejected',
     );
     if (!mounted || reason == null) return;
     setState(() => _busyId = item.reportId);
