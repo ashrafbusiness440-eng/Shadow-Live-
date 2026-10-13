@@ -201,6 +201,11 @@ async function reviewReport(db, actorUid, body) {
   const nextStatus = clean(body.status);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
+  // Do not allow a client to mark a report 'actioned' with a note alone:
+  // only the verified delete/account-moderation paths can do that.
+  if (nextStatus === "actioned") {
+    throw new ModerationApiError("action_requires_execution", 409);
+  }
   if (reason.length > 200 ||
       (nextStatus !== "rejected" && reason.length < 3) ||
       (reason.length > 0 && reason.length < 3)) {
