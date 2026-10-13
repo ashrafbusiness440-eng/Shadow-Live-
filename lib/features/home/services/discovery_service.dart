@@ -373,6 +373,16 @@ class DiscoveryService {
     );
   }
 
+  /// A single fresh metadata check on an actual tap; never per grid tile.
+  /// Admission and password verification remain in the existing room route.
+  Future<DiscoveryRoom?> findRoomForEntry(String roomId) async {
+    final requestUid = _auth.currentUser?.uid;
+    final snapshot = await _firestore.collection('rooms').doc(roomId).get();
+    if (_auth.currentUser?.uid != requestUid || !snapshot.exists) return null;
+    final room = DiscoveryRoom(id: snapshot.id, data: snapshot.data()!);
+    return isDiscoverableRoom(room) ? room : null;
+  }
+
   Future<Map<String, dynamic>?> _loadCurrentUserData(User? currentUser) async {
     if (currentUser == null || currentUser.isAnonymous) return null;
     final userSnapshot =
