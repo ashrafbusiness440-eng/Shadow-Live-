@@ -133,6 +133,27 @@ bool isDiscoverableRoom(DiscoveryRoom room) =>
     room.data['isPrivate'] != true &&
     const {'public', 'password'}.contains(room.visibility);
 
+/// Combine only pages already fetched, preserving one record per room.
+/// No additional reads are performed here. Newly verified room snapshots
+/// replace older ones and pinned/active priority applies to the loaded set.
+List<DiscoveryRoom> mergeDiscoveryRoomPages(
+  Iterable<DiscoveryRoom> current,
+  Iterable<DiscoveryRoom> incoming, {
+  Set<String> excludedIds = const <String>{},
+}) {
+  final byId = <String, DiscoveryRoom>{
+    for (final room in current)
+      if (!excludedIds.contains(room.id)) room.id: room,
+  };
+  for (final room in incoming) {
+    if (excludedIds.contains(room.id) || !isDiscoverableRoom(room)) continue;
+    byId[room.id] = room;
+  }
+  final merged = byId.values.toList(growable: false)
+    ..sort(compareRoomsByDiscoveryPriority);
+  return List<DiscoveryRoom>.unmodifiable(merged);
+}
+
 /// Firestore document cursor rather than an offset or an expanded limit.
 /// The cursor covers raw documents, including filtered ones, so hidden rooms
 /// cannot make the same page repeat on the next request.
