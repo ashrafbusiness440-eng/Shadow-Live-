@@ -319,7 +319,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
       const receipt = await db.get("control_operations/" + verifiedAccountKey,
         transaction);
       const expectedAction = actionKind === "account_banned"
-        ? "ban" : "suspend";
+        ? "ban" : actionKind === "warning" ? "warn" : "suspend";
       const expectedUid = clean(report.data?.targetType) === "diary_comment"
         ? clean(report.data?.targetAuthorUid)
         : clean(report.data?.targetOwnerUid);
@@ -329,6 +329,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
           clean(receipt.data?.targetId) !== expectedUid ||
           clean(receipt.data?.status) !== "completed" ||
           clean(receipt.data?.result?.targetUid) !== expectedUid ||
+          clean(receipt.data?.result?.linkedReportId) !== reportId ||
           clean(receipt.data?.result?.action) !== expectedAction) {
         throw new ModerationApiError("unverified_account_action", 409);
       }
@@ -395,13 +396,28 @@ async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
   const action = clean(body.accountAction);
   const reason = clean(body.reason);
   const key = operationKey(body.idempotencyKey);
-  if (!["suspend", "ban"].includes(action) ||
+  if (!["warn", "suspend", "ban"].includes(action) ||
       reason.length < 3 || reason.length > 160 || key.length > 148) {
     throw new ModerationApiError("invalid_account_action", 400);
   }
   const snap = await db.get("diary_reports/" + reportId);
   if (!snap.exists) throw new ModerationApiError("report_not_found", 404);
   const data = snap.data || {};
+  const actionKind = action === "warn" ? "warning"
+    : action === "ban" ? "account_banned" : "account_suspended";
+  if (clean(data.status) === "actioned") {
+    // A retry of this same confirmed decision is harmless. A different key,
+    // target or decision must not inherit an old sanction receipt.
+    const previous = await db.get("admin_audit_logs/diary_report_action_" + key);
+    if (previous.exists &&
+        clean(previous.data?.reportId) === reportId &&
+        clean(previous.data?.actorUid) === actorUid &&
+        clean(previous.data?.reason) === reason &&
+        clean(previous.data?.after?.moderationAction) === actionKind) {
+      return { ok: true, code: "duplicate", reportId,
+        status: "actioned", moderationAction: actionKind };
+    }
+  }
   if (clean(data.status) !== "under_review") {
     throw new ModerationApiError("invalid_report_transition", 409);
   }
@@ -412,18 +428,19 @@ async function resolveDiaryWithAccountAction(db, env, decoded, actorUid, body) {
   await mutateAccount(db, env, decoded, {
     targetUid,
     accountAction: action,
+    linkedReportId: reportId,
     durationMinutes: body.durationMinutes,
     reason,
     idempotencyKey: accountKey,
   });
   await markReportActioned(db, actorUid, reportId, reason, key,
-    action === "ban" ? "account_banned" : "account_suspended", accountKey);
+    action === "warn" ? "warning" : action === "ban" ? "account_banned" : "account_suspended", accountKey);
   return {
     ok: true,
     code: "ok",
     reportId,
     status: "actioned",
-    moderationAction: action === "ban" ? "account_banned" : "account_suspended",
+    moderationAction: action === "warn" ? "warning" : action === "ban" ? "account_banned" : "account_suspended",
   };
 }
 

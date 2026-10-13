@@ -26,6 +26,9 @@ String diaryReportActionMessage(Object error) {
     'report_not_found' => 'البلاغ لم يعد موجودًا. حدّث القائمة.',
     'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل هذا الإجراء.',
     'forbidden' => 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
+    'warning_target_unavailable' => 'لا يمكن توجيه تحذير إلى هذا الحساب حاليًا.',
+    'unverified_account_action' => 'تعذّر التحقق من تنفيذ الإجراء. حدّث البلاغ وحاول مجددًا.',
+    'owner_protected' => 'حساب المالك محمي من هذا الإجراء.',
     'auth_required' => 'يلزم تسجيل الدخول لمراجعة البلاغات.',
     'invalid_reason' => 'اكتب سببًا واضحًا للقرار بين 3 و200 حرف.',
     'comment_not_found' => 'التعليق لم يعد متاحًا. حدّث البلاغات.',
@@ -128,6 +131,10 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
 
   bool get _canReview =>
       _owner || _capabilities.contains('reviewReports');
+  bool get _canWarn =>
+      _canReview && (_owner ||
+      _capabilities.contains('suspendUsers') ||
+      _capabilities.contains('manageUsers'));
   bool get _canSuspend =>
       _canReview && (_owner ||
       _capabilities.contains('suspendUsers') ||
@@ -361,7 +368,8 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
   Future<void> _moderateReportedAccount(
       _DiaryReportItem item, String action) async {
     if (_busyId != null || item.status != 'under_review') return;
-    if (action == 'ban' && !_canBan ||
+    if (action == 'warn' && !_canWarn ||
+        action == 'ban' && !_canBan ||
         action == 'suspend' && !_canSuspend) return;
     final target = item.targetType == 'diary_comment'
         ? item.targetAuthorUid : item.targetOwnerUid;
@@ -372,17 +380,19 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: Text(action == 'ban'
-              ? 'حظر الحساب المبلّغ عليه' : 'تعليق الحساب المبلّغ عليه'),
+          title: Text(action == 'warn' ? 'توجيه تحذير للحساب المبلّغ عليه'
+              : action == 'ban'
+                ? 'حظر الحساب المبلّغ عليه' : 'تعليق الحساب المبلّغ عليه'),
           content: SizedBox(
             width: 410,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'يتم تطبيق العقوبة على الحساب فعليًا بعد التأكيد. '
-                  'لن يُبلَّغ مقدّم البلاغ إلا بعد نجاح التنفيذ.',
-                ),
+                Text(action == 'warn'
+                    ? 'سيتم توجيه تحذير إلى كاتب المحتوى المبلّغ عنه مع السبب، '
+                      'من دون إيقاف حسابه. لن يُبلّغ مقدّم البلاغ إلا بعد نجاح التسجيل.'
+                    : 'يتم تطبيق العقوبة على الحساب فعليًا بعد التأكيد. '
+                      'لن يُبلَّغ مقدّم البلاغ إلا بعد نجاح التنفيذ.'),
                 if (action == 'suspend')
                   DropdownButtonFormField<int>(
                     initialValue: minutes,
@@ -401,8 +411,9 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                   controller: controller,
                   maxLength: 160,
                   maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'سبب العقوبة — مطلوب',
+                  decoration: InputDecoration(
+                    labelText: action == 'warn'
+                        ? 'سبب التحذير — مطلوب' : 'سبب العقوبة — مطلوب',
                   ),
                 ),
               ],
@@ -438,7 +449,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('تم تنفيذ العقوبة وإشعار مقدّم البلاغ.'),
+          content: Text('تم تنفيذ الإجراء وإشعار مقدّم البلاغ.'),
         ));
       }
       await _load(reset: true);
@@ -493,6 +504,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
               Text(switch (item.moderationAction) {
                 'diary_deleted' => 'الإجراء: حذف اليومية',
                 'diary_comment_deleted' => 'الإجراء: حذف التعليق',
+                'warning' => 'الإجراء: تحذير الحساب',
                 'account_suspended' => 'الإجراء: تعليق الحساب',
                 'account_banned' => 'الإجراء: حظر الحساب',
                 _ => 'تم توثيق قرار الإدارة',
@@ -609,6 +621,16 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                           ? 'حذف التعليق'
                           : 'حذف اليومية',
                     ),
+                  ),
+                if (item.status == 'under_review' &&
+                    (item.targetType == 'diary_comment'
+                        ? item.targetAuthorUid : item.targetOwnerUid).isNotEmpty &&
+                    _canWarn)
+                  OutlinedButton.icon(
+                    onPressed: busy ? null
+                        : () => _moderateReportedAccount(item, 'warn'),
+                    icon: const Icon(Icons.warning_amber_rounded),
+                    label: const Text('توجيه تحذير'),
                   ),
                 if (item.status == 'under_review' &&
                     (item.targetType == 'diary_comment'

@@ -23,6 +23,10 @@ void main() {
     expect(page.contains("'reviewReport'"), isTrue);
     expect(page.contains("'deleteDiaryComment'"), isTrue);
     expect(page.contains("'deleteDiary'"), isTrue);
+    expect(page.contains("_moderateReportedAccount(item, 'warn')"), isTrue);
+    expect(page.contains("const Text('توجيه تحذير')"), isTrue);
+    expect(page.contains("'canWarn'"), isFalse);
+    expect(page.contains("action == 'warn' && !_canWarn"), isTrue);
     expect(page.contains("'limit': 20"), isTrue);
     expect(page.contains("collection('reports')"), isFalse);
     expect(page.contains('Load More'), isFalse);

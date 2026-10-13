@@ -321,6 +321,8 @@ async function mutateAccount(db, env, actorPayload, body) {
     const resultData = {
       targetUid,
       action,
+      // Report-bound receipts cannot be replayed against another case.
+      ...(clean(body.linkedReportId) ? { linkedReportId: clean(body.linkedReportId) } : {}),
       accountStatus: after.accountStatus,
       suspendedUntil: after.suspendedUntil,
       authDeleted: after.authDeleted,

@@ -26,6 +26,14 @@ void main() {
       contains('صلاحية'),
     );
     expect(
+      diaryReportActionMessage(StateError('warning_target_unavailable')),
+      contains('تحذير'),
+    );
+    expect(
+      diaryReportActionMessage(StateError('unverified_account_action')),
+      contains('التحقق'),
+    );
+    expect(
       diaryReportActionMessage(Exception('private server trace 123')),
       isNot(contains('private server trace')),
     );
