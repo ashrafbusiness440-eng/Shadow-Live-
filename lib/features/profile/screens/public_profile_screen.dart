@@ -574,6 +574,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         children: [
           ProfileAvatarWithFrame(
             diameter: 110,
+            protectAvatarCenter: true,
             userId: widget.userId,
             fallbackProfile: profile,
             vipLevel: vip,
