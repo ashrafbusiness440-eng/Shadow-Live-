@@ -53,6 +53,51 @@ void main() {
     ]);
   });
 
+  test('home active rail never repeats any of its eight visible suggested rooms', () {
+    final rooms = List<DiscoveryRoom>.generate(
+      12,
+      (index) => DiscoveryRoom(
+        id: 'room-$index',
+        data: {
+          'name': 'Room $index',
+          'onlineCount': 12 - index,
+          'presenceState': 'live',
+          if (index == 11) ...{
+            'systemOwned': true,
+            'isPinned': true,
+          },
+        },
+      ),
+    );
+    final discovery = HomeDiscoveryData(
+      userData: null,
+      config: const {},
+      people: const [],
+      rooms: rooms,
+    );
+    final suggested = discovery.suggested.take(8).map((r) => r.id).toSet();
+    expect(suggested, contains('room-11'));
+    final other = discovery.otherActiveForHome;
+    expect(other.map((r) => r.id), ['room-7', 'room-8', 'room-9', 'room-10']);
+    expect(other.every((r) => !suggested.contains(r.id)), isTrue);
+    expect(discovery.mostActive.length, 12); // other clients unchanged
+  });
+
+  test('home hides an empty duplicated activity rail without extra reads', () {
+    const discovery = HomeDiscoveryData(
+      userData: null,
+      config: {},
+      people: [],
+      rooms: [
+        DiscoveryRoom(id: 'a', data: {'onlineCount': 5}),
+        DiscoveryRoom(id: 'b', data: {'onlineCount': 1}),
+        DiscoveryRoom(id: 'c', data: {'onlineCount': 0}),
+      ],
+    );
+    expect(discovery.suggested.length, 3);
+    expect(discovery.otherActiveForHome, isEmpty);
+  });
+
   test('suggested people rank VIP and level without trusting stale online flags', () {
     const data = HomeDiscoveryData(
       userData: null,
