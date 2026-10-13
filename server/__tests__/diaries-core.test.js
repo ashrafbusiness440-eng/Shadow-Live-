@@ -1167,3 +1167,49 @@ test("cannot report own diary or own comment", async () => {
     false,
   );
 });
+
+
+test("explicit refresh recovers a legacy root-only diary without extra normal reads", async () => {
+  const db = new FakeDb({
+    "diaries/legacy_d1": {
+      diaryId: "legacy_d1",
+      ownerUid: "user_a",
+      text: "يومية منشورة قديمة",
+      createdAtMs: 700,
+    },
+  });
+  const normal = await listUser(db, { userId: "user_a", limit: 20 });
+  assert.deepEqual(normal.items, []);
+  const refreshed = await listUser(db, {
+    userId: "user_a",
+    limit: 20,
+    recoverMissing: true,
+  });
+  assert.deepEqual(refreshed.items.map((item) => item.diaryId), ["legacy_d1"]);
+  assert.equal(refreshed.hasMore, false);
+  assert.equal(refreshed.nextCursor, null);
+});
+
+test("diary images use the canonical R2 public-media path when old links are absent", async () => {
+  const objectId = "a".repeat(32);
+  const db = new FakeDb({
+    "users/user_a/diaries/photo_diary": {
+      ownerUid: "user_a",
+      text: "",
+      images: [{
+        objectId,
+        mimeType: "image/webp",
+        sizeBytes: 100,
+        publicUrl: "",
+      }],
+      createdAtMs: 900,
+    },
+  });
+  const request = new Request("https://shadow-live.example/api/diaries");
+  const result = await listUser(db, { userId: "user_a" }, request);
+  assert.equal(result.items.length, 1);
+  assert.equal(
+    result.items[0].images[0].publicUrl,
+    `https://shadow-live.example/api/public-media/diary_image/user_a/${objectId}.webp`,
+  );
+});
