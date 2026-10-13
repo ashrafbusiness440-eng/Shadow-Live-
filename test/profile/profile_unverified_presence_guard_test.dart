@@ -16,8 +16,13 @@ void main() {
           reason: 'Keep the shared frame and avatar for $path');
       expect(source.contains('useVipFallback: true'), isTrue,
           reason: 'VIP effects remain unchanged for $path');
-      expect(source.contains('ShadowProfileCountryFlag('), isTrue,
-          reason: 'Keep unified country flag for $path');
+      expect(
+        source.contains(path.contains('public_profile_screen')
+            ? 'ProfileIdentityInfoLine('
+            : 'ShadowProfileCountryFlag('),
+        isTrue,
+        reason: 'Keep the canonical country flag for $path',
+      );
       expect(source.contains('Timer.periodic'), isFalse, reason: path);
     }
   });
@@ -30,7 +35,7 @@ void main() {
       'lib/features/profile/widgets/quick_profile_sheet.dart',
     ).readAsStringSync();
 
-    expect(public.contains("key: const Key('public-profile-copy-id')"), isTrue);
+    expect(public.contains("copyKey: const Key('public-profile-copy-id')"), isTrue);
     expect(quick.contains("key: const Key('quick-profile-copy-id')"), isTrue);
     expect(quick.contains('showQuickProfileSheet('), isTrue);
     expect(public.contains('Stream.periodic'), isFalse);
