@@ -411,7 +411,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                   controller: controller,
                   maxLength: 160,
                   maxLines: 3,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: action == 'warn'
                         ? 'سبب التحذير — مطلوب' : 'سبب العقوبة — مطلوب',
                   ),
