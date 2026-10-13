@@ -1,4 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
+import { firestoreClient } from "./firestore.js";
+import { filterContent } from "./content-filter.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 import {
   applyCustomerServiceMicExpiries,
@@ -1078,7 +1080,7 @@ export class RoomRealtimeObject extends DurableObject {
     );
   }
 
-  #handleRoomChatMessage(webSocket, raw) {
+  async #handleRoomChatMessage(webSocket, raw) {
     let attachment = {};
     try {
       attachment = webSocket.deserializeAttachment() || {};
@@ -1101,7 +1103,7 @@ export class RoomRealtimeObject extends DurableObject {
     const roomId = normalizeRoomId(payload.roomId);
     const attachedRoomId = normalizeRoomId(attachment.roomId);
     const uid = String(attachment.uid || "").trim();
-    const text = String(payload.text || "").trim();
+    let text = String(payload.text || "").trim();
     const vipLevel = Math.max(
       0,
       Math.min(10, Number(attachment.vipLevel || 0)),
@@ -1140,6 +1142,23 @@ export class RoomRealtimeObject extends DurableObject {
       return true;
     }
 
+    // Resolve one shared, TTL-cached policy; never create a listener per room.
+    // A policy outage must not leak content that could require blocking.
+    let review = null;
+    let policyDb = null;
+    try {
+      policyDb = firestoreClient(this.env);
+      review = await filterContent(policyDb, "room_chat", text);
+    } catch {
+      this.#chatError(webSocket, requestId, "room_chat_filter_unavailable");
+      return true;
+    }
+    if (review.blocked) {
+      this.#chatError(webSocket, requestId, "content_blocked");
+      return true;
+    }
+    text = review.text;
+
     const nowMs = Date.now();
     const current = this.chatRateByUid.get(uid) || {
       windowStartedAtMs: nowMs,
@@ -1176,6 +1195,20 @@ export class RoomRealtimeObject extends DurableObject {
       .trim()
       .slice(0, 160);
     const messageId = crypto.randomUUID();
+    if (review.flagged) {
+      try {
+        await policyDb.commit(null, [
+          policyDb.writeCreate(`content_filter_flags/${messageId.replaceAll("-", "")}`, {
+            actorUid: uid, roomId, surface: "room_chat",
+            referenceId: messageId, ruleIds: review.matchedRuleIds,
+            status: "pending", createdAt: new Date(),
+          }),
+        ]);
+      } catch {
+        this.#chatError(webSocket, requestId, "room_chat_filter_unavailable");
+        return true;
+      }
+    }
 
     this.#broadcastEvent("room.chat_message", {
       roomId,
@@ -1260,7 +1293,7 @@ export class RoomRealtimeObject extends DurableObject {
     }
     if (
       typeof message === "string" &&
-      this.#handleRoomChatMessage(webSocket, message)
+      await this.#handleRoomChatMessage(webSocket, message)
     ) {
       return;
     }
