@@ -209,3 +209,20 @@ const filterStarterSuggestions = <FilterStarterSuggestion>[
   FilterStarterSuggestion('cheap coins outside app', 'ads', 'flag'),
   FilterStarterSuggestion('external recharge guaranteed', 'ads', 'flag'),
 ];
+
+/// Conservative equivalence key for finding already-added Arabic suggestions.
+/// Keeps whole phrases distinct; never joins ordinary words together.
+String normalizeStarterPhrase(String phrase) {
+  return phrase.trim().toLowerCase()
+      .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]'), '')
+      .replaceAll('أ', 'ا')
+      .replaceAll('إ', 'ا')
+      .replaceAll('آ', 'ا')
+      .replaceAll('ٱ', 'ا')
+      .replaceAll('ى', 'ي')
+      .replaceAll('ئ', 'ي')
+      .replaceAll('ؤ', 'و')
+      .replaceAll('ة', 'ه')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
