@@ -1388,8 +1388,9 @@ class _ActiveRoomChip extends StatelessWidget {
   }
 }
 
-/// Compact recommendation with one independently tappable follow action.
-/// Relation state comes from the parent page's bounded batch fetch.
+/// A lightweight circular suggestion with an independently tappable follow
+/// control at the avatar's upper corner. Uses only the existing profile
+/// snapshot and bounded follow batch from the parent home page.
 class HomeCompactPersonCard extends StatelessWidget {
   const HomeCompactPersonCard({
     super.key,
@@ -1408,82 +1409,102 @@ class HomeCompactPersonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        width: 108,
-        margin: const EdgeInsetsDirectional.only(end: 8),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111321),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ProfileAvatarWithFrame(
-                  diameter: 44,
-                  userId: person.id,
-                  fallbackProfile: person.data,
-                  snapshotOnly: true,
-                  backgroundColor: const Color(0xFF281847),
-                  placeholderColor: Colors.white54,
-                ),
-                if (onFollow != null) ...[
-                  SizedBox(
-                    height: 44,
-                    width: 44,
-                    child: IconButton(
-                      key: Key('home-follow-${person.id}'),
-                      tooltip: isFollowing == true
-                          ? 'إلغاء المتابعة'
-                          : 'متابعة',
-                      onPressed: followBusy ? null : onFollow,
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      iconSize: 20,
-                      icon: Icon(
-                        isFollowing == true
-                            ? Icons.person_remove_alt_1_rounded
-                            : Icons.person_add_alt_1_rounded,
-                        color: const Color(0xFFFFD54A),
-                      ),
+    final identityLabel = person.identityLabel;
+    return SizedBox(
+      width: 104,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(end: 8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(48),
+          child: Column(
+            children: [
+              SizedBox(
+                height: 73,
+                width: 90,
+                child: Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    ProfileAvatarWithFrame(
+                      diameter: 64,
+                      frameScale: 1.08,
+                      userId: person.id,
+                      fallbackProfile: person.data,
+                      snapshotOnly: true,
+                      backgroundColor: const Color(0xFF281847),
+                      placeholderColor: Colors.white54,
                     ),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 5),
-            Text(
-              person.displayName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
+                    if (onFollow != null)
+                      PositionedDirectional(
+                        top: 0,
+                        end: 0,
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: IconButton(
+                            key: Key('home-follow-${person.id}'),
+                            tooltip: isFollowing == true
+                                ? 'إلغاء المتابعة'
+                                : 'متابعة',
+                            onPressed: followBusy ? null : onFollow,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 44,
+                              height: 44,
+                            ),
+                            icon: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1C1730),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFFFD54A),
+                                ),
+                              ),
+                              child: Icon(
+                                isFollowing == true
+                                    ? Icons.person_remove_alt_1_rounded
+                                    : Icons.person_add_alt_1_rounded,
+                                color: const Color(0xFFFFD54A),
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            if (person.identityLabel != null) ...[
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
-                person.identityLabel!,
+                person.displayName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: person.vipLevel > 0
-                      ? const Color(0xFFFFD54A)
-                      : Colors.white70,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
+              if (identityLabel != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  identityLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: person.vipLevel > 0
+                        ? const Color(0xFFFFD54A)
+                        : Colors.white70,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
