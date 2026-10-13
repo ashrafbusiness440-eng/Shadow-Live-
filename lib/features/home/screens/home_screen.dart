@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -232,6 +233,19 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) await _load();
   }
 
+  void _showMoreRooms() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HomeMoreRoomsScreen(
+          discoveryService: _discoveryService,
+          initiallyShownRoomIds:
+              _data?.suggested.take(4).map((room) => room.id).toSet() ?? <String>{},
+        ),
+      ),
+    );
+  }
+
   void _search() {
     Navigator.push(
       context,
@@ -239,26 +253,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _openRoom(DiscoveryRoom room) async {
-    final args = room.toNavigationArguments();
-    final ownerUid =
-        (room.data['ownerUid'] ?? room.data['ownerId'] ?? room.data['hostId'] ?? '')
-            .toString();
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
-    final isOwner = currentUid != null && ownerUid == currentUid;
-
-    if (room.isPasswordProtected && !isOwner) {
-      final password =
-          await showDiscoveryRoomPasswordPrompt(context, room.title);
-      if (!mounted || password == null) return;
-      args['roomPassword'] = password;
-    }
-
-    NavigationService.navigateTo(
-      AppRoutes.voiceChatRoom,
-      arguments: args,
-    );
-  }
+  Future<void> _openRoom(DiscoveryRoom room) =>
+      openDiscoveryRoomFromContext(context, room);
 
   Future<void> _openPerson(DiscoveryPerson person) async {
     await Navigator.push(
@@ -405,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _hero(),
                   if (discovery != null || _error == null) ...[
                     const SizedBox(height: 16),
-                    _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن'),
+                    _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن', onMore: _showMoreRooms),
                     const SizedBox(height: 8),
                     _roomRail(suggestedRooms),
                     if (activeRooms.isNotEmpty) ...[
@@ -985,7 +981,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _sectionHeader(String title, String subtitle) {
+  Widget _sectionHeader(String title, String subtitle, {VoidCallback? onMore}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1006,9 +1002,230 @@ class _HomeScreenState extends State<HomeScreen> {
             style: const TextStyle(color: Colors.white38, fontSize: 10),
           ),
         ),
+        if (onMore != null)
+          TextButton(
+            onPressed: onMore,
+            style: TextButton.styleFrom(
+              foregroundColor: _gold,
+              minimumSize: const Size(68, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+            ),
+            child: const Text('عرض المزيد',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+          ),
       ],
     );
   }
+}
+
+/// Share the established room route and password dialog between the Home
+/// snapshot and the dedicated paginated screen. The dialog belongs to the
+/// page the visitor can currently see, not a route underneath it.
+Future<void> openDiscoveryRoomFromContext(
+  BuildContext context,
+  DiscoveryRoom room,
+) async {
+  final arguments = room.toNavigationArguments();
+  final ownerId =
+      (room.data['ownerUid'] ?? room.data['ownerId'] ?? room.data['hostId'] ?? '')
+          .toString();
+  final viewerUid = FirebaseAuth.instance.currentUser?.uid;
+  final isOwner = viewerUid != null && viewerUid == ownerId;
+  if (room.isPasswordProtected && !isOwner) {
+    final password = await showDiscoveryRoomPasswordPrompt(context, room.title);
+    if (!context.mounted || password == null) return;
+    if (FirebaseAuth.instance.currentUser?.uid != viewerUid) return;
+    arguments['roomPassword'] = password;
+  }
+  if (!context.mounted) return;
+  NavigationService.navigateTo(AppRoutes.voiceChatRoom, arguments: arguments);
+}
+
+/// Lazy document-cursor room directory. The same HomeCompactRoomCard and
+/// existing navigation/password flow are reused without per-room listeners.
+class HomeMoreRoomsScreen extends StatefulWidget {
+  const HomeMoreRoomsScreen({
+    super.key,
+    required this.discoveryService,
+    required this.initiallyShownRoomIds,
+  });
+
+  final DiscoveryService discoveryService;
+  final Set<String> initiallyShownRoomIds;
+
+  @override
+  State<HomeMoreRoomsScreen> createState() => _HomeMoreRoomsScreenState();
+}
+
+class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
+  final ScrollController _scroll = ScrollController();
+  final List<DiscoveryRoom> _rooms = [];
+  final Set<String> _openingIds = {};
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  StreamSubscription<User?>? _authSub;
+  String? _uid;
+  int _accountRevision = 0;
+  bool _loading = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _scroll.addListener(() {
+      if (_scroll.hasClients && _scroll.position.extentAfter < 450) {
+        unawaited(_loadMore());
+      }
+    });
+    _authSub = FirebaseAuth.instance.userChanges().listen((user) {
+      if (user?.uid == _uid || !mounted) return;
+      setState(() {
+        _uid = user?.uid;
+        _accountRevision++;
+        _openingIds.clear();
+        _rooms.clear();
+        _cursor = null;
+        _hasMore = true;
+        _loading = false;
+        _error = null;
+      });
+      unawaited(_loadMore());
+    });
+    unawaited(_loadMore());
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    final uid = _uid;
+    final revision = _accountRevision;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final page = await widget.discoveryService.loadRoomPage(after: _cursor);
+      if (!mounted || uid != _uid || revision != _accountRevision) return;
+      setState(() {
+        _cursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        // A single pure merge handles duplicate IDs and pinned priority
+        // across the pages fetched so far; it creates no new Firestore work.
+        final merged = mergeDiscoveryRoomPages(
+          _rooms,
+          page.rooms,
+          excludedIds: widget.initiallyShownRoomIds,
+        );
+        _rooms
+          ..clear()
+          ..addAll(merged);
+      });
+    } catch (_) {
+      if (mounted && uid == _uid && revision == _accountRevision) {
+        setState(() => _error = 'تعذر تحميل الغرف. حاول مرة أخرى.');
+      }
+    } finally {
+      if (mounted && uid == _uid && revision == _accountRevision) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _enterRoom(DiscoveryRoom room) async {
+    if (!_openingIds.add(room.id)) return;
+    final uid = _uid;
+    final revision = _accountRevision;
+    try {
+      // One fresh check only when the user taps a room.
+      final current = await widget.discoveryService.findRoomForEntry(room.id);
+      if (!mounted || uid != _uid || revision != _accountRevision) return;
+      if (current == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('هذه الغرفة غير متاحة الآن.')),
+        );
+        return;
+      }
+      await openDiscoveryRoomFromContext(context, current);
+    } catch (_) {
+      if (mounted && uid == _uid && revision == _accountRevision) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح الغرفة. حاول مرة أخرى.')),
+        );
+      }
+    } finally {
+      if (revision == _accountRevision) _openingIds.remove(room.id);
+    }
+  }
+
+  Widget _footer() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(22),
+        child: Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF))),
+      );
+    }
+    if (_error != null) {
+      return Column(children: [
+        Text(_error!, style: const TextStyle(color: Colors.white70)),
+        TextButton(onPressed: _loadMore, child: const Text('إعادة المحاولة')),
+      ]);
+    }
+    if (_hasMore) {
+      // A manual continuation also handles pages containing only hidden rooms.
+      return TextButton(onPressed: _loadMore, child: const Text('تحميل المزيد'));
+    }
+    return const Padding(
+      padding: EdgeInsets.all(20),
+      child: Center(child: Text('وصلت إلى نهاية الغرف',
+          style: TextStyle(color: Colors.white54))),
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.rtl,
+    child: Scaffold(
+      backgroundColor: const Color(0xFF05060D),
+      appBar: AppBar(
+        title: const Text('غرف مقترحة'),
+        backgroundColor: const Color(0xFF111321),
+        foregroundColor: const Color(0xFFFFD54A),
+      ),
+      body: CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          if (_rooms.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              sliver: SliverGrid(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final room = _rooms[index];
+                    return HomeCompactRoomCard(
+                      key: ValueKey(room.id),
+                      room: room,
+                      onTap: () => _enterRoom(room),
+                    );
+                  },
+                  childCount: _rooms.length,
+                ),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1,
+                ),
+              ),
+            ),
+          SliverToBoxAdapter(child: _footer()),
+        ],
+      ),
+    ),
+  );
 }
 
 /// Account and both wallet shortcuts share one already loaded user snapshot.

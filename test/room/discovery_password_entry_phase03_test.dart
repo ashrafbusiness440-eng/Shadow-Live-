@@ -66,14 +66,20 @@ void main() {
     final home = File('lib/features/home/screens/home_screen.dart').readAsStringSync();
     final roomList = File('lib/screens/room/room_list_screen.dart').readAsStringSync();
     final search = File('lib/features/home/screens/discovery_search_screen.dart').readAsStringSync();
-    for (final source in [home, roomList, search]) {
+    // Home now shares one function for the feed and the paginated screen.
+    // Its dialog must use the active route's context, not a covered parent.
+    expect(home.contains('showDiscoveryRoomPasswordPrompt('), isTrue);
+    expect(home.contains("arguments['roomPassword'] = password;"), isTrue);
+    expect(home.contains('if (!context.mounted || password == null) return;'), isTrue);
+    expect(home.contains('room.isPasswordProtected && !isOwner'), isTrue);
+    expect(home.contains('final viewerUid = FirebaseAuth.instance.currentUser?.uid;'), isTrue);
+    expect(home.contains('openDiscoveryRoomFromContext(context, current)'), isTrue);
+    for (final source in [roomList, search]) {
       expect(source.contains('showDiscoveryRoomPasswordPrompt('), isTrue);
       expect(source.contains("args['roomPassword'] = password;"), isTrue);
       expect(source.contains('if (!mounted || password == null) return;'), isTrue);
       expect(source.contains('_askRoomPassword('), isFalse);
     }
-    expect(home.contains('room.isPasswordProtected && !isOwner'), isTrue);
-    expect(home.contains('final currentUid = FirebaseAuth.instance.currentUser?.uid;'), isTrue);
     expect(home.contains('NavigationService.navigateTo('), isTrue);
     expect(home.contains('RoomRealtimeQueryService('), isFalse);
   });
