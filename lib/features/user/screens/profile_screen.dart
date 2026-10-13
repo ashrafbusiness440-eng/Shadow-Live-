@@ -674,6 +674,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               attractionLevel: _num(profile, ['attractionLevel']),
               gameLevel: _num(profile, ['gameLevel']),
               compact: true,
+              iconOnly: true,
               onTap: _openLevel,
             ),
           if (_num(profile, ['effectiveVipLevel']) > 0) ...[
