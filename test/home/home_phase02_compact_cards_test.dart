@@ -110,6 +110,15 @@ void main() {
     final home = File('lib/features/home/screens/home_screen.dart')
         .readAsStringSync();
     expect(home.contains('if (activeRooms.isNotEmpty) ...['), isTrue);
+    // Do not display the same verified room in both discovery rails.
+    expect(home.contains('discovery?.otherActiveForHome'), isTrue);
+    // On narrow devices the search hint cannot overflow the RTL row.
+    expect(home.contains("maxLines: 1,\n                overflow: TextOverflow.ellipsis,\n                style: TextStyle(color: Colors.white54, fontSize: 13),"), isTrue);
+    // No disabled fake Games feature if its real tab callback was omitted.
+    expect(home.contains('if (widget.onOpenGames != null)'), isTrue);
+    // The hero's real room CTA remains a full-size mobile tap target.
+    expect(home.contains('height: 44,\n                        child: OutlinedButton.icon('), isTrue);
+
     expect(home.contains('if (suggestedPeople.isNotEmpty) ...['), isTrue);
     expect(home.contains('if (events.isNotEmpty) ...['), isTrue);
     expect(home.contains('if (ranking.isNotEmpty) ...['), isTrue);
