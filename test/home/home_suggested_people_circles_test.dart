@@ -73,7 +73,7 @@ void main() {
     expect(src.contains('diameter: 64,'), isTrue);
     expect(src.contains('frameScale: 1.08,'), isTrue);
     expect(src.contains('snapshotOnly: true,'), isTrue);
-    expect(src.contains('_followService.followingAmong('), isTrue);
+    expect(src.contains('_followService.eligibleDiscoveryPeopleAmong('), isTrue);
     expect(src.contains('_followService.isFollowing('), isFalse);
     expect(src.contains('RoomRealtimeQueryService('), isFalse);
     expect(src.contains('Timer.periodic'), isFalse);
