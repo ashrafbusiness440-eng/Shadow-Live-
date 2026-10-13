@@ -120,11 +120,19 @@ test("review changes are idempotent, guarded and audit-logged", async () => {
     "under_review");
   assert.equal(db.docs.has("admin_audit_logs/general_report_review_case_1234567"),
     true);
+  const reviewNotice = db.docs.get(
+    "notifications/report_result_review_case_1234567");
+  assert.equal(reviewNotice.userId, "reporter");
+  assert.match(reviewNotice.body, /قيد المراجعة/);
   const repeated = await call("under_review","review_case_1234567");
   assert.equal(repeated.code,"duplicate");
   await call("rejected","reject_case_1234567");
   assert.equal(db.docs.get("reports/legacy_chat").status,"rejected");
   assert.equal(db.docs.has("admin_inbox_items/user_report__legacy_chat"),false);
+  assert.equal(db.docs.get("notifications/report_result_reject_case_1234567").userId,
+    "reporter");
+  assert.equal([...db.docs.keys()].filter(x => x.startsWith(
+    "notifications/report_result_review_case_1234567")).length, 1);
 });
 
 test("old index v1 migrates once, and permissions hide other people's reports", async () => {
@@ -215,4 +223,22 @@ test("history refuses arbitrary queries, cursor injection and unknown category",
   });
   assert.equal(out.items.length, 1);
   assert.equal(out.items[0].targetProfile.displayName, "صاحب الغرفة");
+});
+
+test("rejected report accepts empty explanation, still notifies, and guards other decisions", async () => {
+  const db = new Db(cases());
+  const r = await generalReportsTestHooks.reviewGeneralReport(db, "admin", {
+    reportId: "legacy_chat", status: "rejected", reason: "",
+    idempotencyKey: "reject_optional_123456",
+  });
+  assert.equal(r.status, "rejected");
+  const notification = db.docs.get("notifications/report_result_reject_optional_123456");
+  assert.equal(notification.userId, "reporter");
+  assert.doesNotMatch(notification.body, /السبب:/);
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(new Db(cases()), "admin", {
+      reportId: "legacy_chat", status: "under_review", reason: "",
+      idempotencyKey: "review_empty_reason_123456",
+    }), /invalid_reason/,
+  );
 });
