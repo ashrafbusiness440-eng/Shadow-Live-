@@ -12,7 +12,8 @@ export const CONTENT_FILTER_GROUPS = Object.freeze([
 ]);
 const MAX_RULES = 300;
 const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
-const DIACRITICS = /[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/u;
+// Text controls and Arabic vowel marks do not form a word boundary.
+const DIACRITICS = /[\u064B-\u065F\u0670\u06D6-\u06ED\u0640\u200B-\u200F\u2060\uFEFF]/u;
 const MAP = Object.freeze({
   "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
   "ى": "ي", "ئ": "ي", "ؤ": "و", "ة": "ه",
@@ -79,7 +80,25 @@ function compactMatchPositions(text) {
       });
     }
   }
-  return { text: chars.join(""), offsets, ends, obfuscated, original: source };
+  const normalized = chars.join("");
+  const repeated = [];
+  // Catch deliberate 3+ character elongation in complete words only.
+  // Never compress regular doubled letters (e.g. genuine Arabic/English words).
+  const repeatedPattern = /(.)\\1{2,}/gu;
+  const tokens = /[^ ]+/gu;
+  for (const hit of normalized.matchAll(tokens)) {
+    if (repeated.length >= 30) break;
+    const collapsed = hit[0].replace(repeatedPattern, "$1");
+    if (collapsed !== hit[0] && collapsed.length >= 3) {
+      const from = hit.index;
+      repeated.push({
+        normalized: collapsed,
+        start: offsets[from],
+        end: ends[from + hit[0].length - 1],
+      });
+    }
+  }
+  return { text: normalized, offsets, ends, obfuscated, repeated, original: source };
 }
 
 function tokenMatches(text, pattern) {
@@ -100,8 +119,10 @@ function tokenMatches(text, pattern) {
     ]);
     from = i + search.length;
   }
-  if (!search.includes(" ") && search.length >= 4) {
-    for (const item of source.obfuscated || []) {
+  if (!search.includes(" ") && search.length >= 3) {
+    for (const item of [
+      ...(source.obfuscated || []), ...(source.repeated || []),
+    ]) {
       if (item.normalized !== search) continue;
       const before = source.original.slice(0, item.start).slice(-1);
       const after = source.original.slice(item.end, item.end + 1);
