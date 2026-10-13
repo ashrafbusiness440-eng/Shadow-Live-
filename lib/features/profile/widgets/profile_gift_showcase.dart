@@ -49,6 +49,9 @@ class _ProfileGiftShowcaseState extends State<ProfileGiftShowcase> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      // Clear the old stream snapshot if a different account is displayed.
+      // A reused profile route must never briefly show the prior user's gifts.
+      key: ValueKey<String>(widget.userId),
       stream: _itemsStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
