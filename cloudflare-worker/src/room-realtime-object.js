@@ -321,7 +321,7 @@ export class RoomRealtimeObject extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
-    // Internal Worker -> DO calls only. No Firestore access from a room DO.
+    // Internal Worker -> DO calls only. No database authority inside a room instance.
     if (url.pathname === "/filter/snapshot" && request.method === "GET") {
       const stored = await this.ctx.storage.get("filter_policy_v1");
       return Response.json({ ok: true, config: stored || defaultFilterConfig() });
