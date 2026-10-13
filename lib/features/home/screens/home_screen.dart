@@ -1350,6 +1350,7 @@ class HomeCompactRoomCard extends StatelessWidget {
             PositionedDirectional(
               top: 9,
               start: 9,
+              end: 56,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
