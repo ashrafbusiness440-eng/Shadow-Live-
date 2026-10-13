@@ -298,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Reuse the existing discovery snapshot, without any per-card requests.
     final discovery = _data;
     final suggestedRooms = discovery?.suggested ?? const <DiscoveryRoom>[];
-    final activeRooms = discovery?.mostActive ?? const <DiscoveryRoom>[];
+    final activeRooms = discovery?.otherActiveForHome ?? const <DiscoveryRoom>[];
     final suggestedPeople =
         discovery?.suggestedPeople ?? const <DiscoveryPerson>[];
     final events = discovery?.events ?? const <Map<String, dynamic>>[];
@@ -409,8 +409,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         _Feature('الأصدقاء', 'ابحث بالاسم أو ID',
                             Icons.people_alt_rounded, _search),
-                        _Feature('الألعاب', 'العب واربح',
-                            Icons.sports_esports_rounded, widget.onOpenGames),
+                        if (widget.onOpenGames != null)
+                          _Feature('الألعاب', 'العب واربح',
+                              Icons.sports_esports_rounded, widget.onOpenGames),
                         if (events.isNotEmpty)
                           _Feature('الفعاليات', 'لا تفوّت الجديد',
                               Icons.celebration_rounded,
@@ -831,9 +832,13 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.search_rounded, color: Colors.white54),
             SizedBox(width: 10),
-            Text(
-              'ابحث عن غرف، أصدقاء أو ID...',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
+            Expanded(
+              child: Text(
+                'ابحث عن غرف، أصدقاء أو ID...',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
             ),
           ],
         ),
@@ -911,7 +916,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
-                        height: 36,
+                        height: 44,
                         child: OutlinedButton.icon(
                           onPressed: widget.onOpenRooms,
                           icon: const Icon(Icons.meeting_room_rounded, size: 16),
