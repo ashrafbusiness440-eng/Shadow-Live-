@@ -12,6 +12,7 @@ import {
 } from "./admin-inbox-index.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
+import { mutateAccount } from "./manage-user-account.js";
 
 const clean = (value) => String(value ?? "").trim();
 const ACTIVE_STATUSES = new Set(["open", "new", "under_review"]);
@@ -192,7 +193,7 @@ async function getGeneralReport(db, body = {}) {
   return { ok: true, item: enriched };
 }
 
-async function reviewGeneralReport(db, actorUid, body = {}) {
+async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
   const reportId = safeId(body.reportId);
   const status = clean(body.status);
   const reason = clean(body.reason);
@@ -233,15 +234,38 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
     const hasDistinctLegacy = legacyPath !== adminInboxIndexPath(item.type, reportId);
     const legacyIndex = hasDistinctLegacy
       ? await db.get(legacyPath, trx) : null;
+    // When a suspension or ban is reported to the complainant, require a
+    // completed, authorized account-operation receipt for this exact user.
+    const trustedAction = clean(verified.actionKind);
+    if (trustedAction) {
+      const opKey = clean(verified.operationKey);
+      if (!/^[A-Za-z0-9_-]{12,180}$/.test(opKey) ||
+          !["account_suspended", "account_banned"].includes(trustedAction) ||
+          status !== "actioned") {
+        throw new GeneralReportError("invalid_verified_action", 400);
+      }
+      const verifiedOperation = await db.get("control_operations/" + opKey, trx);
+      const expected = trustedAction === "account_banned" ? "ban" : "suspend";
+      if (!verifiedOperation.exists ||
+          clean(verifiedOperation.data?.action) !== expected ||
+          clean(verifiedOperation.data?.actorUid) !== actorUid ||
+          clean(verifiedOperation.data?.targetId) !== item.targetUid ||
+          clean(verifiedOperation.data?.status) !== "completed" ||
+          clean(verifiedOperation.data?.result?.targetUid) !== item.targetUid ||
+          clean(verifiedOperation.data?.result?.action) !== expected) {
+        throw new GeneralReportError("unverified_account_action", 409);
+      }
+    }
     const now = new Date();
     const patch = {
+      ...(trustedAction ? { moderationAction: trustedAction } : {}),
       status,
       reviewReason: reason,
       reviewedBy: actorUid,
       reviewedAt: now,
       updatedAt: now,
     };
-    const result = { reportId, status };
+    const result = { reportId, status, ...(trustedAction ? { moderationAction: trustedAction } : {}) };
     const indexWrites = ACTIVE_STATUSES.has(status)
       ? [adminInboxUpsertWrite(db, {
           type: item.type,
@@ -270,6 +294,7 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
         reportId,
         reporterUid: item.reporterUid,
         status,
+        actionKind: trustedAction,
         reason: status === "rejected" ? reason : "",
         operationKey: key,
         subject: item.type,
@@ -283,7 +308,7 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
         targetUid: item.targetUid,
         reason,
         before: { status: item.status },
-        after: { status },
+        after: { status, ...(trustedAction ? { moderationAction: trustedAction } : {}) },
         createdAt: now,
       }),
       db.writeCreate(operationPath, {
@@ -301,6 +326,52 @@ async function reviewGeneralReport(db, actorUid, body = {}) {
     await db.rollback(trx);
     throw error;
   }
+}
+
+async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
+  const reportId = safeId(body.reportId);
+  const accountAction = clean(body.accountAction);
+  const reason = clean(body.reason);
+  const key = clean(body.idempotencyKey);
+  if (!["suspend", "ban"].includes(accountAction) ||
+      reason.length < 3 || reason.length > 160 ||
+      !/^[A-Za-z0-9_-]{12,148}$/.test(key)) {
+    throw new GeneralReportError("invalid_account_action", 400);
+  }
+  const reviewKey = key + "_resolution";
+  const accountKey = key + "_account";
+  const existingResolution = await db.get("control_operations/" + reviewKey);
+  if (existingResolution.exists) {
+    return { ok: true, code: "duplicate", ...(existingResolution.data?.result || {}) };
+  }
+  const report = await db.get("reports/" + reportId);
+  const item = report.exists
+    ? normalizeGeneralReport(reportId, report.data || {})
+    : null;
+  if (!item) throw new GeneralReportError("report_not_found", 404);
+  if (item.status !== "under_review" || !item.targetUid) {
+    throw new GeneralReportError("invalid_report_transition", 409);
+  }
+
+  // Uses the existing account management service, including role, capability,
+  // owner-protection, duration, audit and account-state safeguards. If its
+  // separate transaction committed, a retry with the SAME key is idempotent.
+  await mutateAccount(db, env, decoded, {
+    targetUid: item.targetUid,
+    accountAction,
+    reason,
+    durationMinutes: body.durationMinutes,
+    idempotencyKey: accountKey,
+  });
+  return reviewGeneralReport(db, actorUid, {
+    reportId,
+    status: "actioned",
+    reason,
+    idempotencyKey: reviewKey,
+  }, {
+    operationKey: accountKey,
+    actionKind: accountAction === "ban" ? "account_banned" : "account_suspended",
+  });
 }
 
 async function requireAdmin(db, decoded, write = false) {
@@ -321,7 +392,12 @@ async function requireAdmin(db, decoded, write = false) {
     (owner || (write ? caps.includes("reviewReports")
       : READ_CAPABILITIES.some((cap) => caps.includes(cap))));
   if (!allowed) throw new GeneralReportError("forbidden", 403);
-  return { uid, canReview: owner || caps.includes("reviewReports") };
+  return {
+    uid, canReview: owner || caps.includes("reviewReports"),
+    canSuspend: owner || (data.adminEnabled === true &&
+      (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
+    canBan: owner || (data.adminEnabled === true && caps.includes("manageUsers")),
+  };
 }
 
 export async function generalReports(request, env) {
@@ -335,7 +411,8 @@ export async function generalReports(request, env) {
     const body = await readJson(request);
     const action = clean(body.action);
     const db = firestoreClient(env);
-    const actor = await requireAdmin(db, decoded, action === "reviewReport");
+    const actor = await requireAdmin(db, decoded,
+      action === "reviewReport" || action === "applyAccountAction");
     const result = action === "listReports"
       ? await listGeneralReports(db, body)
       : action === "listHistory"
@@ -344,9 +421,14 @@ export async function generalReports(request, env) {
         ? await getGeneralReport(db, body)
         : action === "reviewReport"
           ? await reviewGeneralReport(db, actor.uid, body)
-          : null;
+          : action === "applyAccountAction"
+            ? await resolveWithAccountAction(db, env, decoded, actor.uid, body)
+            : null;
     if (!result) throw new GeneralReportError("unsupported_action", 400);
-    return json(request, env, { ...result, canReview: actor.canReview });
+    return json(request, env, {
+      ...result, canReview: actor.canReview,
+      canSuspend: actor.canSuspend, canBan: actor.canBan,
+    });
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
@@ -365,4 +447,5 @@ export const generalReportsTestHooks = Object.freeze({
   listReportHistory,
   getGeneralReport,
   reviewGeneralReport,
+  resolveWithAccountAction,
 });
