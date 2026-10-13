@@ -42,6 +42,7 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
   final _reason = TextEditingController(text: 'تعديل قائمة الكلمات المحظورة');
   final _sample = TextEditingController();
   bool _loading = true;
+  bool _loadFailed = false;
   bool _busy = false;
   bool _enabled = false;
   bool _dirty = false;
@@ -138,15 +139,19 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
       if (!mounted) return;
       setState(() {
         _apply(Map<String, dynamic>.from(response['config'] as Map));
+        _loadFailed = false;
         if (response['roomSynced'] != true) {
           _message = 'إعدادات رسائل الغرف لم تتحدّث بعد. اضغط تحديث لاحقًا للتأكد.';
         }
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _message = _errorLabel(
-            error is FormatException ? error.message : '',
-          ));
+      setState(() {
+        _loadFailed = true;
+        _message = _errorLabel(
+          error is FormatException ? error.message : '',
+        );
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -454,7 +459,28 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
+          : _loadFailed
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_outlined, size: 40),
+                        const SizedBox(height: 12),
+                        Text(_message ?? 'تعذر تحميل قائمة الكلمات.',
+                            textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _load,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('إعادة المحاولة'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView(
               padding: const EdgeInsets.all(14),
               children: [
                 const Text('تحكم بالكلمات غير المناسبة داخل التطبيق',
@@ -603,6 +629,10 @@ class _ContentFilterControlPageState extends State<ContentFilterControlPage> {
                         const Text('جرّب الفلترة قبل الحفظ',
                             style: TextStyle(
                               fontSize: 18, fontWeight: FontWeight.w800)),
+                        const Text(
+                          'التجربة لا ترسل رسالة ولا تشغّل الفلتر للمستخدمين.',
+                          style: TextStyle(color: Colors.white70),
+                        ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
                           value: _testSurface,
