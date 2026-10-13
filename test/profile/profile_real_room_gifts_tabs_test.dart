@@ -100,6 +100,7 @@ void main() {
     expect(shared.contains('late Stream<QuerySnapshot'), isTrue);
     expect(shared.contains('if (oldWidget.userId != widget.userId) _bind();'),
         isTrue);
+    expect(shared.contains('key: ValueKey<String>(widget.userId)'), isTrue);
     expect(shared.contains('ShadowAssetRegistry.remoteUrl(assetKey)'), isTrue);
     expect(shared.contains('هنا تظهر الهدايا العامة فقط'), isTrue);
     expect(publicProfile.contains(
