@@ -24,7 +24,7 @@ void main() {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: HomeAccountHeader(
                   name: 'مستخدم باسم طويل جداً جداً لاختبار واجهة الموبايل',
-                  level: '37',
+                  identityLabel: 'VIP 3',
                   coins: '987.6M',
                   diamonds: '123.4K',
                   profile: const <String, dynamic>{},
@@ -41,7 +41,7 @@ void main() {
       expect(find.byKey(const Key('home-account-profile')), findsOneWidget);
       expect(find.byKey(const Key('home-balance-كوينز')), findsOneWidget);
       expect(find.byKey(const Key('home-balance-ألماس')), findsOneWidget);
-      expect(find.text('LV.37'), findsOneWidget);
+      expect(find.text('VIP 3'), findsOneWidget);
       expect(find.text('987.6M'), findsOneWidget);
       expect(find.text('123.4K'), findsOneWidget);
       expect(find.byType(ProfileAvatarWithFrame), findsOneWidget);
@@ -66,7 +66,7 @@ void main() {
     }
   });
 
-  testWidgets('missing balance or level never appears as an invented zero',
+  testWidgets('missing balance or identity badge never appears as an invented zero',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -74,7 +74,7 @@ void main() {
           textDirection: TextDirection.rtl,
           child: HomeAccountHeader(
             name: 'ضيف Shadow',
-            level: '—',
+            identityLabel: null,
             coins: '—',
             diamonds: '—',
             profile: const <String, dynamic>{},
@@ -86,7 +86,7 @@ void main() {
         ),
       ),
     ));
-    expect(find.text('المستوى غير متاح'), findsOneWidget);
+    expect(find.text('المستوى غير متاح'), findsNothing);
     expect(find.text('—'), findsNWidgets(2));
     expect(find.text('0'), findsNothing);
     expect(tester.takeException(), isNull);
