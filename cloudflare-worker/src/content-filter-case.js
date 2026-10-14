@@ -91,6 +91,7 @@ export async function commitRoomFilterCase(db,event) {
       db.writeCreate(marker, {
         actorUid:event.actorUid, sourceId:event.sourceId,
         surface:"room_chat", createdAt:new Date(event.createdAtMs),
+        expireAt:new Date(event.createdAtMs + 90 * FILTER_CASE_WINDOW_MS),
       }),
     ]);
     return {ok:true,escalated:result.escalated};
@@ -98,4 +99,23 @@ export async function commitRoomFilterCase(db,event) {
     await db.rollback(tx).catch(()=>{});
     throw error;
   }
+}
+
+// The room coordinator has a bounded 1000-slot evidence ring. Its
+// idempotency receipts are purged after 90 days, with no unbounded scan.
+export async function cleanupOldRoomFilterCaseMarkers(db, nowMs = Date.now(),
+  limit = 20) {
+  const bound = Math.max(1, Math.min(20, Math.trunc(limit || 20)));
+  const rows = await db.runQuery("content_filter_case_events", {
+    filters:[{field:"expireAt",op:"<=",value:new Date(nowMs)}],
+    orderBy:[{field:"expireAt",direction:"asc"}],
+    limit:bound,
+  });
+  let deleted = 0;
+  for(const row of rows) {
+    if(!ID.test(String(row.id||""))) continue;
+    await db.commit(null,[db.writeDelete("content_filter_case_events/"+row.id)]);
+    deleted++;
+  }
+  return {checked:rows.length,deleted};
 }
