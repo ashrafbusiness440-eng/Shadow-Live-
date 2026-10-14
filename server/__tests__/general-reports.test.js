@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { generalReportsTestHooks, generalReportType } from "../../cloudflare-worker/src/general-reports.js";
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
 import { mutateAccount } from "../../cloudflare-worker/src/manage-user-account.js";
+import { reportPriority } from "../../cloudflare-worker/src/report-priority-policy.js";
 
 class Db {
   constructor(seed = {}) {
@@ -983,4 +984,90 @@ test("U6-A room evidence is visible and account reports retain accurate review t
   const item=db.docs.get("admin_inbox_items/account_report__direct_account_u6a");
   assert.equal(item.title,"بلاغ مباشر عن حساب");
   assert.equal(item.meta.targetUid,"target");
+});
+
+
+test("U6-C nonpunitive report triage follows verified reasons and manual override", () => {
+  assert.equal(reportPriority("room_report","scam"),"urgent");
+  assert.equal(reportPriority("room_message_report","abuse"),"high");
+  assert.equal(reportPriority("user_report","spam"),"normal");
+  assert.equal(reportPriority("user_report","unexpected"),"normal");
+  assert.equal(reportPriority("room_report","spam","urgent"),"urgent");
+  assert.equal(reportPriority("room_report","scam","normal"),"normal");
+
+  const normalized=generalReportsTestHooks.normalizeGeneralReport("triage_1",{
+    targetType:"room", reason:"spam", priorityOverride:"urgent",
+    priorityReason:"خطر مُثبت من المراجعة", priorityChangedBy:"admin",
+  });
+  assert.equal(normalized.priority,"urgent");
+  assert.equal(normalized.priorityReason,"خطر مُثبت من المراجعة");
+  assert.equal(normalized.priorityChangedBy,"admin");
+});
+
+test("U6-C bounded inbox sorts urgent then important then normal", async () => {
+  const db=new Db({
+    ...cases(),
+    "reports/urgent_u6c":{targetType:"user",reporterUid:"reporter",
+      targetUid:"target",reason:"scam",status:"new",createdAt:new Date(1000)},
+  });
+  const page=await generalReportsTestHooks.listGeneralReports(db,{limit:25});
+  assert.equal(db.queryCalls,4);
+  assert.deepEqual(page.items.map(item=>item.priority),
+    ["urgent","high","high","normal"]);
+  assert.equal(page.items[0].reportId,"urgent_u6c");
+});
+
+test("U6-C override updates only priority/inbox, audits reason and guards idempotency", async () => {
+  const db=new Db(cases());
+  const action={
+    reportId:"room_1",priority:"urgent",
+    reason:"بلاغ مؤكد الاستعجال",idempotencyKey:"u6c_priority_update_12345",
+  };
+  const response=await generalReportsTestHooks.setReportPriority(db,"admin",action);
+  assert.equal(response.ok,true);
+  assert.equal(response.priority,"urgent");
+  const report=db.docs.get("reports/room_1");
+  assert.equal(report.priorityOverride,"urgent");
+  assert.equal(report.status,"under_review");
+  assert.equal(report.priorityReason,action.reason);
+  assert.equal(report.priorityChangedBy,"admin");
+  const inbox=db.docs.get("admin_inbox_items/room_report__room_1");
+  assert.equal(inbox.priority,"urgent");
+  assert.equal(inbox.meta.targetUid,"owner");
+  const audit=db.docs.get("admin_audit_logs/general_report_priority_"+action.idempotencyKey);
+  assert.equal(audit.action,"setReportPriority");
+  assert.equal(audit.before.priority,"normal");
+  assert.equal(audit.after.priority,"urgent");
+  const repeat=await generalReportsTestHooks.setReportPriority(db,"admin",action);
+  assert.equal(repeat.code,"duplicate");
+  await assert.rejects(()=>generalReportsTestHooks.setReportPriority(db,"admin",{
+    ...action,priority:"normal",
+  }),/idempotency_key_conflict/);
+  await assert.rejects(()=>generalReportsTestHooks.setReportPriority(db,"admin",{
+    ...action,reportId:"room_msg",
+  }),/idempotency_key_conflict/);
+  assert.equal(db.docs.get("reports/room_1").status,"under_review");
+  assert.equal([...db.docs.keys()].filter(key=>key.startsWith("notifications/")).length,0);
+});
+
+test("U6-C rejects invalid priority and terminal cases without mutating records", async () => {
+  const db=new Db({...cases(),"reports/closed_u6c":{
+    targetType:"room",reporterUid:"reporter",roomId:"room1",
+    status:"closed",reason:"spam",createdAt:new Date(),
+  }});
+  for(const priority of ["highest","", "high;ban"]) {
+    await assert.rejects(()=>generalReportsTestHooks.setReportPriority(db,"admin",{
+      reportId:"room_1",priority,reason:"مراجعة الإدارة",
+      idempotencyKey:"u6c_invalid_priority_123",
+    }),/invalid_report_priority/);
+  }
+  await assert.rejects(()=>generalReportsTestHooks.setReportPriority(db,"admin",{
+    reportId:"closed_u6c",priority:"urgent",reason:"مراجعة الإدارة",
+    idempotencyKey:"u6c_closed_priority_123",
+  }),/invalid_report_transition/);
+  await assert.rejects(()=>generalReportsTestHooks.setReportPriority(db,"admin",{
+    reportId:"room_1",priority:"urgent",reason:"ا",
+    idempotencyKey:"u6c_invalid_reason_123",
+  }),/invalid_reason/);
+  assert.equal(db.docs.get("reports/closed_u6c").priorityOverride,undefined);
 });
