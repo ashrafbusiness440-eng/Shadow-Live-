@@ -688,3 +688,76 @@ test("U5-B1 restriction duration is validated and does not shorten an active san
   });
   assert.equal(new Date(db.docs.get("users/target").roomChatRestrictedUntil).getTime(),old);
 });
+
+
+test("U5-B2 confirmed room-entry ban links the right report and notifies both users", async () => {
+  const db=new Db({
+    ...cases(),
+    "users/admin":{role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target":{role:"user",accountStatus:"active"},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
+    reportId:"room_msg",status:"under_review",reason:"تحقق بلاغ الغرفة",
+    idempotencyKey:"u5b2_review_12345678",
+  });
+  const action={
+    reportId:"room_msg",accountAction:"restrictRoomEntry",
+    durationMinutes:60,reason:"منع دخول الغرف بسبب مضايقات",
+    idempotencyKey:"u5b2_entry_action_12345678",
+  };
+  const result=await generalReportsTestHooks.resolveWithAccountAction(
+    db,{}, {sub:"admin"},"admin",action);
+  assert.equal(result.status,"actioned");
+  assert.equal(result.moderationAction,"room_entry_restricted");
+  const user=db.docs.get("users/target");
+  assert.equal(user.accountStatus,"active");
+  assert.ok(new Date(user.roomEntryRestrictedUntil).getTime()>Date.now());
+  const receipt=db.docs.get("control_operations/u5b2_entry_action_12345678_account");
+  assert.equal(receipt.result.linkedReportId,"room_msg");
+  assert.equal(receipt.result.action,"restrictRoomEntry");
+  const complainant=db.docs.get("notifications/report_result_u5b2_entry_action_12345678_resolution");
+  assert.equal(complainant.userId,"reporter");
+  assert.equal(complainant.actionKind,"room_entry_restricted");
+  const targetNotice=db.docs.get("notifications/account_room_entry_u5b2_entry_action_12345678_account");
+  assert.equal(targetNotice.userId,"target");
+  assert.match(targetNotice.body,/الغرف/);
+  assert.equal((await generalReportsTestHooks.resolveWithAccountAction(
+    db,{}, {sub:"admin"},"admin",action)).code,"duplicate");
+});
+
+test("U5-B2 invalid durations, owner targets and unauthorized moderators remain blocked", async () => {
+  const seed={
+    "users/admin":{role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target":{role:"user",accountStatus:"active",
+      roomEntryRestrictedUntil:new Date(Date.now()+2*60*60_000)},
+  };
+  for (const minutes of [0,-1,9,43201]) {
+    await assert.rejects(() => mutateAccount(new Db(seed),{}, {sub:"admin"},{
+      targetUid:"target",accountAction:"restrictRoomEntry",
+      durationMinutes:minutes,reason:"بلاغ عن إساءة",
+      idempotencyKey:"u5b2_bad_duration_123456",
+    }), /invalid_restriction_duration/);
+  }
+  const live=new Db(seed);
+  const before=new Date(live.docs.get("users/target").roomEntryRestrictedUntil).getTime();
+  await mutateAccount(live,{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomEntry",
+    durationMinutes:60,reason:"بلاغ عن إساءة",
+    idempotencyKey:"u5b2_keep_longer_123456",
+  });
+  assert.equal(new Date(live.docs.get("users/target").roomEntryRestrictedUntil).getTime(),before);
+  await assert.rejects(() => mutateAccount(new Db({
+    ...seed,"users/target":{role:"owner",accountStatus:"active"},
+  }),{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomEntry",
+    durationMinutes:60,reason:"بلاغ عن إساءة",
+    idempotencyKey:"u5b2_owner_protected_1234",
+  }), /owner_protected/);
+  await assert.rejects(() => mutateAccount(new Db({
+    ...seed,"users/admin":{role:"moderator",adminEnabled:true,capabilities:["reviewReports"]},
+  }),{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomEntry",
+    durationMinutes:60,reason:"بلاغ عن إساءة",
+    idempotencyKey:"u5b2_reviewer_denied_123",
+  }), /forbidden/);
+});

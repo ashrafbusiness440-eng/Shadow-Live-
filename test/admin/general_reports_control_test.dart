@@ -28,6 +28,9 @@ void main() {
     expect(GeneralReportItem(<String, dynamic>{
       'moderationAction': 'room_chat_restricted',
     }).actionLabel, contains('الكتابة في الغرف'));
+    expect(GeneralReportItem(<String, dynamic>{
+      'moderationAction': 'room_entry_restricted',
+    }).actionLabel, contains('منع دخول الغرف'));
     expect(generalReportErrorMessage(StateError('invalid_report_transition')),
         contains('حالة البلاغ'));
   });

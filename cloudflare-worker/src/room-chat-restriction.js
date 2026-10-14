@@ -17,6 +17,10 @@ export function roomChatRestricted(user = {}, nowMs = Date.now()) {
   return restrictionExpiryMs(user?.roomChatRestrictedUntil) > nowMs;
 }
 
+export function roomEntryRestricted(user = {}, nowMs = Date.now()) {
+  return restrictionExpiryMs(user?.roomEntryRestrictedUntil) > nowMs;
+}
+
 // No listeners, polling or unbounded user scans. Concurrent messages for the
 // same sender share a single read; the short cache expires lazily. An outage
 // is propagated so the caller can fail closed instead of publishing a chat.

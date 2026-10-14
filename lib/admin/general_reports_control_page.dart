@@ -49,6 +49,7 @@ class GeneralReportItem {
     'warning' => 'القرار: تحذير الحساب',
     'private_messages_restricted' => 'القرار: تقييد الرسائل الخاصة',
     'room_chat_restricted' => 'القرار: تقييد الكتابة في الغرف',
+    'room_entry_restricted' => 'القرار: منع دخول الغرف مؤقتًا',
     _ => '',
   };
   Map<String, dynamic> mapField(String key) {
@@ -132,7 +133,8 @@ class GeneralReportsService {
       'accountAction': action,
       'reason': reason,
       if (action == 'suspend' || action == 'restrictPrivateMessages' ||
-          action == 'restrictRoomChat')
+          action == 'restrictRoomChat' ||
+          action == 'restrictRoomEntry')
         'durationMinutes': durationMinutes,
       'idempotencyKey': 'gr_action_${DateTime.now().microsecondsSinceEpoch}',
     });
@@ -170,6 +172,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _canBan = false;
   bool _canRestrictPrivateMessages = false;
   bool _canRestrictRoomChat = false;
+  bool _canRestrictRoomEntry = false;
   bool _capped = false;
   String? _error;
   List<GeneralReportItem> _items = [];
@@ -205,6 +208,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         _canBan = result['canBan'] == true;
         _canRestrictPrivateMessages = result['canRestrictPrivateMessages'] == true;
         _canRestrictRoomChat = result['canRestrictRoomChat'] == true;
+        _canRestrictRoomEntry = result['canRestrictRoomEntry'] == true;
         _capped = result['capped'] == true;
       });
     } catch (error) {
@@ -295,7 +299,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         action == 'suspend' && !_canSuspend ||
         action == 'ban' && !_canBan ||
         action == 'restrictPrivateMessages' && !_canRestrictPrivateMessages ||
-        action == 'restrictRoomChat' && !_canRestrictRoomChat) {
+        action == 'restrictRoomChat' && !_canRestrictRoomChat ||
+        action == 'restrictRoomEntry' && !_canRestrictRoomEntry) {
       return;
     }
     final reason = TextEditingController();
@@ -311,7 +316,9 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                   ? 'تقييد الرسائل الخاصة مؤقتًا'
                   : action == 'restrictRoomChat'
                     ? 'تقييد الكتابة في الغرف مؤقتًا'
-                    : 'حظر الحساب المبلّغ عليه'),
+                    : action == 'restrictRoomEntry'
+                      ? 'منع دخول الغرف مؤقتًا'
+                      : 'حظر الحساب المبلّغ عليه'),
           content: SizedBox(
             width: 400,
             child: Column(
@@ -323,7 +330,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                     : 'سيتم تنفيذ العقوبة فعلًا، ولن يصلك تأكيد حتى ينجح الخادم. '
                       'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.'),
                 if (action == 'suspend' || action == 'restrictPrivateMessages' ||
-                    action == 'restrictRoomChat')
+                    action == 'restrictRoomChat' ||
+                    action == 'restrictRoomEntry')
                   DropdownButtonFormField<int>(
                     initialValue: minutes,
                     isExpanded: true,
@@ -332,7 +340,9 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? 'مدة تقييد الرسائل الخاصة'
                           : action == 'restrictRoomChat'
                             ? 'مدة تقييد الكتابة في الغرف'
-                            : 'مدة التعليق',
+                            : action == 'restrictRoomEntry'
+                              ? 'مدة منع دخول الغرف'
+                              : 'مدة التعليق',
                     ),
                     items: const [
                       DropdownMenuItem(value: 60, child: Text('ساعة')),
@@ -552,6 +562,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _takeAccountAction(item, 'restrictRoomChat'),
                       icon: const Icon(Icons.comments_disabled_outlined),
                       label: const Text('تقييد الكتابة في الغرف'),
+                    ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canRestrictRoomEntry)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'restrictRoomEntry'),
+                      icon: const Icon(Icons.no_meeting_room_outlined),
+                      label: const Text('منع دخول الغرف مؤقتًا'),
                     ),
                   if (inReview && item.targetUid.isNotEmpty &&
                       _canSuspend)

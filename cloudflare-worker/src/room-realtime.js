@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import { roomEntryRestricted } from "./room-chat-restriction.js";
 import { loadUserLevelPolicy } from "./user-level-policy.js";
 import { summarizeUserLevelData } from "./user-level-summary.js";
 import { publicLevelMetadata } from "./user-level-visibility.js";
@@ -535,6 +536,9 @@ export async function roomRealtime(request, env) {
 
       const roomData = room.data || {};
       const profileData = user.data || {};
+      if (roomEntryRestricted(profileData)) {
+        return json(request, env, { ok: false, code: "room_entry_restricted" }, 403);
+      }
       const levelMetadata = roomUserLevelMetadata(levelPolicy, uid, profileData);
       const identityPresentation = roomRealtimeIdentityPresentation(
         publicProfile,

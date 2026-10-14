@@ -21,7 +21,7 @@ import {
   vipCosmeticsFromUser,
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
-import {roomChatRestricted} from "./room-chat-restriction.js";
+import {roomChatRestricted,roomEntryRestricted} from "./room-chat-restriction.js";
 import {activeMysteriousIdentity,applyMysteriousIdentityPresentation,mysteriousRoomAuthoritySuppressed} from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentations,
@@ -3280,6 +3280,7 @@ async function roomPresenceJoin(db,uid,roomId){
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   const profile=profileSnap.data()||{};
   const user=userSnap.data()||{};
+  if(roomEntryRestricted(user))throw new ApiError("room_entry_restricted",403);
   const now=Date.now();
   const entitlements=vipEntitlementsFromUser(user,now);
   const ghostMode=activeRoomGhostMode(user,now);
@@ -4918,8 +4919,14 @@ export default async function handler(req,res){
     if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
 
     const db=getFirestore();
-    const roomSnap=await db.collection("rooms").doc(roomId).get();
+    const [roomSnap,entryUserSnap]=await Promise.all([
+      db.collection("rooms").doc(roomId).get(),
+      db.collection("users").doc(decoded.uid).get(),
+    ]);
     if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
+    if(roomEntryRestricted(entryUserSnap.data()||{})) {
+      throw new ApiError("room_entry_restricted",403);
+    }
     const roomData=roomSnap.data()||{};
     const roomOwnerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
     if(roomOwnerUid!==decoded.uid){
