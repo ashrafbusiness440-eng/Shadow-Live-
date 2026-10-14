@@ -32,7 +32,8 @@ void main() {
     expect(page.contains('Load More'), isFalse);
     expect(page.contains('تحميل المزيد'), isTrue);
 
-    expect(mainControl.contains('DiaryReportsControlPage'), isTrue);
+    expect(mainControl.contains('ReportsHubPage'), isTrue);
+    expect(mainControl.contains("ControlItem('التقارير'"), isFalse);
     expect(
       mainControl.contains(
         "capabilities.contains('manageDiaries')",
