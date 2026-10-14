@@ -24,6 +24,14 @@ String diaryReportActionMessage(Object error) {
     'invalid_idempotency_key' => 'تعذر تسجيل العملية. أعد المحاولة.',
     'invalid_report_transition' => 'تغيّرت حالة هذا البلاغ. حدّث القائمة ثم حاول مرة أخرى.',
     'report_not_found' => 'البلاغ لم يعد موجودًا. حدّث القائمة.',
+    'history_case_not_verified' =>
+        'هذا البلاغ لا يملك قرار حذف مثبتًا يمكن استرجاعه.',
+    'history_proof_missing' =>
+        'لا توجد أدلة تنفيذ كافية لاسترجاع هذا الإجراء القديم.',
+    'history_sample_capped' =>
+        'هناك سجلات كثيرة لهذه الحالة. يلزم تدقيق إداري دون استرجاع آلي.',
+    'history_conflict' =>
+        'تعارض في سجل سابق. لم تُغيّر بيانات الحساب.',
     'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل هذا الإجراء.',
     'forbidden' => 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
     'warning_target_unavailable' => 'لا يمكن توجيه تحذير إلى هذا الحساب حاليًا.',
@@ -368,6 +376,54 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
     }
   }
 
+  Future<void> _restoreOldDeletion(_DiaryReportItem item) async {
+    if (!_canReview || _busyId != null || item.status != 'actioned' ||
+        !const ['diary_deleted', 'diary_comment_deleted']
+            .contains(item.moderationAction)) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('استرجاع إجراء حذف قديم'),
+        content: const Text(
+          'سيُفحص هذا البلاغ فقط وسجل تنفيذ الحذف القديم. '
+          'لن يُضاف إلى سجل الحساب إلا إذا تطابقت جميع الأدلة والهوية. '
+          'لن تُفرض أي عقوبة جديدة ولن تتكرر الإشعارات.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('فحص واسترجاع'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || proceed != true) return;
+    setState(() => _busyId = item.reportId);
+    try {
+      final result = await _post('restoreVerifiedDeletionHistory', {
+        'reportId': item.reportId,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result['code'] == 'duplicate'
+            ? 'الإجراء موجود مسبقًا في سجل الحساب، ولم يُكرّر.'
+            : 'تم استرجاع الإجراء القديم بعد التحقق من الأدلة.'),
+      ));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(diaryReportActionMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   Future<void> _moderateReportedAccount(
       _DiaryReportItem item, String action) async {
     if (_busyId != null || item.status != 'under_review') return;
@@ -654,6 +710,14 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                         : () => _moderateReportedAccount(item, 'ban'),
                     icon: const Icon(Icons.block_rounded),
                     label: const Text('حظر الحساب'),
+                  ),
+                if (_canReview && item.status == 'actioned' &&
+                    const ['diary_deleted', 'diary_comment_deleted']
+                        .contains(item.moderationAction))
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : () => _restoreOldDeletion(item),
+                    icon: const Icon(Icons.history_rounded),
+                    label: const Text('استرجاع إجراء الحذف القديم'),
                   ),
                 if (busy)
                   const SizedBox(
