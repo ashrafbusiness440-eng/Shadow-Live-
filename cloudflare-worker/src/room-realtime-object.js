@@ -5,8 +5,7 @@ import {
   validateFilterConfig, CONTENT_FILTER_COORDINATOR_ID,
 } from "./content-filter.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
-import { firestoreClient } from "./firestore.js";
-import { recordRoomFilterRepeat } from "./moderation-flag-groups.js";
+
 import {
   ROOM_FILTER_FLAG_RING_SIZE,
   ROOM_FILTER_FLAG_PURGE_BATCH,
@@ -16,6 +15,7 @@ import {
 import {
   applyCustomerServiceMicExpiries,
   persistRoomChatReport,
+  persistRoomFilterAggregate,
   reclaimDepartedRoomSeat,
   roomDepartureCleanupCandidates,
   loadRoomChatModerationRecord,
@@ -391,7 +391,7 @@ export class RoomRealtimeObject extends DurableObject {
       // bounded persisted retry queue for a temporary Firestore outage.
       let grouped = false;
       try {
-        const result = await recordRoomFilterRepeat(firestoreClient(this.env), {
+        const result = await persistRoomFilterAggregate(this.env, {
           actorUid: uid, surface: "room_chat", referenceId: "room_" + next,
           priority,
         });
@@ -509,7 +509,7 @@ export class RoomRealtimeObject extends DurableObject {
           continue;
         }
         try {
-          const group = await recordRoomFilterRepeat(firestoreClient(this.env), {
+          const group = await persistRoomFilterAggregate(this.env, {
             actorUid: row.actorUid, surface: "room_chat",
             referenceId: "room_" + sequence,
             priority: row.priority || "normal",
