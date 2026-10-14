@@ -859,3 +859,91 @@ test("U5-B3 refuses expired restrictions, protected owners and unauthorized staf
     ...action, idempotencyKey:key, accountAction:"liftRoomChatRestriction",
   }), /idempotency_key_conflict/);
 });
+
+
+test("U5-B4 account microphone restriction is verified by report, audited and reversible", async () => {
+  const future = new Date(Date.now()+2*60*60_000);
+  const db = new Db({
+    ...cases(),
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {
+      role:"user",accountStatus:"active",
+      roomEntryRestrictedUntil:future,
+    },
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
+    reportId:"room_msg",status:"under_review",reason:"مراجعة بلاغ صوتي",
+    idempotencyKey:"u5b4_review_12345678",
+  });
+  const action={
+    reportId:"room_msg",accountAction:"restrictRoomMic",
+    durationMinutes:60,reason:"إساءة متكررة عبر الميكروفون",
+    idempotencyKey:"u5b4_mic_action_12345678",
+  };
+  const result=await generalReportsTestHooks.resolveWithAccountAction(
+    db,{}, {sub:"admin"}, "admin",action);
+  assert.equal(result.status,"actioned");
+  assert.equal(result.moderationAction,"room_mic_restricted");
+  const record=db.docs.get("users/target");
+  assert.ok(new Date(record.roomMicRestrictedUntil).getTime()>Date.now());
+  assert.equal(new Date(record.roomEntryRestrictedUntil).getTime(),future.getTime());
+  assert.equal(record.accountStatus,"active");
+  const receipt=db.docs.get("control_operations/u5b4_mic_action_12345678_account");
+  assert.equal(receipt.result.linkedReportId,"room_msg");
+  assert.equal(receipt.result.action,"restrictRoomMic");
+  const reporter=db.docs.get("notifications/report_result_u5b4_mic_action_12345678_resolution");
+  assert.equal(reporter.actionKind,"room_mic_restricted");
+  const target=db.docs.get("notifications/account_room_mic_u5b4_mic_action_12345678_account");
+  assert.equal(target.userId,"target");
+  assert.match(target.body,/المايكروفون/);
+  assert.equal((await generalReportsTestHooks.resolveWithAccountAction(
+    db,{}, {sub:"admin"}, "admin",action)).code,"duplicate");
+
+  const lifted=await mutateAccount(db,{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"liftRoomMicRestriction",
+    reason:"مراجعة الإدارة ورفع الكتم",
+    idempotencyKey:"u5b4_mic_lift_12345678",
+  });
+  assert.equal(lifted.liftedRestriction,"roomMicRestrictedUntil");
+  assert.equal(db.docs.get("users/target").roomMicRestrictedUntil,null);
+  assert.equal(new Date(db.docs.get("users/target").roomEntryRestrictedUntil).getTime(),future.getTime());
+  const liftedNotice=db.docs.get("notifications/account_restriction_lifted_u5b4_mic_lift_12345678");
+  assert.equal(liftedNotice.userId,"target");
+});
+
+test("U5-B4 microphone sanctions protect owner, scope, duration, and idempotency", async () => {
+  const seed = {
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active",
+      roomMicRestrictedUntil:new Date(Date.now()+120*60_000)},
+  };
+  for (const durationMinutes of [0,9,43201]) {
+    await assert.rejects(()=>mutateAccount(new Db(seed),{}, {sub:"admin"},{
+      targetUid:"target", accountAction:"restrictRoomMic",
+      durationMinutes,reason:"مخالفة صوتية",
+      idempotencyKey:"u5b4_invalid_mic_123456",
+    }),/invalid_restriction_duration/);
+  }
+  const extended=new Db(seed);
+  const old=new Date(extended.docs.get("users/target").roomMicRestrictedUntil).getTime();
+  await mutateAccount(extended,{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomMic",
+    durationMinutes:60,reason:"إساءة على المايك",
+    idempotencyKey:"u5b4_no_shorten_123456",
+  });
+  assert.equal(new Date(extended.docs.get("users/target").roomMicRestrictedUntil).getTime(),old);
+  await assert.rejects(()=>mutateAccount(new Db({...seed,
+    "users/target":{role:"owner",accountStatus:"active"},
+  }),{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomMic",
+    durationMinutes:60,reason:"إساءة على المايك",
+    idempotencyKey:"u5b4_owner_mic_123456",
+  }),/owner_protected/);
+  await assert.rejects(()=>mutateAccount(new Db({...seed,
+    "users/admin":{role:"moderator",adminEnabled:true,capabilities:["reviewReports"]},
+  }),{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomMic",
+    durationMinutes:60,reason:"إساءة على المايك",
+    idempotencyKey:"u5b4_unprivileged_mic_123456",
+  }),/forbidden/);
+});
