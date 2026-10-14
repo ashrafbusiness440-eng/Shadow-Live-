@@ -2,8 +2,19 @@ import { timestampToEpochMs } from "./vip-runtime.js";
 
 // One authoritative user field, read by both the realtime room transport
 // and the existing legacy room chat endpoint. Expiry is evaluated on use.
+function restrictionExpiryMs(value) {
+  if (typeof value?.toDate === "function") {
+    return timestampToEpochMs(value.toDate());
+  }
+  const seconds = Number(value?.seconds ?? value?._seconds);
+  if (value && typeof value === "object" && Number.isFinite(seconds)) {
+    return seconds * 1000;
+  }
+  return timestampToEpochMs(value);
+}
+
 export function roomChatRestricted(user = {}, nowMs = Date.now()) {
-  return timestampToEpochMs(user?.roomChatRestrictedUntil) > nowMs;
+  return restrictionExpiryMs(user?.roomChatRestrictedUntil) > nowMs;
 }
 
 // No listeners, polling or unbounded user scans. Concurrent messages for the
@@ -30,7 +41,7 @@ export function createRoomChatRestrictionGate(loadUser, {
         if (!user || typeof user !== "object") {
           throw new Error("room_chat_user_unavailable");
         }
-        const restrictedUntilMs = timestampToEpochMs(
+        const restrictedUntilMs = restrictionExpiryMs(
           user.roomChatRestrictedUntil,
         );
         cache.delete(id);
