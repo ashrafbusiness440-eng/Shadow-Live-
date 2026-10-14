@@ -17,6 +17,8 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
   bool _busy = false;
   bool _gateReady = false;
   bool _providerReady = false;
+  bool _enabled = false;
+  bool _paidAcknowledged = false;
   int _version = 0;
   int _limit = 20;
   String _mode = 'free';
@@ -61,6 +63,8 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
         _limit = ((conf['dailyLimit'] as num?)?.toInt() ?? 20).clamp(1, 500).toInt();
         _gateReady = data['publicationGateReady'] == true;
         _providerReady = data['providerConfigured'] == true;
+        _enabled = conf['enabled'] == true;
+        _paidAcknowledged = false;
         _providers = data['providers'] is Map
             ? Map<String, dynamic>.from(data['providers'] as Map)
             : {};
@@ -87,7 +91,8 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
         'idempotencyKey': 'image_mod_' +
             DateTime.now().microsecondsSinceEpoch.toString(),
         'config': {
-          'enabled': false,
+          'enabled': _enabled,
+          'paidAcknowledged': _paidAcknowledged,
           'scope': _scope,
           'mode': _mode,
           'provider': _mode == 'paid'
@@ -99,7 +104,9 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
       setState(() {
         _version = ((data['config'] as Map?)?['version'] as num?)?.toInt()
             ?? _version;
-        _notice = 'تم حفظ التجهيز. الفحص لم يُفعَّل بعد.';
+        _notice = _enabled
+            ? 'تم حفظ الإعدادات وتشغيل حماية الصور الجديدة.'
+            : 'تم حفظ التجهيز. الفحص غير مفعّل.';
       });
     } catch (_) {
       if (mounted) setState(() => _notice =
@@ -115,6 +122,7 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
     final provider = _providers[selected] is Map
         ? Map<String, dynamic>.from(_providers[selected] as Map)
         : <String, dynamic>{};
+    final canEnable = _gateReady && provider['configured'] == true;
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -126,14 +134,35 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
           const Text('تجهيز فحص الصور قبل النشر',
             style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-          const Text('الحماية غير مفعّلة حاليًا. زر تشغيلها سيصبح متاحًا '
-              'بعد إكمال منع نشر الصور غير المفحوصة واختبار الخدمة.'),
+          Text(_gateReady
+              ? (_enabled
+                  ? 'فحص الصور الجديدة مفعّل حسب النطاق المحدد.'
+                  : 'حماية الصور غير مفعّلة. يمكنك تشغيلها بعد تحقق الخدمة.')
+              : 'الحماية غير مفعّلة حاليًا. زر تشغيلها سيصبح متاحًا '
+                  'بعد إكمال منع نشر الصور غير المفحوصة واختبار الخدمة.'),
           ListTile(
             leading: const Icon(Icons.shield_outlined),
             title: const Text('حالة تجهيز الخدمة'),
             subtitle: Text(_gateReady && _providerReady
               ? 'الخدمة جاهزة للتشغيل بعد الموافقة.'
               : 'فحص الصور غير مفعّل.'),
+          ),
+          SwitchListTile(
+            title: const Text('تشغيل فحص الصور الجديدة'),
+            subtitle: Text(_gateReady
+                ? 'لا تُنشر الصور المشمولة قبل الموافقة.'
+                : 'التشغيل مقفل حتى اكتمال بوابة الحماية والفحوص.'),
+            value: _enabled,
+            onChanged: (_busy || !canEnable) ? null
+                : (v) => setState(() => _enabled = v),
+          ),
+          if (_mode == 'paid') CheckboxListTile(
+            value: _paidAcknowledged,
+            onChanged: _busy ? null : (v) =>
+                setState(() => _paidAcknowledged = v == true),
+            title: const Text('أوافق صراحة على استخدام المزود المدفوع'),
+            subtitle: const Text('الرسوم لدى Google Cloud مباشرة، '
+                'ولا يشحن التطبيق أي محفظة تلقائيًا.'),
           ),
           const Divider(),
           const Text('استهلاك اليوم على الخادم',
