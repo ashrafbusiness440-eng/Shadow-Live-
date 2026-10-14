@@ -527,6 +527,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             );
             Navigator.of(context).maybePop();
           });
+        } else if (code.contains('room_entry_restricted')) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('تم منع دخول الغرف مؤقتًا بقرار إداري. راجع إشعاراتك لمعرفة السبب والمدة.'),
+              ),
+            );
+            Navigator.of(context).maybePop();
+          });
         } else if (code.contains('room_unavailable')) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
