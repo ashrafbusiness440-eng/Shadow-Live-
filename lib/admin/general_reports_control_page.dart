@@ -69,6 +69,21 @@ String generalReportErrorMessage(Object error) {
             .toLocal().toString().substring(0, 16);
   }
 
+String accountActionHistoryStateLabel(Map<String, dynamic> record) {
+  return switch ((record['lifecycleState'] ?? '').toString()) {
+    'active' => 'ما زال ساريًا',
+    'expired' => 'انتهت المدة المحددة',
+    'lifted' => 'رُفع بقرار إداري',
+    'replaced' => 'استُبدل بإجراء أحدث',
+    'permanent' => 'جزاء دائم ما زال ساريًا',
+    'lift_recorded' => 'تم تنفيذ قرار رفع الجزاء',
+    'completed' => 'إجراء مكتمل',
+    _ => record['permanentSanction'] == true
+        ? 'دون مدة انتهاء — الحالة الحالية غير مؤكدة'
+        : 'الحالة الحالية غير مؤكدة',
+  };
+}
+
 Future<void> showAccountActionHistoryDialog(
   BuildContext context, String targetUid,
 ) async {
@@ -143,6 +158,13 @@ Future<void> showAccountActionHistoryDialog(
                                 final linked = (record['reportId'] ?? '').toString();
                                 final expiration = (record['expiresAtMs'] as num?)
                                     ?.toInt() ?? 0;
+                                final changedBy = (record['changedByUid'] ?? '').toString();
+                                final changedOperation =
+                                    (record['changedByOperationId'] ?? '').toString();
+                                final originalOperation =
+                                    (record['originalOperationId'] ?? '').toString();
+                                final changeReason =
+                                    (record['changeReason'] ?? '').toString();
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   title: Text(_accountActionName(
@@ -181,10 +203,24 @@ Future<void> showAccountActionHistoryDialog(
                                     '\nالمسؤول: ${record['actorUid'] ?? '—'}' +
                                     '\nالتاريخ: ' +
                                         _historyDate(record['createdAtMs']) +
-                                    (expiration > 0 ? '\nانتهاء المدة: ' +
-                                        _historyDate(expiration) +
-                                        (record['expired'] == true
-                                            ? ' (انتهت)' : '') : '') +
+                                    '\nحالة الإجراء: ' +
+                                        accountActionHistoryStateLabel(record) +
+                                    (expiration > 0 ? '\nانتهاء المدة المحددة: ' +
+                                        _historyDate(expiration) : '') +
+                                    (changedOperation.isNotEmpty
+                                        ? '\nالإجراء الذي غيّر الجزاء: ' +
+                                            changedOperation +
+                                            '\nنفّذ التغيير: ' +
+                                            (changedBy.isEmpty ? 'غير محدد' : changedBy) +
+                                            '\nوقت التغيير: ' +
+                                            _historyDate(record['changedAtMs']) +
+                                            (changeReason.isEmpty ? '' :
+                                              '\nسبب التغيير: ' + changeReason)
+                                        : '') +
+                                    (originalOperation.isNotEmpty
+                                        ? '\nالإجراء الأصلي المرتبط: ' +
+                                            originalOperation
+                                        : '') +
                                     (linked.isNotEmpty
                                         ? '\nرقم البلاغ المرتبط: ' + linked : '') +
                                     (record['liftedRestriction'] != null &&
