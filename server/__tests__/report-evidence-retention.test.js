@@ -36,7 +36,8 @@ const base=new Date("2026-10-14T09:00:00Z");
 const after=new Date("2027-01-13T10:00:00Z");
 const seed=(overrides={})=>({
   status:"closed",evidence:{message:{text:"PRIVATE_EVIDENCE"}},
-  evidencePurgeAt:evidenceDeadline(base),...overrides,
+  evidencePurgeAt:evidenceDeadline(base),
+  evidenceRetentionDueAt:evidenceDeadline(base),...overrides,
 });
 
 test("U6-G retention lasts 90 days and never guesses unknown old decisions",()=>{
