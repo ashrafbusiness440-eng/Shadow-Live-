@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'diary_reports_control_page.dart';
 import 'general_reports_control_page.dart';
 import 'general_reports_history_page.dart';
+import 'system_reports_control_page.dart';
 
 /// Each tab mounts one existing bounded moderation screen at a time.
 /// This keeps inactive report requests and subscriptions out of memory.
-enum ReportsHubSection { roomsAndMessages, people, diaries }
+enum ReportsHubSection { roomsAndMessages, people, diaries, system }
 
 class ReportsHubPage extends StatefulWidget {
   const ReportsHubPage({
@@ -110,7 +111,8 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
     if (!_allowed(_section)) {
       return const Center(child: Text('ليس لديك صلاحية لعرض هذا البلاغ.'));
     }
-    if (_historyOpen && _section != ReportsHubSection.diaries) {
+    if (_historyOpen && _section != ReportsHubSection.diaries &&
+        _section != ReportsHubSection.system) {
       return GeneralReportsHistoryPage(
         key: ValueKey('reports-history-${_section.name}-$_reloadCount'),
         embedded: true,
@@ -134,6 +136,10 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
           initialReportId: focused,
           embedded: true,
         );
+      case ReportsHubSection.system:
+        return SystemReportsControlPage(
+          key: ValueKey('reports-hub-system-$_reloadCount'),
+        );
       case ReportsHubSection.diaries:
         return DiaryReportsControlPage(
           key: ValueKey('reports-hub-diaries-$_reloadCount'),
@@ -155,7 +161,9 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
             icon: const Icon(Icons.refresh_rounded),
             onPressed: () => setState(() => _reloadCount++),
           ),
-          if (widget.allowGeneral && _section != ReportsHubSection.diaries)
+          if (widget.allowGeneral &&
+              _section != ReportsHubSection.diaries &&
+              _section != ReportsHubSection.system)
             IconButton(
               tooltip: _historyOpen ? 'البلاغات الحالية' : 'البلاغات السابقة والمغلقة',
               icon: Icon(_historyOpen
@@ -209,6 +217,8 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
                           'الأشخاص', Icons.person_outline_rounded),
                       _tab(ReportsHubSection.diaries,
                           'يومياتي والتعليقات', Icons.auto_stories_outlined),
+                      _tab(ReportsHubSection.system,
+                          'بلاغات النظام', Icons.gpp_maybe_outlined),
                     ],
                   ),
                 ),
