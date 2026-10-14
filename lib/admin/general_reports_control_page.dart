@@ -30,6 +30,9 @@ String generalReportErrorMessage(Object error) {
     'not_found' => 'الحساب المبلّغ عليه غير موجود.',
     'invalid_suspend_duration' => 'مدة التعليق غير صحيحة.',
     'invalid_restriction_duration' => 'اختر مدة صحيحة لتقييد الرسائل مؤقتًا.',
+    'restriction_not_active' => 'هذا التقييد غير نشط أو انتهت مدته. حدّث بيانات المستخدم.',
+    'restriction_target_unavailable' =>
+        'لا يمكن رفع التقييد عن هذا الحساب حاليًا.',
     _ => 'تعذّر تنفيذ الطلب. تحقق من الاتصال وأعد المحاولة.',
   };
 }
@@ -108,6 +111,38 @@ class GeneralReportsService {
       throw StateError((result['code'] ?? 'request_failed').toString());
     }
     return result;
+  }
+
+  static Future<void> liftRestriction({
+    required String targetUid,
+    required String accountAction,
+    required String reason,
+  }) async {
+    final user = controlAuth.currentUser;
+    if (user == null) throw StateError('not_signed_in');
+    final token = await user.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    final response = await http.post(
+      shadowApiEndpoint('manage-user-account'),
+      headers: <String, String>{
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'targetUid': targetUid,
+        'accountAction': accountAction,
+        'reason': reason,
+        'idempotencyKey': 'gr_lift_${DateTime.now().microsecondsSinceEpoch}',
+      }),
+    );
+    Map<String, dynamic> result = {};
+    try {
+      final parsed = jsonDecode(response.body);
+      if (parsed is Map) result = Map<String, dynamic>.from(parsed);
+    } catch (_) {}
+    if (response.statusCode != 200 || result['ok'] != true) {
+      throw StateError((result['code'] ?? 'request_failed').toString());
+    }
   }
 
   static Future<Map<String, dynamic>> load({String? reportId, String? scope}) =>
@@ -406,6 +441,104 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     }
   }
 
+  Future<void> _liftRestriction(GeneralReportItem item) async {
+    if (_busy.contains(item.id) || !_canSuspend || item.targetUid.isEmpty) {
+      return;
+    }
+    final reason = TextEditingController();
+    var action = 'liftPrivateMessagesRestriction';
+    final selected = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('رفع تقييد عن المستخدم'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('اختر تقييدًا واحدًا لرفعه. لن تتغير بقية القيود '
+                    'أو قرار البلاغ، وسيصل إشعار إلى المستخدم بعد التنفيذ.'),
+                DropdownButtonFormField<String>(
+                  initialValue: action,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'التقييد المطلوب رفعه'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'liftPrivateMessagesRestriction',
+                      child: Text('الرسائل الخاصة'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'liftRoomChatRestriction',
+                      child: Text('الكتابة في الغرف'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'liftRoomEntryRestriction',
+                      child: Text('دخول الغرف'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) update(() => action = value);
+                  },
+                ),
+                TextField(
+                  controller: reason,
+                  maxLength: 160,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب رفع التقييد — مطلوب',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (reason.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, <String, String>{
+                    'action': action,
+                    'reason': reason.text.trim(),
+                  });
+                }
+              },
+              child: const Text('تأكيد رفع التقييد'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reason.dispose();
+    if (!mounted || selected == null) return;
+    setState(() => _busy.add(item.id));
+    try {
+      await GeneralReportsService.liftRestriction(
+        targetUid: item.targetUid,
+        accountAction: selected['action']!,
+        reason: selected['reason']!,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(
+          'تم رفع التقييد المحدد وإشعار المستخدم، دون تغيير بقية القيود.',
+        )),
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(generalReportErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.id));
+    }
+  }
+
   Widget _identity(String label, String uid, Map<String, dynamic> profile) =>
       AdminAccountIdentityTile(
         roleLabel: label,
@@ -586,6 +719,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _takeAccountAction(item, 'ban'),
                       icon: const Icon(Icons.block_rounded),
                       label: const Text('حظر الحساب'),
+                    ),
+                  if (item.status == 'actioned' && item.targetUid.isNotEmpty &&
+                      _canSuspend)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _liftRestriction(item),
+                      icon: const Icon(Icons.lock_open_rounded),
+                      label: const Text('رفع تقييد'),
                     ),
                   if (inReview || item.status == 'actioned')
                     OutlinedButton(
