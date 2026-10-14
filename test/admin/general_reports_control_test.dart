@@ -86,6 +86,10 @@ void main() {
     expect(inbox.contains('reportId: item.targetId'), isTrue);
     expect(inbox.contains('reportType: item.type'), isTrue);
     expect(screen.contains("shadowApiEndpoint('general-reports')"), isTrue);
+    expect(screen.contains("shadowApiEndpoint('manage-user-account')"), isTrue);
+    expect(screen.contains("'liftPrivateMessagesRestriction'"), isTrue);
+    expect(screen.contains("'liftRoomChatRestriction'"), isTrue);
+    expect(screen.contains("'liftRoomEntryRestriction'"), isTrue);
     expect(screen.contains('AdminAccountIdentityTile('), isTrue);
     expect(screen.contains("'reviewReport'"), isTrue);
     expect(screen.contains('FirebaseFirestore'), isFalse);
