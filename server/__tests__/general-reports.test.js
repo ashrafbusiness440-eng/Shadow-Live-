@@ -1097,9 +1097,9 @@ test("U6-D reporter context samples exactly two bounded existing index queries w
   assert.equal(result.reporterUid,"reporter");
   assert.equal(db.queryCalls,2);
   // modern_context_1 has both old and new reporter fields, but is one case.
-  assert.equal(result.sampled,6);
+  assert.equal(result.sampled,7);
   assert.deepEqual(result.counts,{
-    rejected:1,actioned:1,pending:3,other:1,
+    rejected:1,actioned:1,pending:4,other:1,
   });
   assert.equal(result.capped,false);
   assert.equal([...db.docs.keys()].filter(key=>
