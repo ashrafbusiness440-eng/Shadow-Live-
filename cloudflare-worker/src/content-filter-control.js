@@ -121,6 +121,8 @@ function flagItem(id, data = {}) {
   return {
     id,
     surface: clean(data.surface),
+    moderationGroupId: clean(data.moderationGroupId),
+    priority: clean(data.priority) || "normal",
     actorUid: clean(data.actorUid),
     referenceId: clean(data.referenceId),
     conversationId: clean(data.conversationId),
