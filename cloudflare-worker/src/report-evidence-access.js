@@ -1,3 +1,5 @@
+import { evidenceRetentionExpired } from "./report-evidence-retention.js";
+
 // Shared, bounded administrative evidence read for general and diary reports.
 // Callers MUST validate the report ID and enforce separate evidence permission
 // before calling. An audit write must succeed before returning any content.
@@ -15,6 +17,12 @@ export async function readProtectedReportEvidence(db, {
     throw error;
   }
   const source = snapshot.data || {};
+  if (evidenceRetentionExpired(source)) {
+    const error = new Error("evidence_retention_expired");
+    error.code = "evidence_retention_expired";
+    error.status = 410;
+    throw error;
+  }
   const raw = source.evidence;
   // Do not record the content itself in the access log.
   await db.commit(null, [db.writeCreate(
