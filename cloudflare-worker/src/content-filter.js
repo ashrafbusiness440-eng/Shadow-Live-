@@ -1,4 +1,5 @@
 import { readThroughConfigCache, primeConfigCache } from "./config-cache.js";
+import { filterRulePriority, higherFilterPriority } from "./moderation-flag-groups.js";
 
 export const CONTENT_FILTER_PATH = "system_config/content_filter";
 export const CONTENT_FILTER_COORDINATOR_ID = "!shadow_content_filter_policy:internal/v1";
@@ -220,6 +221,7 @@ export function applyContentFilter(text, config, surface) {
   const matchedRuleIds = new Set();
   let blocked = false;
   let flagged = false;
+  let highestPriority = "normal";
   for (const rule of config.rules || []) {
     if (!rule.enabled || !rule.surfaces?.includes(surface)) continue;
     // Exempt only occurrences covered by an allowed phrase, not the
@@ -230,6 +232,8 @@ export function applyContentFilter(text, config, surface) {
       !excluded.some(([a, b]) => a <= start && b >= end));
     if (!hits.length) continue;
     matchedRuleIds.add(rule.id);
+    highestPriority = higherFilterPriority(highestPriority,
+      filterRulePriority(rule.group));
     if (rule.action === "block") blocked = true;
     else if (rule.action === "flag") flagged = true;
     else {
@@ -256,7 +260,8 @@ export function applyContentFilter(text, config, surface) {
     offset = end;
   }
   masked += original.slice(offset);
-  return { text: masked, blocked, flagged, matchedRuleIds: [...matchedRuleIds] };
+  return { text: masked, blocked, flagged, matchedRuleIds: [...matchedRuleIds],
+    ...(flagged ? { priority: highestPriority } : {}) };
 }
 
 export async function filterContent(db, surface, text) {
