@@ -842,6 +842,25 @@ async function reviewSystemFlag(db, env, actor, body) {
   });
 }
 
+// One actor-point read only, without original messages, chat context or
+// extra scans. Only administrators with report viewing rights can request it.
+async function getSystemFilterCase(db, body) {
+  const uid = clean(body.actorUid);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(uid)) {
+    throw new GeneralReportError("invalid_target",400);
+  }
+  const snap = await db.get("content_filter_cases/" + uid);
+  const data = snap?.exists ? (snap.data || {}) : {};
+  return { ok:true, actorUid:uid,
+    count:Math.max(0,Number(data.count||0)),
+    tier:Math.max(0,Number(data.tier||0)),
+    windowStartMs:Math.max(0,Number(data.windowStartMs||0)),
+    lastSeenAtMs:Math.max(0,Number(data.lastSeenAtMs||0)),
+    recentFlagIds:Array.isArray(data.recentFlagIds)
+      ? data.recentFlagIds.filter(v=>typeof v==="string").slice(-12) : [],
+    isAllegation:true, evidenceProven:false };
+}
+
 async function openSystemFlagEvidence(db, env, actor, body) {
   if (!actor?.canViewSensitiveEvidence) {
     throw new GeneralReportError("forbidden_evidence", 403);
@@ -927,7 +946,9 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "openReportScreenshot"
+    const result = action === "getSystemFilterCase"
+      ? await getSystemFilterCase(db, body)
+      : action === "openReportScreenshot"
       ? await openReportScreenshot(db, env, actor.uid, safeId(body.reportId))
       : action === "openSystemFlagEvidence"
       ? await openSystemFlagEvidence(db, env, actor, body)
