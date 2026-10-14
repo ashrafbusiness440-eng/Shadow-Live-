@@ -97,19 +97,19 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
   Widget _currentSection() {
     switch (_section) {
       case ReportsHubSection.roomsAndMessages:
-        return const GeneralReportsControlPage(
+        return GeneralReportsControlPage(
           key: ValueKey('reports-hub-rooms-$_reloadCount'),
           scope: 'rooms_messages',
           embedded: true,
         );
       case ReportsHubSection.people:
-        return const GeneralReportsControlPage(
+        return GeneralReportsControlPage(
           key: ValueKey('reports-hub-people-$_reloadCount'),
           scope: 'people',
           embedded: true,
         );
       case ReportsHubSection.diaries:
-        return const DiaryReportsControlPage(
+        return DiaryReportsControlPage(
           key: ValueKey('reports-hub-diaries-$_reloadCount'),
           embedded: true,
         );
