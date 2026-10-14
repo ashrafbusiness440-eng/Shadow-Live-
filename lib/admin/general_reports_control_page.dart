@@ -56,6 +56,8 @@ String generalReportErrorMessage(Object error) {
     'liftRoomChatRestriction' => 'رفع تقييد الشات بالغرف',
     'liftRoomEntryRestriction' => 'رفع منع دخول الغرف',
     'liftRoomMicRestriction' => 'رفع كتم المايكروفون',
+    'moderatorDeleteDiary' => 'حذف يومية مخالفة',
+    'moderatorDeleteDiaryComment' => 'حذف تعليق مخالف',
     _ => 'إجراء إداري',
   };
 
