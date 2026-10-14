@@ -75,8 +75,8 @@ export function moderatedImageDecision(input) {
 
 function parseVisionResponse(raw) {
   const output = clean(raw?.response || raw?.result?.response || "");
-  // Exact first token only. Ambiguous, lengthy or malformed output is review.
-  const m = /^(SAFE|REVIEW|BLOCK)(?:\s|$)/.exec(output);
+  // Exact single-token decision only; explanatory or conflicting text is review.
+  const m = /^(SAFE|REVIEW|BLOCK)$/.exec(output);
   if (!m) return moderatedImageDecision({ status: "needs_review",
     reason: "uncertain_visual_assessment" });
   return moderatedImageDecision({
