@@ -4,7 +4,7 @@ import fs from "node:fs";
 import {
   REPORT_EVIDENCE_RETENTION_DAYS,
   evidenceDeadline, evidenceHoldActive, evidenceRetentionExpired,
-  purgeReportEvidenceDocument,
+  purgeReportEvidenceDocument, setReportEvidenceHold,
 } from "../../cloudflare-worker/src/report-evidence-retention.js";
 import { readProtectedReportEvidence } from "../../cloudflare-worker/src/report-evidence-access.js";
 
@@ -135,4 +135,64 @@ test("U6-G terminal reporting writes deadlines and cron is bounded hourly",()=>{
   assert.match(d,/evidencePurgeAt: evidenceDeadline\(now\)/);
   assert.match(index,/getUTCMinutes\(\) === 0/);
   assert.match(index,/runDueReportEvidenceCleanup/);
+});
+
+test("U6-G owner evidence hold mirrors diary and is audited and idempotent",async()=>{
+  const db=new Db({
+    "diary_reports/rhold":seed({targetType:"diary"}),
+    "reports/rhold":seed({targetType:"diary"}),
+  });
+  const params={collection:"diary_reports",reportId:"rhold",actorUid:"owner",
+    hold:true,reason:"اعتراض مستمر",operationKey:"hold_report_rhold_01"};
+  const held=await setReportEvidenceHold(db,params);
+  assert.equal(held.hold,true);
+  assert.equal(db.docs.get("diary_reports/rhold").evidenceHold,true);
+  assert.equal(db.docs.get("reports/rhold").evidenceHold,true);
+  const audit=db.docs.get("admin_audit_logs/report_evidence_hold_hold_report_rhold_01");
+  assert.equal(audit.after.hold,true);
+  assert.equal(audit.actorUid,"owner");
+  assert.equal(audit.before.hold,false);
+  const duplicate=await setReportEvidenceHold(db,params);
+  assert.equal(duplicate.code,"duplicate");
+  await assert.rejects(()=>setReportEvidenceHold(db,
+    {...params,hold:false}),/idempotency_key_conflict/);
+  assert.equal(await purgeReportEvidenceDocument(db,"diary_reports","rhold",after),
+    "held");
+  assert.equal(await purgeReportEvidenceDocument(db,"reports","rhold",after),
+    "held");
+  const released=await setReportEvidenceHold(db,{
+    ...params,hold:false,reason:"انتهى التحقيق",
+    operationKey:"release_report_rhold_02",
+  });
+  assert.equal(released.hold,false);
+  assert.equal(db.docs.get("diary_reports/rhold").evidenceHold,false);
+  assert.equal(db.docs.get("reports/rhold").evidenceHold,false);
+  assert.equal(db.docs.get("diary_reports/rhold").evidencePurgeAt.toISOString(),
+    evidenceDeadline(base).toISOString());
+});
+
+test("U6-G hold requires valid report, original reason and safe token",async()=>{
+  const db=new Db();
+  await assert.rejects(()=>setReportEvidenceHold(db,{
+    collection:"diary_reports",reportId:"missing",actorUid:"owner",
+    hold:true,reason:"تحقيق",operationKey:"hold_missing_000001",
+  }),/report_not_found/);
+  await assert.rejects(()=>setReportEvidenceHold(db,{
+    collection:"reports",reportId:"../../users",actorUid:"owner",
+    hold:true,reason:"تحقيق",operationKey:"hold_invalid_000001",
+  }),/invalid_request/);
+  assert.equal(db.docs.size,0);
+});
+
+test("U6-G the owner hold controls are explicit in both Arabic screens",()=>{
+  const general=fs.readFileSync("lib/admin/general_reports_control_page.dart","utf8");
+  const diary=fs.readFileSync("lib/admin/diary_reports_control_page.dart","utf8");
+  assert.match(general,/_canHoldEvidence/);
+  assert.match(diary,/if \(_owner && item\.hasSensitiveEvidence\)/);
+  for(const screen of [general,diary]){
+    assert.match(screen,/حجز الدليل/);
+    assert.match(screen,/رفع حجز الدليل/);
+    assert.match(screen,/setEvidenceHold/);
+    assert.match(screen,/evidence_retention_expired/);
+  }
 });
