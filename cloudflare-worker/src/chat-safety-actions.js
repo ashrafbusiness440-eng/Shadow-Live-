@@ -4,6 +4,7 @@ import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import { checkReportDuplicateWindow, reportDuplicateSignature } from "./report-duplicate-window.js";
 import {
   agencyPolicySnapshotFor,
   economyWithAgencyPolicySnapshot,
@@ -1919,6 +1920,12 @@ async function reportUser(db, uid, body) {
     const startedMs = timestampMs(rate.data?.windowStartedAt);
     const sameWindow = startedMs > 0 && (nowMs - startedMs) < windowMinutes * 60 * 1000;
     const currentCount = sameWindow ? Math.max(0, Number(rate.data?.count || 0)) : 0;
+    const duplicate = checkReportDuplicateWindow(
+      rate.data || {},
+      reportDuplicateSignature("private_chat", targetUserId, conversationId, reason),
+      nowMs,
+    );
+    if (duplicate.duplicate) throw new ApiError("report_recent_duplicate", 409);
     if (currentCount >= maxReports) throw new ApiError("rate_limited", 429);
 
     const windowStartedAt = new Date(sameWindow ? startedMs : nowMs);
@@ -1929,8 +1936,9 @@ async function reportUser(db, uid, body) {
       db.writeUpdate(ratePath, {
         windowStartedAt,
         count: currentCount + 1,
+        recentReportKeys: duplicate.recent,
         updatedAt: now,
-      }, ["windowStartedAt", "count", "updatedAt"]),
+      }, ["windowStartedAt", "count", "recentReportKeys", "updatedAt"]),
       db.writeCreate(reportPath, {
         type: "user",
         reporterId: uid,
@@ -2061,6 +2069,12 @@ async function reportRoom(db, uid, body, realtimeNamespace) {
     const sameWindow =
       startedMs > 0 && nowMs - startedMs < windowMinutes * 60 * 1000;
     const count = sameWindow ? Math.max(0, Number(rate.data?.count || 0)) : 0;
+    const duplicate = checkReportDuplicateWindow(
+      rate.data || {},
+      reportDuplicateSignature("room", roomId, "room", reason),
+      nowMs,
+    );
+    if (duplicate.duplicate) throw new ApiError("report_recent_duplicate", 409);
     if (count >= maxReports) throw new ApiError("rate_limited", 429);
     const now = new Date(nowMs);
     const result = { reportId };
@@ -2068,8 +2082,9 @@ async function reportRoom(db, uid, body, realtimeNamespace) {
       db.writeUpdate(ratePath, {
         windowStartedAt: new Date(sameWindow ? startedMs : nowMs),
         count: count + 1,
+        recentReportKeys: duplicate.recent,
         updatedAt: now,
-      }, ["windowStartedAt", "count", "updatedAt"]),
+      }, ["windowStartedAt", "count", "recentReportKeys", "updatedAt"]),
       db.writeCreate(`reports/${reportId}`, {
         reportId,
         targetType: "room",
@@ -2195,3 +2210,8 @@ export async function chatSafetyActions(request, env, ctx) {
     return json(request, env, { ok: false, code: "server_failed" }, 500);
   }
 }
+
+export const reportDeduplicationTestHooks = Object.freeze({
+  reportUser,
+  reportRoom,
+});

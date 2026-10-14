@@ -4990,6 +4990,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             'تعذر تأكيد وجودك بالغرفة. أعد المحاولة.',
                           'rate_limited' =>
                             'أرسلت بلاغات كثيرة مؤخراً. حاول لاحقاً.',
+                          'report_recent_duplicate' =>
+                            'هذا البلاغ أُرسل بالفعل مؤخرًا. يمكنك إضافة بلاغ جديد عن واقعة مختلفة لاحقًا.',
                           _ => 'تعذر إرسال بلاغ الغرفة. حاول مرة أخرى.',
                         };
                         ScaffoldMessenger.of(context).showSnackBar(

@@ -277,6 +277,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       } on StateError catch (error) {
                         if (error.message == 'rate_limited') {
                           _snack('تم إرسال عدة بلاغات مؤخرًا. حاول لاحقًا.');
+                        } else if (error.message == 'report_recent_duplicate') {
+                          _snack('سبق إرسال هذا البلاغ مؤخرًا. يمكنك الإبلاغ عن واقعة مختلفة.');
                         } else {
                           _snack('تعذر إرسال البلاغ حالياً.');
                         }
