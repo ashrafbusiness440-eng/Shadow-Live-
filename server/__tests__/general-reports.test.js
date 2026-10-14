@@ -1579,3 +1579,75 @@ test("U6-F system alerts reuse the bounded filter source and never infer guilt",
     }),/forbidden/);
   assert.equal(db.docs.get("users/sender"),undefined);
 });
+
+test("U6-H system flag lists never return original text, evidence opening is separate and audited",async()=>{
+  const db=new Db({
+    "content_filter_flags/s001":{
+      actorUid:"sender",surface:"private_chat",referenceId:"m1",
+      status:"pending",createdAt:new Date("2026-10-14T00:00:00Z"),
+      evidence:{text:"ORIGINAL_SECRET_TEXT"},
+      ruleIds:["rule_mask"],
+    },
+  });
+  const {contentFilterControlInternals}=await import(
+    "../../cloudflare-worker/src/content-filter-control.js");
+  const list=await contentFilterControlInternals.listFlags(db,{});
+  assert.equal(list.items[0].hasSensitiveEvidence,true);
+  assert.equal(JSON.stringify(list).includes("ORIGINAL_SECRET_TEXT"),false);
+  const denied={uid:"viewer",canViewSensitiveEvidence:false};
+  await assert.rejects(()=>generalReportsTestHooks.openSystemFlagEvidence(
+    db,{},denied,{flagId:"saved_s001"}),/forbidden_evidence/);
+  const granted={uid:"admin",canViewSensitiveEvidence:true};
+  const opened=await generalReportsTestHooks.openSystemFlagEvidence(
+    db,{},granted,{flagId:"saved_s001"});
+  assert.equal(opened.evidence.text,"ORIGINAL_SECRET_TEXT");
+  assert.equal([...db.docs.values()].filter(x=>
+    x.action==="openSensitiveReportEvidence").length,1);
+  assert.equal(JSON.stringify([...db.docs.values()].filter(x=>
+    x.action==="openSensitiveReportEvidence")).includes("ORIGINAL_SECRET_TEXT"),
+    false);
+  await assert.rejects(()=>generalReportsTestHooks.openSystemFlagEvidence(
+    db,{},granted,{flagId:"saved_../../users"}),/invalid_report_id/);
+});
+
+test("U6-H room evidence opens only a single bounded ring item after durable audit",async()=>{
+  const db=new Db();
+  const calls=[];
+  const env={ROOM_REALTIME:{
+    idFromName(v){assert.ok(v);return v;},
+    get(){return {async fetch(url,request){
+      calls.push({url,request});
+      return Response.json({ok:true,evidence:{text:"SINGLE_ROOM_SECRET"}});
+    }};},
+  }};
+  const actor={uid:"owner",canViewSensitiveEvidence:true};
+  const out=await generalReportsTestHooks.openSystemFlagEvidence(
+    db,env,actor,{flagId:"room_42"});
+  assert.equal(out.evidence.text,"SINGLE_ROOM_SECRET");
+  assert.equal(calls.length,1);
+  assert.match(calls[0].url,/\/filter\/flag\/evidence/);
+  assert.match(calls[0].request.body,/"sequence":42/);
+  const logs=[...db.docs.values()].filter(x=>
+    x.action==="openSensitiveReportEvidence");
+  assert.equal(logs.length,1);
+  assert.equal(logs[0].sourceCollection,"room_content_filter_flags");
+  db.commit=async()=>{throw Error("audit_unavailable")};
+  await assert.rejects(()=>generalReportsTestHooks.openSystemFlagEvidence(
+    db,env,actor,{flagId:"room_43"}),/audit_unavailable/);
+  assert.equal(calls.length,1);
+});
+
+test("U6-H original sensitive words expire after a reviewed flag and remain hidden",async()=>{
+  const db=new Db({
+    "content_filter_flags/old_flag":{
+      status:"reviewed",evidence:{text:"EXPIRED_WORD"},
+      evidencePurgeAt:new Date("2026-01-01T00:00:00Z"),
+    },
+  });
+  await assert.rejects(()=>generalReportsTestHooks.openSystemFlagEvidence(
+    db,{}, {uid:"owner",canViewSensitiveEvidence:true},
+    {flagId:"saved_old_flag"}),/evidence_retention_expired/);
+  const flags=await import("../../cloudflare-worker/src/content-filter-control.js");
+  const list=await flags.contentFilterControlInternals.listFlags(db,{});
+  assert.equal(JSON.stringify(list).includes("EXPIRED_WORD"),false);
+});
