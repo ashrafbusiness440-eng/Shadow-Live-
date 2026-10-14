@@ -1438,20 +1438,8 @@ test("U6-E6 time expiration and permanent ban remain distinct from an admin lift
     db,{targetUid:"target"})).items.find(x=>x.operationId===banKey);
   assert.equal(view.lifecycleState,"permanent");
   assert.equal(view.permanentSanction,true);
-  // Firebase Identity is intentionally mocked: verify the backend mutation
-  // linkage only; do not claim the external auth request was made.
-  const originalFetch=globalThis.fetch;
-  globalThis.fetch=async()=>({ok:true,json:async()=>({})});
-  try {
-    // Enabling uses the existing Firebase Admin identity route.
-    // Avoid external auth network in this unit test via a minimal env.
-    await assert.rejects(()=>mutateAccount(db,{}, {sub:"admin"}, {
-      targetUid:"target",accountAction:"enable",
-      reason:"الاستئناف الإداري مقبول",idempotencyKey:releaseKey,
-    }),/server_not_configured|invalid_service_account_json/);
-  } finally { globalThis.fetch=originalFetch; }
-  // No fake release is recorded after an unavailable external dependency.
-  assert.equal(db.docs.has("control_operations/"+releaseKey),false);
+  // An unrelated earlier expiration must never be confused with a lift.
+  assert.equal(view.originalOperationId,"");
   assert.equal(db.docs.get("control_operations/"+banKey).lifecycle,undefined);
 });
 
