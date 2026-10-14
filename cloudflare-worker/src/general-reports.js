@@ -840,6 +840,21 @@ async function reviewSystemFlag(db, env, actor, body) {
   });
 }
 
+async function openSystemFlagEvidence(db, actor, body) {
+  if (!actor?.canViewSensitiveEvidence) {
+    throw new GeneralReportError("forbidden_evidence", 403);
+  }
+  const id = clean(body.flagId);
+  if (!/^saved_[A-Za-z0-9_-]{1,180}$/.test(id)) {
+    throw new GeneralReportError("invalid_report_id", 400);
+  }
+  return readProtectedReportEvidence(db, {
+    collection: "content_filter_flags",
+    reportId: id.slice(6),
+    actorUid: actor.uid,
+  });
+}
+
 async function holdGeneralEvidence(db, actor, body) {
   const id = safeId(body.reportId);
   const snap = await db.get("reports/" + id);
@@ -868,7 +883,7 @@ export async function generalReports(request, env) {
       action === "reviewReport" || action === "applyAccountAction" ||
       action === "setReportPriority" || action === "reviewSystemFlag" ||
       action === "setEvidenceHold");
-    if (action === "openSensitiveEvidence") {
+    if (action === "openSensitiveEvidence" || action === "openSystemFlagEvidence") {
       if (!actor.canViewSensitiveEvidence) {
         throw new GeneralReportError("forbidden_evidence", 403);
       }
@@ -881,7 +896,9 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "setEvidenceHold"
+    const result = action === "openSystemFlagEvidence"
+      ? await openSystemFlagEvidence(db, actor, body)
+      : action === "setEvidenceHold"
       ? await holdGeneralEvidence(db, actor, body)
       : action === "listSystemFlags"
       ? await contentFilterControlInternals.listFlags(db, env)
@@ -940,6 +957,7 @@ export const generalReportsTestHooks = Object.freeze({
   getGeneralReport,
   openGeneralSensitiveEvidence,
   reviewSystemFlag,
+  openSystemFlagEvidence,
   getReporterContext,
   getAccountActionHistory,
   requireAdmin,
