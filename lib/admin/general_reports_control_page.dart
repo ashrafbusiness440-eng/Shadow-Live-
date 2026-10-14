@@ -1122,7 +1122,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                 child: OutlinedButton.icon(
                   onPressed: !_canViewSensitiveEvidence || _busy.contains(item.id)
                       ? null : () => _openEvidence(item),
-                  icon: const Icon(Icons.visibility_lock_outlined),
+                  icon: const Icon(Icons.lock_open_outlined),
                   label: Text(_canViewSensitiveEvidence
                       ? 'فتح الدليل الحساس' : 'الدليل محمي — يلزم إذن المالك'),
                 ),
