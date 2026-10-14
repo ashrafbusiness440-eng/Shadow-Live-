@@ -98,4 +98,7 @@ test("U5-B2 both room ticket and ZEGO token reject restricted room entry", () =>
   assert.match(legacy,/roomEntryRestricted\(user\)/);
   assert.match(control,/'restrictRoomEntry'/);
   assert.match(session,/راجع إشعاراتك لمعرفة السبب والمدة/);
+  const main=readFileSync("lib/main.dart","utf8");
+  assert.match(main,/code\.contains\('room_entry_restricted'\)/);
+  assert.match(main,/راجع إشعاراتك لمعرفة السبب والمدة/);
 });
