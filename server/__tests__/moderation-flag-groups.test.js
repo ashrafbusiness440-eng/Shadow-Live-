@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   filterRepeatGroupWrites, recordRoomFilterRepeat,
   filterRulePriority, higherFilterPriority,
+  cleanupExpiredRepeatReceipts,
 } from "../../cloudflare-worker/src/moderation-flag-groups.js";
 import { applyContentFilter } from "../../cloudflare-worker/src/content-filter.js";
 import { generalReportsTestHooks } from "../../cloudflare-worker/src/general-reports.js";
@@ -16,10 +17,12 @@ class Db {
     data:structuredClone(this.docs.get(path)||null)};}
   writeUpdate(path,fields){return {kind:"update",path,fields};}
   writeCreate(path,fields){return {kind:"create",path,fields};}
+  writeDelete(path){return {kind:"delete",path};}
   async commit(_tx,writes) {
     for(const w of writes){
       if(w.kind==="create"&&this.docs.has(w.path))throw Error("exists");
-      this.docs.set(w.path, {...(w.kind==="update" ? this.docs.get(w.path):{}),
+      if(w.kind==="delete") this.docs.delete(w.path);
+      else this.docs.set(w.path, {...(w.kind==="update" ? this.docs.get(w.path):{}),
         ...structuredClone(w.fields)});
       this.writes.push(w);
     }
@@ -161,4 +164,30 @@ test("U6-K no polling, role exception, or new navigation section",()=>{
   assert.match(chat,/filterRepeatGroupWrites\(db, transaction/);
   assert.match(diaries,/filterRepeatGroupWrites\(db, transaction/);
   assert.equal(room.includes("setInterval("),false);
+});
+
+test("U6-K receipt cleanup uses one due-indexed query capped at 20",async()=>{
+  const db=new Db();
+  await recordRoomFilterRepeat(db,{
+    ...event("room_777"),surface:"room_chat",
+  });
+  const receiptId="u_001__room_777";
+  const path="moderation_flag_group_receipts/"+receiptId;
+  assert.equal(db.docs.get(path).expiresAt.getTime(),
+    at(0).getTime()+90*24*3600_000);
+  let request=null;
+  db.runQuery=async(col,options)=>{
+    request={col,options};
+    return [{id:receiptId}];
+  };
+  const out=await cleanupExpiredRepeatReceipts(db,Date.UTC(2027,1,1),200);
+  assert.deepEqual(out,{checked:1,deleted:1});
+  assert.equal(request.col,"moderation_flag_group_receipts");
+  assert.equal(request.options.limit,20);
+  assert.equal(request.options.filters[0].op,"<=");
+  assert.equal(db.docs.has(path),false);
+  assert.equal(db.docs.has("moderation_flag_groups/u_001"),true);
+  const source=fs.readFileSync(
+    "cloudflare-worker/src/report-evidence-retention.js","utf8");
+  assert.match(source,/cleanupExpiredRepeatReceipts\(db, nowMs, bounded\)/);
 });
