@@ -4,6 +4,7 @@ import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
 import { authConfig } from "./auth-config.js";
 import { contentFilterControl } from "./content-filter-control.js";
+import { imageModerationControl } from "./image-moderation-control.js";
 import { CONTENT_FILTER_COORDINATOR_ID } from "./content-filter.js";
 import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
@@ -91,6 +92,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/content-filter-control") {
     return contentFilterControl(request, env);
+  }
+  if (url.pathname === "/api/image-moderation-control") {
+    return imageModerationControl(request, env);
   }
   if (url.pathname === "/api/change-public-id") {
     annotatePressureRequest(request, { action: "changePublicId" });
