@@ -25,6 +25,7 @@ const allowedActions = new Set([
   "warn",
   "restrictPrivateMessages",
   "restrictRoomChat",
+  "restrictRoomEntry",
   "ban",
   "unban",
   "disable",
@@ -113,6 +114,19 @@ function statusPatch(action, body, actorUid, now) {
       roomChatRestrictionMinutes: minutes,
       roomChatRestrictedBy: actorUid,
       roomChatRestrictionReason: clean(body.reason),
+    };
+  }
+  if (action === "restrictRoomEntry") {
+    const minutes = Number(body.durationMinutes);
+    if (!Number.isInteger(minutes) || minutes < 10 || minutes > 43200) {
+      throw new ApiError("invalid_restriction_duration", 400);
+    }
+    return {
+      ...base,
+      roomEntryRestrictedUntil: new Date(now.getTime() + minutes * 60_000),
+      roomEntryRestrictionMinutes: minutes,
+      roomEntryRestrictedBy: actorUid,
+      roomEntryRestrictionReason: clean(body.reason),
     };
   }
   if (action === "suspend") {
@@ -261,7 +275,8 @@ async function mutateAccount(db, env, actorPayload, body) {
       ? actorIsOwner
       : action === "suspend" || action === "warn" ||
           action === "restrictPrivateMessages" ||
-          action === "restrictRoomChat"
+          action === "restrictRoomChat" ||
+          action === "restrictRoomEntry"
         ? canSuspend
         : action === "enable"
           ? canManageUsers || hasCapability("suspendUsers")
@@ -337,7 +352,8 @@ async function mutateAccount(db, env, actorPayload, body) {
       throw new ApiError("owner_protected", 409);
     }
     // A warning must not modify another admin account or an inactive account.
-    if (["warn", "restrictPrivateMessages", "restrictRoomChat"].includes(action) && (
+    if (["warn", "restrictPrivateMessages", "restrictRoomChat",
+      "restrictRoomEntry"].includes(action) && (
         (freshTarget.adminEnabled === true && !actorIsOwner) ||
         (clean(freshTarget.accountStatus || "active") !== "active") ||
         freshTarget.authDeleted === true)) {
@@ -370,6 +386,19 @@ async function mutateAccount(db, env, actorPayload, body) {
       if (oldMs > patch.roomChatRestrictedUntil.getTime()) {
         patch.roomChatRestrictedUntil = new Date(oldMs);
         patch.roomChatRestrictionMinutes =
+          Math.ceil((oldMs - now.getTime()) / 60_000);
+      }
+    }
+    if (action === "restrictRoomEntry") {
+      const existing = freshTarget.roomEntryRestrictedUntil;
+      const seconds = Number(existing?.seconds ?? existing?._seconds);
+      const oldMs = existing instanceof Date ? existing.getTime()
+        : typeof existing?.toMillis === "function" ? existing.toMillis()
+        : Number.isFinite(seconds) ? seconds * 1000
+        : Date.parse(String(existing || "")) || 0;
+      if (oldMs > patch.roomEntryRestrictedUntil.getTime()) {
+        patch.roomEntryRestrictedUntil = new Date(oldMs);
+        patch.roomEntryRestrictionMinutes =
           Math.ceil((oldMs - now.getTime()) / 60_000);
       }
     }
@@ -413,6 +442,9 @@ async function mutateAccount(db, env, actorPayload, body) {
       } : {}),
       ...(action === "restrictRoomChat" ? {
         roomChatRestrictedUntil: patch.roomChatRestrictedUntil,
+      } : {}),
+      ...(action === "restrictRoomEntry" ? {
+        roomEntryRestrictedUntil: patch.roomEntryRestrictedUntil,
       } : {}),
     };
 
@@ -459,6 +491,19 @@ async function mutateAccount(db, env, actorPayload, body) {
           title: "تقييد الكتابة في الغرف",
           body: "تم تقييد إرسال الرسائل داخل الغرف مؤقتًا. السبب: " + reason +
             ". موعد انتهاء التقييد: " + patch.roomChatRestrictedUntil.toISOString(),
+          read: false,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ] : []),
+      ...(action === "restrictRoomEntry" ? [
+        db.writeCreate(`notifications/account_room_entry_${key}`, {
+          userId: targetUid,
+          type: "account_room_entry_restricted",
+          category: "social",
+          title: "منع دخول الغرف مؤقتًا",
+          body: "تم منعك مؤقتًا من دخول الغرف. السبب: " + reason +
+            ". موعد انتهاء المنع: " + patch.roomEntryRestrictedUntil.toISOString(),
           read: false,
           createdAt: now,
           updatedAt: now,
