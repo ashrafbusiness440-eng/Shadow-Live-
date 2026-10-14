@@ -77,6 +77,15 @@ class ApiError extends Error {
 }
 
 function timestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value?.toDate === "function") {
+    return timestampMs(value.toDate());
+  }
+  if (value && typeof value === "object") {
+    const seconds = Number(value.seconds ?? value._seconds);
+    if (Number.isFinite(seconds)) return seconds * 1000;
+  }
+  if (typeof value === "number") return value;
   const ms = Date.parse(String(value || ""));
   return Number.isFinite(ms) ? ms : 0;
 }
