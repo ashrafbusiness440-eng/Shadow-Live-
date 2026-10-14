@@ -30,10 +30,12 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
   late ReportsHubSection _section;
   int _reloadCount = 0;
   bool _historyOpen = false;
+  String? _focusedReportId;
 
   @override
   void initState() {
     super.initState();
+    _focusedReportId = widget.initialReportId;
     _section = widget.initialSection ?? (widget.allowGeneral
         ? ReportsHubSection.roomsAndMessages
         : ReportsHubSection.diaries);
@@ -61,6 +63,8 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
             onTap: allowed ? () => setState(() {
               _section = section;
               _historyOpen = false;
+              _focusedReportId = null;
+              _reloadCount++;
             }) : null,
             child: Container(
               constraints: const BoxConstraints(minHeight: 76),
@@ -114,7 +118,7 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
       );
     }
     final focused = widget.initialSection == _section
-        ? widget.initialReportId : null;
+        ? _focusedReportId : null;
     switch (_section) {
       case ReportsHubSection.roomsAndMessages:
         return GeneralReportsControlPage(
@@ -156,7 +160,11 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
               tooltip: _historyOpen ? 'البلاغات الحالية' : 'البلاغات السابقة والمغلقة',
               icon: Icon(_historyOpen
                   ? Icons.assignment_outlined : Icons.history_rounded),
-              onPressed: () => setState(() => _historyOpen = !_historyOpen),
+              onPressed: () => setState(() {
+                _historyOpen = !_historyOpen;
+                _focusedReportId = null;
+                _reloadCount++;
+              }),
             ),
         ],
       ),
@@ -178,6 +186,19 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
                     ),
                   ),
                 ),
+                if (_focusedReportId != null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      key: const Key('reports-back-to-list'),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('العودة إلى قائمة البلاغات'),
+                      onPressed: () => setState(() {
+                        _focusedReportId = null;
+                        _reloadCount++;
+                      }),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                   child: Row(
