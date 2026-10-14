@@ -3,7 +3,8 @@ import test from "node:test";
 import fs from "node:fs";
 import {
   moderatedStagingKey, uploadModerationSnapshot,
-  reserveModerationAttempt, animatedImageNeedsReview,
+  reserveModerationAttempt, recordModerationOutcome,
+  animatedImageNeedsReview,
   classifyModeratedUpload, publishModeratedUpload,
 } from "../../cloudflare-worker/src/image-moderation-gate.js";
 
@@ -54,6 +55,20 @@ test("U6-L2 daily free cap is transactional and replay does not charge twice", a
     .reason,"daily_quota_reached");
   assert.equal(db.docs.get("image_moderation_usage/20261015_cloudflare_vision")
     .attempted,1);
+});
+
+test("U6-L2 per-image outcomes count once without fabricating external billing", async () => {
+  const db = new Db();
+  const when = new Date("2026-10-15T01:00:00Z");
+  const id = "e".repeat(32);
+  assert.equal(await recordModerationOutcome(db,id,policy,
+    {status:"needs_review", reason:"provider_unavailable"},when),true);
+  assert.equal(await recordModerationOutcome(db,id,policy,
+    {status:"approved", reason:"retry"},when),false);
+  const usage=db.docs.get("image_moderation_usage/20261015_cloudflare_vision");
+  assert.equal(usage.needsReview,1);
+  assert.equal(usage.approved,undefined);
+  assert.equal(usage.attempted,0);
 });
 
 test("U6-L2 unsupported motion cannot silently clear one frame", () => {
