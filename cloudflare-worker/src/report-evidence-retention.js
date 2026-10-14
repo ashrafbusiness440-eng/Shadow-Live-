@@ -133,3 +133,74 @@ export async function runDueReportEvidenceCleanup(env, {
   }
   return result;
 }
+
+// Explicit owner-controlled preservation for investigation, appeal or
+// legal necessity. Record every toggle, and mirror diary state atomically
+// to the legacy general-report copy so no sweeper bypasses a hold.
+export async function setReportEvidenceHold(db, {
+  collection, reportId, actorUid, hold, reason, operationKey,
+}) {
+  if (!["reports", "diary_reports"].includes(collection) ||
+      !/^[A-Za-z0-9_-]{1,512}$/.test(String(reportId || "")) ||
+      !/^[A-Za-z0-9_-]{12,180}$/.test(String(operationKey || "")) ||
+      typeof hold !== "boolean" ||
+      String(reason || "").trim().length < 3 ||
+      String(reason || "").trim().length > 200) {
+    throw new Error("invalid_request");
+  }
+  const tx = await db.beginTransaction();
+  try {
+    const path = collection + "/" + reportId;
+    const opPath = "control_operations/" + operationKey;
+    const [snapshot, operation] = await Promise.all([
+      db.get(path, tx), db.get(opPath, tx),
+    ]);
+    if (operation.exists) {
+      if (operation.data?.action !== "setReportEvidenceHold" ||
+          operation.data?.actorUid !== actorUid ||
+          operation.data?.targetId !== reportId ||
+          operation.data?.collection !== collection ||
+          operation.data?.hold !== hold) {
+        throw new Error("idempotency_key_conflict");
+      }
+      await db.rollback(tx);
+      return { ok: true, code: "duplicate", hold };
+    }
+    if (!snapshot.exists) throw new Error("report_not_found");
+    const current = snapshot.data || {};
+    const patch = {
+      evidenceHold: hold,
+      evidenceHoldReason: String(reason).trim(),
+      evidenceHoldChangedBy: actorUid,
+      evidenceHoldChangedAt: new Date(),
+      ...(!hold && current.evidenceRetentionDueAt
+        ? { evidencePurgeAt: current.evidenceRetentionDueAt } : {}),
+    };
+    const writes = [db.writeUpdate(path, patch, Object.keys(patch))];
+    if (collection === "diary_reports") {
+      const mirror = await db.get("reports/" + reportId, tx);
+      if (mirror.exists) {
+        writes.push(db.writeUpdate("reports/" + reportId, patch,
+          Object.keys(patch)));
+      }
+    }
+    const now = new Date();
+    writes.push(db.writeCreate("admin_audit_logs/report_evidence_hold_" +
+      operationKey, {
+      action: "setReportEvidenceHold", actorUid, reportId,
+      collection, reason: String(reason).trim(),
+      before: { hold: current.evidenceHold === true },
+      after: { hold }, createdAt: now,
+    }));
+    writes.push(db.writeCreate(opPath, {
+      action: "setReportEvidenceHold", actorUid,
+      targetId: reportId, collection, hold,
+      status: "completed", createdAt: now,
+    }));
+    await db.commit(tx, writes);
+    return { ok: true, code: "ok", hold };
+  } catch (error) {
+    await db.rollback(tx);
+    throw error;
+  }
+}
