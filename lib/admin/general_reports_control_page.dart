@@ -168,7 +168,7 @@ class GeneralReportsService {
 
   // Actions already committed on the server, not accusations or a live feed.
   static Future<Map<String, dynamic>> accountHistory(
-    String targetUid, {String? cursor},
+    String targetUid, {String? cursor}
   ) => _post('getAccountActionHistory', <String, dynamic>{
     'targetUid': targetUid,
     if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
@@ -468,7 +468,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
               final cursor = next
                   ? (page['nextCursor'] ?? '').toString()
                   : cursors[requested];
-              if (next && cursor.isEmpty) return;
+              if (next && (cursor == null || cursor.isEmpty)) return;
               update(() => loadingPage = true);
               try {
                 final received = await GeneralReportsService.accountHistory(
