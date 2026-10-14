@@ -140,10 +140,10 @@ export async function runImageModerationProvider(env, policy, {
     }
     if (provider === "google_safesearch") {
       const response = await fetch(
-        "https://vision.googleapis.com/v1/images:annotate?key=" +
-          encodeURIComponent(clean(env.GOOGLE_VISION_API_KEY)), {
+        "https://vision.googleapis.com/v1/images:annotate", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json",
+            "x-goog-api-key": clean(env.GOOGLE_VISION_API_KEY) },
           body: JSON.stringify({ requests: [{
             image: { content: encoded },
             features: [{ type: "SAFE_SEARCH_DETECTION", maxResults: 1 }],
