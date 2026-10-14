@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { verifiedRoomReportEvidence } from "../../cloudflare-worker/src/chat-safety-actions.js";
 
 function source(path) {
   return readFileSync(new URL("../../" + path, import.meta.url), "utf8");
@@ -47,4 +48,34 @@ test("room report UI submits only a message id and reason over the live socket",
     feed.includes("'يُحفظ فقط دليل محدود لهذه الرسالة وسياق قريب منها للمراجعة.'"),
     true,
   );
+});
+
+
+test("U6-A verified room evidence is bounded and ignores submitted client claims", () => {
+  const time = new Date("2026-10-14T12:00:00Z");
+  const live = {
+    roomName:"الغرفة الرسمية", roomType:"agency", ownerUid:"owner001",
+    hostUid:"host001", isActive:true,
+    seats:Array.from({length:40},(_,i)=>({
+      index:i, uid:i%3===0 ? "" : "uid"+i,
+      muted:i%2===0, locked:i===2, muteLocked:i===4,
+      streamToken:"never_copy_voice_tokens",
+      privateEmail:"never_copy_email",
+    })),
+  };
+  const snapshot=verifiedRoomReportEvidence(live,time);
+  assert.equal(snapshot.source,"verified_room_document");
+  assert.deepEqual(snapshot.recordedAt,time);
+  assert.equal(snapshot.roomState.name,"الغرفة الرسمية");
+  assert.equal(snapshot.roomState.type,"agency");
+  assert.equal(snapshot.roomState.ownerUid,"owner001");
+  assert.equal(snapshot.roomState.hostUid,"host001");
+  assert.equal(snapshot.roomState.occupiedSeatCount,14);
+  assert.equal(snapshot.roomState.occupiedSeats.length,14);
+  assert.equal(snapshot.roomState.occupiedSeats[0].uid,"uid1");
+  assert.equal(snapshot.roomState.occupiedSeats.at(-1).uid,"uid20");
+  assert.doesNotMatch(JSON.stringify(snapshot),/streamToken|privateEmail|never_copy/);
+  const report=source("cloudflare-worker/src/chat-safety-actions.js");
+  assert.match(report,/evidence: verifiedRoomReportEvidence\(room\.data \|\| \{\}, now\)/);
+  assert.ok(!report.includes("evidence: verifiedRoomReportEvidence(body"));
 });
