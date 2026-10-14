@@ -6,6 +6,11 @@ workers_dev = true
 [observability]
 enabled = true
 
+# Workers AI binding only. No inference or billing occurs until the owner
+# enables moderation AFTER the pre-publication gate is verified.
+[ai]
+binding = "AI"
+
 [[analytics_engine_datasets]]
 binding = "PRESSURE_ANALYTICS"
 dataset = "shadow_live_pressure_v1"
