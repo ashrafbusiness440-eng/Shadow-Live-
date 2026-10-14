@@ -16,6 +16,7 @@ import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
 import { evidenceDeadline, setReportEvidenceHold } from "./report-evidence-retention.js";
 import { contentFilterControlInternals } from "./content-filter-control.js";
+import { CONTENT_FILTER_COORDINATOR_ID } from "./content-filter.js";
 import { reportPriority, reportPriorityRank, validReportPriority } from "./report-priority-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -840,19 +841,46 @@ async function reviewSystemFlag(db, env, actor, body) {
   });
 }
 
-async function openSystemFlagEvidence(db, actor, body) {
+async function openSystemFlagEvidence(db, env, actor, body) {
   if (!actor?.canViewSensitiveEvidence) {
     throw new GeneralReportError("forbidden_evidence", 403);
   }
   const id = clean(body.flagId);
-  if (!/^saved_[A-Za-z0-9_-]{1,180}$/.test(id)) {
-    throw new GeneralReportError("invalid_report_id", 400);
+  if (/^saved_[A-Za-z0-9_-]{1,180}$/.test(id)) {
+    return readProtectedReportEvidence(db, {
+      collection: "content_filter_flags",
+      reportId: id.slice(6),
+      actorUid: actor.uid,
+    });
   }
-  return readProtectedReportEvidence(db, {
-    collection: "content_filter_flags",
-    reportId: id.slice(6),
-    actorUid: actor.uid,
-  });
+  const match = /^room_([1-9][0-9]{0,15})$/.exec(id);
+  if (!match) throw new GeneralReportError("invalid_report_id", 400);
+  if (!env?.ROOM_REALTIME) {
+    throw new GeneralReportError("room_filter_not_available", 503);
+  }
+  // Mandatory durable audit before any privileged DO evidence is returned.
+  await db.commit(null, [db.writeCreate(
+    "admin_audit_logs/report_evidence_open_" + crypto.randomUUID(), {
+      action: "openSensitiveReportEvidence",
+      actorUid: actor.uid, reportId: id,
+      sourceCollection: "room_content_filter_flags",
+      createdAt: new Date(),
+    },
+  )]);
+  const coordinator = env.ROOM_REALTIME.get(
+    env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID),
+  );
+  const response = await coordinator.fetch(
+    "https://internal/filter/flag/evidence", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sequence: Number(match[1]) }),
+    });
+  if (!response.ok) throw new GeneralReportError("report_not_found", 404);
+  const payload = await response.json();
+  return { ok: true, reportId: id,
+    evidence: payload?.evidence && typeof payload.evidence === "object"
+      ? { text: String(payload.evidence.text || "").slice(0, 2000) } : {},
+  };
 }
 
 async function holdGeneralEvidence(db, actor, body) {
@@ -897,7 +925,7 @@ export async function generalReports(request, env) {
       throw new GeneralReportError("forbidden", 403);
     }
     const result = action === "openSystemFlagEvidence"
-      ? await openSystemFlagEvidence(db, actor, body)
+      ? await openSystemFlagEvidence(db, env, actor, body)
       : action === "setEvidenceHold"
       ? await holdGeneralEvidence(db, actor, body)
       : action === "listSystemFlags"
