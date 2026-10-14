@@ -71,6 +71,7 @@ function itemAllowedForActor(actor, item) {
     case "account_report":
     case "room_message_report":
     case "room_report":
+    case "system_repeat_flag":
       return canSeeGeneralReports(actor);
     case "agency_application":
       return canReviewAgencyApplications(actor);
@@ -492,6 +493,9 @@ function inboxActorRoles(item) {
     case "room_report":
       candidates.push(["مقدّم البلاغ", meta.reporterUid]);
       candidates.push(["الحساب المبلّغ عليه", meta.targetUid]);
+      break;
+    case "system_repeat_flag":
+      candidates.push(["الحساب المرتبط بالتنبيهات", meta.actorUid]);
       break;
     case "agency_application":
       candidates.push(["مقدّم الطلب", meta.applicantUid]);
