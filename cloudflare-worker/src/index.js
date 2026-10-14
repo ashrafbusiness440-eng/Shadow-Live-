@@ -4,6 +4,7 @@ import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
 import { authConfig } from "./auth-config.js";
 import { contentFilterControl } from "./content-filter-control.js";
+import { CONTENT_FILTER_COORDINATOR_ID } from "./content-filter.js";
 import { changePublicId } from "./change-public-id.js";
 import { setIdManagementPermission } from "./set-id-management-permission.js";
 import { manageUserAccess } from "./manage-user-access.js";
@@ -319,6 +320,24 @@ export default {
       } catch (error) {
         console.error("Evidence retention cleanup failed",
           String(error?.message || "failed").slice(0, 100));
+      }
+    }
+
+    if (schedule.getUTCMinutes() === 0 && env?.ROOM_REALTIME) {
+      try {
+        const coordinator = env.ROOM_REALTIME.get(
+          env.ROOM_REALTIME.idFromName(CONTENT_FILTER_COORDINATOR_ID));
+        const response = await coordinator.fetch(
+          "https://internal/filter/flag/purge", { method: "POST" });
+        if (!response.ok) throw new Error("room_flag_purge_failed");
+        const result = await response.json();
+        if (result.purged) {
+          console.log("Room filtered evidence expired",
+            JSON.stringify({ checked: result.checked, purged: result.purged }));
+        }
+      } catch (error) {
+        console.error("Room filtered evidence cleanup failed",
+          String(error?.message || "failed").slice(0, 80));
       }
     }
 
