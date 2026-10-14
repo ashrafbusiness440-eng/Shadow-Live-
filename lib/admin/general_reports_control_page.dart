@@ -29,6 +29,7 @@ String generalReportErrorMessage(Object error) {
     'owner_protected' => 'حساب المالك محمي ولا يمكن حظره أو تعليقه.',
     'not_found' => 'الحساب المبلّغ عليه غير موجود.',
     'invalid_suspend_duration' => 'مدة التعليق غير صحيحة.',
+    'invalid_restriction_duration' => 'اختر مدة صحيحة لتقييد الرسائل الخاصة.',
     _ => 'تعذّر تنفيذ الطلب. تحقق من الاتصال وأعد المحاولة.',
   };
 }
@@ -46,6 +47,7 @@ class GeneralReportItem {
     'account_suspended' => 'القرار: تعليق الحساب',
     'account_banned' => 'القرار: حظر الحساب',
     'warning' => 'القرار: تحذير الحساب',
+    'private_messages_restricted' => 'القرار: تقييد الرسائل الخاصة',
     _ => '',
   };
   Map<String, dynamic> mapField(String key) {
@@ -128,7 +130,8 @@ class GeneralReportsService {
       'reportId': reportId,
       'accountAction': action,
       'reason': reason,
-      if (action == 'suspend') 'durationMinutes': durationMinutes,
+      if (action == 'suspend' || action == 'restrictPrivateMessages')
+        'durationMinutes': durationMinutes,
       'idempotencyKey': 'gr_action_${DateTime.now().microsecondsSinceEpoch}',
     });
   }
@@ -163,6 +166,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _canWarn = false;
   bool _canSuspend = false;
   bool _canBan = false;
+  bool _canRestrictPrivateMessages = false;
   bool _capped = false;
   String? _error;
   List<GeneralReportItem> _items = [];
@@ -196,6 +200,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         _canWarn = result['canWarn'] == true;
         _canSuspend = result['canSuspend'] == true;
         _canBan = result['canBan'] == true;
+        _canRestrictPrivateMessages = result['canRestrictPrivateMessages'] == true;
         _capped = result['capped'] == true;
       });
     } catch (error) {
@@ -284,7 +289,10 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         item.status != 'under_review') return;
     if (action == 'warn' && !_canWarn ||
         action == 'suspend' && !_canSuspend ||
-        action == 'ban' && !_canBan) return;
+        action == 'ban' && !_canBan ||
+        action == 'restrictPrivateMessages' && !_canRestrictPrivateMessages) {
+      return;
+    }
     final reason = TextEditingController();
     var minutes = 1440;
     final confirmed = await showDialog<String>(
@@ -293,7 +301,10 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         builder: (context, update) => AlertDialog(
           title: Text(action == 'warn' ? 'تحذير الحساب المبلّغ عليه'
               : action == 'suspend'
-                ? 'تعليق الحساب المبلّغ عليه' : 'حظر الحساب المبلّغ عليه'),
+                ? 'تعليق الحساب المبلّغ عليه'
+                : action == 'restrictPrivateMessages'
+                  ? 'تقييد الرسائل الخاصة مؤقتًا'
+                  : 'حظر الحساب المبلّغ عليه'),
           content: SizedBox(
             width: 400,
             child: Column(
@@ -304,11 +315,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                       'وسيصل لصاحب البلاغ إشعار بالقرار فقط بعد تسجيله بنجاح.'
                     : 'سيتم تنفيذ العقوبة فعلًا، ولن يصلك تأكيد حتى ينجح الخادم. '
                       'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.'),
-                if (action == 'suspend')
+                if (action == 'suspend' || action == 'restrictPrivateMessages')
                   DropdownButtonFormField<int>(
                     initialValue: minutes,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'مدة التعليق'),
+                    decoration: InputDecoration(
+                      labelText: action == 'restrictPrivateMessages'
+                          ? 'مدة تقييد الرسائل الخاصة' : 'مدة التعليق',
+                    ),
                     items: const [
                       DropdownMenuItem(value: 60, child: Text('ساعة')),
                       DropdownMenuItem(value: 1440, child: Text('يوم')),
@@ -511,6 +525,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _takeAccountAction(item, 'warn'),
                       icon: const Icon(Icons.warning_amber_rounded),
                       label: const Text('توجيه تحذير'),
+                    ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canRestrictPrivateMessages)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'restrictPrivateMessages'),
+                      icon: const Icon(Icons.mark_chat_unread_outlined),
+                      label: const Text('تقييد الرسائل الخاصة'),
                     ),
                   if (inReview && item.targetUid.isNotEmpty &&
                       _canSuspend)
