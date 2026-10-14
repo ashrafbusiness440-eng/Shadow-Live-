@@ -1547,3 +1547,35 @@ test("U6-E7 new evidence permission is owner-grantable but never bundled with or
   const diary=fs.readFileSync("cloudflare-worker/src/diary-moderation.js","utf8");
   assert.match(diary,/action === "openSensitiveEvidence"/);
 });
+
+test("U6-F system alerts reuse the bounded filter source and never infer guilt", async () => {
+  const db = new Db({
+    "content_filter_flags/f001": {
+      actorUid:"sender", surface:"private_chat", ruleIds:["r01"],
+      status:"pending", createdAt:new Date("2026-10-14T00:00:00Z"),
+      originalText:"SENSITIVE_NOT_FOR_RESPONSE",
+    },
+  });
+  const out=await contentFilterControlInternals.listFlags(db,{});
+  assert.equal(out.roomUnavailable,true);
+  assert.equal(out.items.length,1);
+  assert.equal(out.items[0].id,"saved_f001");
+  assert.equal(out.items[0].actorUid,"sender");
+  assert.equal(JSON.stringify(out).includes("SENSITIVE_NOT_FOR_RESPONSE"),false);
+  assert.equal(db.queryCalls,1);
+  const actor={uid:"reviewer",canReview:true};
+  const done=await generalReportsTestHooks.reviewSystemFlag(db,{},actor,{
+    flagId:"saved_f001",
+    reason:"تمت مراجعة التنبيه يدويًا",
+    idempotencyKey:"u6f_review_f001_0001",
+  });
+  assert.equal(done.ok,true);
+  assert.equal(db.docs.get("content_filter_flags/f001").status,"reviewed");
+  assert.ok(db.docs.has("admin_audit_logs/content_filter_flag_u6f_review_f001_0001"));
+  await assert.rejects(()=>generalReportsTestHooks.reviewSystemFlag(
+    db,{}, {uid:"viewer",canReview:false},{
+      flagId:"saved_f001",reason:"مراجعة",
+      idempotencyKey:"u6f_review_denied_0001",
+    }),/forbidden/);
+  assert.equal(db.docs.get("users/sender"),undefined);
+});
