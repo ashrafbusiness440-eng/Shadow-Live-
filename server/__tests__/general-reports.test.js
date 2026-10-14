@@ -99,10 +99,12 @@ test("existing report sources are queried within limits, with verified public pr
     "user_report","room_message_report","room_report"]);
   assert.equal(out.items[0].reporterProfile.displayName,"المبلّغ");
   assert.equal(out.items[0].targetProfile.publicId,"87654321");
-  assert.equal(out.items[1].evidence.message.text,"bad");
+  assert.equal(out.items[1].evidence,undefined);
+  assert.equal(out.items[1].hasSensitiveEvidence,true);
   assert.equal(out.items[2].targetProfile.displayName,"صاحب الغرفة");
   const detail = await generalReportsTestHooks.getGeneralReport(db,{reportId:"room_msg"});
-  assert.equal(detail.item.evidence.context.length,1);
+  assert.equal(detail.item.evidence,undefined);
+  assert.equal(detail.item.hasSensitiveEvidence,true);
   await assert.rejects(
     () => generalReportsTestHooks.getGeneralReport(db,{reportId:"diary_1"}),
     /report_not_found/);
@@ -974,8 +976,8 @@ test("U6-A room evidence is visible and account reports retain accurate review t
   const db=new Db(seed);
   const room=await generalReportsTestHooks.getGeneralReport(
     db,{reportId:"verified_room_u6a"});
-  assert.equal(room.item.evidence.roomState.name,"غرفة المثال");
-  assert.equal(room.item.evidence.roomState.occupiedSeats[0].uid,"speaker");
+  assert.equal(room.item.evidence,undefined);
+  assert.equal(room.item.hasSensitiveEvidence,true);
 
   await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
     reportId:"direct_account_u6a",status:"under_review",
@@ -1463,4 +1465,66 @@ test("U6-E6 history does not guess permanent legacy state or leak private proof"
   assert.equal(JSON.stringify(out).includes("PRIVATE_EVIDENCE"),false);
   assert.equal(JSON.stringify(out).includes("SECRET_NOT_ALLOWED"),false);
   assert.equal(db.queryCalls,1);
+});
+
+test("U6-E7 sensitive report evidence requires its own granted capability and is always audited", async () => {
+  const db=new Db({
+    ...cases(),
+    "users/owner":{role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/reviewer":{role:"moderator",adminEnabled:true,accountStatus:"active",capabilities:["reviewReports"]},
+    "users/viewer":{role:"moderator",adminEnabled:true,accountStatus:"active",capabilities:["viewReports"]},
+    "users/evidence_only":{role:"moderator",adminEnabled:true,accountStatus:"active",capabilities:["viewReportEvidence"]},
+    "users/authorized":{role:"moderator",adminEnabled:true,accountStatus:"active",capabilities:["viewReports","viewReportEvidence"]},
+  });
+  const list=await generalReportsTestHooks.listGeneralReports(db,{limit:20});
+  const details=await generalReportsTestHooks.getGeneralReport(db,{reportId:"room_msg"});
+  const history=await generalReportsTestHooks.listReportHistory(db,{type:"room_message_report"});
+  for(const page of [list, details, history]) {
+    assert.equal(JSON.stringify(page).includes('"evidence"'),false);
+    assert.equal(JSON.stringify(page).includes('"text":"bad"'),false);
+  }
+  const open=(actor,reportId="room_msg")=>
+    generalReportsTestHooks.openGeneralSensitiveEvidence(db,actor,{reportId});
+  for(const uid of ["viewer","reviewer"]) {
+    const actor=await generalReportsTestHooks.requireAdmin(db,{sub:uid});
+    assert.equal(actor.canViewSensitiveEvidence,false);
+    await assert.rejects(()=>open(actor),/forbidden_evidence/);
+  }
+  await assert.rejects(()=>generalReportsTestHooks.requireAdmin(
+    db,{sub:"evidence_only"}),/forbidden/);
+  const granted=await generalReportsTestHooks.requireAdmin(db,{sub:"authorized"});
+  assert.equal(granted.canViewSensitiveEvidence,true);
+  const opened=await open(granted);
+  assert.equal(opened.evidence.message.text,"bad");
+  assert.equal(opened.reportId,"room_msg");
+  const owner=await generalReportsTestHooks.requireAdmin(db,{sub:"owner"});
+  assert.equal(owner.canViewSensitiveEvidence,true);
+  await open(owner);
+  const audit=[...db.docs.entries()].filter(([k])=>
+    k.startsWith("admin_audit_logs/report_evidence_open_"));
+  assert.equal(audit.length,2);
+  assert.deepEqual(new Set(audit.map(([,v])=>v.actorUid)),
+    new Set(["owner","authorized"]));
+  for(const [,v] of audit) {
+    assert.equal(v.action,"openSensitiveReportEvidence");
+    assert.equal(v.sourceCollection,"reports");
+    assert.equal(v.reportId,"room_msg");
+    assert.equal(JSON.stringify(v).includes('"bad"'),false);
+  }
+  await assert.rejects(()=>open(granted,"../room_msg"),/invalid_report_id/);
+  await assert.rejects(()=>open(granted,"diary_1"),/report_not_found/);
+  assert.equal([...db.docs.keys()].filter(k=>
+    k.startsWith("admin_audit_logs/report_evidence_open_")).length,2);
+});
+
+test("U6-E7 failure to write the audit fails closed before revealing evidence", async () => {
+  const db=new Db(cases());
+  db.commit=async()=>{throw new Error("audit_unavailable")};
+  await assert.rejects(
+    ()=>generalReportsTestHooks.openGeneralSensitiveEvidence(
+      db,{uid:"owner",canViewSensitiveEvidence:true},{reportId:"room_msg"}),
+    /audit_unavailable/,
+  );
+  assert.equal([...db.docs.keys()].some(k=>k.startsWith(
+    "admin_audit_logs/report_evidence_open_")),false);
 });
