@@ -128,7 +128,8 @@ function flagItem(id, data = {}) {
     diaryId: clean(data.diaryId),
     ruleIds: Array.isArray(data.ruleIds) ? data.ruleIds.map(clean).slice(0, 12) : [],
     status: clean(data.status) || "pending",
-    hasSensitiveEvidence: Boolean(data.evidence &&
+    hasSensitiveEvidence: data.hasSensitiveEvidence === true ||
+      Boolean(data.evidence &&
       typeof data.evidence.text === "string" && data.evidence.text.length),
     createdAtMs: Number.isFinite(data.createdAtMs)
       ? data.createdAtMs : Number.isFinite(timestamp) ? timestamp : 0,
