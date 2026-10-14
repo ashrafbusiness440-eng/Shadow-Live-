@@ -218,3 +218,15 @@ export async function persistRoomChatReport(
 
   return { ok: true, reportId };
 }
+
+
+// The persistent account policy stays in the existing storage service;
+// realtime transport receives only a compact, bounded user-state result.
+export async function loadRoomChatModerationRecord(env, uid) {
+  const id = String(uid || "").trim();
+  if (!/^[^/\\\\]{1,180}$/.test(id)) {
+    throw new Error("invalid_room_chat_user");
+  }
+  const snap = await firestoreClient(env).get(`users/${id}`);
+  return snap.exists ? (snap.data || {}) : null;
+}
