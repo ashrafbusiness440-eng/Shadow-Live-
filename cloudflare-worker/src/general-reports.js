@@ -274,6 +274,7 @@ const ACCOUNT_HISTORY_ACTIONS = new Set([
   "restrictRoomMic", "liftPrivateMessagesRestriction",
   "liftRoomChatRestriction", "liftRoomEntryRestriction",
   "liftRoomMicRestriction",
+  "moderatorDeleteDiary", "moderatorDeleteDiaryComment",
 ]);
 const ACCOUNT_HISTORY_CASE_ACTIONS = Object.freeze({
   warn: "warning", suspend: "account_suspended",
@@ -282,6 +283,8 @@ const ACCOUNT_HISTORY_CASE_ACTIONS = Object.freeze({
   restrictRoomChat: "room_chat_restricted",
   restrictRoomEntry: "room_entry_restricted",
   restrictRoomMic: "room_mic_restricted",
+  moderatorDeleteDiary: "diary_deleted",
+  moderatorDeleteDiaryComment: "diary_comment_deleted",
 });
 const ACCOUNT_HISTORY_PAGE_SIZE = 20;
 async function accountHistoryReadMany(db, paths) {
@@ -293,7 +296,11 @@ async function accountHistoryReadMany(db, paths) {
 async function getAccountActionHistory(db, body = {}) {
   const targetUid = safeId(body.targetUid, "invalid_target_uid");
   const cursor = clean(body.cursor);
-  if (cursor) safeId(cursor, "invalid_cursor");
+  // Indexed content-deletion keys include the 180-character source ID
+  // and a deterministic prefix. Cursor characters remain path-safe.
+  if (cursor && !/^[A-Za-z0-9_-]{1,220}$/.test(cursor)) {
+    throw new GeneralReportError("invalid_cursor", 400);
+  }
   // Firestore's single-field targetId index + document-name cursor: 21
   // operations maximum, regardless of the account's total history.
   const rows = await db.runQuery("control_operations", {
@@ -314,8 +321,19 @@ async function getAccountActionHistory(db, body = {}) {
       clean(op.result?.action) === clean(op.action) &&
       clean(op.result?.targetUid) === targetUid;
   });
-  const audits = await accountHistoryReadMany(db, valid.map(
-    (row) => "admin_audit_logs/account_" + row.id));
+  const audits = await accountHistoryReadMany(db, valid.map((row) => {
+    const action = clean(row.data?.action);
+    const sourceId = clean(row.data?.result?.sourceOperationId);
+    if (row.id === "history_diary_" + sourceId && sourceId &&
+        action === "moderatorDeleteDiary") {
+      return "admin_audit_logs/diary_delete_" + sourceId;
+    }
+    if (row.id === "history_diary_" + sourceId && sourceId &&
+        action === "moderatorDeleteDiaryComment") {
+      return "admin_audit_logs/diary_comment_delete_" + sourceId;
+    }
+    return "admin_audit_logs/account_" + row.id;
+  }));
   const linked = valid.filter((row) => clean(row.data?.result?.linkedReportId));
   const reports = await accountHistoryReadMany(db, linked.map(
     (row) => "reports/" + clean(row.data.result.linkedReportId)));
