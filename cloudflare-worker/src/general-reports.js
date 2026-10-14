@@ -14,6 +14,7 @@ import { loadPublicProfilePresentations } from "./public-profile-presentation.js
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
+import { openReportScreenshot } from "./report-screenshot.js";
 import { evidenceDeadline, setReportEvidenceHold } from "./report-evidence-retention.js";
 import { contentFilterControlInternals } from "./content-filter-control.js";
 import { CONTENT_FILTER_COORDINATOR_ID } from "./content-filter.js";
@@ -911,7 +912,9 @@ export async function generalReports(request, env) {
       action === "reviewReport" || action === "applyAccountAction" ||
       action === "setReportPriority" || action === "reviewSystemFlag" ||
       action === "setEvidenceHold");
-    if (action === "openSensitiveEvidence" || action === "openSystemFlagEvidence") {
+    if (action === "openSensitiveEvidence" ||
+        action === "openSystemFlagEvidence" ||
+        action === "openReportScreenshot") {
       if (!actor.canViewSensitiveEvidence) {
         throw new GeneralReportError("forbidden_evidence", 403);
       }
@@ -924,7 +927,9 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "openSystemFlagEvidence"
+    const result = action === "openReportScreenshot"
+      ? await openReportScreenshot(db, env, actor.uid, safeId(body.reportId))
+      : action === "openSystemFlagEvidence"
       ? await openSystemFlagEvidence(db, env, actor, body)
       : action === "setEvidenceHold"
       ? await holdGeneralEvidence(db, actor, body)
