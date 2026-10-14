@@ -608,3 +608,83 @@ test("U5 Firestore image write and DM previews enforce active server restriction
   assert.match(ui, /'restrictPrivateMessages'/);
   assert.match(client, /case 'private_messages_restricted':/);
 });
+
+
+test("U5-B1 room chat restriction requires real account operation, protects owner, and notifies", async () => {
+  const db = new Db({
+    ...cases(),
+    "users/admin": { role:"owner", adminEnabled:true, accountStatus:"active" },
+    "users/target": { role:"user", accountStatus:"active" },
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db, "admin", {
+    reportId:"room_msg", status:"under_review",
+    reason:"فحص رسالة الغرفة", idempotencyKey:"u5b_review_12345678",
+  });
+  const action = {
+    reportId:"room_msg", accountAction:"restrictRoomChat",
+    durationMinutes:60, reason:"إساءة متكررة بالغرف",
+    idempotencyKey:"u5b_room_action_12345678",
+  };
+  const applied = await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", action);
+  assert.equal(applied.status,"actioned");
+  assert.equal(applied.moderationAction,"room_chat_restricted");
+  const user = db.docs.get("users/target");
+  assert.ok(new Date(user.roomChatRestrictedUntil).getTime()>Date.now());
+  assert.equal(user.accountStatus,"active");
+  const receipt = db.docs.get("control_operations/u5b_room_action_12345678_account");
+  assert.equal(receipt.result.linkedReportId,"room_msg");
+  assert.equal(receipt.result.action,"restrictRoomChat");
+  const reporterNote = db.docs.get("notifications/report_result_u5b_room_action_12345678_resolution");
+  assert.equal(reporterNote.userId,"reporter");
+  assert.equal(reporterNote.actionKind,"room_chat_restricted");
+  assert.match(reporterNote.body,/الكتابة|كتابة/);
+  const targetNote = db.docs.get("notifications/account_room_chat_u5b_room_action_12345678_account");
+  assert.equal(targetNote.userId,"target");
+  assert.match(targetNote.body,/الغرف/);
+  assert.equal((await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", action)).code,"duplicate");
+
+  const denied = new Db({
+    "users/admin": {role:"moderator",adminEnabled:true,capabilities:["reviewReports"],accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+  });
+  await assert.rejects(() => mutateAccount(denied, {}, {sub:"admin"}, {
+    targetUid:"target", accountAction:"restrictRoomChat",
+    durationMinutes:60, reason:"إساءة في غرفة",
+    idempotencyKey:"u5b_cap_denied_12345678",
+  }), /forbidden/);
+  const owner = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"owner",accountStatus:"active"},
+  });
+  await assert.rejects(() => mutateAccount(owner, {}, {sub:"admin"}, {
+    targetUid:"target", accountAction:"restrictRoomChat",
+    durationMinutes:60, reason:"إساءة في غرفة",
+    idempotencyKey:"u5b_owner_denied_12345678",
+  }), /owner_protected/);
+});
+
+test("U5-B1 restriction duration is validated and does not shorten an active sanction", async () => {
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {
+      role:"user",accountStatus:"active",
+      roomChatRestrictedUntil: new Date(Date.now()+120*60_000),
+    },
+  });
+  for (const durationMinutes of [0, 9, -1, 43201]) {
+    await assert.rejects(() => mutateAccount(db,{}, {sub:"admin"},{
+      targetUid:"target",accountAction:"restrictRoomChat",
+      durationMinutes,reason:"مراجعة إساءة",
+      idempotencyKey:"u5b_invalid_duration_1234",
+    }), /invalid_restriction_duration/);
+  }
+  const old = new Date(db.docs.get("users/target").roomChatRestrictedUntil).getTime();
+  await mutateAccount(db,{}, {sub:"admin"},{
+    targetUid:"target",accountAction:"restrictRoomChat",
+    durationMinutes:60,reason:"مراجعة إساءة",
+    idempotencyKey:"u5b_extend_only_1234567",
+  });
+  assert.equal(new Date(db.docs.get("users/target").roomChatRestrictedUntil).getTime(),old);
+});
