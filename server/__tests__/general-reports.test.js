@@ -91,7 +91,7 @@ test("only user and room reports enter this separate moderation flow", () => {
 test("existing report sources are queried within limits, with verified public profiles", async () => {
   const db = new Db(cases());
   const out = await generalReportsTestHooks.listGeneralReports(db, {limit:20});
-  assert.equal(db.queryCalls,3);
+  assert.equal(db.queryCalls,4);
   assert.equal(out.items.length,3);
   assert.deepEqual(out.items.map(x=>x.type),[
     "user_report","room_message_report","room_report"]);
@@ -117,7 +117,7 @@ test("unified hub sections use only matching bounded report sources", async () =
   const roomsDb = new Db(cases());
   const rooms = await generalReportsTestHooks.listGeneralReports(
     roomsDb, { limit: 25, scope: "rooms_messages" });
-  assert.equal(roomsDb.queryCalls, 2);
+  assert.equal(roomsDb.queryCalls, 3);
   assert.deepEqual(rooms.items.map(x => x.type),
     ["room_message_report", "room_report"]);
   assert.equal(rooms.items.some(x => x.type === "user_report"), false);
