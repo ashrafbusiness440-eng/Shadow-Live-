@@ -947,3 +947,40 @@ test("U5-B4 microphone sanctions protect owner, scope, duration, and idempotency
     idempotencyKey:"u5b4_unprivileged_mic_123456",
   }),/forbidden/);
 });
+
+
+test("U6-A room evidence is visible and account reports retain accurate review titles", async () => {
+  const seed={
+    ...cases(),
+    "reports/direct_account_u6a": {
+      targetType:"user",source:"profile",reporterUid:"reporter",
+      targetUid:"target",reason:"spam",status:"new",
+      createdAt:new Date(8000),
+    },
+    "reports/verified_room_u6a": {
+      targetType:"room",reporterUid:"reporter",targetUid:"owner",
+      roomId:"room1",reason:"abuse",status:"new",
+      evidence: {
+        source:"verified_room_document",
+        roomState:{
+          name:"غرفة المثال",
+          ownerUid:"owner",occupiedSeats:[{uid:"speaker",seatIndex:2,muted:false}],
+        },
+      },
+      createdAt:new Date(9000),
+    },
+  };
+  const db=new Db(seed);
+  const room=await generalReportsTestHooks.getGeneralReport(
+    db,{reportId:"verified_room_u6a"});
+  assert.equal(room.item.evidence.roomState.name,"غرفة المثال");
+  assert.equal(room.item.evidence.roomState.occupiedSeats[0].uid,"speaker");
+
+  await generalReportsTestHooks.reviewGeneralReport(db,"admin",{
+    reportId:"direct_account_u6a",status:"under_review",
+    reason:"مراجعة حساب",idempotencyKey:"u6a_account_review_123456",
+  });
+  const item=db.docs.get("admin_inbox_items/account_report__direct_account_u6a");
+  assert.equal(item.title,"بلاغ مباشر عن حساب");
+  assert.equal(item.meta.targetUid,"target");
+});
