@@ -138,6 +138,7 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
         );
       case ReportsHubSection.system:
         return SystemReportsControlPage(
+          initialActorUid: focused,
           key: ValueKey('reports-hub-system-$_reloadCount'),
         );
       case ReportsHubSection.diaries:
