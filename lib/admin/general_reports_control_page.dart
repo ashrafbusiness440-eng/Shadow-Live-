@@ -14,6 +14,7 @@ String generalReportErrorMessage(Object error) {
     'forbidden' => 'ما عندك صلاحية لمراجعة البلاغ.',
     'recent_auth_required' => 'سجّل الدخول من جديد لتأكيد الإجراء.',
     'report_not_found' => 'هذا البلاغ غير موجود. حدّث القائمة.',
+    'reporter_unavailable' => 'لا توجد بيانات كافية لعرض سجل هذا المبلّغ.',
     'invalid_report_transition' => 'حالة البلاغ تغيرت. حدّث القائمة وحاول مجدداً.',
     'invalid_reason' => 'اكتب سبباً واضحاً بين 3 و200 حرف، أو اترك سبب الرفض فارغًا.',
     'invalid_idempotency_key' => 'تعذّر تسجيل العملية. أعد المحاولة.',
@@ -159,6 +160,9 @@ class GeneralReportsService {
               if (scope != null) 'scope': scope,
             })
           : _post('getReport', <String, dynamic>{'reportId': reportId});
+
+  static Future<Map<String, dynamic>> reporterContext(String reportId) =>
+      _post('getReporterContext', <String, dynamic>{'reportId': reportId});
 
   static Future<Map<String, dynamic>> history({
     required String type, String? cursor,
@@ -335,6 +339,62 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         )),
       );
       await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(generalReportErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.id));
+    }
+  }
+
+  Future<void> _showReporterContext(GeneralReportItem item) async {
+    if (_busy.contains(item.id) || item.reporterUid.isEmpty) return;
+    setState(() => _busy.add(item.id));
+    try {
+      final result = await GeneralReportsService.reporterContext(item.id);
+      if (!mounted) return;
+      final raw = result['counts'];
+      final counts = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
+      int count(String key) => (counts[key] as num?)?.toInt() ?? 0;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('سياق بلاغات مقدّم البلاغ'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('تمت مراجعة عينة محدودة من ${result['sampled'] ?? 0} بلاغًا.'),
+                const SizedBox(height: 12),
+                Text('بلاغات مرفوضة: ${count('rejected')}'),
+                Text('بلاغات اتُخذ بشأنها إجراء: ${count('actioned')}'),
+                Text('بلاغات قيد المعالجة: ${count('pending')}'),
+                Text('حالات أخرى أو مغلقة: ${count('other')}'),
+                if (result['capped'] == true)
+                  const Text('هذه عينة محدودة وليست إجمالي بلاغات الشخص.'),
+                const SizedBox(height: 12),
+                const Text(
+                  'رفض بلاغ سابق لا يعني أنه بلاغ كيدي. هذه معلومات '
+                  'للمراجعة البشرية فقط، ولا تُفرض أي عقوبة تلقائية.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -714,6 +774,16 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
             const SizedBox(height: 10),
             _identity('مقدّم البلاغ', item.reporterUid,
                 item.mapField('reporterProfile')),
+            if (item.reporterUid.isNotEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _busy.contains(item.id)
+                      ? null : () => _showReporterContext(item),
+                  icon: const Icon(Icons.manage_search_rounded),
+                  label: const Text('سياق البلاغات السابقة'),
+                ),
+              ),
             const SizedBox(height: 8),
             _identity(
               item.type == 'room_report'
