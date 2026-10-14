@@ -8,6 +8,7 @@ import { deleteDiary, deleteComment } from "./diaries.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
+import { evidenceDeadline, setReportEvidenceHold } from "./report-evidence-retention.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -123,6 +124,7 @@ function normalizeReport(id, data = {}) {
     reasonLabel: clean(data.reasonLabel),
     status: clean(data.status || "new") || "new",
     // Normal administrative pages do not disclose original report evidence.
+    evidenceHold: data.evidenceHold === true,
     hasSensitiveEvidence: Boolean(data.evidence &&
       typeof data.evidence === "object" &&
       Object.keys(data.evidence).length > 0),
@@ -256,6 +258,9 @@ async function reviewReport(db, actorUid, body) {
       reviewReason: reason,
       reviewedAt: now,
       updatedAt: now,
+      ...(nextStatus === "rejected"
+        ? { evidencePurgeAt: evidenceDeadline(now),
+            evidenceRetentionDueAt: evidenceDeadline(now) } : {}),
     };
     const mask = Object.keys(patch);
     const result = { reportId, status: nextStatus };
@@ -380,6 +385,8 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
     const patch = {
       status: "actioned",
       moderationAction: actionKind,
+      evidencePurgeAt: evidenceDeadline(now),
+      evidenceRetentionDueAt: evidenceDeadline(now),
       reviewedBy: actorUid,
       reviewReason: reason,
       reviewedAt: now,
@@ -768,6 +775,19 @@ export async function diaryModeration(request, env) {
       ]);
       return json(request, env, await getReport(db, body));
     }
+    if (action === "setEvidenceHold") {
+      const actor = await requireCapability(db, decoded, [
+        "viewReports", "reviewReports", "manageDiaries", "deleteDiaryComment",
+      ], { recentAuth: true });
+      if (!actor.owner) throw new ModerationApiError("forbidden", 403);
+      const result = await setReportEvidenceHold(db, {
+        collection: "diary_reports",
+        reportId: safeReportId(body.reportId), actorUid: actor.uid,
+        hold: body.hold, reason: body.reason,
+        operationKey: body.idempotencyKey,
+      });
+      return json(request, env, result);
+    }
     if (action === "openSensitiveEvidence") {
       const actor = await requireCapability(db, decoded, [
         "viewReports", "reviewReports", "manageDiaries", "deleteDiaryComment",
@@ -815,6 +835,9 @@ export async function diaryModeration(request, env) {
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
+    if (clean(error?.code) === "evidence_retention_expired") {
+      return json(request, env, { ok: false, code: error.code }, 410);
+    }
     if (error instanceof ModerationApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
