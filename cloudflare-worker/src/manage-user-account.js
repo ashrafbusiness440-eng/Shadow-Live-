@@ -586,6 +586,20 @@ async function mutateAccount(db, env, actorPayload, body) {
       accountStatus: after.accountStatus,
       suspendedUntil: after.suspendedUntil,
       authDeleted: after.authDeleted,
+      // Effective enforced duration, not merely the requested shorter extension.
+      ...(action === "suspend" ? { durationMinutes: patch.suspensionMinutes } : {}),
+      ...(action === "restrictPrivateMessages" ? {
+        durationMinutes: patch.privateMessageRestrictionMinutes,
+      } : {}),
+      ...(action === "restrictRoomChat" ? {
+        durationMinutes: patch.roomChatRestrictionMinutes,
+      } : {}),
+      ...(action === "restrictRoomEntry" ? {
+        durationMinutes: patch.roomEntryRestrictionMinutes,
+      } : {}),
+      ...(action === "restrictRoomMic" ? {
+        durationMinutes: patch.roomMicRestrictionMinutes,
+      } : {}),
       ...(action === "restrictPrivateMessages" ? {
         privateMessagesRestrictedUntil: patch.privateMessagesRestrictedUntil,
       } : {}),
