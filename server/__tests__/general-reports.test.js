@@ -5,6 +5,7 @@ import { generalReportsTestHooks, generalReportType } from "../../cloudflare-wor
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
 import { mutateAccount } from "../../cloudflare-worker/src/manage-user-account.js";
 import { reportPriority } from "../../cloudflare-worker/src/report-priority-policy.js";
+import { manageUserAccessInternals } from "../../cloudflare-worker/src/manage-user-access.js";
 
 class Db {
   constructor(seed = {}) {
@@ -1527,4 +1528,21 @@ test("U6-E7 failure to write the audit fails closed before revealing evidence", 
   );
   assert.equal([...db.docs.keys()].some(k=>k.startsWith(
     "admin_audit_logs/report_evidence_open_")),false);
+});
+
+test("U6-E7 new evidence permission is owner-grantable but never bundled with ordinary review", () => {
+  const granted=manageUserAccessInternals.normalizeCapabilities(
+    ["viewReports","viewReportEvidence"]);
+  assert.deepEqual(granted,["viewReportEvidence","viewReports"]);
+  assert.deepEqual(manageUserAccessInternals.normalizeCapabilities(
+    ["viewReports","reviewReports"]),["reviewReports","viewReports"]);
+  assert.throws(()=>manageUserAccessInternals.normalizeCapabilities(
+    ["viewSensitiveEverything"]),/invalid_capability/);
+  const roles=fs.readFileSync("lib/admin/user_access_control_card.dart","utf8");
+  assert.match(roles,/فتح أدلة البلاغات الحساسة/);
+  assert.match(roles,/viewReportEvidence/);
+  const controls=fs.readFileSync("cloudflare-worker/src/general-reports.js","utf8");
+  assert.match(controls,/action === "openSensitiveEvidence"/);
+  const diary=fs.readFileSync("cloudflare-worker/src/diary-moderation.js","utf8");
+  assert.match(diary,/action === "openSensitiveEvidence"/);
 });
