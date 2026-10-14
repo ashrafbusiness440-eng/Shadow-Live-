@@ -95,6 +95,12 @@ void main() {
     expect(screen.contains("'liftRoomEntryRestriction'"), isTrue);
     expect(screen.contains("'liftRoomMicRestriction'"), isTrue);
     expect(screen.contains("'restrictRoomMic'"), isTrue);
+    expect(screen.contains("'setReportPriority'"), isTrue);
+    expect(screen.contains('تعديل الأولوية'), isTrue);
+    expect(screen.contains('سبب تغيير الأولوية — مطلوب'), isTrue);
+    expect(GeneralReportItem(<String, dynamic>{
+      'priority': 'urgent',
+    }).priorityLabel, 'عاجل');
     expect(screen.contains('لقطة موثقة لحالة الغرفة وقت البلاغ'), isTrue);
     expect(screen.contains('ليست تسجيلًا صوتيًا'), isTrue);
     expect(screen.contains('AdminAccountIdentityTile('), isTrue);
