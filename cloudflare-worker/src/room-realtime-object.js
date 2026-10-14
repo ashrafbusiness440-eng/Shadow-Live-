@@ -1,6 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import { firestoreClient } from "./firestore.js";
-import { commitRoomFilterCase } from "./content-filter-case.js";
 import { createRoomChatRestrictionGate } from "./room-chat-restriction.js";
 import {
   applyContentFilter, defaultFilterConfig,
@@ -16,6 +14,7 @@ import {
 import {
   applyCustomerServiceMicExpiries,
   persistRoomChatReport,
+  persistRoomFilterCaseEvent,
   reclaimDepartedRoomSeat,
   roomDepartureCleanupCandidates,
   loadRoomChatModerationRecord,
@@ -386,7 +385,7 @@ export class RoomRealtimeObject extends DurableObject {
       // Failure in the case index never invalidates the already-stored flag
       // or blocks the room message. Existing hourly maintenance retries it.
       try {
-        await commitRoomFilterCase(firestoreClient(this.env), {
+        await persistRoomFilterCaseEvent(this.env, {
           actorUid: uid, sourceId: String(next),
           surface: "room_chat", createdAtMs,
         });
@@ -491,7 +490,7 @@ export class RoomRealtimeObject extends DurableObject {
       let caseRelinked = 0;
       for (const item of result.casePending) {
         try {
-          await commitRoomFilterCase(firestoreClient(this.env), {
+          await persistRoomFilterCaseEvent(this.env, {
             actorUid:item.actorUid, sourceId:String(item.sequence),
             surface:"room_chat", createdAtMs:Number(item.createdAtMs),
           });
