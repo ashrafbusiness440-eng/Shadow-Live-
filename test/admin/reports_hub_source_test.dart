@@ -31,6 +31,16 @@ void main() {
     expect(hub.contains('Timer.periodic('), isFalse);
     expect(hub.contains('snapshots()'), isFalse);
     expect(hub.contains('تحديث البلاغات'), isTrue);
+    expect(hub.contains('GeneralReportsHistoryPage('), isTrue);
+    expect(hub.contains('_historyOpen'), isTrue);
+    expect(hub.contains('initialReportId: focused'), isTrue);
+    expect(hub.contains('widget.initialSection'), isTrue);
+    final inbox = File('lib/admin/reports_hub_inbox_route.dart')
+        .readAsStringSync();
+    expect(inbox.contains("'user_report' || 'room_message_report'"), isTrue);
+    expect(inbox.contains("'account_report' => ReportsHubSection.people"), isTrue);
+    expect(inbox.contains("'diary_report' => ReportsHubSection.diaries"), isTrue);
+    expect(inbox.contains('controlFirestore.collection'), isTrue);
   });
 
   test('existing reports support embedded mode and scoped bounded fetches', () {
