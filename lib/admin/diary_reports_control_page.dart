@@ -66,6 +66,7 @@ class _DiaryReportItem {
     required this.moderationAction,
     required this.evidence,
     required this.hasSensitiveEvidence,
+    required this.evidenceHold,
     required this.createdAtMs,
   });
 
@@ -85,6 +86,7 @@ class _DiaryReportItem {
   final String moderationAction;
   final Map<String, dynamic> evidence;
   final bool hasSensitiveEvidence;
+  final bool evidenceHold;
   final int createdAtMs;
 
   factory _DiaryReportItem.fromMap(Map<String, dynamic> data) {
@@ -118,6 +120,7 @@ class _DiaryReportItem {
           ? Map<String, dynamic>.from(rawEvidence)
           : const <String, dynamic>{},
       hasSensitiveEvidence: data['hasSensitiveEvidence'] == true,
+      evidenceHold: data['evidenceHold'] == true,
       createdAtMs: (data['createdAtMs'] as num?)?.toInt() ?? 0,
     );
   }
@@ -542,6 +545,59 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
   String _targetLabel(_DiaryReportItem item) =>
       item.targetType == 'diary_comment' ? 'تعليق يومية' : 'يومية';
 
+  Future<void> _changeEvidenceHold(_DiaryReportItem item) async {
+    if (!_owner || _busyId != null) return;
+    final hold = !item.evidenceHold;
+    final controller = TextEditingController(
+      text: hold ? 'حجز الدليل لحين انتهاء الاعتراض أو التحقيق'
+          : 'انتهاء سبب حجز الدليل',
+    );
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(hold ? 'حجز دليل البلاغ' : 'رفع حجز دليل البلاغ'),
+        content: TextField(
+          controller: controller,
+          maxLength: 200,
+          decoration: const InputDecoration(
+            labelText: 'سبب القرار',
+            helperText: 'يُحفظ سبب الحجز أو الرفع في سجل الإدارة.',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء')),
+          FilledButton(onPressed: () {
+            if (controller.text.trim().length >= 3) {
+              Navigator.pop(dialogContext, controller.text.trim());
+            }
+          }, child: const Text('تأكيد')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null || !mounted) return;
+    setState(() => _busyId = item.reportId);
+    try {
+      await _post('setEvidenceHold', {
+        'reportId': item.reportId,
+        'hold': hold,
+        'reason': reason,
+        'idempotencyKey': 'diary_evidence_hold_${DateTime.now().microsecondsSinceEpoch}',
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(hold
+          ? 'تم حجز الدليل ومنع حذفه التلقائي.'
+          : 'تم رفع الحجز واستئناف سياسة الاحتفاظ.')));
+      await _load(reset: true);
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(diaryReportActionMessage(error))));
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   Future<void> _openEvidence(_DiaryReportItem item) async {
     if (!_canViewSensitiveEvidence || _busyId != null) return;
     setState(() => _busyId = item.reportId);
@@ -697,6 +753,13 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                       style: const TextStyle(color: Colors.white54, fontSize: 11),
                     ),
                 ],
+              ),
+            if (_owner && item.hasSensitiveEvidence)
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => _changeEvidenceHold(item),
+                icon: const Icon(Icons.policy_outlined),
+                label: Text(item.evidenceHold
+                    ? 'رفع حجز الدليل' : 'حجز الدليل لحين انتهاء التحقيق'),
               ),
             if (item.hasSensitiveEvidence)
               OutlinedButton.icon(
