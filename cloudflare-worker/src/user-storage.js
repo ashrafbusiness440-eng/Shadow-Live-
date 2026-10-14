@@ -640,6 +640,11 @@ async function confirmUpload(request, env, auth, body) {
         status: "needs_review", reason: "moderation_unavailable",
       };
     }
+    // A concurrent confirmation has already reserved this one-off receipt.
+    // Never overwrite its eventual verdict or publish on a replay.
+    if (moderationDecision.reason === "already_reserved") {
+      throw new StorageApiError("moderation_in_progress", 409);
+    }
     if (!ticket.moderationDecision) {
       await auth.db.commit(null, [
         auth.db.writeUpdate(`storage_upload_tickets/${objectId}`, {
