@@ -7,7 +7,7 @@ abstract final class ControlPermissionsMatrix {
   if(role=='owner'){
    return {
     ControlCapabilities.viewDashboard,ControlCapabilities.viewSystemHealth,ControlCapabilities.viewUsers,ControlCapabilities.manageUsers,
-    ControlCapabilities.viewReports,ControlCapabilities.reviewReports,ControlCapabilities.muteUsers,
+    ControlCapabilities.viewReports,ControlCapabilities.reviewReports,ControlCapabilities.viewReportEvidence,ControlCapabilities.muteUsers,
     ControlCapabilities.suspendUsers,ControlCapabilities.permanentBan,ControlCapabilities.manageRooms,ControlCapabilities.canCreateHiddenRoom,
     ControlCapabilities.globalRoomControl,ControlCapabilities.manageAgencies,
     ControlCapabilities.reviewAgencyApplications,ControlCapabilities.manageAgencyMemberships,
