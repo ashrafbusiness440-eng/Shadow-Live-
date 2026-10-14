@@ -14,6 +14,7 @@ import { loadPublicProfilePresentations } from "./public-profile-presentation.js
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
+import { contentFilterControlInternals } from "./content-filter-control.js";
 import { reportPriority, reportPriorityRank, validReportPriority } from "./report-priority-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -821,6 +822,17 @@ async function requireAdmin(db, decoded, write = false) {
   };
 }
 
+// Reuse existing bounded content-filter flags, never fabricate a violation
+// or expose original unmasked text. Review requires report-review capability.
+async function reviewSystemFlag(db, env, actor, body) {
+  if (!actor?.canReview) throw new GeneralReportError("forbidden", 403);
+  return contentFilterControlInternals.reviewFlag(db, env, actor.uid, {
+    flagId: body.flagId,
+    reason: clean(body.reason),
+    idempotencyKey: body.idempotencyKey,
+  });
+}
+
 export async function generalReports(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -834,7 +846,7 @@ export async function generalReports(request, env) {
     const db = firestoreClient(env);
     const actor = await requireAdmin(db, decoded,
       action === "reviewReport" || action === "applyAccountAction" ||
-      action === "setReportPriority");
+      action === "setReportPriority" || action === "reviewSystemFlag");
     if (action === "openSensitiveEvidence") {
       if (!actor.canViewSensitiveEvidence) {
         throw new GeneralReportError("forbidden_evidence", 403);
@@ -845,7 +857,11 @@ export async function generalReports(request, env) {
         throw new GeneralReportError("recent_auth_required", 401);
       }
     }
-    const result = action === "openSensitiveEvidence"
+    const result = action === "listSystemFlags"
+      ? await contentFilterControlInternals.listFlags(db, env)
+      : action === "reviewSystemFlag"
+        ? await reviewSystemFlag(db, env, actor, body)
+        : action === "openSensitiveEvidence"
       ? await openGeneralSensitiveEvidence(db, actor, body)
       : action === "listReports"
       ? await listGeneralReports(db, body)
@@ -893,6 +909,7 @@ export const generalReportsTestHooks = Object.freeze({
   listReportHistory,
   getGeneralReport,
   openGeneralSensitiveEvidence,
+  reviewSystemFlag,
   getReporterContext,
   getAccountActionHistory,
   requireAdmin,
