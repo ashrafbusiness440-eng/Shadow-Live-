@@ -128,6 +128,10 @@ test("U5-B4 Firestore rules block client edits to every moderation field", () =>
   const start=rules.indexOf("function protectedUserFieldsUnchanged()");
   const end=rules.indexOf("function publicProfileAuthoritativeFieldsMatch(",start);
   const protectedFields=rules.slice(start,end);
+  const createStart=rules.indexOf("match /users/{userId} {");
+  const createEnd=rules.indexOf("allow get:",createStart);
+  const newAccountGuard=rules.slice(createStart,createEnd);
+  assert.ok(newAccountGuard.includes("request.resource.data.keys().hasAny(["));
   for(const field of [
     "privateMessagesRestrictedUntil","roomChatRestrictedUntil",
     "roomEntryRestrictedUntil","roomMicRestrictedUntil",
@@ -135,6 +139,6 @@ test("U5-B4 Firestore rules block client edits to every moderation field", () =>
     "roomMicRestrictionReason","roomMicRestrictionLiftedAt",
   ]) {
     assert.ok(protectedFields.includes("'" + field + "'"), field+" must be immutable to clients");
-    assert.match(rules,new RegExp("!\\('"+field+"' in request\\.resource\\.data\\)"));
+    assert.ok(newAccountGuard.includes("'" + field + "'"), field+" must be disallowed on create");
   }
 });
