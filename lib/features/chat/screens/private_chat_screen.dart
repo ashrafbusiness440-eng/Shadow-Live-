@@ -135,6 +135,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         case 'rate_limited':
           _snack('تم الإرسال بسرعة كبيرة. حاول مجددًا بعد لحظات.');
           break;
+        case 'private_messages_restricted':
+          _snack('الإدارة قيّدت إرسال الرسائل الخاصة مؤقتًا. راجع إشعاراتك لمعرفة السبب والمدة.');
+          break;
         default:
           _snack('تعذر إرسال الرسالة حالياً.');
       }
@@ -434,7 +437,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
       if (error.code == 'unauthorized' || error.code == 'permission-denied') {
-        _snack('إرسال الصور يحتاج متابعة متبادلة وصلاحية المحادثة.');
+        _snack('تعذّر إرسال الصورة: تحقق من المتابعة المتبادلة أو تقييد الرسائل الخاصة في إشعاراتك.');
       } else {
         _snack('تعذر حفظ الصورة في المحادثة حالياً.');
       }
