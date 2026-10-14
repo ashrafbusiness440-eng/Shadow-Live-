@@ -31,6 +31,9 @@ void main() {
     expect(GeneralReportItem(<String, dynamic>{
       'moderationAction': 'room_entry_restricted',
     }).actionLabel, contains('منع دخول الغرف'));
+    expect(GeneralReportItem(<String, dynamic>{
+      'moderationAction': 'room_mic_restricted',
+    }).actionLabel, contains('كتم المايكروفون'));
     expect(generalReportErrorMessage(StateError('invalid_report_transition')),
         contains('حالة البلاغ'));
   });
@@ -90,6 +93,8 @@ void main() {
     expect(screen.contains("'liftPrivateMessagesRestriction'"), isTrue);
     expect(screen.contains("'liftRoomChatRestriction'"), isTrue);
     expect(screen.contains("'liftRoomEntryRestriction'"), isTrue);
+    expect(screen.contains("'liftRoomMicRestriction'"), isTrue);
+    expect(screen.contains("'restrictRoomMic'"), isTrue);
     expect(screen.contains('AdminAccountIdentityTile('), isTrue);
     expect(screen.contains("'reviewReport'"), isTrue);
     expect(screen.contains('FirebaseFirestore'), isFalse);
