@@ -23,6 +23,7 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
   String _scope = 'public';
   String? _notice;
   Map<String, dynamic> _providers = {};
+  Map<String, dynamic> _usage = {};
 
   @override
   void initState() {
@@ -62,6 +63,9 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
         _providerReady = data['providerConfigured'] == true;
         _providers = data['providers'] is Map
             ? Map<String, dynamic>.from(data['providers'] as Map)
+            : {};
+        _usage = data['usage'] is Map
+            ? Map<String, dynamic>.from(data['usage'] as Map)
             : {};
       });
     } catch (_) {
@@ -132,6 +136,20 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
               : 'فحص الصور غير مفعّل.'),
           ),
           const Divider(),
+          const Text('استهلاك اليوم على الخادم',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text('اليوم (UTC): ${_usage['day'] ?? '—'}'),
+          Text('الخدمة: ${_usage['provider'] ?? '—'}'),
+          Text('محاولات الفحص: ${_usage['attempted'] ?? 0}'
+              ' / ${_usage['limit'] ?? _limit}'),
+          Text('سليمة: ${_usage['approved'] ?? 0}  •  '
+              'للمراجعة: ${_usage['needsReview'] ?? 0}  •  '
+              'محجوبة: ${_usage['blocked'] ?? 0}'),
+          Text('المتبقي من الحد الداخلي: ${_usage['remaining'] ?? _limit}'),
+          const Text('هذه أعداد داخل التطبيق وليست فاتورة أو رصيد '
+              'الخدمة الخارجية. الصور القديمة لا تُفحص مجددًا.'),
+          const Divider(),
           const Text('نوع الخدمة', style: TextStyle(fontWeight: FontWeight.bold)),
           RadioListTile<String>(
             value: 'free', groupValue: _mode,
@@ -174,9 +192,9 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
             onChanged: _busy ? null : (v) =>
                 setState(() => _limit = v.round()),
           ),
-          const Text('هذا حد تخطيطي فقط إلى أن يُنفَّذ عدّ الاستهلاك بالخادم. '
-              'حصة Cloudflare مشتركة وقد تطبق رسوم حسب خطة الحساب؛ '
-              'لا تشغيل تلقائي ولا تحويل صامت إلى المدفوع.'),
+          const Text('الحد اليومي يُطبّق عبر الخادم عند تشغيل الفحص '
+              'لاحقًا، لكنه لا يساوي حصة Cloudflare الإجمالية أو رصيدها. '
+              'لا تشغيل تلقائي ولا تحويل صامت إلى خدمة مدفوعة.'),
           if (provider['billingUrl'] != null) ...[
             const Text('صفحة الخدمة الرسمية:'),
             SelectableText(provider['billingUrl'].toString()),
