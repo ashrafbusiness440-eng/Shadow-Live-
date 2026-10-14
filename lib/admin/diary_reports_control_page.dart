@@ -35,6 +35,8 @@ String diaryReportActionMessage(Object error) {
     'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل هذا الإجراء.',
     'forbidden' => 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
     'forbidden_evidence' => 'فتح الدليل الحساس يحتاج صلاحية مستقلة من المالك.',
+    'evidence_retention_expired' =>
+        'انتهت مدة الاحتفاظ بالدليل الحساس، ولم يعد متاحًا للعرض.',
     'warning_target_unavailable' => 'لا يمكن توجيه تحذير إلى هذا الحساب حاليًا.',
     'unverified_account_action' => 'تعذّر التحقق من تنفيذ الإجراء. حدّث البلاغ وحاول مجددًا.',
     'owner_protected' => 'حساب المالك محمي من هذا الإجراء.',
