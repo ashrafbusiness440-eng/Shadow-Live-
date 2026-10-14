@@ -3,6 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import { generalReportsTestHooks, generalReportType } from "../../cloudflare-worker/src/general-reports.js";
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
+import { mutateAccount } from "../../cloudflare-worker/src/manage-user-account.js";
 
 class Db {
   constructor(seed = {}) {
@@ -321,6 +322,8 @@ test("warning is persisted and sent to the accused before report outcome", async
   assert.equal(accused.lastWarnedBy,"admin");
   assert.equal(accused.lastWarningReason,params.reason);
   assert.equal(db.docs.get("control_operations/warn_action_12345678901_account").action,"warn");
+  assert.equal(db.docs.get("control_operations/warn_action_12345678901_account")
+    .result.linkedReportId, "legacy_chat");
   const recipientNotice = db.docs.get("notifications/account_warning_warn_action_12345678901_account");
   assert.equal(recipientNotice.userId,"target");
   assert.match(recipientNotice.body,/تحذير بشأن الإساءة/);
@@ -441,4 +444,83 @@ test("reported user's owner protection blocks punishment and notification", asyn
   assert.equal(db.docs.get("users/target").accountStatus,"active");
   assert.equal(db.docs.has(
     "notifications/report_result_acct_owner_action_123456_resolution"),false);
+});
+
+
+test("case-bound account receipts cannot be reused for another complaint", async () => {
+  const db = new Db({
+    ...cases(),
+    "reports/second_chat": {
+      type:"user", source:"private_chat", reporterUid:"reporter",
+      targetUid:"target", reason:"harassment", status:"under_review",
+      createdAt:new Date(7000),
+    },
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active",warningCount:0},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db, "admin", {
+    reportId:"legacy_chat", status:"under_review", reason:"مراجعة أولى",
+    idempotencyKey:"case_bound_review_123456",
+  });
+  const sharedKey = "case_bound_action_123456";
+  await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", {
+      reportId:"legacy_chat", accountAction:"warn",
+      reason:"تحذير مثبت للأولى", idempotencyKey:sharedKey,
+    });
+  await assert.rejects(
+    () => generalReportsTestHooks.resolveWithAccountAction(
+      db, {}, {sub:"admin"}, "admin", {
+        reportId:"second_chat", accountAction:"warn",
+        reason:"محاولة إعادة استخدام الإيصال", idempotencyKey:sharedKey,
+      }), /idempotency_key_conflict/,
+  );
+  // Simulate a successful sanction whose separate report-resolution write
+  // did not complete: a retry with the same account receipt must still fail.
+  db.docs.delete("control_operations/" + sharedKey + "_resolution");
+  await assert.rejects(
+    () => generalReportsTestHooks.resolveWithAccountAction(
+      db, {}, {sub:"admin"}, "admin", {
+        reportId:"second_chat", accountAction:"warn",
+        reason:"محاولة إعادة استخدام إيصال منفرد", idempotencyKey:sharedKey,
+      }), /unverified_account_action/,
+  );
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(db, "admin", {
+      reportId:"second_chat", status:"actioned", reason:"إيصال غير مرتبط",
+      idempotencyKey:"case_bound_resolution_123456",
+    }, {
+      actionKind:"warning", operationKey:sharedKey + "_account",
+    }), /unverified_account_action/,
+  );
+  await assert.rejects(
+    () => generalReportsTestHooks.reviewGeneralReport(db, "admin", {
+      reportId:"second_chat", status:"under_review", reason:"تكرار المفتاح",
+      idempotencyKey:"case_bound_review_123456",
+    }), /idempotency_key_conflict/,
+  );
+  assert.equal(db.docs.get("reports/second_chat").status, "under_review");
+  assert.equal(db.docs.get("users/target").warningCount, 1);
+  assert.equal(db.docs.has("notifications/report_result_case_bound_resolution_123456"), false);
+});
+
+test("public account management cannot forge a report-bound receipt", () => {
+  const source = fs.readFileSync("cloudflare-worker/src/manage-user-account.js", "utf8");
+  assert.match(source, /hasOwnProperty\.call\(body, "linkedReportId"\)/);
+  assert.match(source, /throw new ApiError\("invalid_request", 400\)/);
+});
+
+test("account moderation preserves long legacy diary-comment report IDs", async () => {
+  const reportId = "diary_comment_" + "a".repeat(320);
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active",warningCount:0},
+  });
+  await mutateAccount(db, {}, {sub:"admin"}, {
+    targetUid:"target", accountAction:"warn", linkedReportId:reportId,
+    reason:"تحذير بعد مراجعة تعليق", idempotencyKey:"long_diary_receipt_123456",
+  });
+  const receipt = db.docs.get("control_operations/long_diary_receipt_123456");
+  assert.equal(receipt.result.linkedReportId, reportId);
+  assert.equal(db.docs.get("users/target").warningCount, 1);
 });

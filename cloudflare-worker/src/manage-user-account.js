@@ -170,6 +170,30 @@ async function mutateAccount(db, env, actorPayload, body) {
   const action = clean(body.accountAction);
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
+  const linkedReportId = clean(body.linkedReportId);
+  // Only the internal reports endpoint may supply a case-bound receipt.
+  // Diary-comment report IDs can exceed the short general-report ID format.
+  if (linkedReportId &&
+      (linkedReportId.length > 512 ||
+       linkedReportId.includes("/") || linkedReportId.includes("\\"))) {
+    throw new ApiError("invalid_linked_report_id", 400);
+  }
+  const assertMatchingOperation = (snap) => {
+    if (!snap.exists) return;
+    const saved = snap.data || {};
+    // Keep the established diary-moderation error contract for a receipt
+    // belonging to another report, before any account mutation is retried.
+    if (clean(saved.result?.linkedReportId) !== linkedReportId) {
+      throw new ApiError("unverified_account_action", 409);
+    }
+    if (clean(saved.actorUid) !== actorUid ||
+        clean(saved.targetId) !== targetUid ||
+        clean(saved.action) !== action ||
+        clean(saved.result?.targetUid) !== targetUid ||
+        clean(saved.result?.action) !== action) {
+      throw new ApiError("idempotency_key_conflict", 409);
+    }
+  };
 
   if (
     !targetUid ||
@@ -227,6 +251,7 @@ async function mutateAccount(db, env, actorPayload, body) {
     db.get(`control_operations/${key}`),
   ]);
   if (operationSnap.exists) {
+    assertMatchingOperation(operationSnap);
     return {
       ok: true,
       code: "duplicate",
@@ -262,6 +287,7 @@ async function mutateAccount(db, env, actorPayload, body) {
       ]);
 
     if (operationSnap.exists) {
+      assertMatchingOperation(operationSnap);
       await db.rollback(transaction);
       return {
         ok: true,
@@ -322,7 +348,7 @@ async function mutateAccount(db, env, actorPayload, body) {
       targetUid,
       action,
       // Report-bound receipts cannot be replayed against another case.
-      ...(clean(body.linkedReportId) ? { linkedReportId: clean(body.linkedReportId) } : {}),
+      ...(linkedReportId ? { linkedReportId } : {}),
       accountStatus: after.accountStatus,
       suspendedUntil: after.suspendedUntil,
       authDeleted: after.authDeleted,
@@ -411,6 +437,10 @@ export async function manageUserAccount(request, env) {
       throw new ApiError("recent_auth_required", 401);
     }
     const body = await readJson(request);
+    // A client must never manufacture a report-bound moderation receipt.
+    if (Object.prototype.hasOwnProperty.call(body, "linkedReportId")) {
+      throw new ApiError("invalid_request", 400);
+    }
     const result = await mutateAccount(
       firestoreClient(env),
       env,

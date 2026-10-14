@@ -17,6 +17,8 @@ String generalReportErrorMessage(Object error) {
     'invalid_report_transition' => 'حالة البلاغ تغيرت. حدّث القائمة وحاول مجدداً.',
     'invalid_reason' => 'اكتب سبباً واضحاً بين 3 و200 حرف، أو اترك سبب الرفض فارغًا.',
     'invalid_idempotency_key' => 'تعذّر تسجيل العملية. أعد المحاولة.',
+    'idempotency_key_conflict' =>
+        'تعذّر تأكيد العملية بسبب تكرار مختلف. حدّث البلاغ وحاول مجددًا.',
     'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
     'invalid_report_scope' => 'تعذّر فتح هذا القسم من البلاغات. حدّث الصفحة.',
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
