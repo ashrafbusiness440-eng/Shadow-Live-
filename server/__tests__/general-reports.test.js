@@ -761,3 +761,101 @@ test("U5-B2 invalid durations, owner targets and unauthorized moderators remain 
     idempotencyKey:"u5b2_reviewer_denied_123",
   }), /forbidden/);
 });
+
+
+test("U5-B3 lifts only the selected active restriction, not other sanctions", async () => {
+  const now = Date.now();
+  const future = new Date(now + 2 * 60 * 60_000);
+  const db = new Db({
+    "users/admin": { role: "owner", adminEnabled: true, accountStatus: "active" },
+    "users/target": {
+      role: "user", accountStatus: "active",
+      privateMessagesRestrictedUntil: future,
+      privateMessageRestrictionMinutes: 120,
+      roomChatRestrictedUntil: future,
+      roomChatRestrictionMinutes: 120,
+      roomEntryRestrictedUntil: future,
+      roomEntryRestrictionMinutes: 120,
+    },
+  });
+  const items = [
+    ["liftPrivateMessagesRestriction", "privateMessagesRestrictedUntil",
+      "privateMessageRestrictionMinutes"],
+    ["liftRoomChatRestriction", "roomChatRestrictedUntil", "roomChatRestrictionMinutes"],
+    ["liftRoomEntryRestriction", "roomEntryRestrictedUntil", "roomEntryRestrictionMinutes"],
+  ];
+  for (let i = 0; i < items.length; i++) {
+    const [action, until, minutes] = items[i];
+    const key = "u5b3_lift_unique_" + String(i + 100);
+    const result = await mutateAccount(db, {}, { sub: "admin" }, {
+      targetUid: "target", accountAction: action,
+      reason: "مراجعة قرار التقييد", idempotencyKey: key,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.liftedRestriction, until);
+    assert.equal(db.docs.get("users/target")[until], null);
+    assert.equal(db.docs.get("users/target")[minutes], null);
+    assert.equal(db.docs.get("users/target").accountStatus, "active");
+    const note = db.docs.get("notifications/account_restriction_lifted_" + key);
+    assert.equal(note.userId, "target");
+    assert.match(note.body, /تم رفع التقييد/);
+    assert.equal(db.docs.get("control_operations/" + key).result.action, action);
+    const repeat = await mutateAccount(db, {}, { sub: "admin" }, {
+      targetUid: "target", accountAction: action,
+      reason: "مراجعة قرار التقييد", idempotencyKey: key,
+    });
+    assert.equal(repeat.code, "duplicate");
+    assert.equal([...db.docs.keys()].filter(id =>
+      id === "notifications/account_restriction_lifted_" + key).length, 1);
+    for (const [, otherField] of items.slice(i + 1)) {
+      assert.equal(new Date(db.docs.get("users/target")[otherField]).getTime(),
+        future.getTime());
+    }
+  }
+  assert.equal(db.docs.get("users/target").warningCount, undefined);
+});
+
+test("U5-B3 refuses expired restrictions, protected owners and unauthorized staff", async () => {
+  const active = new Date(Date.now() + 60_000);
+  const seed = {
+    "users/admin": {role: "owner", adminEnabled: true, accountStatus: "active"},
+    "users/target": {
+      role: "user", accountStatus: "active",
+      roomEntryRestrictedUntil: active,
+    },
+  };
+  const action = {
+    targetUid: "target",
+    accountAction: "liftRoomEntryRestriction",
+    reason: "رفع بعد التدقيق", idempotencyKey: "u5b3_no_action_12345",
+  };
+  const expired = new Db({
+    ...seed,
+    "users/target": {
+      role: "user", accountStatus: "active",
+      roomEntryRestrictedUntil: new Date(Date.now() - 1000),
+    },
+  });
+  await assert.rejects(() => mutateAccount(expired, {}, {sub:"admin"}, action),
+    /restriction_not_active/);
+  assert.equal(expired.docs.has("control_operations/" + action.idempotencyKey), false);
+  const owner = new Db({...seed,
+    "users/target": {...seed["users/target"], role:"owner"},
+  });
+  await assert.rejects(() => mutateAccount(owner, {}, {sub:"admin"}, action),
+    /owner_protected/);
+  const staff = new Db({...seed, "users/admin": {
+    role:"moderator", adminEnabled:true, capabilities:["reviewReports"],
+    accountStatus:"active",
+  }});
+  await assert.rejects(() => mutateAccount(staff, {}, {sub:"admin"}, action),
+    /forbidden/);
+  const crossAction = new Db(seed);
+  const key = "u5b3_key_conflict_123456";
+  await mutateAccount(crossAction, {}, {sub:"admin"}, {
+    ...action, idempotencyKey:key,
+  });
+  await assert.rejects(() => mutateAccount(crossAction, {}, {sub:"admin"}, {
+    ...action, idempotencyKey:key, accountAction:"liftRoomChatRestriction",
+  }), /idempotency_key_conflict/);
+});
