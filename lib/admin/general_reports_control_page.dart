@@ -13,6 +13,7 @@ String generalReportErrorMessage(Object error) {
   final raw = error.toString().replaceFirst('Bad state: ', '');
   return switch (raw) {
     'forbidden' => 'ما عندك صلاحية لمراجعة البلاغ.',
+    'forbidden_evidence' => 'فتح الدليل الحساس يحتاج صلاحية مستقلة من المالك.',
     'recent_auth_required' => 'سجّل الدخول من جديد لتأكيد الإجراء.',
     'report_not_found' => 'هذا البلاغ غير موجود. حدّث القائمة.',
     'reporter_unavailable' => 'لا توجد بيانات كافية لعرض سجل هذا المبلّغ.',
@@ -394,6 +395,9 @@ class GeneralReportsService {
             })
           : _post('getReport', <String, dynamic>{'reportId': reportId});
 
+  static Future<Map<String, dynamic>> openEvidence(String reportId) =>
+      _post('openSensitiveEvidence', <String, dynamic>{'reportId': reportId});
+
   static Future<Map<String, dynamic>> reporterContext(String reportId) =>
       _post('getReporterContext', <String, dynamic>{'reportId': reportId});
 
@@ -466,6 +470,7 @@ class GeneralReportsControlPage extends StatefulWidget {
 class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _loading = false;
   bool _canReview = false;
+  bool _canViewSensitiveEvidence = false;
   bool _canWarn = false;
   bool _canSuspend = false;
   bool _canBan = false;
@@ -503,6 +508,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       setState(() {
         _items = items;
         _canReview = result['canReview'] == true;
+        _canViewSensitiveEvidence = result['canViewSensitiveEvidence'] == true;
         _canWarn = result['canWarn'] == true;
         _canSuspend = result['canSuspend'] == true;
         _canBan = result['canBan'] == true;
@@ -970,6 +976,87 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     }
   }
 
+  Future<void> _openEvidence(GeneralReportItem item) async {
+    if (!_canViewSensitiveEvidence || _busy.contains(item.id)) return;
+    setState(() => _busy.add(item.id));
+    try {
+      final response = await GeneralReportsService.openEvidence(item.id);
+      if (!mounted) return;
+      final raw = response['evidence'];
+      final evidence = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
+      final message = evidence['message'] is Map
+          ? Map<String, dynamic>.from(evidence['message'] as Map)
+          : <String, dynamic>{};
+      final room = evidence['roomState'] is Map
+          ? Map<String, dynamic>.from(evidence['roomState'] as Map)
+          : <String, dynamic>{};
+      final contextItems = evidence['context'] is List
+          ? (evidence['context'] as List).take(7).whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item)).toList()
+          : <Map<String, dynamic>>[];
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('الدليل الحساس للبلاغ'),
+          content: SizedBox(
+            width: 510,
+            height: 390,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('تم توثيق فتح هذا الدليل في سجل الإدارة. '
+                      'لا تشارك محتواه خارج المراجعة المصرّح بها.'),
+                  const SizedBox(height: 12),
+                  if (message['text'] != null)
+                    SelectableText('الرسالة المبلّغ عنها: ' +
+                        message['text'].toString()),
+                  if (room.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text('لقطة موثقة لحالة الغرفة وقت البلاغ'),
+                    Text('اسم الغرفة: ' + (room['name'] ?? 'غير محدد').toString()),
+                    Text('المالك وقت البلاغ: ' +
+                        (room['ownerUid'] ?? 'غير محدد').toString()),
+                    Text('المايكات المسجلة: ' +
+                        ((room['occupiedSeats'] as List?)?.length ?? 0).toString()),
+                    const Text('هذه بيانات توثيق وليست تسجيلًا صوتيًا.'),
+                  ],
+                  if (contextItems.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text('سياق الرسالة الموثق'),
+                    for (final entry in contextItems)
+                      SelectableText(
+                        (entry['displayName'] ?? 'مستخدم').toString() +
+                        ': ' + (entry['text'] ?? '').toString(),
+                      ),
+                  ],
+                  if (message.isEmpty && room.isEmpty && contextItems.isEmpty)
+                    const Text('لا يتوفر نص قابل للعرض من الدليل المحفوظ.'),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق الدليل'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(generalReportErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.id));
+    }
+  }
+
   Widget _identity(String label, String uid, Map<String, dynamic> profile) =>
       AdminAccountIdentityTile(
         roleLabel: label,
@@ -1029,6 +1116,17 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
             if (item.field('priorityReason').isNotEmpty)
               Text('سبب تعديل الأولوية: ' + item.field('priorityReason')),
             if (details.isNotEmpty) Text('التفاصيل: ' + details),
+            if (item.data['hasSensitiveEvidence'] == true)
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: !_canViewSensitiveEvidence || _busy.contains(item.id)
+                      ? null : () => _openEvidence(item),
+                  icon: const Icon(Icons.visibility_lock_outlined),
+                  label: Text(_canViewSensitiveEvidence
+                      ? 'فتح الدليل الحساس' : 'الدليل محمي — يلزم إذن المالك'),
+                ),
+              ),
             const SizedBox(height: 10),
             _identity('مقدّم البلاغ', item.reporterUid,
                 item.mapField('reporterProfile')),
