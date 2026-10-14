@@ -1071,3 +1071,62 @@ test("U6-C rejects invalid priority and terminal cases without mutating records"
   }),/invalid_reason/);
   assert.equal(db.docs.get("reports/closed_u6c").priorityOverride,undefined);
 });
+
+
+test("U6-D reporter context samples exactly two bounded existing index queries without penalties", async () => {
+  const db=new Db({
+    ...cases(),
+    "reports/modern_context_1":{
+      targetType:"room",reporterUid:"reporter",reporterId:"reporter",
+      targetUid:"owner",reason:"spam",status:"rejected",
+      createdAt:new Date(10000),
+    },
+    "reports/modern_context_2":{
+      targetType:"room",reporterUid:"reporter",targetUid:"owner",
+      reason:"harassment",status:"actioned",createdAt:new Date(12000),
+    },
+    "reports/modern_context_3":{
+      targetType:"room",reporterUid:"reporter",targetUid:"owner",
+      reason:"spam",status:"closed",createdAt:new Date(13000),
+    },
+  });
+  const result=await generalReportsTestHooks.getReporterContext(
+    db,{reportId:"legacy_chat"});
+  assert.equal(result.ok,true);
+  assert.equal(result.nonPunitive,true);
+  assert.equal(result.reporterUid,"reporter");
+  assert.equal(db.queryCalls,2);
+  // modern_context_1 has both old and new reporter fields, but is one case.
+  assert.equal(result.sampled,7);
+  assert.deepEqual(result.counts,{
+    rejected:1,actioned:1,pending:4,other:1,
+  });
+  assert.equal(result.capped,false);
+  assert.equal([...db.docs.keys()].filter(key=>
+    key.startsWith("admin_audit_logs/")||key.startsWith("notifications/")).length,0);
+});
+
+test("U6-D sample caps, legacy reporter id and missing report protection", async () => {
+  const rows={...cases()};
+  for(let i=0;i<28;i++){
+    rows["reports/u6d_sample_"+i]={
+      targetType:"user",reporterUid:"reporter",targetUid:"target",
+      status:i%2?"rejected":"open",reason:"spam",
+      createdAt:new Date(1000+i),
+    };
+  }
+  const db=new Db(rows);
+  const report=await generalReportsTestHooks.getReporterContext(
+    db,{reportId:"legacy_chat"});
+  assert.equal(db.queryCalls,2);
+  assert.equal(report.capped,true);
+  assert.ok(report.sampled<=40);
+  assert.ok(report.sampled>=21);
+  await assert.rejects(()=>generalReportsTestHooks.getReporterContext(
+    db,{reportId:"does_not_exist"}),/report_not_found/);
+  const absent=new Db({
+    "reports/no_reporter":{targetType:"room",roomId:"room1",status:"new"},
+  });
+  await assert.rejects(()=>generalReportsTestHooks.getReporterContext(
+    absent,{reportId:"no_reporter"}),/reporter_unavailable/);
+});

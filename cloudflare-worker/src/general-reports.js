@@ -216,6 +216,54 @@ async function getGeneralReport(db, body = {}) {
   return { ok: true, item: enriched };
 }
 
+// On-demand context only. Never infer that a rejected report was malicious,
+// never auto-penalize a reporter. Two bounded indexed queries reuse the
+// existing reports collection and support legacy reporterId records.
+async function getReporterContext(db, body = {}) {
+  const reportId = safeId(body.reportId);
+  const source = await db.get("reports/" + reportId);
+  const selected = source.exists
+    ? normalizeGeneralReport(reportId, source.data || {}) : null;
+  if (!selected) throw new GeneralReportError("report_not_found", 404);
+  const reporterUid = selected.reporterUid;
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(reporterUid)) {
+    throw new GeneralReportError("reporter_unavailable", 409);
+  }
+  const [current, legacy] = await Promise.all([
+    db.runQuery("reports", {
+      filters: [{ field: "reporterUid", op: "==", value: reporterUid }],
+      limit: 21,
+    }),
+    db.runQuery("reports", {
+      filters: [{ field: "reporterId", op: "==", value: reporterUid }],
+      limit: 21,
+    }),
+  ]);
+  const seen = new Set();
+  const items = [...current, ...legacy].filter((row) => {
+    const id = clean(row?.id);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, 40);
+  const counts = {
+    rejected: 0, actioned: 0, pending: 0, other: 0,
+  };
+  for (const row of items) {
+    const status = clean(row?.data?.status) || "new";
+    if (status === "rejected") counts.rejected += 1;
+    else if (status === "actioned") counts.actioned += 1;
+    else if (ACTIVE_STATUSES.has(status)) counts.pending += 1;
+    else counts.other += 1;
+  }
+  return {
+    ok: true, reportId, reporterUid,
+    sampled: items.length, counts,
+    capped: current.length >= 21 || legacy.length >= 21,
+    nonPunitive: true,
+  };
+}
+
 async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
   const reportId = safeId(body.reportId);
   const status = clean(body.status);
@@ -595,6 +643,8 @@ export async function generalReports(request, env) {
       ? await listGeneralReports(db, body)
       : action === "listHistory"
         ? await listReportHistory(db, body)
+        : action === "getReporterContext"
+          ? await getReporterContext(db, body)
         : action === "getReport"
         ? await getGeneralReport(db, body)
         : action === "reviewReport"
@@ -631,6 +681,7 @@ export const generalReportsTestHooks = Object.freeze({
   listGeneralReports,
   listReportHistory,
   getGeneralReport,
+  getReporterContext,
   reviewGeneralReport,
   setReportPriority,
   resolveWithAccountAction,
