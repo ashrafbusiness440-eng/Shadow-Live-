@@ -1,0 +1,176 @@
+import 'package:flutter/material.dart';
+
+import 'diary_reports_control_page.dart';
+import 'general_reports_control_page.dart';
+import 'general_reports_history_page.dart';
+
+/// Each tab mounts one existing bounded moderation screen at a time.
+/// This keeps inactive report requests and subscriptions out of memory.
+enum ReportsHubSection { roomsAndMessages, people, diaries }
+
+class ReportsHubPage extends StatefulWidget {
+  const ReportsHubPage({
+    super.key,
+    required this.allowGeneral,
+    required this.allowDiary,
+  });
+
+  final bool allowGeneral;
+  final bool allowDiary;
+
+  @override
+  State<ReportsHubPage> createState() => _ReportsHubPageState();
+}
+
+class _ReportsHubPageState extends State<ReportsHubPage> {
+  late ReportsHubSection _section;
+
+  @override
+  void initState() {
+    super.initState();
+    _section = widget.allowGeneral
+        ? ReportsHubSection.roomsAndMessages
+        : ReportsHubSection.diaries;
+  }
+
+  bool _allowed(ReportsHubSection section) =>
+      section == ReportsHubSection.diaries
+          ? widget.allowDiary
+          : widget.allowGeneral;
+
+  Widget _tab(ReportsHubSection section, String label, IconData icon) {
+    final active = _section == section;
+    final allowed = _allowed(section);
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Material(
+          color: active
+              ? const Color(0xFF322047)
+              : const Color(0xFF1A1329),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            key: Key('reports-tab-${section.name}'),
+            borderRadius: BorderRadius.circular(14),
+            onTap: allowed ? () => setState(() => _section = section) : null,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 76),
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: active
+                      ? const Color(0xFFD2B3FA)
+                      : const Color(0xFF40354F),
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 19, color: !allowed
+                      ? Colors.white30 : active
+                          ? const Color(0xFFE3BD63)
+                          : const Color(0xFFC6B4DB)),
+                  const SizedBox(height: 5),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      height: 1.2,
+                      fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                      fontSize: 11,
+                      color: allowed ? Colors.white : Colors.white38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _currentSection() {
+    switch (_section) {
+      case ReportsHubSection.roomsAndMessages:
+        return const GeneralReportsControlPage(
+          key: ValueKey('reports-hub-rooms'),
+          scope: 'rooms_messages',
+          embedded: true,
+        );
+      case ReportsHubSection.people:
+        return const GeneralReportsControlPage(
+          key: ValueKey('reports-hub-people'),
+          scope: 'people',
+          embedded: true,
+        );
+      case ReportsHubSection.diaries:
+        return const DiaryReportsControlPage(
+          key: ValueKey('reports-hub-diaries'),
+          embedded: true,
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allowedAny = widget.allowGeneral || widget.allowDiary;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('البلاغات'),
+        actions: [
+          if (widget.allowGeneral)
+            IconButton(
+              tooltip: 'البلاغات السابقة والمغلقة',
+              icon: const Icon(Icons.history_rounded),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const GeneralReportsHistoryPage(),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: !allowedAny
+          ? const Center(child: Text('ليس لديك صلاحية لعرض البلاغات.'))
+          : Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'مركز البلاغات',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFFE6D5FF),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Row(
+                    children: [
+                      _tab(ReportsHubSection.roomsAndMessages,
+                          'الغرف والرسائل', Icons.forum_outlined),
+                      _tab(ReportsHubSection.people,
+                          'الأشخاص', Icons.person_outline_rounded),
+                      _tab(ReportsHubSection.diaries,
+                          'يومياتي والتعليقات', Icons.auto_stories_outlined),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  // No IndexedStack: the deselected tab does not issue reads.
+                  child: _currentSection(),
+                ),
+              ],
+            ),
+    );
+  }
+}
