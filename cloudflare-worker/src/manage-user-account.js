@@ -280,8 +280,8 @@ async function mutateAccount(db, env, actorPayload, body) {
       ]);
 
     if (operationSnap.exists) {
-      await db.rollback(transaction);
       assertMatchingOperation(operationSnap);
+      await db.rollback(transaction);
       return {
         ok: true,
         code: "duplicate",
