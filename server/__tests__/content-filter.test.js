@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendMessage } from "../../cloudflare-worker/src/chat-safety-actions.js";
@@ -199,3 +200,37 @@ test("overlapping masked phrases never leak the tail of a longer forbidden phras
   ]);
   assert.equal(applyContentFilter("يا حقير للغاية", p, "room_chat").text, "***");
 });
+
+test("U6-H masking always creates one protected flag while client text remains redacted",()=>{
+  const p=policy([rule("mask_required_secret","اهانة","mask")]);
+  const original="مرحبا إهانة من المستخدم";
+  const result=applyContentFilter(original,p,"private_chat");
+  assert.equal(result.text,"مرحبا *** من المستخدم");
+  assert.equal(result.flagged,true);
+  assert.equal(result.blocked,false);
+  assert.deepEqual(result.matchedRuleIds,["mask_required_secret"]);
+  assert.equal(result.text.includes("إهانة"),false);
+  const noFlag=applyContentFilter("رسالة نظيفة",p,"private_chat");
+  assert.equal(noFlag.flagged,false);
+  assert.equal(noFlag.text,"رسالة نظيفة");
+  const blocked=applyContentFilter("إهانة",policy([
+    rule("mask_required_secret","اهانة","block")]),"private_chat");
+  assert.equal(blocked.blocked,true);
+});
+
+test("U6-H original message is only stored in restricted one-item moderation flag evidence",()=>{
+  const readFileSync=fs.readFileSync;
+  const chat=readFileSync("cloudflare-worker/src/chat-safety-actions.js","utf8");
+  const diary=readFileSync("cloudflare-worker/src/diaries.js","utf8");
+  const room=readFileSync("cloudflare-worker/src/room-realtime-object.js","utf8");
+  assert.match(chat,/evidence: \{ text: message \}/);
+  assert.match(diary,/evidence: \{ text: original \}/);
+  assert.match(room,/evidence: \{ text: originalFlagText \}/);
+  assert.match(room,/hasSensitiveEvidence: Boolean\(item\.evidence\?\.text\)/);
+  assert.match(room,/evidence: undefined/);
+  assert.match(room,/\/filter\/flag\/evidence/);
+  assert.ok(room.indexOf("const originalFlagText = text") <
+    room.indexOf("text = review.text"));
+  assert.equal(chat.includes("context: conversationData.messages"),false);
+});
+
