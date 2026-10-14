@@ -6,7 +6,7 @@ import { evidenceRetentionExpired } from "./report-evidence-retention.js";
 export async function readProtectedReportEvidence(db, {
   collection, reportId, actorUid,
 }) {
-  if (!["reports", "diary_reports"].includes(collection) ||
+  if (!["reports", "diary_reports", "content_filter_flags"].includes(collection) ||
       !reportId || reportId.includes("/") || reportId.includes("\\")) {
     throw new Error("invalid_report_id");
   }
