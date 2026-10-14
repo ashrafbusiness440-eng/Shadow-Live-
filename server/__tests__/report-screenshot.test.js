@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   attachReportScreenshot, openReportScreenshot,
   parseReportScreenshot, validateReportScreenshotTarget,
+  readBoundedScreenshotRequest,
 } from "../../cloudflare-worker/src/report-screenshot.js";
 import { purgeReportEvidenceDocument, evidenceDeadline } from "../../cloudflare-worker/src/report-evidence-retention.js";
 
@@ -190,4 +191,22 @@ test("U6-J Flutter report capture and server R2 display are connected and option
   assert.match(admin,/clientScreenshot/);
   assert.match(admin,/Image\.memory\(snapshotBytes/);
   assert.match(worker,/api\/report-screenshot/);
+});
+
+test("U6-J rejects streaming uploads beyond cap without trusting Content-Length",async()=>{
+  const huge = new Request("https://internal/api/report-screenshot",{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({action:"attach",imageBase64:"A".repeat(220000)}),
+  });
+  await assert.rejects(()=>readBoundedScreenshotRequest(huge),
+    /screenshot_too_large/);
+  const small = new Request("https://internal/api/report-screenshot",{
+    method:"POST",body:JSON.stringify({
+      action:"attach",reportId:"report_ok",imageBase64:b64,
+    }),
+  });
+  const out=await readBoundedScreenshotRequest(small);
+  assert.equal(out.reportId,"report_ok");
+  assert.equal(out.imageBase64,b64);
 });
