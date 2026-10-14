@@ -617,3 +617,46 @@ test("U6-E3 never indexes a deletion without a matching completed receipt", asyn
   assert.equal(db.docs.has("control_operations/history_diary_"+key),false);
   assert.equal(db.docs.get("diary_reports/u6e3_unverified").status,"actioned");
 });
+
+
+test("U6-E3 real moderated diary removal records the canonical owner and case", async () => {
+  const key="u6e3_real_diary_123456";
+  const item=report("u6e3_real_report",9000,"under_review");
+  const db=new FakeDb({
+    "diary_reports/u6e3_real_report":item,
+    "reports/u6e3_real_report":item,
+    "diaries/diary_1":{ownerUid:"owner",images:[],commentCount:0},
+    "users/owner/diaries/diary_1":{commentCount:0},
+  });
+  const out=await diaryModerationTestHooks.deleteDiaryTarget(
+    db,"admin_uid",{diaryId:"diary_1",reportId:"u6e3_real_report",
+      reason:"مخالفة محتوى مؤكدة",idempotencyKey:key});
+  assert.equal(out.ok,true);
+  assert.equal(db.docs.has("diaries/diary_1"),false);
+  assert.equal(db.docs.get("diary_operations/"+key).targetUid,"owner");
+  assert.equal(db.docs.get("reports/u6e3_real_report").status,"actioned");
+  assert.equal(db.docs.get("control_operations/history_diary_"+key).targetId,"owner");
+});
+
+test("U6-E3 real comment removal records its author rather than diary owner", async () => {
+  const key="u6e3_real_comment_123456";
+  const item={...report("u6e3_real_comment_report",9000,"under_review"),
+    targetType:"diary_comment",targetId:"comment_1",
+    commentId:"comment_1",targetOwnerUid:"owner",
+    targetAuthorUid:"writer"};
+  const db=new FakeDb({
+    "diary_reports/u6e3_real_comment_report":item,
+    "reports/u6e3_real_comment_report":item,
+    "diaries/diary_1":{ownerUid:"owner",commentCount:1},
+    "users/owner/diaries/diary_1":{commentCount:1},
+    "diaries/diary_1/comments/comment_1":{authorUid:"writer"},
+  });
+  const out=await diaryModerationTestHooks.deleteCommentTarget(
+    db,"admin_uid",{diaryId:"diary_1",commentId:"comment_1",
+      reportId:"u6e3_real_comment_report",reason:"تعليق مخالف مؤكّد",
+      idempotencyKey:key});
+  assert.equal(out.ok,true);
+  assert.equal(db.docs.has("diaries/diary_1/comments/comment_1"),false);
+  assert.equal(db.docs.get("diary_operations/"+key).targetUid,"writer");
+  assert.equal(db.docs.get("control_operations/history_diary_"+key).targetId,"writer");
+});
