@@ -156,7 +156,7 @@ test("U6-K no polling, role exception, or new navigation section",()=>{
   assert.match(ui,/ملف التنبيهات المتكررة/);
   assert.match(ui,/لا يترتب عليه إجراء تلقائي/);
   assert.match(room,/filter_pending_aggregate/);
-  assert.match(room,/recordRoomFilterRepeat/);
+  assert.match(room,/persistRoomFilterAggregate/);
   assert.match(room,/aggregationPending/);
   assert.match(chat,/filterRepeatGroupWrites\(db, transaction/);
   assert.match(diaries,/filterRepeatGroupWrites\(db, transaction/);
