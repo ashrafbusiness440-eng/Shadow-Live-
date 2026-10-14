@@ -258,7 +258,8 @@ async function reviewReport(db, actorUid, body) {
       reviewedAt: now,
       updatedAt: now,
       ...(nextStatus === "rejected"
-        ? { evidencePurgeAt: evidenceDeadline(now) } : {}),
+        ? { evidencePurgeAt: evidenceDeadline(now),
+            evidenceRetentionDueAt: evidenceDeadline(now) } : {}),
     };
     const mask = Object.keys(patch);
     const result = { reportId, status: nextStatus };
@@ -384,6 +385,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
       status: "actioned",
       moderationAction: actionKind,
       evidencePurgeAt: evidenceDeadline(now),
+      evidenceRetentionDueAt: evidenceDeadline(now),
       reviewedBy: actorUid,
       reviewReason: reason,
       reviewedAt: now,
