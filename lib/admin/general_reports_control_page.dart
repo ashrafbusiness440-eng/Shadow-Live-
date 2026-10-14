@@ -14,6 +14,8 @@ String generalReportErrorMessage(Object error) {
   return switch (raw) {
     'forbidden' => 'ما عندك صلاحية لمراجعة البلاغ.',
     'forbidden_evidence' => 'فتح الدليل الحساس يحتاج صلاحية مستقلة من المالك.',
+    'evidence_retention_expired' =>
+        'انتهت مدة الاحتفاظ بالدليل الحساس، ولم يعد متاحًا للعرض.',
     'recent_auth_required' => 'سجّل الدخول من جديد لتأكيد الإجراء.',
     'report_not_found' => 'هذا البلاغ غير موجود. حدّث القائمة.',
     'reporter_unavailable' => 'لا توجد بيانات كافية لعرض سجل هذا المبلّغ.',
