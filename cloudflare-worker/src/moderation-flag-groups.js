@@ -99,9 +99,22 @@ export async function filterRepeatGroupWrites(db, transaction, {
 export async function recordRoomFilterRepeat(db, occurrence) {
   const tx = await db.beginTransaction();
   try {
+    const uid = clean(occurrence.actorUid);
+    const ref = clean(occurrence.referenceId);
+    if (!SAFE.test(uid) || !/^room_[1-9][0-9]{0,15}$/.test(ref)) {
+      throw new Error("invalid_filter_group_occurrence");
+    }
+    const receiptPath = "moderation_flag_group_receipts/" + uid + "__" + ref;
+    const receipt = await db.get(receiptPath, tx);
+    if (receipt.exists) {
+      await db.rollback(tx);
+      return { duplicate: true, notified: false };
+    }
     const result = await filterRepeatGroupWrites(db, tx, occurrence);
-    if (result.writes.length) await db.commit(tx, result.writes);
-    else await db.rollback(tx);
+    await db.commit(tx, [...result.writes, db.writeCreate(receiptPath, {
+      actorUid: uid, referenceId: ref, surface: "room_chat",
+      groupId: result.groupId, createdAt: occurrence.now || new Date(),
+    })]);
     return result;
   } catch (error) {
     await db.rollback(tx).catch(() => {});
