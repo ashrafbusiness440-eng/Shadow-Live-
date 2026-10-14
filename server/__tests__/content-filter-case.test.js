@@ -5,6 +5,7 @@ import {
   FILTER_CASE_WINDOW_MS, FILTER_CASE_RECENT_MAX,
   filterCaseTier, filterCasePriority, nextFilterCase,
   filterCaseWrites, commitRoomFilterCase,
+  cleanupOldRoomFilterCaseMarkers,
 } from "../../cloudflare-worker/src/content-filter-case.js";
 
 class Db {
@@ -19,6 +20,7 @@ class Db {
     data:this.docs.get(path)||null};}
   writeCreate(path,fields){return {path,fields,type:"create"};}
   writeUpdate(path,fields){return {path,fields,type:"update"};}
+  writeDelete(path){return {path,type:"delete"};}
   async commit(_tx,writes){
     // Transaction preconditions are enforced for immutable room markers.
     for(const w of writes){
@@ -27,7 +29,8 @@ class Db {
       }
     }
     for(const w of writes){
-      this.docs.set(w.path,{...(this.docs.get(w.path)||{}),...w.fields});
+      if(w.type==="delete")this.docs.delete(w.path);
+      else this.docs.set(w.path,{...(this.docs.get(w.path)||{}),...w.fields});
     }
     this.commits.push(writes);
   }
@@ -121,6 +124,24 @@ test("U6-K room coordinator idempotency survives retries after case linked",asyn
   assert.equal(db.docs.get("content_filter_cases/roomSpeaker")
     .recentFlagIds[0],"room_55");
   assert.equal(db.docs.get("content_filter_case_events/55").sourceId,"55");
+});
+
+test("U6-K room idempotency receipts expire through bounded indexed lookup",async()=>{
+  const db=new Db({
+    "content_filter_case_events/55":{actorUid:"a"},
+    "content_filter_case_events/56":{actorUid:"b"},
+  });
+  let seen;
+  db.runQuery=async(collection,options)=>{
+    seen={collection,options};
+    return [{id:"55"},{id:"56"}];
+  };
+  const out=await cleanupOldRoomFilterCaseMarkers(db,start+91*FILTER_CASE_WINDOW_MS,999);
+  assert.deepEqual(out,{checked:2,deleted:2});
+  assert.equal(seen.collection,"content_filter_case_events");
+  assert.equal(seen.options.limit,20);
+  assert.equal(seen.options.filters[0].op,"<=");
+  assert.equal(db.docs.size,0);
 });
 
 test("U6-K every persisted surface uses the same transaction and admin route",()=>{
