@@ -272,6 +272,7 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
         'user_report' => Icons.person_off_outlined,
         'room_report' => Icons.meeting_room_outlined,
         'room_message_report' => Icons.mark_chat_unread_outlined,
+        'system_repeat_flag' => Icons.gpp_maybe_outlined,
         'agency_application' => Icons.apartment_outlined,
         'agency_identity_change' => Icons.edit_location_alt_outlined,
         'agency_ownership_transfer' => Icons.swap_horiz_rounded,
