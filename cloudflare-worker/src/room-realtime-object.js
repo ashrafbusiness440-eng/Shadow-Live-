@@ -6,6 +6,12 @@ import {
 } from "./content-filter.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
 import {
+  ROOM_FILTER_FLAG_RING_SIZE,
+  ROOM_FILTER_FLAG_PURGE_BATCH,
+  roomFlagEvidenceExpired,
+  roomFlagPublicItem,
+} from "./room-filter-evidence-retention.js";
+import {
   applyCustomerServiceMicExpiries,
   persistRoomChatReport,
   reclaimDepartedRoomSeat,
@@ -365,7 +371,7 @@ export class RoomRealtimeObject extends DurableObject {
         const seq = (Number(await tx.get("filter_flag_sequence")) || 0) + 1;
         await tx.put({
           filter_flag_sequence: seq,
-          [`filter_flag_slot_${seq % 1000}`]: {
+          [`filter_flag_slot_${seq % ROOM_FILTER_FLAG_RING_SIZE}`]: {
             sequence: seq, actorUid: uid, roomId, referenceId, ruleIds,
             evidence: originalText ? { text: originalText } : {},
             surface: "room_chat", status: "pending", createdAtMs: Date.now(),
@@ -379,14 +385,12 @@ export class RoomRealtimeObject extends DurableObject {
       const last = Number(await this.ctx.storage.get("filter_flag_sequence")) || 0;
       const seqs = Array.from({ length: Math.min(30, last) }, (_, i) => last - i);
       const stored = seqs.length
-        ? await this.ctx.storage.get(seqs.map((seq) => `filter_flag_slot_${seq % 1000}`))
+        ? await this.ctx.storage.get(seqs.map((seq) => `filter_flag_slot_${seq % ROOM_FILTER_FLAG_RING_SIZE}`))
         : new Map();
       const items = seqs.map((seq) => stored.get(`filter_flag_slot_${seq % 1000}`))
         .filter((item) => item && Number.isSafeInteger(item.sequence))
         .map((item) => ({
-          ...item,
-          evidence: undefined,
-          hasSensitiveEvidence: Boolean(item.evidence?.text),
+          ...roomFlagPublicItem(item),
           id: `room_${item.sequence}`,
         }));
       return Response.json({ ok: true, items });
@@ -397,9 +401,13 @@ export class RoomRealtimeObject extends DurableObject {
       if (!Number.isSafeInteger(sequence) || sequence < 1) {
         return Response.json({ ok: false }, { status: 400 });
       }
-      const item = await this.ctx.storage.get(`filter_flag_slot_${sequence % 1000}`);
+      const item = await this.ctx.storage.get(`filter_flag_slot_${sequence % ROOM_FILTER_FLAG_RING_SIZE}`);
       if (!item || item.sequence !== sequence) {
         return Response.json({ ok: false }, { status: 404 });
+      }
+      if (roomFlagEvidenceExpired(item)) {
+        return Response.json({ ok: false, code: "evidence_retention_expired" },
+          { status: 410 });
       }
       return Response.json({ ok: true,
         evidence: item.evidence && typeof item.evidence === "object"
@@ -412,7 +420,7 @@ export class RoomRealtimeObject extends DurableObject {
       if (!Number.isSafeInteger(sequence) || sequence < 1) {
         return Response.json({ ok: false, code: "invalid_flag" }, { status: 400 });
       }
-      const key = `filter_flag_slot_${sequence % 1000}`;
+      const key = `filter_flag_slot_${sequence % ROOM_FILTER_FLAG_RING_SIZE}`;
       const changed = await this.ctx.storage.transaction(async (tx) => {
         const item = await tx.get(key);
         if (!item || item.sequence !== sequence) return false;
@@ -423,6 +431,35 @@ export class RoomRealtimeObject extends DurableObject {
       });
       return Response.json({ ok: changed, code: changed ? "ok" : "flag_not_found" },
         { status: changed ? 200 : 404 });
+    }
+    if (url.pathname === "/filter/flag/purge" && request.method === "POST") {
+      // Each hourly cron visit checks exactly 25 of the 1000 bounded ring
+      // slots, avoiding a growing scan and keeping ownership in this DO.
+      const nowMs = Date.now();
+      const result = await this.ctx.storage.transaction(async (tx) => {
+        const cursor = Math.max(0,
+          Math.trunc(Number(await tx.get("filter_flag_purge_cursor")) || 0)
+        ) % ROOM_FILTER_FLAG_RING_SIZE;
+        const slots = Array.from({ length: ROOM_FILTER_FLAG_PURGE_BATCH },
+          (_, i) => (cursor + i) % ROOM_FILTER_FLAG_RING_SIZE);
+        const keys = slots.map(i => `filter_flag_slot_${i}`);
+        const stored = await tx.get(keys);
+        const updates = {};
+        let purged = 0;
+        for (const key of keys) {
+          const item = stored.get(key);
+          if (!item?.evidence?.text || !roomFlagEvidenceExpired(item, nowMs))
+            continue;
+          updates[key] = { ...item, evidence: {},
+            evidencePurgedAtMs: nowMs };
+          purged++;
+        }
+        updates.filter_flag_purge_cursor =
+          (cursor + ROOM_FILTER_FLAG_PURGE_BATCH) % ROOM_FILTER_FLAG_RING_SIZE;
+        await tx.put(updates);
+        return { checked: ROOM_FILTER_FLAG_PURGE_BATCH, purged };
+      });
+      return Response.json({ ok: true, ...result });
     }
     if (url.pathname === "/ticket" && request.method === "POST") {
       return this.#issueTicket(request);
