@@ -57,6 +57,8 @@ export function generalReportType(data = {}) {
   const targetType = clean(data.targetType);
   if (targetType === "room_message") return "room_message_report";
   if (targetType === "room") return "room_report";
+  // A direct complaint about a profile is not a message complaint.
+  if (targetType === "user") return "account_report";
   if (clean(data.type) === "user" && clean(data.source) === "private_chat") {
     return "user_report";
   }
@@ -114,8 +116,8 @@ async function listGeneralReports(db, body = {}) {
   }
   const includePeople = scope !== "rooms_messages";
   const includeRooms = scope !== "people";
-  const [chat, roomMessages, rooms] = await Promise.all([
-    includePeople ? db.runQuery("reports", {
+  const [chat, roomMessages, rooms, accounts] = await Promise.all([
+    includeRooms ? db.runQuery("reports", {
       filters: [{ field: "type", op: "==", value: "user" }],
       limit: 30,
     }) : Promise.resolve([]),
@@ -127,9 +129,13 @@ async function listGeneralReports(db, body = {}) {
       filters: [{ field: "targetType", op: "==", value: "room" }],
       limit: 30,
     }) : Promise.resolve([]),
+    includePeople ? db.runQuery("reports", {
+      filters: [{ field: "targetType", op: "==", value: "user" }],
+      limit: 30,
+    }) : Promise.resolve([]),
   ]);
   const seen = new Set();
-  const normalized = [...chat, ...roomMessages, ...rooms]
+  const normalized = [...chat, ...roomMessages, ...rooms, ...accounts]
     .map((row) => normalizeGeneralReport(row?.id || "", row?.data || {}))
     .filter((item) => {
       if (!item || !ACTIVE_STATUSES.has(item.status) ||
@@ -144,7 +150,8 @@ async function listGeneralReports(db, body = {}) {
     ok: true,
     items: await withGeneralReportProfiles(db, selected),
     capped: normalized.length > limit ||
-      chat.length === 30 || roomMessages.length === 30 || rooms.length === 30,
+      chat.length === 30 || roomMessages.length === 30 ||
+      rooms.length === 30 || accounts.length === 30,
     limit,
   };
 }
@@ -154,6 +161,7 @@ async function listGeneralReports(db, body = {}) {
 // selected category. __name__ is stable even for legacy records without dates.
 const HISTORY_FILTERS = Object.freeze({
   user_report: [{ field: "type", op: "==", value: "user" }],
+  account_report: [{ field: "targetType", op: "==", value: "user" }],
   room_message_report: [{
     field: "targetType", op: "==", value: "room_message",
   }],
