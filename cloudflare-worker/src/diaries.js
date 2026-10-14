@@ -2,6 +2,7 @@ import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
+import { filterCaseWrites } from "./content-filter-case.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import {
@@ -473,6 +474,11 @@ async function createDiary(db, uid, body) {
       }),
     ];
     if (checked.flagged) {
+      const caseUpdate = await filterCaseWrites(db,transaction, {
+        actorUid:uid, surface:"diary_post", sourceId:diaryId,
+        createdAtMs:now.getTime(),
+      });
+      writes.push(...caseUpdate.writes);
       writes.push(db.writeCreate(`content_filter_flags/${diaryId}`, {
         actorUid: uid, surface: "diary_post", referenceId: diaryId,
         ruleIds: checked.matchedRuleIds, status: "pending",
@@ -865,6 +871,11 @@ async function createComment(db, uid, body) {
     ];
 
     if (checked.flagged) {
+      const caseUpdate = await filterCaseWrites(db,transaction, {
+        actorUid:uid, surface:"diary_comment", sourceId:commentId,
+        createdAtMs:now.getTime(),
+      });
+      writes.push(...caseUpdate.writes);
       writes.push(db.writeCreate(`content_filter_flags/${commentId}`, {
         actorUid: uid, surface: "diary_comment", referenceId: commentId,
         diaryId, ruleIds: checked.matchedRuleIds, status: "pending",
