@@ -113,6 +113,10 @@ void main() {
     expect(inbox.contains('reportId: item.targetId'), isTrue);
     expect(inbox.contains('reportType: item.type'), isTrue);
     expect(screen.contains("shadowApiEndpoint('general-reports')"), isTrue);
+    expect(screen.contains("'openSensitiveEvidence'"), isTrue);
+    expect(screen.contains("'canViewSensitiveEvidence'"), isTrue);
+    expect(screen.contains('فتح الدليل الحساس'), isTrue);
+    expect(screen.contains('الدليل محمي — يلزم إذن المالك'), isTrue);
     expect(screen.contains("shadowApiEndpoint('manage-user-account')"), isTrue);
     expect(screen.contains("'liftPrivateMessagesRestriction'"), isTrue);
     expect(screen.contains("'liftRoomChatRestriction'"), isTrue);

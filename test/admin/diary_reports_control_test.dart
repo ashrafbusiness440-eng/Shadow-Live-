@@ -13,6 +13,9 @@ void main() {
     final screen = File('lib/admin/diary_reports_control_page.dart')
         .readAsStringSync();
     expect(screen.contains("'restoreVerifiedDeletionHistory'"), isTrue);
+    expect(screen.contains("'openSensitiveEvidence'"), isTrue);
+    expect(screen.contains("'viewReportEvidence'"), isTrue);
+    expect(screen.contains('فتح الدليل الحساس'), isTrue);
     expect(screen.contains('استرجاع إجراء الحذف القديم'), isTrue);
     expect(screen.contains("item.status == 'actioned'"), isTrue);
     expect(screen.contains("item.moderationAction"), isTrue);

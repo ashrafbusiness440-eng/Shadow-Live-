@@ -7,6 +7,7 @@ import { firestoreClient } from "./firestore.js";
 import { deleteDiary, deleteComment } from "./diaries.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
+import { readProtectedReportEvidence } from "./report-evidence-access.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -121,7 +122,10 @@ function normalizeReport(id, data = {}) {
     reason: clean(data.reason),
     reasonLabel: clean(data.reasonLabel),
     status: clean(data.status || "new") || "new",
-    evidence: data.evidence && typeof data.evidence === "object" ? data.evidence : {},
+    // Normal administrative pages do not disclose original report evidence.
+    hasSensitiveEvidence: Boolean(data.evidence &&
+      typeof data.evidence === "object" &&
+      Object.keys(data.evidence).length > 0),
     createdAt: data.createdAt || null,
     createdAtMs: Math.max(0, Number(data.createdAtMs || 0)),
     updatedAt: data.updatedAt || null,
@@ -150,6 +154,16 @@ async function withReportActors(db, reports) {
     targetAuthorProfile: profiles.get(item.targetAuthorUid) ?? null,
     diaryOwnerProfile: profiles.get(item.targetOwnerUid) ?? null,
   }));
+}
+
+async function openDiarySensitiveEvidence(db, actor, body) {
+  if (!(actor?.owner || actor?.capabilities?.includes("viewReportEvidence"))) {
+    throw new ModerationApiError("forbidden_evidence", 403);
+  }
+  const reportId = safeReportId(body.reportId);
+  return readProtectedReportEvidence(db, {
+    collection: "diary_reports", reportId, actorUid: actor.uid,
+  });
 }
 
 async function getReport(db, body) {
@@ -754,6 +768,16 @@ export async function diaryModeration(request, env) {
       ]);
       return json(request, env, await getReport(db, body));
     }
+    if (action === "openSensitiveEvidence") {
+      const actor = await requireCapability(db, decoded, [
+        "viewReports", "reviewReports", "manageDiaries", "deleteDiaryComment",
+      ], { recentAuth: true });
+      if (!(actor.owner || actor.capabilities.includes("viewReportEvidence"))) {
+        throw new ModerationApiError("forbidden_evidence", 403);
+      }
+      return json(request, env,
+        await openDiarySensitiveEvidence(db, actor, body));
+    }
     if (action === "reviewReport") {
       const actor = await requireCapability(db, decoded, "reviewReports", {
         recentAuth: true,
@@ -803,6 +827,7 @@ export async function diaryModeration(request, env) {
 export const diaryModerationTestHooks = Object.freeze({
   listReports,
   getReport,
+  openDiarySensitiveEvidence,
   reviewReport,
   assertReportTarget,
   resolveDiaryWithAccountAction,

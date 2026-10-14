@@ -40,6 +40,7 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageGameLevel",
   "viewReports",
   "reviewReports",
+  "viewReportEvidence",
   "manageDiaries",
   "deleteDiaryComment",
   "muteUsers",

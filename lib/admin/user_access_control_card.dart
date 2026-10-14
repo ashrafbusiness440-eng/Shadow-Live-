@@ -39,6 +39,7 @@ class OwnerUserAccessCard extends StatelessWidget {
     'viewHiddenUserLevels': 'عرض المستويات المخفية — Safety',
     'viewReports': 'عرض البلاغات',
     'reviewReports': 'مراجعة البلاغات',
+    'viewReportEvidence': 'فتح أدلة البلاغات الحساسة',
     'manageDiaries': 'حذف اليوميات من البلاغات',
     'deleteDiaryComment': 'حذف تعليقات اليوميات من البلاغات',
     'muteUsers': 'كتم المستخدمين',
@@ -83,7 +84,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'viewDashboard', 'viewSystemHealth', 'viewUsers', 'manageUsers',
     ],
     'البلاغات والإشراف': [
-      'viewReports', 'reviewReports', 'manageDiaries', 'deleteDiaryComment',
+      'viewReports', 'reviewReports', 'viewReportEvidence', 'manageDiaries', 'deleteDiaryComment',
       'muteUsers', 'suspendUsers', 'permanentBan',
     ],
     'الغرف والـ IDs': [

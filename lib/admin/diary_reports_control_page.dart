@@ -34,6 +34,7 @@ String diaryReportActionMessage(Object error) {
         'تعارض في سجل سابق. لم تُغيّر بيانات الحساب.',
     'recent_auth_required' => 'يلزم تسجيل الدخول من جديد قبل هذا الإجراء.',
     'forbidden' => 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
+    'forbidden_evidence' => 'فتح الدليل الحساس يحتاج صلاحية مستقلة من المالك.',
     'warning_target_unavailable' => 'لا يمكن توجيه تحذير إلى هذا الحساب حاليًا.',
     'unverified_account_action' => 'تعذّر التحقق من تنفيذ الإجراء. حدّث البلاغ وحاول مجددًا.',
     'owner_protected' => 'حساب المالك محمي من هذا الإجراء.',
@@ -62,6 +63,7 @@ class _DiaryReportItem {
     required this.status,
     required this.moderationAction,
     required this.evidence,
+    required this.hasSensitiveEvidence,
     required this.createdAtMs,
   });
 
@@ -80,6 +82,7 @@ class _DiaryReportItem {
   final String status;
   final String moderationAction;
   final Map<String, dynamic> evidence;
+  final bool hasSensitiveEvidence;
   final int createdAtMs;
 
   factory _DiaryReportItem.fromMap(Map<String, dynamic> data) {
@@ -112,6 +115,7 @@ class _DiaryReportItem {
       evidence: rawEvidence is Map
           ? Map<String, dynamic>.from(rawEvidence)
           : const <String, dynamic>{},
+      hasSensitiveEvidence: data['hasSensitiveEvidence'] == true,
       createdAtMs: (data['createdAtMs'] as num?)?.toInt() ?? 0,
     );
   }
@@ -142,6 +146,8 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
 
   bool get _canReview =>
       _owner || _capabilities.contains('reviewReports');
+  bool get _canViewSensitiveEvidence =>
+      _owner || _capabilities.contains('viewReportEvidence');
   bool get _canWarn =>
       _canReview && (_owner ||
       _capabilities.contains('suspendUsers') ||
@@ -534,6 +540,59 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
   String _targetLabel(_DiaryReportItem item) =>
       item.targetType == 'diary_comment' ? 'تعليق يومية' : 'يومية';
 
+  Future<void> _openEvidence(_DiaryReportItem item) async {
+    if (!_canViewSensitiveEvidence || _busyId != null) return;
+    setState(() => _busyId = item.reportId);
+    try {
+      final result = await _post('openSensitiveEvidence', {
+        'reportId': item.reportId,
+      });
+      if (!mounted) return;
+      final raw = result['evidence'];
+      final evidence = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
+      final text = (evidence['text'] ?? '').toString().trim();
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('الدليل الحساس لبلاغ اليومية'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('تم تسجيل فتح الدليل في سجل الإدارة. '
+                      'الاطلاع عليه مخصص للمراجعة المصرّح بها فقط.'),
+                  const SizedBox(height: 12),
+                  if (text.isNotEmpty)
+                    SelectableText(text)
+                  else
+                    const Text('لا يتوفر نص محفوظ قابل للعرض لهذا الدليل.'),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق الدليل'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(diaryReportActionMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   Widget _reportCard(_DiaryReportItem item) {
     final evidenceText = (item.evidence['text'] ?? '').toString().trim();
     final busy = _busyId == item.reportId;
@@ -636,6 +695,14 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
                       style: const TextStyle(color: Colors.white54, fontSize: 11),
                     ),
                 ],
+              ),
+            if (item.hasSensitiveEvidence)
+              OutlinedButton.icon(
+                onPressed: _canViewSensitiveEvidence && !busy
+                    ? () => _openEvidence(item) : null,
+                icon: const Icon(Icons.lock_open_outlined),
+                label: Text(_canViewSensitiveEvidence
+                    ? 'فتح الدليل الحساس' : 'الدليل محمي — يلزم إذن المالك'),
               ),
             if (evidenceText.isNotEmpty) ...[
               const SizedBox(height: 10),
