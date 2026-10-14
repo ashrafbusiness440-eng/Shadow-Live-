@@ -3,6 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import { generalReportsTestHooks, generalReportType } from "../../cloudflare-worker/src/general-reports.js";
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
+import { mutateAccount } from "../../cloudflare-worker/src/manage-user-account.js";
 
 class Db {
   constructor(seed = {}) {
@@ -474,6 +475,16 @@ test("case-bound account receipts cannot be reused for another complaint", async
         reason:"محاولة إعادة استخدام الإيصال", idempotencyKey:sharedKey,
       }), /idempotency_key_conflict/,
   );
+  // Simulate a successful sanction whose separate report-resolution write
+  // did not complete: a retry with the same account receipt must still fail.
+  db.docs.delete("control_operations/" + sharedKey + "_resolution");
+  await assert.rejects(
+    () => generalReportsTestHooks.resolveWithAccountAction(
+      db, {}, {sub:"admin"}, "admin", {
+        reportId:"second_chat", accountAction:"warn",
+        reason:"محاولة إعادة استخدام إيصال منفرد", idempotencyKey:sharedKey,
+      }), /idempotency_key_conflict/,
+  );
   await assert.rejects(
     () => generalReportsTestHooks.reviewGeneralReport(db, "admin", {
       reportId:"second_chat", status:"actioned", reason:"إيصال غير مرتبط",
@@ -497,4 +508,19 @@ test("public account management cannot forge a report-bound receipt", () => {
   const source = fs.readFileSync("cloudflare-worker/src/manage-user-account.js", "utf8");
   assert.match(source, /hasOwnProperty\.call\(body, "linkedReportId"\)/);
   assert.match(source, /throw new ApiError\("invalid_request", 400\)/);
+});
+
+test("account moderation preserves long legacy diary-comment report IDs", async () => {
+  const reportId = "diary_comment_" + "a".repeat(320);
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active",warningCount:0},
+  });
+  await mutateAccount(db, {}, {sub:"admin"}, {
+    targetUid:"target", accountAction:"warn", linkedReportId:reportId,
+    reason:"تحذير بعد مراجعة تعليق", idempotencyKey:"long_diary_receipt_123456",
+  });
+  const receipt = db.docs.get("control_operations/long_diary_receipt_123456");
+  assert.equal(receipt.result.linkedReportId, reportId);
+  assert.equal(db.docs.get("users/target").warningCount, 1);
 });
