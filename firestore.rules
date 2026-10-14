@@ -930,7 +930,12 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessage','lastSenderId','updatedAt','unreadCounts'
-        ]);
+        ])
+        // Still allow clearing unread counters while restricted; never
+        // allow a fake outbound preview / unread alert in lieu of a message.
+        && (privateMessagesAllowed()
+          || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['unreadCounts', 'updatedAt']));
       allow delete: if false;
 
       match /messages/{messageId} {
