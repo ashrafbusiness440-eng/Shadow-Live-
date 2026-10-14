@@ -693,10 +693,8 @@ async function confirmUpload(request, env, auth, body) {
         publicUrl: null,
       });
     }
-    // This copy is guarded by the classifier verdict, not owner UI state.
-    // A failed copy throws; the private ticket is retained, not approved.
-    await publishModeratedUpload(bucket, clean(ticket.storageKey),
-      clean(ticket.publicStorageKey), expectedMime);
+    // The public copy is delayed until all replacement/authorization
+    // checks are complete, immediately before committing its metadata.
   }
 
   let previous = null;
@@ -1054,6 +1052,12 @@ async function confirmUpload(request, env, auth, body) {
     );
   }
 
+  if (moderationDecision) {
+    // This is deliberately after pointer conflict checks and before commit.
+    // A failed copy leaves the private upload ticket untouched.
+    await publishModeratedUpload(bucket, clean(ticket.storageKey),
+      clean(ticket.publicStorageKey), expectedMime);
+  }
   await auth.db.commit(transaction, writes);
   if (moderationDecision) {
     // Private staging cleanup is safe only AFTER the metadata commit.
