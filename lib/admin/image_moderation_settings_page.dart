@@ -57,7 +57,7 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
         _mode = conf['mode'] == 'paid' ? 'paid' : 'free';
         _scope = conf['scope'] == 'public_and_private'
             ? 'public_and_private' : 'public';
-        _limit = ((conf['dailyLimit'] as num?)?.toInt() ?? 20).clamp(1, 500);
+        _limit = ((conf['dailyLimit'] as num?)?.toInt() ?? 20).clamp(1, 500).toInt();
         _gateReady = data['publicationGateReady'] == true;
         _providerReady = data['providerConfigured'] == true;
         _providers = data['providers'] is Map
@@ -138,7 +138,7 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
             title: const Text('الحصة المجانية أولًا'),
             subtitle: const Text('Cloudflare: يخضع للحصة المشتركة في الحساب.'),
             onChanged: _busy ? null : (v) => setState(() {
-              _mode = v ?? 'free'; _limit = _limit.clamp(1, 100);
+              _mode = v ?? 'free'; _limit = _limit.clamp(1, 100).toInt();
             }),
           ),
           RadioListTile<String>(
