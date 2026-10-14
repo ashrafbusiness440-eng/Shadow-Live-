@@ -334,6 +334,34 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
         throw new ModerationApiError("unverified_account_action", 409);
       }
     }
+    // Only index verified, completed moderation deletions for the actual
+    // author. Reuse diary_operations as the execution proof; a complaint or
+    // mismatched legacy record alone must never become a user violation.
+    const deletionAction = actionKind === "diary_deleted"
+      ? "moderatorDeleteDiary"
+      : actionKind === "diary_comment_deleted"
+        ? "moderatorDeleteDiaryComment" : "";
+    let contentHistory = null;
+    if (deletionAction) {
+      const original = await db.get("diary_operations/" + key, transaction);
+      const proof = original?.data || {};
+      const targetUid = deletionAction === "moderatorDeleteDiary"
+        ? clean(report.data?.targetOwnerUid)
+        : clean(report.data?.targetAuthorUid);
+      const expectedTargetType = deletionAction === "moderatorDeleteDiary"
+        ? "diary" : "diary_comment";
+      if (original.exists && targetUid &&
+          clean(report.data?.targetType) === expectedTargetType &&
+          clean(proof.action) === deletionAction &&
+          clean(proof.actorUid) === actorUid &&
+          clean(proof.status) === "completed" &&
+          clean(proof.targetUid) === targetUid &&
+          clean(proof.diaryId) === clean(report.data?.diaryId) &&
+          (deletionAction !== "moderatorDeleteDiaryComment" ||
+            clean(proof.commentId) === clean(report.data?.commentId))) {
+        contentHistory = { targetUid, action: deletionAction };
+      }
+    }
     const now = new Date();
     const patch = {
       status: "actioned",
@@ -368,6 +396,24 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
         operationId: key,
         createdAt: now,
       }),
+      ...(contentHistory ? [
+        // Minimal searchable pointer in the existing account operations
+        // collection. The actual deletion receipt and audit stay canonical.
+        db.writeCreate("control_operations/history_diary_" + key, {
+          action: contentHistory.action,
+          actorUid,
+          targetType: "user",
+          targetId: contentHistory.targetUid,
+          status: "completed",
+          result: {
+            targetUid: contentHistory.targetUid,
+            action: contentHistory.action,
+            linkedReportId: reportId,
+            sourceOperationId: key,
+          },
+          createdAt: now,
+        }),
+      ] : []),
       ...adminInboxDeleteWrites(db, "diary_report", reportId, legacyIndex),
     ]);
   } catch (error) {
@@ -600,5 +646,6 @@ export const diaryModerationTestHooks = Object.freeze({
   normalizeReport,
   parseCursor,
   safeReportId,
+  markReportActioned,
   withReportActors,
 });
