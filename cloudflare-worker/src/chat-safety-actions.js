@@ -226,6 +226,10 @@ export async function sendMessage(db, uid, body) {
       throw new ApiError("not_found", 404);
     }
 
+    if (timestampMs(sender.data?.privateMessagesRestrictedUntil) > nowMs) {
+      throw new ApiError("private_messages_restricted", 403);
+    }
+
     const conversationData = conversation.data || {};
     const participants = Array.isArray(conversationData.participants)
       ? conversationData.participants
@@ -1513,6 +1517,7 @@ async function sendRoomInvite(db, uid, body, options = {}) {
 
   return runTransaction(db, async (transaction) => {
     const opPath = `message_operations/${key}`;
+    const senderPath = `users/${uid}`;
     const receiverPath = `users/${receiverId}`;
     const conversationPath = `conversations/${conversationId}`;
     const roomPath = `rooms/${roomId}`;
@@ -1525,6 +1530,7 @@ async function sendRoomInvite(db, uid, body, options = {}) {
 
     const [
       op,
+      sender,
       receiver,
       conversation,
       room,
@@ -1535,6 +1541,7 @@ async function sendRoomInvite(db, uid, body, options = {}) {
       incomingBlock,
     ] = await Promise.all([
       db.get(opPath, transaction),
+      db.get(senderPath, transaction),
       db.get(receiverPath, transaction),
       db.get(conversationPath, transaction),
       db.get(roomPath, transaction),
@@ -1549,7 +1556,12 @@ async function sendRoomInvite(db, uid, body, options = {}) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
-    if (!receiver.exists || !room.exists) throw new ApiError("not_found", 404);
+    if (!sender.exists || !receiver.exists || !room.exists) {
+      throw new ApiError("not_found", 404);
+    }
+    if (timestampMs(sender.data?.privateMessagesRestrictedUntil) > Date.now()) {
+      throw new ApiError("private_messages_restricted", 403);
+    }
     if (outgoingBlock.exists || incomingBlock.exists) throw new ApiError("blocked", 403);
     if (!outgoingFollow.exists || !incomingFollow.exists) {
       throw new ApiError("mutual_follow_required", 403);
