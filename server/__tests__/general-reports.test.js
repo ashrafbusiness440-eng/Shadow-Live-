@@ -107,20 +107,29 @@ test("existing report sources are queried within limits, with verified public pr
 });
 
 test("unified hub sections use only matching bounded report sources", async () => {
-  const peopleDb = new Db(cases());
+  const direct = { "reports/direct_account_1": {
+    targetType:"user", source:"profile", reporterUid:"reporter",
+    targetUid:"target", reason:"spam", status:"new",
+    createdAt:new Date(6000),
+  }};
+  const peopleDb = new Db({...cases(), ...direct});
   const people = await generalReportsTestHooks.listGeneralReports(
     peopleDb, { limit: 25, scope: "people" });
   assert.equal(peopleDb.queryCalls, 1);
-  assert.deepEqual(people.items.map(x => x.type), ["user_report"]);
+  assert.deepEqual(people.items.map(x => x.type), ["account_report"]);
   assert.equal(people.items[0].targetUid, "target");
 
-  const roomsDb = new Db(cases());
+  const roomsDb = new Db({...cases(), ...direct});
   const rooms = await generalReportsTestHooks.listGeneralReports(
     roomsDb, { limit: 25, scope: "rooms_messages" });
   assert.equal(roomsDb.queryCalls, 3);
   assert.deepEqual(rooms.items.map(x => x.type),
-    ["room_message_report", "room_report"]);
-  assert.equal(rooms.items.some(x => x.type === "user_report"), false);
+    ["user_report", "room_message_report", "room_report"]);
+  assert.equal(rooms.items.some(x => x.type === "account_report"), false);
+  const peopleHistory = await generalReportsTestHooks.listReportHistory(
+    peopleDb, {type:"account_report"});
+  assert.equal(peopleHistory.items.length, 1);
+  assert.equal(peopleHistory.items[0].reportId, "direct_account_1");
   await assert.rejects(
     () => generalReportsTestHooks.listGeneralReports(
       new Db(cases()), {scope:"incorrect"}),
