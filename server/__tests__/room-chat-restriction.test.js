@@ -119,7 +119,7 @@ test("U5-B4 microphone expiry and server-side mute are enforced on both unmute p
   assert.match(session,/_watchAccountModeration\(targetRoomId\)/);
   assert.match(session,/\.collection\('users'\)[\s\S]{0,100}\.snapshots\(\)/);
   assert.match(session,/await leave\(\); \/\/ leaves ZEGO, socket and mic/);
-  assert.match(session,/unawaited\(setMicMuted\(true\)\)/);
+  assert.match(session,/_enforceRoomMicRestriction\(targetRoomId, uid\)/);
   assert.match(session,/_roomModerationSubscription\?\.cancel\(\)/);
 });
 
