@@ -20,6 +20,18 @@ void main() {
     expect(hub.contains('الغرف والرسائل'), isTrue);
     expect(hub.contains('الأشخاص'), isTrue);
     expect(hub.contains('يومياتي والتعليقات'), isTrue);
+    expect(hub.contains('بلاغات النظام'), isTrue);
+    expect(hub.contains('ReportsHubSection.system'), isTrue);
+    expect(hub.contains('SystemReportsControlPage('), isTrue);
+    final system = File('lib/admin/system_reports_control_page.dart')
+        .readAsStringSync();
+    expect(system.contains("'listSystemFlags'"), isTrue);
+    expect(system.contains("'reviewSystemFlag'"), isTrue);
+    expect(system.contains('الكلمات المحظورة'), isTrue);
+    expect(system.contains('الصور المخالفة'), isTrue);
+    expect(system.contains('مراقبة الصور لم تُفعّل بعد'), isTrue);
+    expect(system.contains('Timer.periodic('), isFalse);
+    expect(system.contains('snapshots()'), isFalse);
     expect(hub.contains('widget.allowGeneral'), isTrue);
     expect(hub.contains('widget.allowDiary'), isTrue);
     expect(hub.contains("scope: 'rooms_messages'"), isTrue);
