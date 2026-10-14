@@ -17,6 +17,7 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
   String _type = 'all';
   bool _loading = false;
   bool _canReview = false;
+  bool _canViewSensitiveEvidence = false;
   bool _unavailable = false;
   String? _error;
   List<Map<String, dynamic>> _items = const [];
@@ -56,11 +57,59 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
             .map((row) => Map<String, dynamic>.from(row))
             .toList(growable: false);
         _canReview = response['canReview'] == true;
+        _canViewSensitiveEvidence = response['canViewSensitiveEvidence'] == true;
         _unavailable = response['roomUnavailable'] == true;
       });
     } catch (_) {
       if (mounted) setState(() =>
           _error = 'تعذّر تحميل بلاغات النظام. تحقّق من الاتصال وأعد المحاولة.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openEvidence(Map<String, dynamic> item) async {
+    if (!_canViewSensitiveEvidence || _loading) return;
+    setState(() => _loading = true);
+    try {
+      final result = await _request('openSystemFlagEvidence', {
+        'flagId': item['id'],
+      });
+      if (!mounted) return;
+      final raw = result['evidence'];
+      final evidence = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
+      final original = (evidence['text'] ?? '').toString();
+      await showDialog<void>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('النص الأصلي للمخالفة'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('هذه رسالة واحدة فقط؛ لا يتم فتح بقية '
+                      'المحادثة. تم توثيق الاطلاع في سجل الإدارة.'),
+                  const SizedBox(height: 10),
+                  SelectableText(original.isEmpty
+                      ? 'لا يوجد نص أصلي محفوظ.' : original),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(dialog),
+              child: const Text('إغلاق')),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(
+          'تعذّر فتح الدليل. تحقّق من الصلاحية وحداثة الدخول.')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -156,11 +205,25 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
                   '\nالتاريخ: ${when > 0 ? DateTime.fromMillisecondsSinceEpoch(when).toLocal().toString().substring(0,16) : 'غير معروف'}'
                   '\nالحالة: ${item['status'] == 'reviewed' ? 'تمت المراجعة' : 'بانتظار المراجعة'}',
                 ),
-                trailing: _canReview && item['status'] != 'reviewed'
-                  ? TextButton(onPressed: _loading
-                    ? null : () => _markReviewed(item),
-                      child: const Text('تمت المراجعة'))
-                  : null,
+                trailing: Wrap(
+                  spacing: 2,
+                  children: [
+                    if (_canViewSensitiveEvidence &&
+                        item['hasSensitiveEvidence'] == true)
+                      IconButton(
+                        tooltip: 'فتح النص الأصلي بصلاحية الأدلة',
+                        onPressed: _loading ? null
+                            : () => _openEvidence(item),
+                        icon: const Icon(Icons.lock_open_outlined),
+                      ),
+                    if (_canReview && item['status'] != 'reviewed')
+                      TextButton(
+                        onPressed: _loading ? null
+                            : () => _markReviewed(item),
+                        child: const Text('تمت المراجعة'),
+                      ),
+                  ],
+                ),
               ));
             },
           )),
