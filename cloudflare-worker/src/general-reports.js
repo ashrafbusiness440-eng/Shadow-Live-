@@ -1023,6 +1023,7 @@ export const generalReportsTestHooks = Object.freeze({
   openGeneralSensitiveEvidence,
   reviewSystemFlag,
   openSystemFlagEvidence,
+  getSystemFlagGroup,
   getReporterContext,
   getAccountActionHistory,
   requireAdmin,
