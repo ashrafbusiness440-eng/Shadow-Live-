@@ -4,6 +4,7 @@ import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import { filterRepeatGroupWrites } from "./moderation-flag-groups.js";
 import { reportPriority } from "./report-priority-policy.js";
 import { checkReportDuplicateWindow, reportDuplicateSignature } from "./report-duplicate-window.js";
 import {
@@ -355,10 +356,17 @@ export async function sendMessage(db, uid, body) {
     ];
 
     if (review.flagged) {
+      const aggregation = await filterRepeatGroupWrites(db, transaction, {
+        actorUid: uid, surface: "private_chat", referenceId: messageId,
+        priority: review.priority || "normal", now,
+      });
+      writes.push(...aggregation.writes);
       writes.push(db.writeCreate(`content_filter_flags/${messageId}`, {
         actorUid: uid, surface: "private_chat",
         referenceId: messageId, conversationId,
         ruleIds: review.matchedRuleIds, status: "pending",
+        moderationGroupId: aggregation.groupId,
+        priority: aggregation.priority,
         evidence: { text: message },
         createdAt: now,
       }));

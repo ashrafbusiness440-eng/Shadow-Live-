@@ -4,6 +4,7 @@ import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import { filterRepeatGroupWrites } from "./moderation-flag-groups.js";
 import {
   loadPublicProfilePresentation,
   loadPublicProfilePresentations,
@@ -473,9 +474,16 @@ async function createDiary(db, uid, body) {
       }),
     ];
     if (checked.flagged) {
+      const aggregation = await filterRepeatGroupWrites(db, transaction, {
+        actorUid: uid, surface: "diary_post", referenceId: diaryId,
+        priority: checked.priority || "normal", now,
+      });
+      writes.push(...aggregation.writes);
       writes.push(db.writeCreate(`content_filter_flags/${diaryId}`, {
         actorUid: uid, surface: "diary_post", referenceId: diaryId,
         ruleIds: checked.matchedRuleIds, status: "pending",
+        moderationGroupId: aggregation.groupId,
+        priority: aggregation.priority,
         evidence: { text: original }, createdAt: now,
       }));
     }
@@ -865,9 +873,16 @@ async function createComment(db, uid, body) {
     ];
 
     if (checked.flagged) {
+      const aggregation = await filterRepeatGroupWrites(db, transaction, {
+        actorUid: uid, surface: "diary_comment", referenceId: commentId,
+        priority: checked.priority || "normal", now,
+      });
+      writes.push(...aggregation.writes);
       writes.push(db.writeCreate(`content_filter_flags/${commentId}`, {
         actorUid: uid, surface: "diary_comment", referenceId: commentId,
         diaryId, ruleIds: checked.matchedRuleIds, status: "pending",
+        moderationGroupId: aggregation.groupId,
+        priority: aggregation.priority,
         evidence: { text: original },
         createdAt: now,
       }));

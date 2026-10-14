@@ -7,6 +7,7 @@ import 'reports_hub_page.dart';
 ReportsHubSection reportSectionForInboxType(String type) => switch (type) {
   'diary_report' => ReportsHubSection.diaries,
   'account_report' => ReportsHubSection.people,
+  'system_repeat_flag' => ReportsHubSection.system,
   'user_report' || 'room_message_report' || 'room_report' =>
     ReportsHubSection.roomsAndMessages,
   _ => ReportsHubSection.roomsAndMessages,

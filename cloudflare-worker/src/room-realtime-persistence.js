@@ -1,6 +1,7 @@
 import { firestoreClient } from "./firestore.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { reportPriority } from "./report-priority-policy.js";
+import { recordRoomFilterRepeat } from "./moderation-flag-groups.js";
 import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
 import { roomSessionLeave } from "./voice-session-legacy.js";
 
@@ -160,6 +161,12 @@ export async function applyCustomerServiceMicExpiries(
     invitesChanged,
     seatsChanged,
   };
+}
+
+// Room DO cannot be a Firestore authority; reuse its existing bounded
+// persistence facade for moderation signal grouping as well.
+export async function persistRoomFilterAggregate(env, occurrence) {
+  return recordRoomFilterRepeat(firestoreClient(env), occurrence);
 }
 
 export async function persistRoomChatReport(
