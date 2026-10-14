@@ -7,8 +7,7 @@ import 'admin_account_identity_tile.dart';
 import 'agency_control_page.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
-import 'diary_reports_control_page.dart';
-import 'general_reports_control_page.dart';
+import 'reports_hub_inbox_route.dart';
 
 class AdminInboxItem {
   const AdminInboxItem({
@@ -229,10 +228,12 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
       if (!mounted) return;
 
       Widget? page;
-      if (item.route == 'diary_reports') {
-        page = DiaryReportsControlPage(initialReportId: item.targetId);
-      } else if (item.route == 'general_reports') {
-        page = GeneralReportsControlPage(initialReportId: item.targetId);
+      if (item.route == 'diary_reports' ||
+          item.route == 'general_reports') {
+        page = ReportsHubInboxRoute(
+          reportId: item.targetId,
+          reportType: item.type,
+        );
       } else if (item.route == 'agency_control') {
         page = AgencyControlPage(
           focusType: item.type,
