@@ -821,13 +821,38 @@ class VoiceRoomSessionController extends ChangeNotifier {
         unawaited(_leaveRoomEntryRestricted());
         return;
       }
+      final wasRestricted = micRestricted;
       final restrictedUntil = expiry('roomMicRestrictedUntil');
       _micRestrictedUntilMs = restrictedUntil;
-      if (restrictedUntil > now && !_micMuted) {
-        unawaited(setMicMuted(true)); // ZEGO microphone is actually muted.
+      if (restrictedUntil > now && (!wasRestricted || !_micMuted)) {
+        unawaited(_enforceRoomMicRestriction(targetRoomId, uid));
       }
       notifyListeners();
     });
+  }
+
+  Future<void> _enforceRoomMicRestriction(
+    String targetRoomId, String uid,
+  ) async {
+    if (!_active || roomId != targetRoomId) return;
+    // Stop ZEGO first. Then record the muted server seat, if occupied,
+    // through the existing seat endpoint (no additional listener).
+    try {
+      await setMicMuted(true);
+    } catch (_) {
+      // Room departure also shuts down audio if the voice session is lost.
+    }
+    if (!_active || roomId != targetRoomId || !micRestricted) return;
+    final rawSeats = _lastRawRoomState['seats'];
+    final activeMic = rawSeats is List &&
+        rawSeats.whereType<Map>().any((seat) =>
+          (seat['uid'] ?? '').toString() == uid && seat['muted'] == false);
+    if (!activeMic) return;
+    try {
+      await _seatService.setSeatMuted(roomId: targetRoomId, muted: true);
+    } catch (_) {
+      // The local ZEGO microphone stays muted even if seat accounting fails.
+    }
   }
 
   Future<void> _leaveRoomEntryRestricted() async {
