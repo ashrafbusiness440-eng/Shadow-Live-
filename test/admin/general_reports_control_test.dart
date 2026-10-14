@@ -97,6 +97,10 @@ void main() {
     expect(screen.contains("'restrictRoomMic'"), isTrue);
     expect(screen.contains("'setReportPriority'"), isTrue);
     expect(screen.contains("'getReporterContext'"), isTrue);
+    expect(screen.contains("'getAccountActionHistory'"), isTrue);
+    expect(screen.contains('سجل مخالفات وإجراءات الحساب'), isTrue);
+    expect(screen.contains('البلاغ بحد ذاته ليس'), isTrue);
+    expect(screen.contains('صفحة ${index + 1}'), isTrue);
     expect(screen.contains('سياق البلاغات السابقة'), isTrue);
     expect(screen.contains('رفض بلاغ سابق لا يعني أنه بلاغ كيدي'), isTrue);
     expect(screen.contains('تعديل الأولوية'), isTrue);
