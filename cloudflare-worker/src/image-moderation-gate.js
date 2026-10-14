@@ -67,11 +67,39 @@ export async function reserveModerationAttempt(db, objectId, policy,
   }
 }
 
+// Inspect only an initial bounded header; uncertain animation is manual review.
+// WebP VP8X animation flag and APNG acTL are not reliably assessed by one frame.
+export function animatedImageNeedsReview(buffer, mimeType) {
+  if (mimeType === "image/gif") return true;
+  const bytes = new Uint8Array(buffer);
+  if (mimeType === "image/webp") {
+    if (bytes.length < 22 ||
+        String.fromCharCode(...bytes.subarray(0, 4)) !== "RIFF" ||
+        String.fromCharCode(...bytes.subarray(8, 12)) !== "WEBP") {
+      return true;
+    }
+    const vp8x = String.fromCharCode(...bytes.subarray(12, 16)) === "VP8X";
+    return vp8x && (bytes[20] & 0x02) !== 0;
+  }
+  if (mimeType === "image/png") {
+    const max = Math.min(bytes.length - 3, 262144);
+    for (let i = 8; i < max; i++) {
+      if (bytes[i] === 97 && bytes[i + 1] === 99 &&
+          bytes[i + 2] === 84 && bytes[i + 3] === 76) return true;
+    }
+  }
+  return false;
+}
+
 export async function classifyModeratedUpload({
   db, bucket, env, ticket, objectId,
 }) {
   const policy = ticket.moderationPolicy;
   if (!policy?.enabled) return { status: "approved", reason: "not_in_scope" };
+  // Unsupported animations never consume provider quota, and cannot publish.
+  if (ticket.mimeType === "image/gif") {
+    return { status: "needs_review", reason: "animation_manual_review" };
+  }
   const reservation = await reserveModerationAttempt(db, objectId, policy);
   if (!reservation.reserved) {
     return { status: "needs_review", reason: reservation.reason };
@@ -84,10 +112,10 @@ export async function classifyModeratedUpload({
         Number(object.size || 0) <= 0) {
       return { status: "needs_review", reason: "image_unavailable" };
     }
-    if (ticket.mimeType === "image/gif") {
+    const bytes = await object.arrayBuffer();
+    if (animatedImageNeedsReview(bytes, ticket.mimeType)) {
       return { status: "needs_review", reason: "animation_manual_review" };
     }
-    const bytes = await object.arrayBuffer();
     return await runImageModerationProvider(env, policy, {
       bytes, mimeType: ticket.mimeType,
     });
