@@ -541,3 +541,122 @@ test("a plain review request cannot falsely claim a diary punishment", async () 
   assert.equal([...db.docs.keys()].filter(k =>
     k.startsWith("notifications/report_result_fake_action_")).length, 0);
 });
+
+
+test("U6-E3 verified diary deletion is indexed once for the real author", async () => {
+  const key="u6e3_diary_delete_12345";
+  const item=report("u6e3_report",9000,"under_review");
+  const db=new FakeDb({
+    "diary_reports/u6e3_report":item,
+    "reports/u6e3_report":item,
+    ["diary_operations/"+key]:{
+      action:"moderatorDeleteDiary",actorUid:"admin_uid",
+      targetUid:"owner",diaryId:"diary_1",status:"completed",
+    },
+    ["admin_audit_logs/diary_delete_"+key]:{
+      action:"moderatorDeleteDiary",actorUid:"admin_uid",
+      reason:"تم حذف اليومية بعد إثبات الإساءة",
+    },
+  });
+  await diaryModerationTestHooks.markReportActioned(
+    db,"admin_uid","u6e3_report","تم التحقق من الواقعة",
+    key,"diary_deleted",
+  );
+  const history=db.docs.get("control_operations/history_diary_"+key);
+  assert.equal(history.targetId,"owner");
+  assert.equal(history.targetType,"user");
+  assert.equal(history.action,"moderatorDeleteDiary");
+  assert.equal(history.result.linkedReportId,"u6e3_report");
+  assert.equal(db.docs.get("reports/u6e3_report").status,"actioned");
+  await diaryModerationTestHooks.markReportActioned(
+    db,"admin_uid","u6e3_report","تم التحقق من الواقعة",
+    key,"diary_deleted",
+  );
+  assert.equal([...db.docs.keys()].filter(path=>
+    path.startsWith("control_operations/history_diary_")).length,1);
+});
+
+test("U6-E3 comment deletion belongs to comment writer, never diary owner", async () => {
+  const key="u6e3_comment_delete_12345";
+  const item={...report("u6e3_comment",9000,"under_review"),
+    targetType:"diary_comment",commentId:"comment_1",
+    targetAuthorUid:"comment_writer",targetOwnerUid:"diary_owner"};
+  const db=new FakeDb({
+    "diary_reports/u6e3_comment":item,
+    "reports/u6e3_comment":item,
+    ["diary_operations/"+key]:{
+      action:"moderatorDeleteDiaryComment",actorUid:"admin_uid",
+      targetUid:"comment_writer",diaryId:"diary_1",
+      commentId:"comment_1",status:"completed",
+    },
+  });
+  await diaryModerationTestHooks.markReportActioned(
+    db,"admin_uid","u6e3_comment","تم حذف تعليق مخالف",
+    key,"diary_comment_deleted",
+  );
+  const history=db.docs.get("control_operations/history_diary_"+key);
+  assert.equal(history.targetId,"comment_writer");
+  assert.notEqual(history.targetId,"diary_owner");
+});
+
+test("U6-E3 never indexes a deletion without a matching completed receipt", async () => {
+  const key="u6e3_no_proof_12345";
+  const item=report("u6e3_unverified",9000,"under_review");
+  const db=new FakeDb({
+    "diary_reports/u6e3_unverified":item,
+    "reports/u6e3_unverified":item,
+    ["diary_operations/"+key]:{
+      action:"moderatorDeleteDiary",actorUid:"admin_uid",
+      targetUid:"different_person",diaryId:"diary_1",status:"completed",
+    },
+  });
+  await diaryModerationTestHooks.markReportActioned(
+    db,"admin_uid","u6e3_unverified","الحذف منفذ",
+    key,"diary_deleted",
+  );
+  assert.equal(db.docs.has("control_operations/history_diary_"+key),false);
+  assert.equal(db.docs.get("diary_reports/u6e3_unverified").status,"actioned");
+});
+
+
+test("U6-E3 real moderated diary removal records the canonical owner and case", async () => {
+  const key="u6e3_real_diary_123456";
+  const item=report("u6e3_real_report",9000,"under_review");
+  const db=new FakeDb({
+    "diary_reports/u6e3_real_report":item,
+    "reports/u6e3_real_report":item,
+    "diaries/diary_1":{ownerUid:"owner",images:[],commentCount:0},
+    "users/owner/diaries/diary_1":{commentCount:0},
+  });
+  const out=await diaryModerationTestHooks.deleteDiaryTarget(
+    db,"admin_uid",{diaryId:"diary_1",reportId:"u6e3_real_report",
+      reason:"مخالفة محتوى مؤكدة",idempotencyKey:key});
+  assert.equal(out.ok,true);
+  assert.equal(db.docs.has("diaries/diary_1"),false);
+  assert.equal(db.docs.get("diary_operations/"+key).targetUid,"owner");
+  assert.equal(db.docs.get("reports/u6e3_real_report").status,"actioned");
+  assert.equal(db.docs.get("control_operations/history_diary_"+key).targetId,"owner");
+});
+
+test("U6-E3 real comment removal records its author rather than diary owner", async () => {
+  const key="u6e3_real_comment_123456";
+  const item={...report("u6e3_real_comment_report",9000,"under_review"),
+    targetType:"diary_comment",targetId:"comment_1",
+    commentId:"comment_1",targetOwnerUid:"owner",
+    targetAuthorUid:"writer"};
+  const db=new FakeDb({
+    "diary_reports/u6e3_real_comment_report":item,
+    "reports/u6e3_real_comment_report":item,
+    "diaries/diary_1":{ownerUid:"owner",commentCount:1},
+    "users/owner/diaries/diary_1":{commentCount:1},
+    "diaries/diary_1/comments/comment_1":{authorUid:"writer"},
+  });
+  const out=await diaryModerationTestHooks.deleteCommentTarget(
+    db,"admin_uid",{diaryId:"diary_1",commentId:"comment_1",
+      reportId:"u6e3_real_comment_report",reason:"تعليق مخالف مؤكّد",
+      idempotencyKey:key});
+  assert.equal(out.ok,true);
+  assert.equal(db.docs.has("diaries/diary_1/comments/comment_1"),false);
+  assert.equal(db.docs.get("diary_operations/"+key).targetUid,"writer");
+  assert.equal(db.docs.get("control_operations/history_diary_"+key).targetId,"writer");
+});
