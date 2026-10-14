@@ -25,6 +25,7 @@ function reportOutcomeText(status, actionKind, reason) {
       diary_comment_deleted: "تم حذف التعليق المخالف بعد مراجعة بلاغك.",
       warning: "تم اتخاذ إجراء تحذيري بعد مراجعة بلاغك.",
       account_suspended: "تم تعليق الحساب المخالف بعد مراجعة بلاغك.",
+      private_messages_restricted: "تم تقييد إرسال الرسائل الخاصة للحساب المخالف بعد مراجعة بلاغك.",
       account_banned: "تم حظر الحساب المخالف بعد مراجعة بلاغك.",
     };
     return actionKind && actions[actionKind]

@@ -907,6 +907,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Direct-message images are client-written; enforce the same restriction
+    // as the Worker text endpoint on the server, not only in Flutter.
+    function privateMessagesAllowed() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        || !('privateMessagesRestrictedUntil' in userDoc().data)
+        || userDoc().data.privateMessagesRestrictedUntil == null
+        || request.time >= userDoc().data.privateMessagesRestrictedUntil;
+    }
+
     match /conversations/{conversationId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
       allow create: if signedIn()
@@ -921,12 +930,18 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessage','lastSenderId','updatedAt','unreadCounts'
-        ]);
+        ])
+        // Still allow clearing unread counters while restricted; never
+        // allow a fake outbound preview / unread alert in lieu of a message.
+        && (privateMessagesAllowed()
+          || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['unreadCounts', 'updatedAt']));
       allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if conversationParticipant(conversationId);
         allow create: if conversationParticipant(conversationId)
+          && privateMessagesAllowed()
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.type == 'image'
           && request.resource.data.receiverId is string

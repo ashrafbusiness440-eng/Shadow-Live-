@@ -4,6 +4,7 @@ import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 import { sendMessage } from "../../cloudflare-worker/src/chat-safety-actions.js";
+import { mutateAccount } from "../../cloudflare-worker/src/manage-user-account.js";
 import { setFriendsOnlyMessages } from "../../cloudflare-worker/src/vip-actions.js";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 
@@ -200,4 +201,43 @@ test("animated emoji in DM is rejected server-side below its VIP requirement", a
     .collection("messages")
     .get();
   assert.equal(messages.size, 0);
+});
+
+
+test("U5 server refuses restricted DM text, then accepts after its expiry", async () => {
+  const suffix = Date.now().toString() + "_restrict";
+  const sender = "restricted_sender_" + suffix;
+  const receiver = "restricted_receiver_" + suffix;
+  const moderator = "restricted_admin_" + suffix;
+  const conversationId = "restricted_chat_" + suffix;
+  await Promise.all([
+    seedUser(sender, 0, Date.now()),
+    seedUser(receiver, 0, Date.now()),
+    seedUser(moderator, 0, Date.now(), {role:"owner",adminEnabled:true}),
+    seedConversation(sender, receiver, conversationId),
+    db.collection("follows").doc(sender + "__" + receiver).set({
+      followerUid: sender, followingUid: receiver,
+    }),
+    db.collection("follows").doc(receiver + "__" + sender).set({
+      followerUid: receiver, followingUid: sender,
+    }),
+  ]);
+  const applied = await mutateAccount(cloudflareDb, {}, {sub:moderator}, {
+    targetUid:sender, accountAction:"restrictPrivateMessages",
+    durationMinutes:60, reason:"منع مؤقت بسبب الإزعاج",
+    idempotencyKey:"u5_restricted_dm_" + suffix,
+  });
+  assert.ok(new Date(applied.privateMessagesRestrictedUntil).getTime() > Date.now());
+  await assert.rejects(() => sendMessage(cloudflareDb, sender, {
+    receiverId:receiver, conversationId, text:"blocked text",
+    idempotencyKey:"u5_blocked_text_" + suffix,
+  }), /private_messages_restricted/);
+  await db.collection("users").doc(sender).update({
+    privateMessagesRestrictedUntil: new Date(Date.now() - 1000),
+  });
+  const allowed = await sendMessage(cloudflareDb, sender, {
+    receiverId:receiver, conversationId, text:"allowed after expiry",
+    idempotencyKey:"u5_allowed_text_" + suffix,
+  });
+  assert.equal(allowed.ok, true);
 });

@@ -23,6 +23,7 @@ const validKey = (value) => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const allowedActions = new Set([
   "suspend",
   "warn",
+  "restrictPrivateMessages",
   "ban",
   "unban",
   "disable",
@@ -85,6 +86,19 @@ function statusPatch(action, body, actorUid, now) {
       lastWarnedAt: now,
       lastWarnedBy: actorUid,
       lastWarningReason: clean(body.reason),
+    };
+  }
+  if (action === "restrictPrivateMessages") {
+    const minutes = Number(body.durationMinutes);
+    if (!Number.isInteger(minutes) || minutes < 10 || minutes > 43200) {
+      throw new ApiError("invalid_restriction_duration", 400);
+    }
+    return {
+      ...base,
+      privateMessagesRestrictedUntil: new Date(Date.now() + minutes * 60000),
+      privateMessageRestrictionMinutes: minutes,
+      privateMessagesRestrictedBy: actorUid,
+      privateMessageRestrictionReason: clean(body.reason),
     };
   }
   if (action === "suspend") {
@@ -231,7 +245,8 @@ async function mutateAccount(db, env, actorPayload, body) {
   const allowedForActor =
     action === "deleteAccount"
       ? actorIsOwner
-      : action === "suspend" || action === "warn"
+      : action === "suspend" || action === "warn" ||
+          action === "restrictPrivateMessages"
         ? canSuspend
         : action === "enable"
           ? canManageUsers || hasCapability("suspendUsers")
@@ -307,7 +322,7 @@ async function mutateAccount(db, env, actorPayload, body) {
       throw new ApiError("owner_protected", 409);
     }
     // A warning must not modify another admin account or an inactive account.
-    if (action === "warn" && (
+    if (["warn", "restrictPrivateMessages"].includes(action) && (
         (freshTarget.adminEnabled === true && !actorIsOwner) ||
         (clean(freshTarget.accountStatus || "active") !== "active") ||
         freshTarget.authDeleted === true)) {
@@ -317,6 +332,19 @@ async function mutateAccount(db, env, actorPayload, body) {
 
     const now = new Date();
     const patch = statusPatch(action, body, actorUid, now);
+    if (action === "restrictPrivateMessages") {
+      // New action must not silently shorten an existing restriction.
+      const existing = freshTarget.privateMessagesRestrictedUntil;
+      const oldMs = existing instanceof Date ? existing.getTime()
+        : typeof existing?.toDate === "function" ? existing.toDate().getTime()
+        : Number(existing?.seconds ?? existing?._seconds ?? 0) * 1000 ||
+          Date.parse(String(existing || "")) || 0;
+      if (oldMs > patch.privateMessagesRestrictedUntil.getTime()) {
+        patch.privateMessagesRestrictedUntil = new Date(oldMs);
+        patch.privateMessageRestrictionMinutes = Math.ceil(
+          (oldMs - now.getTime()) / 60000);
+      }
+    }
     if (action === "warn") {
       // Increment from the transaction snapshot; no unbounded warning query.
       patch.warningCount = Math.min(1000000,
@@ -352,6 +380,9 @@ async function mutateAccount(db, env, actorPayload, body) {
       accountStatus: after.accountStatus,
       suspendedUntil: after.suspendedUntil,
       authDeleted: after.authDeleted,
+      ...(action === "restrictPrivateMessages" ? {
+        privateMessagesRestrictedUntil: patch.privateMessagesRestrictedUntil,
+      } : {}),
     };
 
     await db.commit(transaction, [
@@ -376,6 +407,19 @@ async function mutateAccount(db, env, actorPayload, body) {
         result: resultData,
         createdAt: now,
       }),
+      ...(action === "restrictPrivateMessages" ? [
+        db.writeCreate(`notifications/account_private_messages_${key}`, {
+          userId: targetUid,
+          type: "account_private_messages_restricted",
+          category: "social",
+          title: "تقييد إرسال الرسائل الخاصة",
+          body: "تم تقييد إرسال الرسائل الخاصة مؤقتًا. السبب: " + reason +
+            ". تنتهي المدة: " + patch.privateMessagesRestrictedUntil.toISOString(),
+          read: false,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ] : []),
       ...(action === "warn" ? [
         db.writeCreate(`notifications/account_warning_${key}`, {
           userId: targetUid,

@@ -20,6 +20,11 @@ void main() {
     expect(report.statusLabel, 'قيد المراجعة');
     expect(report.reasonLabel, 'مضايقة أو إساءة');
     expect(report.mapField('evidence')['message'], isNotNull);
+    expect(GeneralReportItem(<String, dynamic>{
+      'moderationAction': 'private_messages_restricted',
+    }).actionLabel, contains('تقييد الرسائل الخاصة'));
+    expect(generalReportErrorMessage(StateError('invalid_restriction_duration')),
+        contains('مدة صحيحة'));
     expect(generalReportErrorMessage(StateError('invalid_report_transition')),
         contains('حالة البلاغ'));
   });
