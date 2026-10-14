@@ -111,6 +111,5 @@ export async function publishModeratedUpload(bucket, stagingKey, publicKey,
   await bucket.put(publicKey, staged.body, {
     httpMetadata: { contentType: mimeType },
   });
-  // Staging removal is best-effort: leaving private bytes cannot publish them.
-  await bucket.delete(stagingKey).catch(() => {});
+  // The caller removes staging ONLY after the metadata commit succeeds.
 }
