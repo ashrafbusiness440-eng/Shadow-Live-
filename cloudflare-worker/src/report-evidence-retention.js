@@ -86,8 +86,24 @@ export async function purgeReportEvidenceDocument(db, collection, reportId,
       evidencePurgeAt: null,
       evidencePurgedAt: now,
     };
+    const picture = data.evidence?.clientScreenshot;
+    const validPicture = collection === "reports" && picture &&
+      /^[a-f0-9-]{36}$/.test(String(picture.objectId || "")) &&
+      picture.storageKey ===
+        "report-evidence/" + reportId + "/" + picture.objectId + ".jpg";
     await db.commit(tx, [
       db.writeUpdate(path, patch, Object.keys(patch)),
+      ...(validPicture ? [db.writeCreate(
+        "storage_delete_queue/report_screenshot_" + picture.objectId, {
+          objectId: picture.objectId,
+          storageKey: picture.storageKey,
+          ownerUid: String(picture.capturedBy || ""),
+          scope: "report_evidence", targetId: reportId,
+          sizeBytes: Number(picture.byteLength || 0),
+          deleteAfter: now, reason: "report_evidence_90_day_purge",
+          createdAt: now,
+        },
+      )] : []),
       db.writeCreate("admin_audit_logs/report_evidence_purge_" +
         crypto.randomUUID(), {
         action: "purgeReportEvidenceAfterRetention",

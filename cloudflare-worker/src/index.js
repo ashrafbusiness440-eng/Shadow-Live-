@@ -43,6 +43,7 @@ import { diaries } from "./diaries.js";
 import { diaryModeration } from "./diary-moderation.js";
 import { adminInbox } from "./admin-inbox.js";
 import { generalReports } from "./general-reports.js";
+import { reportScreenshot } from "./report-screenshot.js";
 import { userLevelSummary } from "./user-level-summary.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
@@ -218,6 +219,9 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/diary-moderation") {
     annotatePressureRequest(request, { action: "diaryModeration" });
     return diaryModeration(request, env);
+  }
+  if (url.pathname === "/api/report-screenshot") {
+    return reportScreenshot(request, env);
   }
   if (url.pathname === "/api/general-reports") {
     return generalReports(request, env);

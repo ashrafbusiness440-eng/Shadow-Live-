@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../../shared/services/report_screenshot_service.dart';
 import '../../chat/services/animated_emoji_catalog.dart';
 
 import '../services/room_chat_service.dart';
@@ -802,6 +803,8 @@ class RoomChatFeed extends StatefulWidget {
 
 class _RoomChatFeedState extends State<RoomChatFeed> {
   final RoomChatService _service = RoomChatService();
+  final GlobalKey _reportSnapshotKey = GlobalKey();
+  final ReportScreenshotService _reportSnapshots = ReportScreenshotService();
   final VoiceRoomSessionController _session =
       VoiceRoomSessionController.instance;
   bool _effectSoundInitialized = false;
@@ -910,17 +913,21 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
     if (reason == null || !mounted) return;
 
     try {
-      await _service.reportMessage(
+      final screenshot = await captureReportSnapshot(_reportSnapshotKey);
+      final reportId = await _service.reportMessage(
         roomId: widget.roomId,
         messageId: message.id,
         reason: reason,
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إرسال البلاغ للمراجعة.'),
-        ),
+      final attached = await _reportSnapshots.attach(
+        reportId: reportId, imageBase64: screenshot,
       );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(screenshot != null && !attached
+          ? 'تم إرسال البلاغ بالدليل الموثق، دون الصورة الاختيارية.'
+          : 'تم إرسال البلاغ للمراجعة.'),
+      ));
     } on StateError catch (error) {
       if (!mounted) return;
       final code = error.message.toString();
@@ -1316,12 +1323,15 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
             ),
           );
         }
-        return ListView.builder(
-          controller: widget.scrollController,
-          reverse: true,
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-          itemCount: messages.length,
-          itemBuilder: (_, index) => _entry(messages[index]),
+        return RepaintBoundary(
+          key: _reportSnapshotKey,
+          child: ListView.builder(
+            controller: widget.scrollController,
+            reverse: true,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            itemCount: messages.length,
+            itemBuilder: (_, index) => _entry(messages[index]),
+          ),
         );
       },
     );

@@ -488,7 +488,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> reportRoomChatMessage({
+  Future<String> reportRoomChatMessage({
     required String messageId,
     required String reason,
   }) {

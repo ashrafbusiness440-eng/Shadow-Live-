@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../shared/widgets/shadow_global_wallpaper.dart';
 import '../../../shared/services/user_storage_service.dart';
+import '../../../shared/services/report_screenshot_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
@@ -41,6 +42,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final _controller = TextEditingController();
   final _follow = FollowService();
   final _picker = ImagePicker();
+  final GlobalKey _reportSnapshotKey = GlobalKey();
+  final ReportScreenshotService _reportSnapshots = ReportScreenshotService();
   final _storage = UserStorageService();
   final Map<String, Future<UserStorageObject>> _chatImageLoads = {};
   final _safety = ChatSafetyService();
@@ -266,14 +269,20 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                   : () async {
                       setDialogState(() => sending = true);
                       try {
-                        await _safety.reportUser(
+                        final screenshot = await captureReportSnapshot(_reportSnapshotKey);
+                        final reportId = await _safety.reportUser(
                           targetUserId: widget.otherUid,
                           conversationId: widget.conversationId,
                           reason: reason,
                           details: detailsController.text.trim(),
                         );
+                        final attached = await _reportSnapshots.attach(
+                          reportId: reportId, imageBase64: screenshot,
+                        );
                         if (dialogContext.mounted) Navigator.pop(dialogContext);
-                        _snack('تم إرسال البلاغ للمراجعة.');
+                        _snack(screenshot != null && !attached
+                          ? 'تم إرسال البلاغ مع الدليل الموثق، دون الصورة الاختيارية.'
+                          : 'تم إرسال البلاغ للمراجعة.');
                       } on StateError catch (error) {
                         if (error.message == 'rate_limited') {
                           _snack('تم إرسال عدة بلاغات مؤخرًا. حاول لاحقًا.');
@@ -1067,7 +1076,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             body: Column(
               children: [
                 Expanded(
-                  child: ShadowGlobalWallpaper(
+                  child: RepaintBoundary(
+                    key: _reportSnapshotKey,
+                    child: ShadowGlobalWallpaper(
                     key: const ValueKey('private-chat-interior-wallpaper'),
                     assetKey: ShadowAssetKeys.chatWallpaper,
                     bundledAsset: ShadowAssetKeys.chatWallpaperBundledPath,
@@ -1104,6 +1115,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       );
                     },
                     ),
+                  ),
                   ),
                 ),
                 if (_loadingSafety)

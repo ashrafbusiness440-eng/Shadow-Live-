@@ -129,7 +129,7 @@ class RoomChatService {
 
   final VoiceRoomSessionController _session;
 
-  Future<void> reportMessage({
+  Future<String> reportMessage({
     required String roomId,
     required String messageId,
     required String reason,
@@ -140,7 +140,7 @@ class RoomChatService {
         activeRoomId != roomId.trim()) {
       throw StateError('room_realtime_not_connected');
     }
-    await _session.reportRoomChatMessage(
+    return await _session.reportRoomChatMessage(
       messageId: messageId,
       reason: reason,
     );

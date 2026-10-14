@@ -18,6 +18,8 @@ String generalReportErrorMessage(Object error) {
         'انتهت مدة الاحتفاظ بالدليل الحساس، ولم يعد متاحًا للعرض.',
     'recent_auth_required' => 'سجّل الدخول من جديد لتأكيد الإجراء.',
     'report_not_found' => 'هذا البلاغ غير موجود. حدّث القائمة.',
+    'report_screenshot_not_found' => 'لا توجد صورة مرفقة بهذا البلاغ.',
+    'report_screenshot_unavailable' => 'تعذّر تحميل الصورة المرفقة بالدليل.',
     'reporter_unavailable' => 'لا توجد بيانات كافية لعرض سجل هذا المبلّغ.',
     'invalid_target_uid' => 'معرّف الحساب غير صالح. حدّث البلاغ.',
 
@@ -410,6 +412,9 @@ class GeneralReportsService {
 
   static Future<Map<String, dynamic>> openEvidence(String reportId) =>
       _post('openSensitiveEvidence', <String, dynamic>{'reportId': reportId});
+
+  static Future<Map<String, dynamic>> openScreenshot(String reportId) =>
+      _post('openReportScreenshot', <String, dynamic>{'reportId': reportId});
 
   static Future<Map<String, dynamic>> reporterContext(String reportId) =>
       _post('getReporterContext', <String, dynamic>{'reportId': reportId});
@@ -1058,6 +1063,19 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       final room = evidence['roomState'] is Map
           ? Map<String, dynamic>.from(evidence['roomState'] as Map)
           : <String, dynamic>{};
+      Map<String, dynamic>? screenshot;
+      if (evidence['clientScreenshot'] is Map) {
+        try {
+          screenshot = await GeneralReportsService.openScreenshot(item.id);
+        } catch (_) {
+          // The verified server evidence remains visible even when image IO fails.
+        }
+      }
+      if (!mounted) return;
+      final snapshotBytes = screenshot?['imageBase64'] is String
+          ? base64Decode(screenshot!['imageBase64'] as String)
+          : null;
+      final hasClientCapture = evidence['clientScreenshot'] is Map;
       final contextItems = evidence['context'] is List
           ? (evidence['context'] as List).take(7).whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item)).toList()
@@ -1076,6 +1094,15 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                   const Text('تم توثيق فتح هذا الدليل في سجل الإدارة. '
                       'لا تشارك محتواه خارج المراجعة المصرّح بها.'),
                   const SizedBox(height: 12),
+                  if (hasClientCapture) ...[
+                    const SizedBox(height: 8),
+                    const Text('لقطة شاشة أرسلها صاحب البلاغ — ليست دليلًا موثقًا من الخادم.'),
+                    const SizedBox(height: 8),
+                    if (snapshotBytes != null)
+                      Image.memory(snapshotBytes, height: 240, fit: BoxFit.contain)
+                    else
+                      const Text('الصورة غير متاحة حاليًا؛ بقي الدليل الموثق محفوظًا.'),
+                  ],
                   if (message['text'] != null)
                     SelectableText('الرسالة المبلّغ عنها: ' +
                         message['text'].toString()),
@@ -1098,7 +1125,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                         ': ' + (entry['text'] ?? '').toString(),
                       ),
                   ],
-                  if (message.isEmpty && room.isEmpty && contextItems.isEmpty)
+                  if (message.isEmpty && room.isEmpty && contextItems.isEmpty &&
+                      !hasClientCapture)
                     const Text('لا يتوفر نص قابل للعرض من الدليل المحفوظ.'),
                 ],
               ),
