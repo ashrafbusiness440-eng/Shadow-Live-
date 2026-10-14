@@ -565,6 +565,151 @@ async function deleteCommentTarget(db, actorUid, body) {
   return { ok: true, code: result.code || "ok", ...result };
 }
 
+
+/**
+ * U6-E5 — reconcile a SINGLE already-actioned historical diary case.
+ * No collection sweep, counter, new penalty or auto-import. Every source
+ * is bounded and independently corroborated before recording an index.
+ */
+async function restoreVerifiedDeletionHistory(db, actorUid, body = {}) {
+  const reportId = safeReportId(body.reportId);
+  const tx = await db.beginTransaction();
+  try {
+    const source = await db.get("diary_reports/" + reportId, tx);
+    const mirrored = await db.get("reports/" + reportId, tx);
+    const report = source?.data || {};
+    const isComment = clean(report.targetType) === "diary_comment";
+    const targetUid = clean(isComment
+      ? report.targetAuthorUid : report.targetOwnerUid);
+    const action = isComment
+      ? "moderatorDeleteDiaryComment" : "moderatorDeleteDiary";
+    const expectedKind = isComment
+      ? "diary_comment_deleted" : "diary_deleted";
+    const id = clean(report.diaryId);
+    const commentId = clean(report.commentId);
+    const originalActor = clean(report.reviewedBy);
+    if (!source?.exists || !mirrored?.exists ||
+        !["diary", "diary_comment"].includes(clean(report.targetType)) ||
+        !targetUid || !id || (isComment && !commentId) ||
+        clean(report.status) !== "actioned" ||
+        clean(report.moderationAction) !== expectedKind ||
+        clean(mirrored.data?.status) !== "actioned" ||
+        clean(mirrored.data?.moderationAction) !== expectedKind ||
+        clean(mirrored.data?.diaryId) !== id ||
+        clean(mirrored.data?.targetType) !== clean(report.targetType) ||
+        (isComment && clean(mirrored.data?.targetAuthorUid) !== targetUid) ||
+        (!isComment && clean(mirrored.data?.targetOwnerUid) !== targetUid) ||
+        !originalActor) {
+      throw new ModerationApiError("history_case_not_verified", 409);
+    }
+
+    // Single-field lookups, max 11 rows from each existing audit collection.
+    // A saturated sample is ambiguous and must not be interpreted as proof.
+    const [decisions, deletions] = await Promise.all([
+      db.runQuery("admin_audit_logs", {
+        filters: [{ field: "reportId", op: "==", value: reportId }],
+        limit: 11, transaction: tx,
+      }),
+      db.runQuery("diary_audit_logs", {
+        filters: [{ field: "diaryId", op: "==", value: id }],
+        limit: 11, transaction: tx,
+      }),
+    ]);
+    if (decisions.length >= 11 || deletions.length >= 11) {
+      throw new ModerationApiError("history_sample_capped", 409);
+    }
+    const candidates = decisions.filter((row) => {
+      const data = row?.data || {};
+      return clean(data.action) === "actionDiaryReport" &&
+        clean(data.actorUid) === originalActor &&
+        clean(data.reportId) === reportId &&
+        clean(data.after?.moderationAction) === expectedKind &&
+        clean(data.after?.status) === "actioned" &&
+        clean(data.operationId) &&
+        row.id === "diary_report_action_" + clean(data.operationId);
+    });
+    if (candidates.length !== 1) {
+      throw new ModerationApiError("history_proof_missing", 409);
+    }
+    const key = clean(candidates[0].data.operationId);
+    if (!KEY_PATTERN.test(key)) {
+      throw new ModerationApiError("history_proof_missing", 409);
+    }
+    const historyPath = "control_operations/history_diary_" + key;
+    const [prior, receipt, deleteAudit] = await Promise.all([
+      db.get(historyPath, tx),
+      db.get("diary_operations/" + key, tx),
+      db.get("admin_audit_logs/" + (isComment
+        ? "diary_comment_delete_" : "diary_delete_") + key, tx),
+    ]);
+    const op = receipt?.data || {};
+    const audit = deleteAudit?.data || {};
+    const matchingDeletions = deletions.filter((row) => {
+      const data = row?.data || {};
+      return clean(data.action) === action &&
+        clean(data.actorUid) === originalActor &&
+        clean(data.diaryId) === id &&
+        clean(data.ownerUid) === clean(report.targetOwnerUid) &&
+        (!isComment || (
+          clean(data.commentId) === commentId &&
+          clean(data.authorUid) === targetUid
+        )) &&
+        (!timestampMs(op.createdAt) ||
+          timestampMs(data.createdAt) === timestampMs(op.createdAt));
+    });
+    if (!receipt?.exists || !deleteAudit?.exists ||
+        clean(op.action) !== action ||
+        clean(op.actorUid) !== originalActor ||
+        clean(op.diaryId) !== id ||
+        (isComment && clean(op.commentId) !== commentId) ||
+        (clean(op.targetUid) && clean(op.targetUid) !== targetUid) ||
+        clean(op.status) !== "completed" ||
+        clean(audit.action) !== action ||
+        clean(audit.actorUid) !== originalActor ||
+        clean(audit.reportId) !== reportId ||
+        clean(audit.targetId) !== (isComment ? commentId : id) ||
+        (isComment && clean(audit.diaryId) !== id) ||
+        matchingDeletions.length !== 1) {
+      throw new ModerationApiError("history_proof_missing", 409);
+    }
+
+    if (prior?.exists) {
+      const saved = prior.data || {};
+      if (clean(saved.action) !== action ||
+          clean(saved.actorUid) !== originalActor ||
+          clean(saved.targetId) !== targetUid ||
+          clean(saved.result?.linkedReportId) !== reportId ||
+          clean(saved.result?.sourceOperationId) !== key) {
+        throw new ModerationApiError("history_conflict", 409);
+      }
+      await db.rollback(tx);
+      return { ok: true, code: "duplicate", reportId, targetUid };
+    }
+
+    const now = new Date();
+    await db.commit(tx, [
+      db.writeCreate(historyPath, {
+        action, actorUid: originalActor, targetType: "user",
+        targetId: targetUid, status: "completed",
+        result: { action, targetUid, linkedReportId: reportId,
+          sourceOperationId: key },
+        createdAt: op.createdAt || candidates[0].data.createdAt || now,
+        reconciledAt: now, reconciledBy: actorUid,
+      }),
+      db.writeCreate("admin_audit_logs/diary_history_restore_" + key, {
+        action: "restoreVerifiedDeletionHistory", actorUid,
+        originalActorUid: originalActor,
+        targetType: "user", targetId: targetUid,
+        reportId, sourceOperationId: key, createdAt: now,
+      }),
+    ]);
+    return { ok: true, code: "restored", reportId, targetUid };
+  } catch (error) {
+    await db.rollback(tx);
+    throw error;
+  }
+}
+
 export async function diaryModeration(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -609,6 +754,13 @@ export async function diaryModeration(request, env) {
       return json(request, env,
         await resolveDiaryWithAccountAction(db, env, decoded, actor.uid, body));
     }
+    if (action === "restoreVerifiedDeletionHistory") {
+      const actor = await requireCapability(db, decoded, "reviewReports", {
+        recentAuth: true,
+      });
+      return json(request, env,
+        await restoreVerifiedDeletionHistory(db, actor.uid, body));
+    }
     if (action === "deleteDiary") {
       const actor = await requireCapability(db, decoded, "manageDiaries", {
         recentAuth: true,
@@ -647,5 +799,6 @@ export const diaryModerationTestHooks = Object.freeze({
   parseCursor,
   safeReportId,
   markReportActioned,
+  restoreVerifiedDeletionHistory,
   withReportActors,
 });
