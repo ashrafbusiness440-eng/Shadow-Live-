@@ -240,7 +240,6 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
       db.get(reportPath, trx),
     ]);
     if (operation.exists) {
-      await db.rollback(trx);
       const previous = operation.data || {};
       if (clean(previous.action) !== "reviewGeneralReport" ||
           clean(previous.actorUid) !== actorUid ||
@@ -248,6 +247,7 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
           clean(previous.result?.status) !== status) {
         throw new GeneralReportError("idempotency_key_conflict", 409);
       }
+      await db.rollback(trx);
       return { ok: true, code: "duplicate", ...(previous.result || {}) };
     }
     const item = report.exists
