@@ -24,6 +24,7 @@ const allowedActions = new Set([
   "suspend",
   "warn",
   "restrictPrivateMessages",
+  "restrictRoomChat",
   "ban",
   "unban",
   "disable",
@@ -99,6 +100,19 @@ function statusPatch(action, body, actorUid, now) {
       privateMessageRestrictionMinutes: minutes,
       privateMessagesRestrictedBy: actorUid,
       privateMessageRestrictionReason: clean(body.reason),
+    };
+  }
+  if (action === "restrictRoomChat") {
+    const minutes = Number(body.durationMinutes);
+    if (!Number.isInteger(minutes) || minutes < 10 || minutes > 43200) {
+      throw new ApiError("invalid_restriction_duration", 400);
+    }
+    return {
+      ...base,
+      roomChatRestrictedUntil: new Date(now.getTime() + minutes * 60_000),
+      roomChatRestrictionMinutes: minutes,
+      roomChatRestrictedBy: actorUid,
+      roomChatRestrictionReason: clean(body.reason),
     };
   }
   if (action === "suspend") {
@@ -246,7 +260,8 @@ async function mutateAccount(db, env, actorPayload, body) {
     action === "deleteAccount"
       ? actorIsOwner
       : action === "suspend" || action === "warn" ||
-          action === "restrictPrivateMessages"
+          action === "restrictPrivateMessages" ||
+          action === "restrictRoomChat"
         ? canSuspend
         : action === "enable"
           ? canManageUsers || hasCapability("suspendUsers")
@@ -322,7 +337,7 @@ async function mutateAccount(db, env, actorPayload, body) {
       throw new ApiError("owner_protected", 409);
     }
     // A warning must not modify another admin account or an inactive account.
-    if (["warn", "restrictPrivateMessages"].includes(action) && (
+    if (["warn", "restrictPrivateMessages", "restrictRoomChat"].includes(action) && (
         (freshTarget.adminEnabled === true && !actorIsOwner) ||
         (clean(freshTarget.accountStatus || "active") !== "active") ||
         freshTarget.authDeleted === true)) {
@@ -343,6 +358,19 @@ async function mutateAccount(db, env, actorPayload, body) {
         patch.privateMessagesRestrictedUntil = new Date(oldMs);
         patch.privateMessageRestrictionMinutes = Math.ceil(
           (oldMs - now.getTime()) / 60000);
+      }
+    }
+    if (action === "restrictRoomChat") {
+      const existing = freshTarget.roomChatRestrictedUntil;
+      const seconds = Number(existing?.seconds ?? existing?._seconds);
+      const oldMs = existing instanceof Date ? existing.getTime()
+        : typeof existing?.toMillis === "function" ? existing.toMillis()
+        : Number.isFinite(seconds) ? seconds * 1000
+        : Date.parse(String(existing || "")) || 0;
+      if (oldMs > patch.roomChatRestrictedUntil.getTime()) {
+        patch.roomChatRestrictedUntil = new Date(oldMs);
+        patch.roomChatRestrictionMinutes =
+          Math.ceil((oldMs - now.getTime()) / 60_000);
       }
     }
     if (action === "warn") {
@@ -383,6 +411,9 @@ async function mutateAccount(db, env, actorPayload, body) {
       ...(action === "restrictPrivateMessages" ? {
         privateMessagesRestrictedUntil: patch.privateMessagesRestrictedUntil,
       } : {}),
+      ...(action === "restrictRoomChat" ? {
+        roomChatRestrictedUntil: patch.roomChatRestrictedUntil,
+      } : {}),
     };
 
     await db.commit(transaction, [
@@ -415,6 +446,19 @@ async function mutateAccount(db, env, actorPayload, body) {
           title: "تقييد إرسال الرسائل الخاصة",
           body: "تم تقييد إرسال الرسائل الخاصة مؤقتًا. السبب: " + reason +
             ". تنتهي المدة: " + patch.privateMessagesRestrictedUntil.toISOString(),
+          read: false,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ] : []),
+      ...(action === "restrictRoomChat" ? [
+        db.writeCreate(`notifications/account_room_chat_${key}`, {
+          userId: targetUid,
+          type: "account_room_chat_restricted",
+          category: "social",
+          title: "تقييد الكتابة في الغرف",
+          body: "تم تقييد إرسال الرسائل داخل الغرف مؤقتًا. السبب: " + reason +
+            ". موعد انتهاء التقييد: " + patch.roomChatRestrictedUntil.toISOString(),
           read: false,
           createdAt: now,
           updatedAt: now,
