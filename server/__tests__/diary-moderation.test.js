@@ -70,6 +70,26 @@ class FakeDb {
   }
 
   async runQuery(collectionPath, options = {}) {
+    if (collectionPath === "admin_audit_logs" ||
+        collectionPath === "diary_audit_logs") {
+      this.historyQueries = (this.historyQueries || 0) + 1;
+      assert.equal(options.limit, 11);
+      assert.equal(options.filters?.length, 1);
+      const filter = options.filters[0];
+      assert.equal(filter.op, "==");
+      assert.equal(filter.field,
+        collectionPath === "admin_audit_logs" ? "reportId" : "diaryId");
+      return [...this.docs.entries()]
+        .filter(([path, data]) =>
+          path.startsWith(collectionPath + "/") &&
+          !path.substring(collectionPath.length + 1).includes("/") &&
+          data?.[filter.field] === filter.value)
+        .slice(0, options.limit)
+        .map(([path, data]) => ({
+          id: path.substring(collectionPath.length + 1),
+          data: structuredClone(data),
+        }));
+    }
     assert.equal(collectionPath, "diary_reports");
     let rows = [...this.docs.entries()]
       .filter(([path]) => /^diary_reports\/[^/]+$/.test(path))
@@ -659,4 +679,136 @@ test("U6-E3 real comment removal records its author rather than diary owner", as
   assert.equal(db.docs.has("diaries/diary_1/comments/comment_1"),false);
   assert.equal(db.docs.get("diary_operations/"+key).targetUid,"writer");
   assert.equal(db.docs.get("control_operations/history_diary_"+key).targetId,"writer");
+});
+
+
+function oldRemovalCase({
+  isComment = false, targetUid = "writer",
+  receiptActor = "moderator", reportStatus = "actioned",
+  reportId = "history_case", key = "legacy_delete_1234567",
+} = {}) {
+  const kind = isComment ? "diary_comment_deleted" : "diary_deleted";
+  const action = isComment ? "moderatorDeleteDiaryComment"
+    : "moderatorDeleteDiary";
+  const reportData = {
+    ...report(reportId, 5000, reportStatus),
+    targetType: isComment ? "diary_comment" : "diary",
+    targetOwnerUid: isComment ? "diary_owner" : targetUid,
+    targetAuthorUid: targetUid,
+    commentId: isComment ? "comment_7" : null,
+    moderationAction:kind,reviewedBy:"moderator",
+  };
+  const now = new Date(7000);
+  return {
+    ["diary_reports/" + reportId]: reportData,
+    ["reports/" + reportId]: reportData,
+    ["admin_audit_logs/diary_report_action_" + key]: {
+      action:"actionDiaryReport", actorUid:"moderator", reportId,
+      operationId:key, after:{status:"actioned",moderationAction:kind},
+      createdAt:now,
+    },
+    ["diary_operations/" + key]:{
+      action,actorUid:receiptActor,diaryId:"diary_1",
+      ...(isComment?{commentId:"comment_7"}:{}),
+      status:"completed",createdAt:now,
+    },
+    ["admin_audit_logs/" + (isComment
+      ? "diary_comment_delete_" : "diary_delete_") + key]:{
+      action,actorUid:"moderator",reportId,
+      targetId:isComment?"comment_7":"diary_1",
+      ...(isComment?{diaryId:"diary_1"}:{}),
+      reason:"حذف قديم تم تنفيذه",createdAt:now,
+    },
+    ["diary_audit_logs/deletion_" + key]:{
+      action,actorUid:"moderator",diaryId:"diary_1",
+      ownerUid:isComment?"diary_owner":targetUid,
+      ...(isComment?{commentId:"comment_7",authorUid:targetUid}:{}),
+      createdAt:now,
+    },
+  };
+}
+
+test("U6-E5 reuses one old deletion receipt, with no new penalty or notifications", async () => {
+  const key="legacy_delete_1234567";
+  const db=new FakeDb(oldRemovalCase({key}));
+  const input={reportId:"history_case"};
+  const out=await diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+    db,"owner",input);
+  assert.equal(out.code,"restored");
+  assert.equal(out.targetUid,"writer");
+  assert.equal(db.historyQueries,2);
+  const receipt=db.docs.get("control_operations/history_diary_"+key);
+  assert.equal(receipt.actorUid,"moderator");
+  assert.equal(receipt.targetId,"writer");
+  assert.equal(receipt.result.linkedReportId,"history_case");
+  assert.equal(receipt.reconciledBy,"owner");
+  assert.ok(db.docs.has("admin_audit_logs/diary_history_restore_"+key));
+  assert.deepEqual([...db.docs.keys()].filter(x=>
+    x.startsWith("notifications/")),[]);
+  const again=await diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+    db,"owner",input);
+  assert.equal(again.code,"duplicate");
+  assert.equal([...db.docs.keys()].filter(x=>
+    x.startsWith("control_operations/history_diary_")).length,1);
+});
+
+test("U6-E5 verified old comment deletion belongs to author, not diary owner", async () => {
+  const db=new FakeDb(oldRemovalCase({isComment:true}));
+  const result=await diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+    db,"owner",{reportId:"history_case"});
+  assert.equal(result.targetUid,"writer");
+  assert.equal(db.docs.get(
+    "control_operations/history_diary_legacy_delete_1234567").targetId,"writer");
+});
+
+test("U6-E5 refuses rejected reports, unmatched owners, incomplete receipts and ambiguous audits", async () => {
+  const root=oldRemovalCase();
+  const scenarios=[
+    (docs)=>{docs["diary_reports/history_case"].status="rejected";},
+    (docs)=>{docs["diary_audit_logs/deletion_legacy_delete_1234567"].ownerUid="someone_else";},
+    (docs)=>{docs["diary_operations/legacy_delete_1234567"].status="pending";},
+    (docs)=>{docs["diary_operations/legacy_delete_1234567"].actorUid="other";},
+    (docs)=>{delete docs["admin_audit_logs/diary_delete_legacy_delete_1234567"];},
+    (docs)=>{docs["admin_audit_logs/diary_report_action_duplicate"]={
+      ...docs["admin_audit_logs/diary_report_action_legacy_delete_1234567"],
+      operationId:"duplicate",
+    };},
+  ];
+  for(const change of scenarios){
+    const docs=structuredClone(root); change(docs);
+    const db=new FakeDb(docs);
+    await assert.rejects(()=>
+      diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+        db,"owner",{reportId:"history_case"}),
+      /history_case_not_verified|history_proof_missing/);
+    assert.equal([...db.docs.keys()].some(k=>
+      k.startsWith("control_operations/history_diary_")),false);
+  }
+});
+
+test("U6-E5 audit queries are capped and oversized historical samples fail closed", async () => {
+  const docs=oldRemovalCase();
+  for(let i=0;i<11;i++){
+    docs["diary_audit_logs/extra_"+i]={
+      action:"unrelated",diaryId:"diary_1",ownerUid:"other",
+    };
+  }
+  const db=new FakeDb(docs);
+  await assert.rejects(()=>
+    diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+      db,"owner",{reportId:"history_case"}),/history_sample_capped/);
+  assert.equal(db.historyQueries,2);
+  assert.equal(db.docs.has("control_operations/history_diary_legacy_delete_1234567"),false);
+});
+
+test("U6-E5 old report identifiers remain path-safe and may exceed 180 chars", async () => {
+  const long="case_"+"x".repeat(270);
+  const docs=oldRemovalCase({reportId:long});
+  const db=new FakeDb(docs);
+  const result=await diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+    db,"owner",{reportId:long});
+  assert.equal(result.reportId,long);
+  await assert.rejects(()=>
+    diaryModerationTestHooks.restoreVerifiedDeletionHistory(
+      db,"owner",{reportId:"bad/id"}),/invalid_report_id/);
 });
