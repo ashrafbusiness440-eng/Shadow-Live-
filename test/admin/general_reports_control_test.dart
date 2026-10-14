@@ -96,6 +96,9 @@ void main() {
     expect(screen.contains("'liftRoomMicRestriction'"), isTrue);
     expect(screen.contains("'restrictRoomMic'"), isTrue);
     expect(screen.contains("'setReportPriority'"), isTrue);
+    expect(screen.contains("'getReporterContext'"), isTrue);
+    expect(screen.contains('سياق البلاغات السابقة'), isTrue);
+    expect(screen.contains('رفض بلاغ سابق لا يعني أنه بلاغ كيدي'), isTrue);
     expect(screen.contains('تعديل الأولوية'), isTrue);
     expect(screen.contains('سبب تغيير الأولوية — مطلوب'), isTrue);
     expect(GeneralReportItem(<String, dynamic>{
