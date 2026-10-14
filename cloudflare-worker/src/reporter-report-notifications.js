@@ -28,6 +28,7 @@ function reportOutcomeText(status, actionKind, reason) {
       private_messages_restricted: "تم تقييد إرسال الرسائل الخاصة للحساب المخالف بعد مراجعة بلاغك.",
       room_chat_restricted: "تم تقييد كتابة الحساب المخالف داخل الغرف بعد مراجعة بلاغك.",
       room_entry_restricted: "تم منع الحساب المخالف مؤقتًا من دخول الغرف بعد مراجعة بلاغك.",
+      room_mic_restricted: "تم كتم المايكروفون للحساب المخالف داخل الغرف بعد مراجعة بلاغك.",
       account_banned: "تم حظر الحساب المخالف بعد مراجعة بلاغك.",
     };
     return actionKind && actions[actionKind]
