@@ -143,6 +143,19 @@ function roomFilterCoordinator(env) {
   );
 }
 
+// Repeat indication is strictly scoped to an already-authorized 40-item
+// report sample. It never estimates a user's lifetime violations and
+// cannot cause an automatic warning, ban or accusation.
+export function flagSampleRepeatCount(items, item, windowMs = 86_400_000) {
+  const uid = clean(item?.actorUid);
+  const when = Number(item?.createdAtMs || 0);
+  if (!uid || !Number.isFinite(when) || when <= 0) return 0;
+  return items.filter(row =>
+    clean(row.actorUid) === uid &&
+    Number.isFinite(Number(row.createdAtMs)) &&
+    Math.abs(Number(row.createdAtMs) - when) <= windowMs).length;
+}
+
 async function listFlags(db, env) {
   // Explicit admin action only: a fixed number of stored records, no watch.
   const stored = await db.runQuery("content_filter_flags", {
@@ -164,7 +177,11 @@ async function listFlags(db, env) {
     ...stored.map((entry) => flagItem(`saved_${entry.id}`, entry.data)),
     ...roomItems,
   ].sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, 40);
-  return { ok: true, items, roomUnavailable };
+  return { ok: true, items: items.map(item => ({
+    ...item,
+    repeatsInSample24h: flagSampleRepeatCount(items, item),
+    repeatSampleOnly: true,
+  })), roomUnavailable };
 }
 
 async function reviewFlag(db, env, actorUid, body) {

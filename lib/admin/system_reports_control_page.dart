@@ -203,7 +203,8 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
                   'الحساب: ${item['actorUid'] ?? 'غير محدد'}'
                   '\nالمكان: ${item['surface'] ?? 'غير معروف'}'
                   '\nالتاريخ: ${when > 0 ? DateTime.fromMillisecondsSinceEpoch(when).toLocal().toString().substring(0,16) : 'غير معروف'}'
-                  '\nالحالة: ${item['status'] == 'reviewed' ? 'تمت المراجعة' : 'بانتظار المراجعة'}',
+                  '\nالحالة: ${item['status'] == 'reviewed' ? 'تمت المراجعة' : 'بانتظار المراجعة'}'
+                  '${((item['repeatsInSample24h'] as num?)?.toInt() ?? 0) > 1 ? '\nتنبيهات لنفس الحساب خلال 24 ساعة ضمن العينة المحدودة: ${item['repeatsInSample24h']}' : ''}',
                 ),
                 trailing: Wrap(
                   spacing: 2,

@@ -226,8 +226,11 @@ test("U6-H original message is only stored in restricted one-item moderation fla
   assert.match(chat,/evidence: \{ text: message \}/);
   assert.match(diary,/evidence: \{ text: original \}/);
   assert.match(room,/evidence: \{ text: originalFlagText \}/);
-  assert.match(room,/hasSensitiveEvidence: Boolean\(item\.evidence\?\.text\)/);
-  assert.match(room,/evidence: undefined/);
+  const retention=readFileSync(
+    "cloudflare-worker/src/room-filter-evidence-retention.js","utf8");
+  assert.match(room,/roomFlagPublicItem\(item\)/);
+  assert.match(retention,/hasSensitiveEvidence: Boolean\(evidence\?\.text\)/);
+  assert.match(retention,/const \{ evidence, \.\.\.publicFields \} = item/);
   assert.match(room,/\/filter\/flag\/evidence/);
   assert.ok(room.indexOf("const originalFlagText = text") <
     room.indexOf("text = review.text"));
