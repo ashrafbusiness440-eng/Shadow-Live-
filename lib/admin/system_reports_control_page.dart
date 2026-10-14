@@ -7,7 +7,8 @@ import 'control_firebase.dart';
 /// Existing content-filter observations, inside the unified reports hub.
 /// On demand only: no automatic refresh, polling or broad collection scans.
 class SystemReportsControlPage extends StatefulWidget {
-  const SystemReportsControlPage({super.key});
+  const SystemReportsControlPage({super.key, this.initialActorUid});
+  final String? initialActorUid;
   @override
   State<SystemReportsControlPage> createState() =>
       _SystemReportsControlPageState();
@@ -25,7 +26,10 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _load().then((_) {
+      final uid = widget.initialActorUid?.trim() ?? '';
+      if (mounted && uid.isNotEmpty) _openCase(uid);
+    });
   }
 
   Future<Map<String, dynamic>> _request(String action,
@@ -63,6 +67,68 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
     } catch (_) {
       if (mounted) setState(() =>
           _error = 'تعذّر تحميل بلاغات النظام. تحقّق من الاتصال وأعد المحاولة.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openCase(String actorUid) async {
+    if (_loading || actorUid.trim().isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      final info = await _request('getSystemFilterCase', {
+        'actorUid': actorUid.trim(),
+      });
+      if (!mounted) return;
+      final count = (info['count'] as num?)?.toInt() ?? 0;
+      final tier = (info['tier'] as num?)?.toInt() ?? 0;
+      final refs = (info['recentFlagIds'] as List? ?? const [])
+          .whereType<String>().take(12).toList(growable: false);
+      await showDialog<void>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('ملف التنبيهات المتكررة'),
+          content: SizedBox(
+            width: 490, height: 370,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('هذا عدد تنبيهات الفلتر خلال نافذة 24 ساعة. '
+                    'ليس حكمًا بمخالفة مثبتة، ولا يسبب عقوبة تلقائية.'),
+                  const SizedBox(height: 10),
+                  SelectableText('الحساب: ' + actorUid),
+                  Text('عدد التنبيهات: ' + count.toString()),
+                  Text('أولوية المراجعة: ' +
+                    (tier >= 3 ? 'عاجلة' : tier == 2
+                      ? 'مهمة' : tier == 1 ? 'عادية' : 'لم تبلغ حد التنبيه')),
+                  const SizedBox(height: 12),
+                  const Text('أحدث الوقائع المستقلة — حتى 12 مرجعًا'),
+                  for (final ref in refs)
+                    ListTile(
+                      dense: true,
+                      title: SelectableText(ref),
+                      trailing: _canViewSensitiveEvidence
+                        ? TextButton(
+                            onPressed: () => _openEvidence({'id': ref}),
+                            child: const Text('فتح الدليل'),
+                          ) : null,
+                    ),
+                  if (refs.isEmpty) const Text('لا توجد مراجع مسجلة.'),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(dialog),
+              child: const Text('إغلاق')),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(
+          'تعذّر فتح ملف التكرارات. حدّث القائمة وحاول من جديد.')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -209,6 +275,12 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
                 trailing: Wrap(
                   spacing: 2,
                   children: [
+                    IconButton(
+                      tooltip: 'ملف تنبيهات الحساب المتكررة',
+                      onPressed: _loading ? null : () =>
+                        _openCase((item['actorUid'] ?? '').toString()),
+                      icon: const Icon(Icons.fact_check_outlined),
+                    ),
                     if (_canViewSensitiveEvidence &&
                         item['hasSensitiveEvidence'] == true)
                       IconButton(
