@@ -475,7 +475,8 @@ async function createDiary(db, uid, body) {
     if (checked.flagged) {
       writes.push(db.writeCreate(`content_filter_flags/${diaryId}`, {
         actorUid: uid, surface: "diary_post", referenceId: diaryId,
-        ruleIds: checked.matchedRuleIds, status: "pending", createdAt: now,
+        ruleIds: checked.matchedRuleIds, status: "pending",
+        evidence: { text: original }, createdAt: now,
       }));
     }
     for (const target of mentionTargets) {
