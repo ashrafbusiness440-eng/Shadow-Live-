@@ -1318,3 +1318,149 @@ test("U6-E3 history cursors accept safe prefixed 180-character operation keys", 
   await assert.rejects(()=>generalReportsTestHooks.getAccountActionHistory(
     db,{targetUid:"writer",cursor:cursor+"/malicious"}),/invalid_cursor/);
 });
+
+
+test("U6-E6 verified restriction lift links original receipt and shows who lifted it", async () => {
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+  });
+  const issueKey = "u6e6_mic_issue_123456";
+  const liftKey = "u6e6_mic_lift_123456";
+  await mutateAccount(db, {}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"restrictRoomMic",
+    durationMinutes:60,reason:"مخالفة المايك الموثقة",idempotencyKey:issueKey,
+  });
+  assert.equal(db.docs.get("users/target").roomMicRestrictionOperationId, issueKey);
+  const first = (await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"})).items.find(x=>x.operationId===issueKey);
+  assert.equal(first.lifecycleState,"active");
+  await mutateAccount(db, {}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"liftRoomMicRestriction",
+    reason:"رفع القيد بعد المراجعة",idempotencyKey:liftKey,
+  });
+  assert.equal(db.docs.get("users/target").roomMicRestrictionOperationId,null);
+  const original = db.docs.get("control_operations/"+issueKey);
+  assert.equal(original.lifecycle.type,"lifted");
+  assert.equal(original.lifecycle.operationId,liftKey);
+  assert.equal(original.lifecycle.actorUid,"admin");
+  assert.equal(original.lifecycle.reason,"رفع القيد بعد المراجعة");
+  assert.equal(db.docs.get("control_operations/"+liftKey).result.originalOperationId,issueKey);
+  const out = await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"});
+  const originalView = out.items.find(x=>x.operationId===issueKey);
+  const liftView = out.items.find(x=>x.operationId===liftKey);
+  assert.equal(originalView.lifecycleState,"lifted");
+  assert.equal(originalView.changedByUid,"admin");
+  assert.equal(originalView.changedByOperationId,liftKey);
+  assert.equal(liftView.originalOperationId,issueKey);
+  assert.equal(liftView.lifecycleState,"lift_recorded");
+  assert.equal(db.queryCalls,2);
+  assert.equal(JSON.stringify(out).includes("notifications/"),false);
+  const repeat = await mutateAccount(db, {}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"liftRoomMicRestriction",
+    reason:"رفع القيد بعد المراجعة",idempotencyKey:liftKey,
+  });
+  assert.equal(repeat.code,"duplicate");
+  assert.equal(db.docs.get("control_operations/"+issueKey).lifecycle.operationId,liftKey);
+});
+
+test("U6-E6 successive restrictions supersede only the provably active source", async () => {
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+  });
+  const a="u6e6_chat_first_1234",b="u6e6_chat_second_1234";
+  for(const [key,duration] of [[a,60],[b,120]]) {
+    await mutateAccount(db,{}, {sub:"admin"}, {
+      targetUid:"target",accountAction:"restrictRoomChat",
+      durationMinutes:duration,reason:"مراجعة واقعة محققة",idempotencyKey:key,
+    });
+  }
+  assert.equal(db.docs.get("users/target").roomChatRestrictionOperationId,b);
+  const before = db.docs.get("control_operations/"+a);
+  assert.equal(before.lifecycle.type,"replaced");
+  assert.equal(before.lifecycle.operationId,b);
+  const after = (await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"})).items;
+  assert.equal(after.find(x=>x.operationId===a).lifecycleState,"replaced");
+  assert.equal(after.find(x=>x.operationId===b).lifecycleState,"active");
+});
+
+test("U6-E6 legacy or contradictory origin is never inferred for a lift", async () => {
+  const future = new Date(Date.now()+60*60_000);
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active",
+      roomEntryRestrictedUntil:future},
+    "control_operations/u6e6_old_unverified_123":{
+      action:"restrictRoomEntry",targetType:"user",targetId:"target",
+      actorUid:"admin",status:"completed",
+      result:{action:"restrictRoomEntry",targetUid:"target",
+        roomEntryRestrictedUntil:future},
+      createdAt:new Date(Date.now()-1000),
+    },
+  });
+  const liftKey = "u6e6_unlinked_lift_123";
+  await mutateAccount(db,{}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"liftRoomEntryRestriction",
+    reason:"رفع التقييد بعد المراجعة",idempotencyKey:liftKey,
+  });
+  assert.equal(db.docs.get("control_operations/"+liftKey).result.originalOperationId,undefined);
+  assert.equal(db.docs.get("control_operations/u6e6_old_unverified_123").lifecycle,undefined);
+  const items = (await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"})).items;
+  assert.equal(items.find(x=>x.operationId==="u6e6_old_unverified_123")
+    .lifecycleState,"unknown");
+  assert.equal(items.find(x=>x.operationId===liftKey).originalOperationId,"");
+});
+
+test("U6-E6 time expiration and permanent ban remain distinct from an admin lift", async () => {
+  const past=new Date(Date.now()-10_000);
+  const db = new Db({
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+    "control_operations/u6e6_expired_receipt":{
+      action:"suspend",actorUid:"admin",targetType:"user",
+      targetId:"target",status:"completed",createdAt:new Date(Date.now()-90_000),
+      result:{targetUid:"target",action:"suspend",accountStatus:"suspended",suspendedUntil:past},
+    },
+  });
+  let view=(await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"})).items.find(x=>x.operationId==="u6e6_expired_receipt");
+  assert.equal(view.lifecycleState,"expired");
+  assert.equal(view.expired,true);
+  const banKey="u6e6_ban_forever_1234",releaseKey="u6e6_ban_release_1234";
+  await mutateAccount(db,{}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"ban",reason:"قرار حظر إداري موثق",idempotencyKey:banKey,
+  });
+  view=(await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"})).items.find(x=>x.operationId===banKey);
+  assert.equal(view.lifecycleState,"permanent");
+  assert.equal(view.permanentSanction,true);
+  // An unrelated earlier expiration must never be confused with a lift.
+  assert.equal(view.originalOperationId,"");
+  assert.equal(db.docs.get("control_operations/"+banKey).lifecycle,undefined);
+});
+
+test("U6-E6 history does not guess permanent legacy state or leak private proof", async () => {
+  const db=new Db({
+    "users/target":{accountStatus:"active"},
+    "control_operations/u6e6_legacy_ban_123":{
+      action:"ban",actorUid:"admin",targetId:"target",targetType:"user",
+      status:"completed",createdAt:new Date(1000),
+      result:{targetUid:"target",action:"ban",accountStatus:"banned",
+        privateEvidence:"SECRET_NOT_ALLOWED"},
+    },
+    "admin_audit_logs/account_u6e6_legacy_ban_123":{
+      reason:"قرار قديم",evidence:"PRIVATE_EVIDENCE",
+    },
+  });
+  const out=await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"});
+  assert.equal(out.items[0].lifecycleState,"unknown");
+  assert.equal(out.items[0].permanentSanction,true);
+  assert.equal(JSON.stringify(out).includes("PRIVATE_EVIDENCE"),false);
+  assert.equal(JSON.stringify(out).includes("SECRET_NOT_ALLOWED"),false);
+  assert.equal(db.queryCalls,1);
+});

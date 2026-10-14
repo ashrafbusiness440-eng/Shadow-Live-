@@ -50,6 +50,24 @@ const liftRestrictionFields = Object.freeze({
     label: "دخول الغرف",
   },
 });
+// Provenance is stored on the existing user and original operation documents.
+// Never guess which historical operation a legacy sanction belongs to.
+const restrictionProvenance = Object.freeze({
+  restrictPrivateMessages: ["privateMessagesRestrictionOperationId", "privateMessagesRestrictedUntil"],
+  liftPrivateMessagesRestriction: ["privateMessagesRestrictionOperationId", "privateMessagesRestrictedUntil"],
+  restrictRoomChat: ["roomChatRestrictionOperationId", "roomChatRestrictedUntil"],
+  liftRoomChatRestriction: ["roomChatRestrictionOperationId", "roomChatRestrictedUntil"],
+  restrictRoomEntry: ["roomEntryRestrictionOperationId", "roomEntryRestrictedUntil"],
+  liftRoomEntryRestriction: ["roomEntryRestrictionOperationId", "roomEntryRestrictedUntil"],
+  restrictRoomMic: ["roomMicRestrictionOperationId", "roomMicRestrictedUntil"],
+  liftRoomMicRestriction: ["roomMicRestrictionOperationId", "roomMicRestrictedUntil"],
+});
+const activeRestrictionActions = new Set([
+  "restrictPrivateMessages", "restrictRoomChat", "restrictRoomEntry", "restrictRoomMic",
+]);
+const accountStatusSourceActions = new Set(["suspend", "ban", "disable"]);
+const accountStatusReleaseActions = new Set(["unban", "enable"]);
+
 function restrictionTimestamp(value) {
   if (value instanceof Date) return value.getTime();
   if (typeof value?.toDate === "function") return value.toDate().getTime();
@@ -493,6 +511,44 @@ async function mutateAccount(db, env, actorPayload, body) {
           (oldMs - now.getTime()) / 60_000);
       }
     }
+    // One optional point-read of the active provenance receipt. Historical
+    // users without a verified source are deliberately left unlinked.
+    const restrictionFields = restrictionProvenance[action];
+    const accountSanction = accountStatusSourceActions.has(action);
+    const accountRelease = accountStatusReleaseActions.has(action);
+    const sourceField = restrictionFields?.[0] ||
+      (accountSanction || accountRelease ? "accountModerationOperationId" : "");
+    const savedSourceId = sourceField ? clean(freshTarget[sourceField]) : "";
+    let sourceOperation = null;
+    if (savedSourceId && validKey(savedSourceId) && savedSourceId !== key) {
+      const snap = await db.get("control_operations/" + savedSourceId, transaction);
+      const saved = snap.exists ? snap.data || {} : {};
+      const savedAction = clean(saved.action);
+      const sharedProof = clean(saved.targetId) === targetUid &&
+        clean(saved.targetType) === "user" &&
+        clean(saved.status) === "completed" &&
+        clean(saved.result?.targetUid) === targetUid &&
+        clean(saved.result?.action) === savedAction &&
+        !saved.lifecycle;
+      if (sharedProof && restrictionFields &&
+          activeRestrictionActions.has(savedAction) &&
+          restrictionProvenance[savedAction]?.[1] === restrictionFields[1] &&
+          restrictionTimestamp(saved.result?.[restrictionFields[1]]) > now.getTime() &&
+          restrictionTimestamp(saved.result?.[restrictionFields[1]]) ===
+            restrictionTimestamp(freshTarget[restrictionFields[1]])) {
+        sourceOperation = savedSourceId;
+      } else if (sharedProof && !restrictionFields &&
+          accountStatusSourceActions.has(savedAction) &&
+          clean(saved.result?.accountStatus) === clean(freshTarget.accountStatus) &&
+          (savedAction !== "suspend" ||
+            restrictionTimestamp(saved.result?.suspendedUntil) > now.getTime())) {
+        sourceOperation = savedSourceId;
+      }
+    }
+    if (sourceField) {
+      patch[sourceField] = (activeRestrictionActions.has(action) || accountSanction)
+        ? key : null;
+    }
     if (action === "warn") {
       // Increment from the transaction snapshot; no unbounded warning query.
       patch.warningCount = Math.min(1000000,
@@ -530,6 +586,20 @@ async function mutateAccount(db, env, actorPayload, body) {
       accountStatus: after.accountStatus,
       suspendedUntil: after.suspendedUntil,
       authDeleted: after.authDeleted,
+      // Effective enforced duration, not merely the requested shorter extension.
+      ...(action === "suspend" ? { durationMinutes: patch.suspensionMinutes } : {}),
+      ...(action === "restrictPrivateMessages" ? {
+        durationMinutes: patch.privateMessageRestrictionMinutes,
+      } : {}),
+      ...(action === "restrictRoomChat" ? {
+        durationMinutes: patch.roomChatRestrictionMinutes,
+      } : {}),
+      ...(action === "restrictRoomEntry" ? {
+        durationMinutes: patch.roomEntryRestrictionMinutes,
+      } : {}),
+      ...(action === "restrictRoomMic" ? {
+        durationMinutes: patch.roomMicRestrictionMinutes,
+      } : {}),
       ...(action === "restrictPrivateMessages" ? {
         privateMessagesRestrictedUntil: patch.privateMessagesRestrictedUntil,
       } : {}),
@@ -546,6 +616,8 @@ async function mutateAccount(db, env, actorPayload, body) {
         liftedRestriction: liftRestrictionFields[action].until,
         restrictionLiftedAt: now,
       } : {}),
+      ...((liftConfig || accountRelease) && sourceOperation
+        ? { originalOperationId: sourceOperation } : {}),
     };
 
     await db.commit(transaction, [
@@ -570,6 +642,18 @@ async function mutateAccount(db, env, actorPayload, body) {
         result: resultData,
         createdAt: now,
       }),
+      ...(sourceOperation ? [db.writeUpdate(
+        "control_operations/" + sourceOperation, {
+          lifecycle: {
+            type: liftConfig || accountRelease ? "lifted" : "replaced",
+            operationId: key,
+            action,
+            actorUid,
+            at: now,
+            reason,
+          },
+        }, ["lifecycle"],
+      )] : []),
       ...(action === "restrictPrivateMessages" ? [
         db.writeCreate(`notifications/account_private_messages_${key}`, {
           userId: targetUid,
