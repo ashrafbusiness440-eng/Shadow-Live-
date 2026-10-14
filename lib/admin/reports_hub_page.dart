@@ -164,8 +164,8 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
           ? const Center(child: Text('ليس لديك صلاحية لعرض البلاغات.'))
           : Column(
               children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: Text(
