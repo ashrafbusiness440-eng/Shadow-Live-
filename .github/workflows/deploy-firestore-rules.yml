@@ -25,6 +25,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect index configuration changes
+        id: indexes_scope
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "run_index_sync=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            echo "run_index_sync=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+          fi
+          if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" |
+            grep -Fxq 'firestore.indexes.json'; then
+            echo "run_index_sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_index_sync=false" >> "$GITHUB_OUTPUT"
+            echo "Index config unchanged; publishing rules without index creation."
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -228,6 +256,10 @@ jobs:
           NODE
 
       - name: Deploy Firestore composite indexes through Admin API
+        # Index creation needs separate IAM permissions. A rules-only change
+        # must not attempt to provision unrelated indexes and fail the release.
+        # Manual dispatch intentionally performs a full index sync.
+        if: steps.indexes_scope.outputs.run_index_sync == 'true'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
