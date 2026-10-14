@@ -14,6 +14,7 @@ import { loadPublicProfilePresentations } from "./public-profile-presentation.js
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
+import { evidenceDeadline } from "./report-evidence-retention.js";
 import { reportPriority, reportPriorityRank, validReportPriority } from "./report-priority-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -554,6 +555,8 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
       reviewedBy: actorUid,
       reviewedAt: now,
       updatedAt: now,
+      ...(TERMINAL_STATUSES.has(status)
+        ? { evidencePurgeAt: evidenceDeadline(now) } : {}),
     };
     const result = { reportId, status, ...(trustedAction ? { moderationAction: trustedAction } : {}) };
     const indexWrites = ACTIVE_STATUSES.has(status)
@@ -878,6 +881,9 @@ export async function generalReports(request, env) {
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
+    if (clean(error?.code) === "evidence_retention_expired") {
+      return json(request, env, { ok: false, code: error.code }, 410);
+    }
     if (error instanceof GeneralReportError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
