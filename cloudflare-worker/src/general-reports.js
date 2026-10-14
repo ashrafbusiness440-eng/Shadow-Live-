@@ -556,7 +556,8 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
       reviewedAt: now,
       updatedAt: now,
       ...(TERMINAL_STATUSES.has(status)
-        ? { evidencePurgeAt: evidenceDeadline(now) } : {}),
+        ? { evidencePurgeAt: evidenceDeadline(now),
+            evidenceRetentionDueAt: evidenceDeadline(now) } : {}),
     };
     const result = { reportId, status, ...(trustedAction ? { moderationAction: trustedAction } : {}) };
     const indexWrites = ACTIVE_STATUSES.has(status)
