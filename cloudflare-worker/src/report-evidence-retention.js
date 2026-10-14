@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import { cleanupOldRoomFilterCaseMarkers } from "./content-filter-case.js";
 
 // Only final, explicitly timestamped decisions start the 90-day clock.
 // Pending, reopened, disputed or historic unverified reports are never
@@ -146,6 +147,16 @@ export async function runDueReportEvidenceCleanup(env, {
           String(error?.code || error?.message || "failed").slice(0,90));
       }
     }
+  }
+  // This adds only one bounded indexed lookup to the existing hourly job.
+  // Failures are isolated: they never block report evidence retention.
+  try {
+    const markers = await cleanupOldRoomFilterCaseMarkers(db, nowMs, bounded);
+    result.caseMarkersDeleted = markers.deleted;
+  } catch (error) {
+    result.caseMarkerCleanupFailed = true;
+    console.error("Room filter case receipt cleanup failed",
+      String(error?.code || error?.message || "failed").slice(0,85));
   }
   return result;
 }
