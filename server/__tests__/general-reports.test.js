@@ -1268,3 +1268,50 @@ test("U6-E1 account history is restricted to authorized active moderators", asyn
     );
   }
 });
+
+
+test("U6-E3 account history includes only confirmed content moderation, not sensitive evidence", async () => {
+  const key="u6e3_verified_comment_123";
+  const recordId="history_diary_"+key;
+  const db=new Db({
+    ["control_operations/"+recordId]:{
+      action:"moderatorDeleteDiaryComment",targetType:"user",
+      targetId:"comment_writer",actorUid:"admin",status:"completed",
+      createdAt:new Date(5000),
+      result:{targetUid:"comment_writer",action:"moderatorDeleteDiaryComment",
+        linkedReportId:"u6e3_report",sourceOperationId:key},
+    },
+    ["admin_audit_logs/diary_comment_delete_"+key]:{
+      reason:"تم إثبات المخالفة وحذف التعليق",
+    },
+    "reports/u6e3_report":{
+      targetType:"diary_comment",targetOwnerUid:"diary_owner",
+      targetAuthorUid:"comment_writer",status:"actioned",
+      moderationAction:"diary_comment_deleted",
+      evidence:{originalText:"PRIVATE_TEXT_ONLY_FOR_REVIEW"},
+    },
+  });
+  const out=await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"comment_writer"});
+  assert.equal(db.queryCalls,1);
+  assert.equal(out.items.length,1);
+  assert.equal(out.confirmedInPage,1);
+  assert.equal(out.items[0].caseVerified,true);
+  assert.equal(out.items[0].reason,"تم إثبات المخالفة وحذف التعليق");
+  assert.equal(out.items[0].reportId,"u6e3_report");
+  assert.equal(JSON.stringify(out).includes("PRIVATE_TEXT_ONLY_FOR_REVIEW"),false);
+  const unrelated=await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"diary_owner"});
+  assert.equal(unrelated.items.length,0);
+});
+
+test("U6-E3 history cursors accept safe prefixed 180-character operation keys", async () => {
+  const key="x".repeat(180);
+  const cursor="history_diary_"+key;
+  const db=new Db({});
+  const out=await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"writer",cursor});
+  assert.equal(out.items.length,0);
+  await assert.rejects(()=>generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"writer",cursor:cursor+"/malicious"}),/invalid_cursor/);
+});
