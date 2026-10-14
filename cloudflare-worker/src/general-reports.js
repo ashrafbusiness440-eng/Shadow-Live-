@@ -333,7 +333,8 @@ async function getAccountActionHistory(db, body = {}) {
       reportSnap?.exists &&
       ["actioned", "closed"].includes(clean(report.status)) &&
       clean(report.moderationAction) === expectedKind &&
-      clean(report.reviewedBy) === clean(operation.actorUid) &&
+      // A different reviewer may later close an already-actioned case.
+      // The immutable account receipt establishes who executed the action.
       clean(report.targetUid || report.targetUserId ||
         report.targetAuthorUid || report.targetOwnerUid) === targetUid);
     const expiry = result.privateMessagesRestrictedUntil ||
