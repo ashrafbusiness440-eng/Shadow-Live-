@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { createRoomChatRestrictionGate } from "./room-chat-restriction.js";
 import {
   applyContentFilter, defaultFilterConfig,
   validateFilterConfig, CONTENT_FILTER_COORDINATOR_ID,
@@ -9,6 +10,7 @@ import {
   persistRoomChatReport,
   reclaimDepartedRoomSeat,
   roomDepartureCleanupCandidates,
+  loadRoomChatModerationRecord,
 } from "./room-realtime-persistence.js";
 
 import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
@@ -76,6 +78,9 @@ export class RoomRealtimeObject extends DurableObject {
     this.env = env;
     this.chatRateByUid = new Map();
     this.chatReportRateByUid = new Map();
+    this.isRoomChatRestricted = createRoomChatRestrictionGate(async (uid) => {
+      return loadRoomChatModerationRecord(this.env, uid);
+    });
     this._contentFilterSnapshot = null;
     this._contentFilterExpiresMs = 0;
     this._contentFilterPending = null;
@@ -1248,6 +1253,18 @@ export class RoomRealtimeObject extends DurableObject {
       attachment.canModerateChat !== true
     ) {
       this.#chatError(webSocket, requestId, "room_chat_disabled");
+      return true;
+    }
+
+    // Check the authoritative user restriction even for sockets connected
+    // before an admin applied it. Bounded TTL avoids a lookup per message.
+    try {
+      if (await this.isRoomChatRestricted(uid)) {
+        this.#chatError(webSocket, requestId, "room_chat_restricted");
+        return true;
+      }
+    } catch {
+      this.#chatError(webSocket, requestId, "room_chat_moderation_unavailable");
       return true;
     }
 

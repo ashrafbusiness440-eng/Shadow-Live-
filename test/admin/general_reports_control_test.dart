@@ -25,6 +25,9 @@ void main() {
     }).actionLabel, contains('تقييد الرسائل الخاصة'));
     expect(generalReportErrorMessage(StateError('invalid_restriction_duration')),
         contains('مدة صحيحة'));
+    expect(GeneralReportItem(<String, dynamic>{
+      'moderationAction': 'room_chat_restricted',
+    }).actionLabel, contains('الكتابة في الغرف'));
     expect(generalReportErrorMessage(StateError('invalid_report_transition')),
         contains('حالة البلاغ'));
   });

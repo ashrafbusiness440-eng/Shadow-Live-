@@ -26,6 +26,7 @@ function reportOutcomeText(status, actionKind, reason) {
       warning: "تم اتخاذ إجراء تحذيري بعد مراجعة بلاغك.",
       account_suspended: "تم تعليق الحساب المخالف بعد مراجعة بلاغك.",
       private_messages_restricted: "تم تقييد إرسال الرسائل الخاصة للحساب المخالف بعد مراجعة بلاغك.",
+      room_chat_restricted: "تم تقييد كتابة الحساب المخالف داخل الغرف بعد مراجعة بلاغك.",
       account_banned: "تم حظر الحساب المخالف بعد مراجعة بلاغك.",
     };
     return actionKind && actions[actionKind]
