@@ -406,6 +406,9 @@ async function getAccountActionHistory(db, body = {}) {
       reason: clean(audit.reason),
       createdAtMs: timestampMs(operation.createdAt),
       expiresAtMs: expiryMs,
+      durationMinutes: Number.isInteger(result.durationMinutes) &&
+        result.durationMinutes >= 10 && result.durationMinutes <= 43200
+        ? result.durationMinutes : null,
       expired: expiryMs > 0 && expiryMs <= nowMs,
       lifecycleState,
       permanentSanction: permanent,
