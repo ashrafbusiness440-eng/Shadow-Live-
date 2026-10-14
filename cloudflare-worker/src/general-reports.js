@@ -789,6 +789,7 @@ export const generalReportsTestHooks = Object.freeze({
   getGeneralReport,
   getReporterContext,
   getAccountActionHistory,
+  requireAdmin,
   reviewGeneralReport,
   setReportPriority,
   resolveWithAccountAction,
