@@ -181,12 +181,16 @@ async function mutateAccount(db, env, actorPayload, body) {
   const assertMatchingOperation = (snap) => {
     if (!snap.exists) return;
     const saved = snap.data || {};
+    // Keep the established diary-moderation error contract for a receipt
+    // belonging to another report, before any account mutation is retried.
+    if (clean(saved.result?.linkedReportId) !== linkedReportId) {
+      throw new ApiError("unverified_account_action", 409);
+    }
     if (clean(saved.actorUid) !== actorUid ||
         clean(saved.targetId) !== targetUid ||
         clean(saved.action) !== action ||
         clean(saved.result?.targetUid) !== targetUid ||
-        clean(saved.result?.action) !== action ||
-        clean(saved.result?.linkedReportId) !== linkedReportId) {
+        clean(saved.result?.action) !== action) {
       throw new ApiError("idempotency_key_conflict", 409);
     }
   };
