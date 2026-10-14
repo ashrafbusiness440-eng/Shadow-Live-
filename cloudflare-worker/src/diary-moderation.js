@@ -8,6 +8,7 @@ import { deleteDiary, deleteComment } from "./diaries.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
+import { evidenceDeadline } from "./report-evidence-retention.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -256,6 +257,8 @@ async function reviewReport(db, actorUid, body) {
       reviewReason: reason,
       reviewedAt: now,
       updatedAt: now,
+      ...(nextStatus === "rejected"
+        ? { evidencePurgeAt: evidenceDeadline(now) } : {}),
     };
     const mask = Object.keys(patch);
     const result = { reportId, status: nextStatus };
@@ -380,6 +383,7 @@ async function markReportActioned(db, actorUid, reportId, reason, key, actionKin
     const patch = {
       status: "actioned",
       moderationAction: actionKind,
+      evidencePurgeAt: evidenceDeadline(now),
       reviewedBy: actorUid,
       reviewReason: reason,
       reviewedAt: now,
@@ -815,6 +819,9 @@ export async function diaryModeration(request, env) {
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
+    if (clean(error?.code) === "evidence_retention_expired") {
+      return json(request, env, { ok: false, code: error.code }, 410);
+    }
     if (error instanceof ModerationApiError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
