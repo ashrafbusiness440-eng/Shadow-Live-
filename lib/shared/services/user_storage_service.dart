@@ -205,6 +205,14 @@ String detectSupportedImageMime(Uint8List bytes) {
   throw StateError('unsupported_image_format');
 }
 
+// Pending or blocked images are retained privately for human review/appeal.
+ // Never return these as publishable object results to legacy callers.
+class UserStoragePendingModeration implements Exception {
+  const UserStoragePendingModeration(this.objectId, this.status);
+  final String objectId;
+  final String status;
+}
+
 class UserStorageUploadResult {
   const UserStorageUploadResult({
     required this.objectId,
@@ -352,6 +360,13 @@ class UserStorageService {
       'action': 'confirmUpload',
       'objectId': objectId,
     });
+    final moderationStatus =
+        (confirm['moderationStatus'] ?? '').toString().trim();
+    if (confirm['publicationPending'] == true ||
+        moderationStatus == 'needs_review' ||
+        moderationStatus == 'blocked') {
+      throw UserStoragePendingModeration(objectId, moderationStatus);
+    }
     return UserStorageUploadResult.fromJson(confirm);
   }
 

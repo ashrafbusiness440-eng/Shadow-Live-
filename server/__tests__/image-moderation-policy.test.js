@@ -139,7 +139,9 @@ test("U6-L1 Worker, Wrangler and owner settings never claim scanning already liv
   const reports=fs.readFileSync("lib/admin/system_reports_control_page.dart","utf8");
   assert.match(route,/api\/image-moderation-control/);
   assert.match(toml,/\[ai\]\s+binding = "AI"/);
-  assert.match(screen,/enabled': false/);
+  assert.match(screen,/enabled': _enabled/);
+  assert.match(screen,/canEnable = _gateReady/);
+  assert.match(screen,/paidAcknowledged/);
   assert.match(screen,/الحماية غير مفعّلة/);
   assert.match(reports,/ImageModerationSettingsPage/);
   assert.equal(screen.includes("GOOGLE_VISION_API_KEY"),false);

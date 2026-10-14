@@ -8,6 +8,11 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { publicMediaUrl } from "./public-media.js";
 import {
+  uploadModerationSnapshot, moderatedStagingKey,
+  classifyModeratedUpload, publishModeratedUpload,
+  recordModerationOutcome,
+} from "./image-moderation-gate.js";
+import {
   R2_BUCKET_NAME,
   R2_PRESIGN_TTL_SECONDS,
   presignR2Get,
@@ -492,14 +497,17 @@ async function prepareUpload(request, env, auth, body) {
     throw new StorageApiError("replace_not_supported", 409);
   }
 
+  const moderationPolicy = await uploadModerationSnapshot(auth.db, scope);
   const objectId = crypto.randomUUID().replaceAll("-", "");
-  const storageKey = buildStorageObjectKey({
+  const publicStorageKey = buildStorageObjectKey({
     scope,
     uid: auth.uid,
     targetId: authorization.targetId,
     objectId,
     extension: validated.extension,
   });
+  const storageKey = moderationPolicy
+    ? moderatedStagingKey(publicStorageKey) : publicStorageKey;
   const expiresAtMs = Date.now() + UPLOAD_TICKET_TTL_MS;
 
   const uploadUrl = await presignR2Put(env, {
@@ -512,6 +520,8 @@ async function prepareUpload(request, env, auth, body) {
     auth.db.writeCreate(`storage_upload_tickets/${objectId}`, {
       objectId,
       storageKey,
+      publicStorageKey,
+      moderationPolicy,
       bucket: R2_BUCKET_NAME,
       scope,
       ownerUid: auth.uid,
@@ -552,6 +562,7 @@ async function confirmUpload(request, env, auth, body) {
         action: "confirmUpload",
         objectId,
         code: "already_confirmed",
+        moderationStatus: clean(existing.data?.moderation?.status) || null,
       });
     }
     throw new StorageApiError("upload_ticket_not_found", 404);
@@ -613,6 +624,77 @@ async function confirmUpload(request, env, auth, body) {
       auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
     ]).catch(() => {});
     throw new StorageApiError("uploaded_object_mismatch", 409);
+  }
+
+  // Fail-closed pre-publication gate. Only a clean provider verdict permits
+  // copying from the private staging prefix to the existing public R2 path.
+  // A pending/blocked replacement never touches the old active pointer.
+  let moderationDecision = null;
+  if (ticket.moderationPolicy?.enabled === true) {
+    try {
+      moderationDecision = ticket.moderationDecision ||
+        await classifyModeratedUpload({
+          db: auth.db, bucket, env, ticket, objectId,
+        });
+    } catch {
+      moderationDecision = {
+        status: "needs_review", reason: "moderation_unavailable",
+      };
+    }
+    // A concurrent confirmation has already reserved this one-off receipt.
+    // Never overwrite its eventual verdict or publish on a replay.
+    if (moderationDecision.reason === "already_reserved") {
+      throw new StorageApiError("moderation_in_progress", 409);
+    }
+    if (!ticket.moderationDecision) {
+      // Record the verdict once before any public copy; a failed metric write
+      // must never be interpreted as permission to publish.
+      await recordModerationOutcome(auth.db, objectId,
+        ticket.moderationPolicy, moderationDecision);
+      await auth.db.commit(null, [
+        auth.db.writeUpdate(`storage_upload_tickets/${objectId}`, {
+          moderationDecision, moderationCheckedAt: new Date(),
+        }, ["moderationDecision", "moderationCheckedAt"]),
+      ]);
+    }
+    if (moderationDecision.status !== "approved") {
+      const now = new Date();
+      const status = moderationDecision.status === "blocked"
+        ? "blocked" : "needs_review";
+      await auth.db.commit(null, [
+        auth.db.writeCreate(`storage_objects/${objectId}`, {
+          objectId, storageKey: clean(ticket.storageKey),
+          publicStorageKey: clean(ticket.publicStorageKey),
+          bucket: R2_BUCKET_NAME, scope: clean(ticket.scope),
+          ownerUid: auth.uid, targetId: clean(ticket.targetId),
+          mimeType: expectedMime, sizeBytes: actualSize,
+          etag: clean(object.etag), state: status,
+          replaceObjectId: clean(ticket.replaceObjectId) || null,
+          moderation: {
+            status, reason: clean(moderationDecision.reason),
+            provider: clean(ticket.moderationPolicy.provider),
+            policyVersion: Number(ticket.moderationPolicy.version || 0),
+            checkedAt: now,
+          },
+          createdAt: now, updatedAt: now,
+        }),
+        auth.db.writeDelete(`storage_upload_tickets/${objectId}`),
+        auth.db.writeCreate(`storage_audit_logs/${auditId()}`, {
+          actorUid: auth.uid, action: "holdModeratedStorageObject",
+          objectId, scope: clean(ticket.scope),
+          targetId: clean(ticket.targetId),
+          moderationStatus: status, createdAt: now,
+        }),
+      ]);
+      return json(request, env, {
+        ok: true, action: "confirmUpload", objectId,
+        scope: clean(ticket.scope), targetId: clean(ticket.targetId),
+        moderationStatus: status, publicationPending: true,
+        publicUrl: null,
+      });
+    }
+    // The public copy is delayed until all replacement/authorization
+    // checks are complete, immediately before committing its metadata.
   }
 
   let previous = null;
@@ -700,7 +782,7 @@ async function confirmUpload(request, env, auth, body) {
   const now = new Date();
   const metadata = {
     objectId,
-    storageKey: clean(ticket.storageKey),
+    storageKey: clean(ticket.publicStorageKey || ticket.storageKey),
     bucket: R2_BUCKET_NAME,
     scope: clean(ticket.scope),
     ownerUid: auth.uid,
@@ -709,6 +791,13 @@ async function confirmUpload(request, env, auth, body) {
     sizeBytes: actualSize,
     etag: clean(object.etag),
     state: "active",
+    ...(moderationDecision ? { moderation: {
+      status: "approved",
+      reason: clean(moderationDecision.reason),
+      provider: clean(ticket.moderationPolicy.provider),
+      policyVersion: Number(ticket.moderationPolicy.version || 0),
+      checkedAt: new Date(),
+    } } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -963,11 +1052,22 @@ async function confirmUpload(request, env, auth, body) {
     );
   }
 
+  if (moderationDecision) {
+    // This is deliberately after pointer conflict checks and before commit.
+    // A failed copy leaves the private upload ticket untouched.
+    await publishModeratedUpload(bucket, clean(ticket.storageKey),
+      clean(ticket.publicStorageKey), expectedMime);
+  }
   await auth.db.commit(transaction, writes);
+  if (moderationDecision) {
+    // Private staging cleanup is safe only AFTER the metadata commit.
+    await bucket.delete(clean(ticket.storageKey)).catch(() => {});
+  }
 
   return json(request, env, {
     ok: true,
     action: "confirmUpload",
+    moderationStatus: moderationDecision?.status || null,
     objectId,
     scope: metadata.scope,
     targetId: metadata.targetId,
@@ -1702,6 +1802,11 @@ export async function runDueStorageCleanup(
 async function prepareRead(request, env, auth, body) {
   const metadata = await metadataForObject(auth.db, body.objectId);
   await authorizeRead(auth.db, auth.uid, metadata);
+  if (["needs_review", "blocked"].includes(clean(metadata.state)) ||
+      (metadata.moderation &&
+       clean(metadata.moderation.status) !== "approved")) {
+    throw new StorageApiError("image_pending_moderation", 423);
+  }
   const readUrl = await presignR2Get(env, {
     key: clean(metadata.storageKey),
     expiresSeconds: R2_PRESIGN_TTL_SECONDS,

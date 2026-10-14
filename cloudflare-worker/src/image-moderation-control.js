@@ -105,8 +105,25 @@ export async function imageModerationControl(request, env) {
       const config = state.exists
         ? { ...defaultImageModerationPolicy(), ...(state.data || {}) }
         : defaultImageModerationPolicy();
+      // Only the selected provider's UTC-day aggregate is read; there is no
+      // storage scan and no externally inferred billing balance.
+      const day = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+      const stats = await db.get(
+        "image_moderation_usage/" + day + "_" + config.provider);
+      const counts = stats.data || {};
+      const usage = {
+        day, provider: config.provider,
+        attempted: Number(counts.attempted || 0),
+        approved: Number(counts.approved || 0),
+        needsReview: Number(counts.needsReview || 0),
+        blocked: Number(counts.blocked || 0),
+        limit: Number(config.dailyLimit || 0),
+        remaining: Math.max(0, Number(config.dailyLimit || 0) -
+          Number(counts.attempted || 0)),
+        source: "internal_attempts_not_provider_billing",
+      };
       return json(request, env, {
-        ok: true, config,
+        ok: true, config, usage,
         publicationGateReady: IMAGE_MODERATION_PUBLICATION_GATE_READY,
         providerConfigured: imageModerationProviderReady(env, config.provider),
         providers: Object.fromEntries(Object.entries(IMAGE_MODERATION_PROVIDERS)
