@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createRoomChatRestrictionGate,
   roomChatRestricted,
+  roomEntryRestricted,
 } from "../../cloudflare-worker/src/room-chat-restriction.js";
 
 test("room chat restriction respects expiry and Firestore timestamp formats", () => {
@@ -75,4 +76,26 @@ test("both realtime and legacy room chat enforce the same server restriction", (
   assert.match(legacy, /roomChatRestricted\(actorUser\)/);
   assert.match(control, /'restrictRoomChat'/);
   assert.match(panel, /'room_chat_restricted'/);
+});
+
+
+test("U5-B2 room entry gate shares timestamp parsing and denies only while active", () => {
+  const now=Date.parse("2026-10-14T10:00:00Z");
+  assert.equal(roomEntryRestricted({},now),false);
+  assert.equal(roomEntryRestricted({roomEntryRestrictedUntil:new Date(now+60000)},now),true);
+  assert.equal(roomEntryRestricted({roomEntryRestrictedUntil:{seconds:(now+60000)/1000}},now),true);
+  assert.equal(roomEntryRestricted({roomEntryRestrictedUntil:new Date(now-60000)},now),false);
+});
+
+test("U5-B2 both room ticket and ZEGO token reject restricted room entry", () => {
+  const realtime=readFileSync("cloudflare-worker/src/room-realtime.js","utf8");
+  const legacy=readFileSync("cloudflare-worker/src/voice-session-legacy.js","utf8");
+  const control=readFileSync("lib/admin/general_reports_control_page.dart","utf8");
+  const session=readFileSync("lib/features/voice/services/voice_room_session_controller.dart","utf8");
+  assert.match(realtime,/if \(roomEntryRestricted\(profileData\)\)/);
+  assert.match(realtime,/code: "room_entry_restricted"/);
+  assert.match(legacy,/roomEntryRestricted\(entryUserSnap\.data\(\)\|\|\{\}\)/);
+  assert.match(legacy,/roomEntryRestricted\(user\)/);
+  assert.match(control,/'restrictRoomEntry'/);
+  assert.match(session,/راجع إشعاراتك لمعرفة السبب والمدة/);
 });
