@@ -53,8 +53,8 @@ class _ReportsHubInboxRouteState extends State<ReportsHubInboxRoute> {
             body: Center(child: Text('تعذّر التحقق من صلاحيات عرض البلاغ.')),
           );
         }
-        final owner = actor['role'] == 'owner';
         final enabled = actor['adminEnabled'] == true;
+        final owner = enabled && actor['role'] == 'owner';
         final capabilities = actor['capabilities'] is List
             ? (actor['capabilities'] as List).map((e) => e.toString()).toSet()
             : <String>{};
