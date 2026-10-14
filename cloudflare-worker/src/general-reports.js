@@ -884,6 +884,36 @@ async function openSystemFlagEvidence(db, env, actor, body) {
   };
 }
 
+// A case ID is provided by an inbox item, never by arbitrary profile search.
+async function getSystemFlagGroup(db, body) {
+  const alert = clean(body.groupAlertId);
+  const match = /^([A-Za-z0-9_-]{1,180})_([0-9]{13})_(normal|high|urgent)$/.exec(alert);
+  if (!match) throw new GeneralReportError("invalid_report_id", 400);
+  const groupId = match[1] + "_" + match[2];
+  const snapshot = await db.get("moderation_flag_group_cases/" + groupId);
+  const data = snapshot.data || {};
+  if (!snapshot.exists || clean(data.groupId) !== groupId ||
+      clean(data.actorUid) !== match[1] ||
+      !Array.isArray(data.recentReferences)) {
+    throw new GeneralReportError("report_not_found", 404);
+  }
+  return {
+    ok: true,
+    group: {
+      groupId, actorUid: match[1],
+      count: Math.max(0, Number(data.count || 0)),
+      highestPriority: clean(data.highestPriority) || "normal",
+      windowStartMs: Number(data.windowStartMs || 0),
+      // References only, never the original text in this response.
+      recentReferences: data.recentReferences.slice(-12).map(item => ({
+        surface: clean(item?.surface).slice(0,32),
+        referenceId: clean(item?.referenceId).slice(0,180),
+        createdAtMs: Number(item?.createdAtMs || 0),
+      })).filter(item => item.referenceId),
+    },
+  };
+}
+
 async function holdGeneralEvidence(db, actor, body) {
   const id = safeId(body.reportId);
   const snap = await db.get("reports/" + id);
@@ -927,7 +957,9 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "openReportScreenshot"
+    const result = action === "getSystemFlagGroup"
+      ? await getSystemFlagGroup(db, body)
+      : action === "openReportScreenshot"
       ? await openReportScreenshot(db, env, actor.uid, safeId(body.reportId))
       : action === "openSystemFlagEvidence"
       ? await openSystemFlagEvidence(db, env, actor, body)
