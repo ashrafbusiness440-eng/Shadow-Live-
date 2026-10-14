@@ -2214,7 +2214,8 @@ export async function roomSeatAction(db,uid,body){
       const keepMicActive=
         !roomMicRestricted(actor) &&
         existingSeat?.muted===false&&Number(existingSeat?.micStartedAtMs||0)>0;
-      if(seat.muteLocked&&existingSeat?.muted===false){
+      if((seat.muteLocked||roomMicRestricted(actor))&&
+        existingSeat?.muted===false){
         await recordMicActivity(tx,db,uid,existingSeat);
       }
       const micStartedAtMs=keepMicActive&&!seat.muteLocked
