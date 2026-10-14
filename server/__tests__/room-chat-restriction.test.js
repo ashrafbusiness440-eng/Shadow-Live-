@@ -5,6 +5,7 @@ import {
   createRoomChatRestrictionGate,
   roomChatRestricted,
   roomEntryRestricted,
+  roomMicRestricted,
 } from "../../cloudflare-worker/src/room-chat-restriction.js";
 
 test("room chat restriction respects expiry and Firestore timestamp formats", () => {
@@ -101,4 +102,43 @@ test("U5-B2 both room ticket and ZEGO token reject restricted room entry", () =>
   const main=readFileSync("lib/main.dart","utf8");
   assert.match(main,/code\.contains\('room_entry_restricted'\)/);
   assert.match(main,/راجع إشعاراتك لمعرفة السبب والمدة/);
+});
+
+
+test("U5-B4 microphone expiry and server-side mute are enforced on both unmute paths", () => {
+  const now=Date.parse("2026-10-14T10:00:00Z");
+  assert.equal(roomMicRestricted({},now),false);
+  assert.equal(roomMicRestricted({roomMicRestrictedUntil:new Date(now+60000)},now),true);
+  assert.equal(roomMicRestricted({roomMicRestrictedUntil:{seconds:(now+60000)/1000}},now),true);
+  assert.equal(roomMicRestricted({roomMicRestrictedUntil:new Date(now-60000)},now),false);
+  const legacy=readFileSync("cloudflare-worker/src/voice-session-legacy.js","utf8");
+  assert.match(legacy,/if\(roomMicRestricted\(actor\)\)throw new ApiError\("room_mic_restricted",403\)/);
+  assert.match(legacy,/roomMicRestricted\(targetSnap\.data\(\)\|\|\{\}\)/);
+  assert.match(legacy,/!roomMicRestricted\(actor\)/);
+  const session=readFileSync("lib/features/voice/services/voice_room_session_controller.dart","utf8");
+  assert.match(session,/_watchAccountModeration\(targetRoomId\)/);
+  assert.match(session,/\.collection\('users'\)[\s\S]{0,100}\.snapshots\(\)/);
+  assert.match(session,/await leave\(\); \/\/ leaves ZEGO, socket and mic/);
+  assert.match(session,/_enforceRoomMicRestriction\(targetRoomId, uid\)/);
+  assert.match(session,/_roomModerationSubscription\?\.cancel\(\)/);
+});
+
+test("U5-B4 Firestore rules block client edits to every moderation field", () => {
+  const rules=readFileSync("firestore.rules","utf8");
+  const start=rules.indexOf("function protectedUserFieldsUnchanged()");
+  const end=rules.indexOf("function publicProfileAuthoritativeFieldsMatch(",start);
+  const protectedFields=rules.slice(start,end);
+  const createStart=rules.indexOf("match /users/{userId} {");
+  const createEnd=rules.indexOf("allow get:",createStart);
+  const newAccountGuard=rules.slice(createStart,createEnd);
+  assert.ok(newAccountGuard.includes("request.resource.data.keys().hasAny(["));
+  for(const field of [
+    "privateMessagesRestrictedUntil","roomChatRestrictedUntil",
+    "roomEntryRestrictedUntil","roomMicRestrictedUntil",
+    "roomMicRestrictionMinutes","roomMicRestrictedBy",
+    "roomMicRestrictionReason","roomMicRestrictionLiftedAt",
+  ]) {
+    assert.ok(protectedFields.includes("'" + field + "'"), field+" must be immutable to clients");
+    assert.ok(newAccountGuard.includes("'" + field + "'"), field+" must be disallowed on create");
+  }
 });

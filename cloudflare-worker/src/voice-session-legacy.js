@@ -21,7 +21,7 @@ import {
   vipCosmeticsFromUser,
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
-import {roomChatRestricted,roomEntryRestricted} from "./room-chat-restriction.js";
+import {roomChatRestricted,roomEntryRestricted,roomMicRestricted} from "./room-chat-restriction.js";
 import {activeMysteriousIdentity,applyMysteriousIdentityPresentation,mysteriousRoomAuthoritySuppressed} from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentations,
@@ -2212,8 +2212,10 @@ export async function roomSeatAction(db,uid,body){
         :vipExpiryMs;
       const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
       const keepMicActive=
+        !roomMicRestricted(actor) &&
         existingSeat?.muted===false&&Number(existingSeat?.micStartedAtMs||0)>0;
-      if(seat.muteLocked&&existingSeat?.muted===false){
+      if((seat.muteLocked||roomMicRestricted(actor))&&
+        existingSeat?.muted===false){
         await recordMicActivity(tx,db,uid,existingSeat);
       }
       const micStartedAtMs=keepMicActive&&!seat.muteLocked
@@ -2274,6 +2276,7 @@ export async function roomSeatAction(db,uid,body){
         if(currentSeat.muted===false)await recordMicActivity(tx,db,uid,currentSeat);
         seats[seatIndex]={...currentSeat,muted:true,micStartedAtMs:0};
       }else{
+        if(roomMicRestricted(actor))throw new ApiError("room_mic_restricted",403);
         if(currentSeat.muteLocked)throw new ApiError("seat_mute_locked",403);
         seats[seatIndex]={
           ...currentSeat,
@@ -2326,6 +2329,10 @@ export async function roomSeatAction(db,uid,body){
         }
         seats[targetSeatIndex]={...targetSeat,muted:true,micStartedAtMs:0};
       }else{
+        const targetSnap=await tx.get(db.collection("users").doc(targetUid));
+        if(roomMicRestricted(targetSnap.data()||{})){
+          throw new ApiError("room_mic_restricted",403);
+        }
         if(targetSeat.muteLocked)throw new ApiError("seat_mute_locked",403);
         seats[targetSeatIndex]={
           ...targetSeat,

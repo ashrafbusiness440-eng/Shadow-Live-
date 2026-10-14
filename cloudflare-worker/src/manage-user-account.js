@@ -35,6 +35,13 @@ const liftRestrictionFields = Object.freeze({
     liftedBy: "roomChatRestrictionLiftedBy",
     label: "الكتابة في الغرف",
   },
+  liftRoomMicRestriction: {
+    until: "roomMicRestrictedUntil",
+    minutes: "roomMicRestrictionMinutes",
+    liftedAt: "roomMicRestrictionLiftedAt",
+    liftedBy: "roomMicRestrictionLiftedBy",
+    label: "المايكروفون في الغرف",
+  },
   liftRoomEntryRestriction: {
     until: "roomEntryRestrictedUntil",
     minutes: "roomEntryRestrictionMinutes",
@@ -61,9 +68,11 @@ const allowedActions = new Set([
   "restrictPrivateMessages",
   "restrictRoomChat",
   "restrictRoomEntry",
+  "restrictRoomMic",
   "liftPrivateMessagesRestriction",
   "liftRoomChatRestriction",
   "liftRoomEntryRestriction",
+  "liftRoomMicRestriction",
   "ban",
   "unban",
   "disable",
@@ -165,6 +174,19 @@ function statusPatch(action, body, actorUid, now) {
       roomEntryRestrictionMinutes: minutes,
       roomEntryRestrictedBy: actorUid,
       roomEntryRestrictionReason: clean(body.reason),
+    };
+  }
+  if (action === "restrictRoomMic") {
+    const minutes = Number(body.durationMinutes);
+    if (!Number.isInteger(minutes) || minutes < 10 || minutes > 43200) {
+      throw new ApiError("invalid_restriction_duration", 400);
+    }
+    return {
+      ...base,
+      roomMicRestrictedUntil: new Date(now.getTime() + minutes * 60_000),
+      roomMicRestrictionMinutes: minutes,
+      roomMicRestrictedBy: actorUid,
+      roomMicRestrictionReason: clean(body.reason),
     };
   }
   if (liftRestrictionFields[action]) {
@@ -325,6 +347,7 @@ async function mutateAccount(db, env, actorPayload, body) {
           action === "restrictPrivateMessages" ||
           action === "restrictRoomChat" ||
           action === "restrictRoomEntry" ||
+          action === "restrictRoomMic" ||
           Boolean(liftRestrictionFields[action])
         ? canSuspend
         : action === "enable"
@@ -402,7 +425,7 @@ async function mutateAccount(db, env, actorPayload, body) {
     }
     // A warning must not modify another admin account or an inactive account.
     if (["warn", "restrictPrivateMessages", "restrictRoomChat",
-      "restrictRoomEntry"].includes(action) && (
+      "restrictRoomEntry", "restrictRoomMic"].includes(action) && (
         (freshTarget.adminEnabled === true && !actorIsOwner) ||
         (clean(freshTarget.accountStatus || "active") !== "active") ||
         freshTarget.authDeleted === true)) {
@@ -462,6 +485,14 @@ async function mutateAccount(db, env, actorPayload, body) {
           Math.ceil((oldMs - now.getTime()) / 60_000);
       }
     }
+    if (action === "restrictRoomMic") {
+      const oldMs = restrictionTimestamp(freshTarget.roomMicRestrictedUntil);
+      if (oldMs > patch.roomMicRestrictedUntil.getTime()) {
+        patch.roomMicRestrictedUntil = new Date(oldMs);
+        patch.roomMicRestrictionMinutes = Math.ceil(
+          (oldMs - now.getTime()) / 60_000);
+      }
+    }
     if (action === "warn") {
       // Increment from the transaction snapshot; no unbounded warning query.
       patch.warningCount = Math.min(1000000,
@@ -507,6 +538,9 @@ async function mutateAccount(db, env, actorPayload, body) {
       } : {}),
       ...(action === "restrictRoomEntry" ? {
         roomEntryRestrictedUntil: patch.roomEntryRestrictedUntil,
+      } : {}),
+      ...(action === "restrictRoomMic" ? {
+        roomMicRestrictedUntil: patch.roomMicRestrictedUntil,
       } : {}),
       ...(liftRestrictionFields[action] ? {
         liftedRestriction: liftRestrictionFields[action].until,
@@ -570,6 +604,19 @@ async function mutateAccount(db, env, actorPayload, body) {
           title: "منع دخول الغرف مؤقتًا",
           body: "تم منعك مؤقتًا من دخول الغرف. السبب: " + reason +
             ". موعد انتهاء المنع: " + patch.roomEntryRestrictedUntil.toISOString(),
+          read: false,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ] : []),
+      ...(action === "restrictRoomMic" ? [
+        db.writeCreate(`notifications/account_room_mic_${key}`, {
+          userId: targetUid,
+          type: "account_room_mic_restricted",
+          category: "social",
+          title: "كتم المايكروفون في الغرف",
+          body: "تم تقييد استخدام المايكروفون مؤقتًا. السبب: " + reason +
+            ". موعد انتهاء الكتم: " + patch.roomMicRestrictedUntil.toISOString(),
           read: false,
           createdAt: now,
           updatedAt: now,

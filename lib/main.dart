@@ -1108,6 +1108,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ? 'هذا المايك مقفل من الإدارة.'
                           : code == 'seat_mute_locked'
                               ? 'هذا المايك مكتوم إجباريًا من الإدارة.'
+                      : code == 'room_mic_restricted'
+                              ? 'الإدارة قيّدت استخدام المايكروفون مؤقتًا. راجع إشعاراتك لمعرفة السبب والمدة.'
                       : 'تعذر تنفيذ العملية حالياً.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
