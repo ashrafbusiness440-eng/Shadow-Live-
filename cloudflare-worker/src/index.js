@@ -305,7 +305,7 @@ export default {
     }
 
     // U6: reuse existing 5-minute cron only at the hourly boundary.
-    // Each run makes two bounded index queries (max 20 each), never a scan.
+    // Each run makes three bounded index queries (max 20 each), never a scan.
     const schedule = new Date(Number(event?.scheduledTime || Date.now()));
     if (schedule.getUTCMinutes() === 0) {
       try {

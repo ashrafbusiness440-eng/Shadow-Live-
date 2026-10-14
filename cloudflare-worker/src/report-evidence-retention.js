@@ -24,7 +24,7 @@ export function evidenceRetentionExpired(data = {}, nowMs = Date.now()) {
   const at = data.evidencePurgeAt instanceof Date
     ? data.evidencePurgeAt.getTime()
     : Date.parse(String(data.evidencePurgeAt || ""));
-  return ["rejected", "actioned", "closed"].includes(
+  return ["rejected", "actioned", "closed", "reviewed"].includes(
     String(data.status || "").trim()) &&
     Number.isFinite(at) && at <= nowMs &&
     !evidenceHoldActive(data);
@@ -34,7 +34,7 @@ export function evidenceRetentionExpired(data = {}, nowMs = Date.now()) {
 // appeal/hold from racing with a cleanup of the same document.
 export async function purgeReportEvidenceDocument(db, collection, reportId,
   now = new Date()) {
-  if (!["reports", "diary_reports"].includes(collection) ||
+  if (!["reports", "diary_reports", "content_filter_flags"].includes(collection) ||
       !/^[A-Za-z0-9_-]{1,512}$/.test(String(reportId || ""))) {
     throw new Error("invalid_report_id");
   }
@@ -111,7 +111,7 @@ export async function runDueReportEvidenceCleanup(env, {
   const now = new Date(nowMs);
   const bounded = Math.max(1, Math.min(20, Math.trunc(limit || 20)));
   const result = { checked: 0, purged: 0, held: 0, failed: 0 };
-  for (const collection of ["reports", "diary_reports"]) {
+  for (const collection of ["reports", "diary_reports", "content_filter_flags"]) {
     const rows = await db.runQuery(collection, {
       filters: [{ field: "evidencePurgeAt", op: "<=", value: now }],
       orderBy: [{ field: "evidencePurgeAt", direction: "asc" }],

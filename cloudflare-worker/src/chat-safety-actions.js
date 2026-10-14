@@ -359,6 +359,7 @@ export async function sendMessage(db, uid, body) {
         actorUid: uid, surface: "private_chat",
         referenceId: messageId, conversationId,
         ruleIds: review.matchedRuleIds, status: "pending",
+        evidence: { text: message },
         createdAt: now,
       }));
     }

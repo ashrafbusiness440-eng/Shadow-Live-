@@ -27,6 +27,9 @@ void main() {
         .readAsStringSync();
     expect(system.contains("'listSystemFlags'"), isTrue);
     expect(system.contains("'reviewSystemFlag'"), isTrue);
+    expect(system.contains("'openSystemFlagEvidence'"), isTrue);
+    expect(system.contains("'canViewSensitiveEvidence'"), isTrue);
+    expect(system.contains('النص الأصلي للمخالفة'), isTrue);
     expect(system.contains('الكلمات المحظورة'), isTrue);
     expect(system.contains('الصور المخالفة'), isTrue);
     expect(system.contains('مراقبة الصور لم تُفعّل بعد'), isTrue);

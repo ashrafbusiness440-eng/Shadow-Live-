@@ -232,7 +232,12 @@ export function applyContentFilter(text, config, surface) {
     matchedRuleIds.add(rule.id);
     if (rule.action === "block") blocked = true;
     else if (rule.action === "flag") flagged = true;
-    else ranges.push(...hits);
+    else {
+      ranges.push(...hits);
+      // A masked violation also needs one private moderation record.
+      // The public/user-facing copy remains "***"; original is server-only.
+      flagged = true;
+    }
   }
   if (blocked) return { text: original, blocked, flagged, matchedRuleIds: [...matchedRuleIds] };
   // Merge overlapping spans so a shorter rule cannot expose the tail

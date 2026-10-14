@@ -4,6 +4,7 @@ import {
   assertUserDocumentSessionState,
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { evidenceDeadline } from "./report-evidence-retention.js";
 import {
   CONTENT_FILTER_PATH, CONTENT_FILTER_COORDINATOR_ID,
   validateFilterConfig, loadContentFilter, applyContentFilter, primeContentFilter,
@@ -127,6 +128,9 @@ function flagItem(id, data = {}) {
     diaryId: clean(data.diaryId),
     ruleIds: Array.isArray(data.ruleIds) ? data.ruleIds.map(clean).slice(0, 12) : [],
     status: clean(data.status) || "pending",
+    hasSensitiveEvidence: data.hasSensitiveEvidence === true ||
+      Boolean(data.evidence &&
+      typeof data.evidence.text === "string" && data.evidence.text.length),
     createdAtMs: Number.isFinite(data.createdAtMs)
       ? data.createdAtMs : Number.isFinite(timestamp) ? timestamp : 0,
   };
@@ -196,7 +200,10 @@ async function reviewFlag(db, env, actorUid, body) {
     if (!item.exists) throw new FilterControlError("flag_not_found", 404);
     writes.push(db.writeUpdate(path, {
       status: "reviewed", reviewedAt: now, reviewedBy: actorUid,
-    }, ["status", "reviewedAt", "reviewedBy"]));
+      evidencePurgeAt: evidenceDeadline(now),
+      evidenceRetentionDueAt: evidenceDeadline(now),
+    }, ["status", "reviewedAt", "reviewedBy",
+      "evidencePurgeAt", "evidenceRetentionDueAt"]));
     await db.commit(null, writes);
   } else {
     const sequence = Number(id.slice(5));
