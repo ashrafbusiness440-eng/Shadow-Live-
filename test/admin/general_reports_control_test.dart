@@ -68,7 +68,8 @@ void main() {
     final client = File('lib/features/room/services/room_action_service.dart')
         .readAsStringSync();
 
-    expect(main.contains("ControlItem('بلاغات المستخدمين والغرف'"), isTrue);
+    expect(main.contains("ControlItem('البلاغات'"), isTrue);
+    expect(main.contains("ControlItem('بلاغات المستخدمين والغرف'"), isFalse);
     expect(inbox.contains("item.route == 'general_reports'"), isTrue);
     expect(inbox.contains('GeneralReportsControlPage(initialReportId: item.targetId)'),
         isTrue);
