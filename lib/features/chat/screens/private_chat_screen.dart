@@ -443,6 +443,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       });
       await batch.commit();
       uploadedObjectId = null;
+    } on UserStoragePendingModeration catch (_) {
+      _snack('الصورة قيد المراجعة ولم تُرسل بالمحادثة بعد.');
     } on FirebaseException catch (error) {
       if (uploadedObjectId != null) {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
