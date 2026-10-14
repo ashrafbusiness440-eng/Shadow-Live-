@@ -1195,7 +1195,7 @@ def main() -> int:
         "_roomModerationSubscription = null",
         "roomEntryRestrictedUntil",
         "roomMicRestrictedUntil",
-        "unawaited(setMicMuted(true))",
+        "_enforceRoomMicRestriction(targetRoomId, uid)",
     ):
         if required not in voice:
             failures.append(
