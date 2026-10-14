@@ -332,6 +332,19 @@ async function mutateAccount(db, env, actorPayload, body) {
 
     const now = new Date();
     const patch = statusPatch(action, body, actorUid, now);
+    if (action === "restrictPrivateMessages") {
+      // New action must not silently shorten an existing restriction.
+      const existing = freshTarget.privateMessagesRestrictedUntil;
+      const oldMs = existing instanceof Date ? existing.getTime()
+        : typeof existing?.toDate === "function" ? existing.toDate().getTime()
+        : Number(existing?.seconds ?? existing?._seconds ?? 0) * 1000 ||
+          Date.parse(String(existing || "")) || 0;
+      if (oldMs > patch.privateMessagesRestrictedUntil.getTime()) {
+        patch.privateMessagesRestrictedUntil = new Date(oldMs);
+        patch.privateMessageRestrictionMinutes = Math.ceil(
+          (oldMs - now.getTime()) / 60000);
+      }
+    }
     if (action === "warn") {
       // Increment from the transaction snapshot; no unbounded warning query.
       patch.warningCount = Math.min(1000000,
