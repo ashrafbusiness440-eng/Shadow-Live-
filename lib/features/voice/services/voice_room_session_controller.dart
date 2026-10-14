@@ -52,6 +52,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _roomLifecycleSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _roomBanSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _roomModerationSubscription;
   final Map<String, Uint8List> _localRoomMusic = <String, Uint8List>{};
   final Map<String, Uint8List> _effectSoundCache =
       <String, Uint8List>{};
@@ -79,6 +81,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool _active = false;
   bool _minimized = false;
   bool _micMuted = true;
+  int _micRestrictedUntilMs = 0;
   bool _mysteriousModeEnabled = false;
   String _mysteriousVoiceId = 'original';
   String? _error;
@@ -91,6 +94,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool get active => _active;
   bool get minimized => _minimized;
   bool get micMuted => _micMuted;
+  bool get micRestricted =>
+      _micRestrictedUntilMs > DateTime.now().millisecondsSinceEpoch;
   bool get mysteriousModeEnabled => _mysteriousModeEnabled;
   String get mysteriousVoiceId => _mysteriousVoiceId;
   String? get error => _error;
@@ -789,6 +794,49 @@ class VoiceRoomSessionController extends ChangeNotifier {
     });
   }
 
+  // Exactly one own-account snapshot while a voice session is active.
+  // Reuse the existing Firebase user document; no timers, room scans or
+  // per-microphone listeners. Every open client leaves ZEGO immediately if
+  // global room entry is revoked, including minimized sessions.
+  void _watchAccountModeration(String targetRoomId) {
+    unawaited(_roomModerationSubscription?.cancel());
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+    _roomModerationSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!_active || roomId != targetRoomId ||
+          _sessionUserUid != uid) return;
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final now = DateTime.now().millisecondsSinceEpoch;
+      int expiry(String key) {
+        final raw = data[key];
+        if (raw is Timestamp) return raw.millisecondsSinceEpoch;
+        if (raw is DateTime) return raw.millisecondsSinceEpoch;
+        return 0;
+      }
+      if (expiry('roomEntryRestrictedUntil') > now) {
+        unawaited(_leaveRoomEntryRestricted());
+        return;
+      }
+      final restrictedUntil = expiry('roomMicRestrictedUntil');
+      _micRestrictedUntilMs = restrictedUntil;
+      if (restrictedUntil > now && !_micMuted) {
+        unawaited(setMicMuted(true)); // ZEGO microphone is actually muted.
+      }
+      notifyListeners();
+    });
+  }
+
+  Future<void> _leaveRoomEntryRestricted() async {
+    if (!_active || roomId.isEmpty) return;
+    await leave(); // leaves ZEGO, socket and mic, not only room UI.
+    _error = 'room_entry_restricted';
+    notifyListeners();
+  }
+
   Future<void> _leaveBannedRoom() async {
     final departingRoomId = roomId;
     if (departingRoomId.isEmpty) return;
@@ -949,6 +997,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _connectionState = VoiceConnectionState.connected;
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
+      _watchAccountModeration(targetRoomId);
       unawaited(_startPresence(targetRoomId));
     } catch (error) {
       _active = false;
@@ -973,6 +1022,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (!_active || _connectionState != VoiceConnectionState.connected) {
       return;
     }
+    if (_micMuted && micRestricted) {
+      throw StateError('room_mic_restricted');
+    }
     if (_micMuted) {
       await _voiceService.unmuteMic();
     } else {
@@ -990,6 +1042,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> setMicMuted(bool muted) async {
     if (!_active || _connectionState != VoiceConnectionState.connected) {
       return;
+    }
+    if (!muted && micRestricted) {
+      throw StateError('room_mic_restricted');
     }
     if (muted) {
       await _voiceService.muteMic();
@@ -1030,6 +1085,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _roomLifecycleSubscription = null;
     await _roomBanSubscription?.cancel();
     _roomBanSubscription = null;
+    await _roomModerationSubscription?.cancel();
+    _roomModerationSubscription = null;
+    _micRestrictedUntilMs = 0;
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
@@ -1065,6 +1123,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _realtimeSubscription = null;
     await _roomLifecycleSubscription?.cancel();
     await _roomBanSubscription?.cancel();
+    await _roomModerationSubscription?.cancel();
+    _roomModerationSubscription = null;
     if (_serviceInitialized) {
       await _voiceService.dispose();
     }
