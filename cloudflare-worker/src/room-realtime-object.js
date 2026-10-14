@@ -353,6 +353,7 @@ export class RoomRealtimeObject extends DurableObject {
       const uid = String(body?.actorUid || "").slice(0, 180);
       const roomId = normalizeRoomId(body?.roomId);
       const referenceId = String(body?.referenceId || "").slice(0, 120);
+      const originalText = String(body?.evidence?.text || "").slice(0, 2000);
       const ruleIds = Array.isArray(body?.ruleIds)
         ? body.ruleIds.map((v) => String(v || "").slice(0, 80)).slice(0, 12)
         : [];
@@ -366,6 +367,7 @@ export class RoomRealtimeObject extends DurableObject {
           filter_flag_sequence: seq,
           [`filter_flag_slot_${seq % 1000}`]: {
             sequence: seq, actorUid: uid, roomId, referenceId, ruleIds,
+            evidence: originalText ? { text: originalText } : {},
             surface: "room_chat", status: "pending", createdAtMs: Date.now(),
           },
         });
@@ -381,8 +383,28 @@ export class RoomRealtimeObject extends DurableObject {
         : new Map();
       const items = seqs.map((seq) => stored.get(`filter_flag_slot_${seq % 1000}`))
         .filter((item) => item && Number.isSafeInteger(item.sequence))
-        .map((item) => ({ ...item, id: `room_${item.sequence}` }));
+        .map((item) => ({
+          ...item,
+          evidence: undefined,
+          hasSensitiveEvidence: Boolean(item.evidence?.text),
+          id: `room_${item.sequence}`,
+        }));
       return Response.json({ ok: true, items });
+    }
+    if (url.pathname === "/filter/flag/evidence" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const sequence = Number(body.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence < 1) {
+        return Response.json({ ok: false }, { status: 400 });
+      }
+      const item = await this.ctx.storage.get(`filter_flag_slot_${sequence % 1000}`);
+      if (!item || item.sequence !== sequence) {
+        return Response.json({ ok: false }, { status: 404 });
+      }
+      return Response.json({ ok: true,
+        evidence: item.evidence && typeof item.evidence === "object"
+          ? { text: String(item.evidence.text || "").slice(0, 2000) } : {},
+      });
     }
     if (url.pathname === "/filter/flag/review" && request.method === "POST") {
       const body = await request.json().catch(() => ({}));
@@ -1281,6 +1303,7 @@ export class RoomRealtimeObject extends DurableObject {
       this.#chatError(webSocket, requestId, "content_blocked");
       return true;
     }
+    const originalFlagText = text;
     text = review.text;
 
     const nowMs = Date.now();
@@ -1329,6 +1352,7 @@ export class RoomRealtimeObject extends DurableObject {
           body: JSON.stringify({
             actorUid: uid, roomId, referenceId: messageId,
             ruleIds: review.matchedRuleIds,
+            evidence: { text: originalFlagText },
           }),
         });
         if (!logged.ok) throw Error("room_filter_flag_failed");
