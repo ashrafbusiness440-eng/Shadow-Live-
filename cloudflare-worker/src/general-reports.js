@@ -106,21 +106,27 @@ async function withGeneralReportProfiles(db, items) {
 
 async function listGeneralReports(db, body = {}) {
   const limit = Math.max(1, Math.min(25, Number(body.limit || 20) || 20));
-  // Existing room and private chat reports differ in schema. Three bounded
-  // queries, not a scan or a listener, cover old and new documents.
+  // One tab loads only its matching sources. Keep legacy no-scope callers
+  // unchanged, with the same three bounded queries and no listeners/scans.
+  const scope = clean(body.scope);
+  if (scope && !["people", "rooms_messages"].includes(scope)) {
+    throw new GeneralReportError("invalid_report_scope", 400);
+  }
+  const includePeople = scope !== "rooms_messages";
+  const includeRooms = scope !== "people";
   const [chat, roomMessages, rooms] = await Promise.all([
-    db.runQuery("reports", {
+    includePeople ? db.runQuery("reports", {
       filters: [{ field: "type", op: "==", value: "user" }],
       limit: 30,
-    }),
-    db.runQuery("reports", {
+    }) : Promise.resolve([]),
+    includeRooms ? db.runQuery("reports", {
       filters: [{ field: "targetType", op: "==", value: "room_message" }],
       limit: 30,
-    }),
-    db.runQuery("reports", {
+    }) : Promise.resolve([]),
+    includeRooms ? db.runQuery("reports", {
       filters: [{ field: "targetType", op: "==", value: "room" }],
       limit: 30,
-    }),
+    }) : Promise.resolve([]),
   ]);
   const seen = new Set();
   const normalized = [...chat, ...roomMessages, ...rooms]
