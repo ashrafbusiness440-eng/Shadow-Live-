@@ -35,7 +35,7 @@ export async function filterRepeatGroupWrites(db, transaction, {
   const prior = snapshot.exists ? snapshot.data || {} : {};
   const start = Number(prior.windowStartMs || 0);
   const sameWindow = start > 0 && when >= start && when - start < WINDOW_MS;
-  const groupId = sameWindow && SAFE.test(clean(prior.groupId))
+  const groupId = sameWindow && /^[A-Za-z0-9_-]{1,320}$/.test(clean(prior.groupId))
     ? clean(prior.groupId) : uid + "_" + when;
   if (groupId.length > 320) throw new Error("invalid_filter_group_occurrence");
   const previous = sameWindow && groupId === prior.groupId ? prior : {};
@@ -46,7 +46,7 @@ export async function filterRepeatGroupWrites(db, transaction, {
     return { writes: [], groupId, count: Number(previous.count || 1),
       notified: false, duplicate: true };
   }
-  const count = Math.max(0, Math.min(100000000, Number(previous.count || 0))) + 1;
+  const count = Math.min(100000000, Math.max(0, Number(previous.count || 0)) + 1);
   const bestPriority = higherFilterPriority(
     clean(previous.highestPriority) || "normal", priority);
   const previousNotified = clean(previous.notifiedPriority);
@@ -73,6 +73,10 @@ export async function filterRepeatGroupWrites(db, transaction, {
   };
   const writes = [
     db.writeUpdate(path, state, Object.keys(state)),
+    // Immutable group identity across 24h window rollover: archived metadata
+    // remains reachable from the notification without any collection scan.
+    db.writeUpdate("moderation_flag_group_cases/" + groupId,
+      state, Object.keys(state)),
   ];
   if (notified) {
     const notificationId = groupId + "_" + bestPriority;
