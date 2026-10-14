@@ -71,8 +71,9 @@ void main() {
     expect(main.contains("ControlItem('البلاغات'"), isTrue);
     expect(main.contains("ControlItem('بلاغات المستخدمين والغرف'"), isFalse);
     expect(inbox.contains("item.route == 'general_reports'"), isTrue);
-    expect(inbox.contains('GeneralReportsControlPage(initialReportId: item.targetId)'),
-        isTrue);
+    expect(inbox.contains('ReportsHubInboxRoute('), isTrue);
+    expect(inbox.contains('reportId: item.targetId'), isTrue);
+    expect(inbox.contains('reportType: item.type'), isTrue);
     expect(screen.contains("shadowApiEndpoint('general-reports')"), isTrue);
     expect(screen.contains('AdminAccountIdentityTile('), isTrue);
     expect(screen.contains("'reviewReport'"), isTrue);

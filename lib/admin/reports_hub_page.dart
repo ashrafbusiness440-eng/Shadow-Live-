@@ -13,10 +13,14 @@ class ReportsHubPage extends StatefulWidget {
     super.key,
     required this.allowGeneral,
     required this.allowDiary,
+    this.initialSection,
+    this.initialReportId,
   });
 
   final bool allowGeneral;
   final bool allowDiary;
+  final ReportsHubSection? initialSection;
+  final String? initialReportId;
 
   @override
   State<ReportsHubPage> createState() => _ReportsHubPageState();
@@ -25,13 +29,14 @@ class ReportsHubPage extends StatefulWidget {
 class _ReportsHubPageState extends State<ReportsHubPage> {
   late ReportsHubSection _section;
   int _reloadCount = 0;
+  bool _historyOpen = false;
 
   @override
   void initState() {
     super.initState();
-    _section = widget.allowGeneral
+    _section = widget.initialSection ?? (widget.allowGeneral
         ? ReportsHubSection.roomsAndMessages
-        : ReportsHubSection.diaries;
+        : ReportsHubSection.diaries);
   }
 
   bool _allowed(ReportsHubSection section) =>
@@ -53,7 +58,10 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
           child: InkWell(
             key: Key('reports-tab-${section.name}'),
             borderRadius: BorderRadius.circular(14),
-            onTap: allowed ? () => setState(() => _section = section) : null,
+            onTap: allowed ? () => setState(() {
+              _section = section;
+              _historyOpen = false;
+            }) : null,
             child: Container(
               constraints: const BoxConstraints(minHeight: 76),
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
@@ -95,22 +103,37 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
   }
 
   Widget _currentSection() {
+    if (!_allowed(_section)) {
+      return const Center(child: Text('ليس لديك صلاحية لعرض هذا البلاغ.'));
+    }
+    if (_historyOpen && _section != ReportsHubSection.diaries) {
+      return GeneralReportsHistoryPage(
+        key: ValueKey('reports-history-${_section.name}-$_reloadCount'),
+        embedded: true,
+        scope: _section == ReportsHubSection.people ? 'people' : 'rooms_messages',
+      );
+    }
+    final focused = widget.initialSection == _section
+        ? widget.initialReportId : null;
     switch (_section) {
       case ReportsHubSection.roomsAndMessages:
         return GeneralReportsControlPage(
           key: ValueKey('reports-hub-rooms-$_reloadCount'),
           scope: 'rooms_messages',
+          initialReportId: focused,
           embedded: true,
         );
       case ReportsHubSection.people:
         return GeneralReportsControlPage(
           key: ValueKey('reports-hub-people-$_reloadCount'),
           scope: 'people',
+          initialReportId: focused,
           embedded: true,
         );
       case ReportsHubSection.diaries:
         return DiaryReportsControlPage(
           key: ValueKey('reports-hub-diaries-$_reloadCount'),
+          initialReportId: focused,
           embedded: true,
         );
     }
@@ -128,15 +151,12 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
             icon: const Icon(Icons.refresh_rounded),
             onPressed: () => setState(() => _reloadCount++),
           ),
-          if (widget.allowGeneral)
+          if (widget.allowGeneral && _section != ReportsHubSection.diaries)
             IconButton(
-              tooltip: 'البلاغات السابقة والمغلقة',
-              icon: const Icon(Icons.history_rounded),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const GeneralReportsHistoryPage(),
-                ),
-              ),
+              tooltip: _historyOpen ? 'البلاغات الحالية' : 'البلاغات السابقة والمغلقة',
+              icon: Icon(_historyOpen
+                  ? Icons.assignment_outlined : Icons.history_rounded),
+              onPressed: () => setState(() => _historyOpen = !_historyOpen),
             ),
         ],
       ),
@@ -144,12 +164,12 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
           ? const Center(child: Text('ليس لديك صلاحية لعرض البلاغات.'))
           : Column(
               children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      'مركز البلاغات',
+                      _historyOpen ? 'سجل البلاغات السابقة' : 'مركز البلاغات',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,

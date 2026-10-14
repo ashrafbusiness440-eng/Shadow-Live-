@@ -7,7 +7,12 @@ import 'general_reports_control_page.dart';
 /// Historical case browsing lives under the existing Reports entry.
 //// Only one bounded 20-document category page is held in memory at a time.
 class GeneralReportsHistoryPage extends StatefulWidget {
-  const GeneralReportsHistoryPage({super.key});
+  const GeneralReportsHistoryPage({
+    super.key, this.embedded = false, this.scope = 'rooms_messages',
+  });
+
+  final bool embedded;
+  final String scope;
 
   @override
   State<GeneralReportsHistoryPage> createState() =>
@@ -19,7 +24,7 @@ class _GeneralReportsHistoryPageState
   final _search = TextEditingController();
   final List<String?> _back = <String?>[];
   List<GeneralReportItem> _items = <GeneralReportItem>[];
-  String _category = 'user_report';
+  late String _category;
   String? _cursor;
   String? _nextCursor;
   String? _lookupId;
@@ -30,6 +35,7 @@ class _GeneralReportsHistoryPageState
   @override
   void initState() {
     super.initState();
+    _category = widget.scope == 'people' ? 'account_report' : 'user_report';
     _load();
   }
 
@@ -225,7 +231,7 @@ class _GeneralReportsHistoryPageState
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+    appBar: widget.embedded ? null : AppBar(
       title: const Text('سجل البلاغات السابقة'),
       actions: [
         IconButton(
@@ -255,14 +261,19 @@ class _GeneralReportsHistoryPageState
             labelText: 'نوع البلاغ',
             border: OutlineInputBorder(),
           ),
-          items: const [
-            DropdownMenuItem(value: 'user_report',
-                child: Text('بلاغات المحادثات الخاصة')),
-            DropdownMenuItem(value: 'room_message_report',
-                child: Text('بلاغات رسائل الغرف')),
-            DropdownMenuItem(value: 'room_report',
-                child: Text('بلاغات الغرف')),
-          ],
+          items: widget.scope == 'people'
+              ? const [
+                  DropdownMenuItem(value: 'account_report',
+                    child: Text('بلاغات الحسابات')),
+                ]
+              : const [
+                  DropdownMenuItem(value: 'user_report',
+                      child: Text('بلاغات المحادثات الخاصة')),
+                  DropdownMenuItem(value: 'room_message_report',
+                      child: Text('بلاغات رسائل الغرف')),
+                  DropdownMenuItem(value: 'room_report',
+                      child: Text('بلاغات الغرف')),
+                ],
           onChanged: _loading ? null : (v) {
             if (v != null) _chooseCategory(v);
           },

@@ -19,10 +19,9 @@ void main() {
     ).readAsStringSync();
 
     expect(source.contains("item.route == 'diary_reports'"), isTrue);
-    expect(
-      source.contains('DiaryReportsControlPage(initialReportId: item.targetId)'),
-      isTrue,
-    );
+    expect(source.contains('ReportsHubInboxRoute('), isTrue);
+    expect(source.contains('reportId: item.targetId'), isTrue);
+    expect(source.contains('reportType: item.type'), isTrue);
     expect(source.contains("item.route == 'agency_control'"), isTrue);
     expect(source.contains('focusType: item.type'), isTrue);
     expect(source.contains('focusId: item.targetId'), isTrue);

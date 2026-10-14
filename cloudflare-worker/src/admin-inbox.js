@@ -68,6 +68,7 @@ function itemAllowedForActor(actor, item) {
     case "diary_report":
       return canSeeDiary(actor);
     case "user_report":
+    case "account_report":
     case "room_message_report":
     case "room_report":
       return canSeeGeneralReports(actor);
@@ -201,6 +202,7 @@ async function loadDiaryItems(db) {
 async function loadGeneralReportItems(db) {
   const sources = [
     [{ field: "type", op: "==", value: "user" }],
+    [{ field: "targetType", op: "==", value: "user" }],
     [{ field: "targetType", op: "==", value: "room_message" }],
     [{ field: "targetType", op: "==", value: "room" }],
   ];
@@ -219,6 +221,7 @@ async function loadGeneralReportItems(db) {
       type,
       title: type === "user_report"
         ? "بلاغ عن مستخدم في محادثة خاصة"
+        : type === "account_report" ? "بلاغ مباشر عن حساب"
         : type === "room_report" ? "بلاغ عن غرفة"
           : "بلاغ عن رسالة داخل غرفة",
       body: "بلاغ يحتاج مراجعة",
@@ -484,6 +487,7 @@ function inboxActorRoles(item) {
       }
       break;
     case "user_report":
+    case "account_report":
     case "room_message_report":
     case "room_report":
       candidates.push(["مقدّم البلاغ", meta.reporterUid]);
