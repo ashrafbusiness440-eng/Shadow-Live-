@@ -397,6 +397,17 @@ class GeneralReportsService {
             })
           : _post('getReport', <String, dynamic>{'reportId': reportId});
 
+  static Future<void> setEvidenceHold(
+    String reportId, bool hold, String reason,
+  ) async {
+    await _post('setEvidenceHold', <String, dynamic>{
+      'reportId': reportId,
+      'hold': hold,
+      'reason': reason,
+      'idempotencyKey': 'report_evidence_hold_${DateTime.now().microsecondsSinceEpoch}',
+    });
+  }
+
   static Future<Map<String, dynamic>> openEvidence(String reportId) =>
       _post('openSensitiveEvidence', <String, dynamic>{'reportId': reportId});
 
@@ -473,6 +484,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _loading = false;
   bool _canReview = false;
   bool _canViewSensitiveEvidence = false;
+  bool _canHoldEvidence = false;
   bool _canWarn = false;
   bool _canSuspend = false;
   bool _canBan = false;
@@ -511,6 +523,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         _items = items;
         _canReview = result['canReview'] == true;
         _canViewSensitiveEvidence = result['canViewSensitiveEvidence'] == true;
+        _canHoldEvidence = result['canHoldEvidence'] == true;
         _canWarn = result['canWarn'] == true;
         _canSuspend = result['canSuspend'] == true;
         _canBan = result['canBan'] == true;
@@ -978,6 +991,57 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     }
   }
 
+  Future<void> _changeEvidenceHold(GeneralReportItem item) async {
+    if (!_canHoldEvidence || _busy.contains(item.id)) return;
+    final hold = item.data['evidenceHold'] != true;
+    final controller = TextEditingController(
+      text: hold ? 'حفظ الدليل لحين انتهاء الاعتراض أو التحقيق'
+          : 'انتهاء سبب حجز الدليل',
+    );
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(hold ? 'حجز الدليل الحساس' : 'رفع حجز الدليل'),
+        content: TextField(
+          controller: controller,
+          maxLength: 200,
+          decoration: const InputDecoration(
+            labelText: 'سبب القرار',
+            helperText: 'يُسجّل هذا التغيير في سجل الإدارة.',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.trim().length >= 3) {
+                Navigator.pop(dialogContext, controller.text.trim());
+              }
+            },
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null || !mounted) return;
+    setState(() => _busy.add(item.id));
+    try {
+      await GeneralReportsService.setEvidenceHold(item.id, hold, reason);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:
+        Text(hold ? 'تم حفظ الدليل من الحذف التلقائي.'
+            : 'تم رفع الحجز وإعادة تفعيل مدة الاحتفاظ.')));
+      await _load();
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(generalReportErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.id));
+    }
+  }
+
   Future<void> _openEvidence(GeneralReportItem item) async {
     if (!_canViewSensitiveEvidence || _busy.contains(item.id)) return;
     setState(() => _busy.add(item.id));
@@ -1118,6 +1182,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
             if (item.field('priorityReason').isNotEmpty)
               Text('سبب تعديل الأولوية: ' + item.field('priorityReason')),
             if (details.isNotEmpty) Text('التفاصيل: ' + details),
+            if (_canHoldEvidence && item.data['hasSensitiveEvidence'] == true)
+              OutlinedButton.icon(
+                onPressed: _busy.contains(item.id)
+                    ? null : () => _changeEvidenceHold(item),
+                icon: const Icon(Icons.policy_outlined),
+                label: Text(item.data['evidenceHold'] == true
+                    ? 'رفع حجز الدليل' : 'حجز الدليل لحين انتهاء التحقيق'),
+              ),
             if (item.data['hasSensitiveEvidence'] == true)
               Align(
                 alignment: Alignment.centerRight,
