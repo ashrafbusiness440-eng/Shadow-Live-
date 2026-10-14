@@ -5,6 +5,8 @@ import {
   validateFilterConfig, CONTENT_FILTER_COORDINATOR_ID,
 } from "./content-filter.js";
 import { recordRealtimeTelemetry } from "./pressure-telemetry.js";
+import { firestoreClient } from "./firestore.js";
+import { recordRoomFilterRepeat } from "./moderation-flag-groups.js";
 import {
   ROOM_FILTER_FLAG_RING_SIZE,
   ROOM_FILTER_FLAG_PURGE_BATCH,
@@ -360,6 +362,8 @@ export class RoomRealtimeObject extends DurableObject {
       const roomId = normalizeRoomId(body?.roomId);
       const referenceId = String(body?.referenceId || "").slice(0, 120);
       const originalText = String(body?.evidence?.text || "").slice(0, 2000);
+      const priority = ["normal", "high", "urgent"].includes(body?.priority)
+        ? body.priority : "normal";
       const ruleIds = Array.isArray(body?.ruleIds)
         ? body.ruleIds.map((v) => String(v || "").slice(0, 80)).slice(0, 12)
         : [];
@@ -369,17 +373,46 @@ export class RoomRealtimeObject extends DurableObject {
       // Atomic fixed-size ring: no full text, unbounded scans or extra timers.
       const next = await this.ctx.storage.transaction(async (tx) => {
         const seq = (Number(await tx.get("filter_flag_sequence")) || 0) + 1;
+        const queue = Array.isArray(await tx.get("filter_pending_aggregate"))
+          ? await tx.get("filter_pending_aggregate") : [];
         await tx.put({
+          filter_pending_aggregate: [...queue, seq].slice(-32),
           filter_flag_sequence: seq,
           [`filter_flag_slot_${seq % ROOM_FILTER_FLAG_RING_SIZE}`]: {
             sequence: seq, actorUid: uid, roomId, referenceId, ruleIds,
             evidence: originalText ? { text: originalText } : {},
             surface: "room_chat", status: "pending", createdAtMs: Date.now(),
+            priority, aggregationPending: true,
           },
         });
         return seq;
       });
-      return Response.json({ ok: true, sequence: next });
+      // Exactly one server-side group attempt per flagged message, plus a
+      // bounded persisted retry queue for a temporary Firestore outage.
+      let grouped = false;
+      try {
+        const result = await recordRoomFilterRepeat(firestoreClient(this.env), {
+          actorUid: uid, surface: "room_chat", referenceId: "room_" + next,
+          priority,
+        });
+        await this.ctx.storage.transaction(async (tx) => {
+          const slot = `filter_flag_slot_${next % ROOM_FILTER_FLAG_RING_SIZE}`;
+          const item = await tx.get(slot);
+          if (item?.sequence === next) await tx.put(slot, {
+            ...item, aggregationPending: false,
+            moderationGroupId: result.groupId || "",
+          });
+          const pending = await tx.get("filter_pending_aggregate");
+          await tx.put("filter_pending_aggregate",
+            (Array.isArray(pending) ? pending : []).filter(x => x !== next));
+        });
+        grouped = true;
+      } catch (error) {
+        console.error("Room moderation aggregation deferred",
+          String(error?.code || error?.message || "failed").slice(0,80));
+      }
+      return Response.json({ ok: true, sequence: next,
+        aggregationPending: !grouped });
     }
     if (url.pathname === "/filter/flags" && request.method === "GET") {
       const last = Number(await this.ctx.storage.get("filter_flag_sequence")) || 0;
@@ -459,7 +492,46 @@ export class RoomRealtimeObject extends DurableObject {
         await tx.put(updates);
         return { checked: ROOM_FILTER_FLAG_PURGE_BATCH, purged };
       });
-      return Response.json({ ok: true, ...result });
+      // Retry up to 8 ungrouped room flags per existing hourly cron.
+      // Cross-DO/Firestore writes cannot share one transaction; durable
+      // receipts prevent duplicate moderation alerts after a retry.
+      let retried = 0;
+      const pending = await this.ctx.storage.get("filter_pending_aggregate");
+      for (const sequence of (Array.isArray(pending) ? pending : []).slice(0,8)) {
+        const slot = `filter_flag_slot_${sequence % ROOM_FILTER_FLAG_RING_SIZE}`;
+        const row = await this.ctx.storage.get(slot);
+        if (!row || row.sequence !== sequence || !row.aggregationPending) {
+          await this.ctx.storage.transaction(async tx => {
+            const queue = await tx.get("filter_pending_aggregate");
+            await tx.put("filter_pending_aggregate",
+              (Array.isArray(queue) ? queue : []).filter(x => x !== sequence));
+          });
+          continue;
+        }
+        try {
+          const group = await recordRoomFilterRepeat(firestoreClient(this.env), {
+            actorUid: row.actorUid, surface: "room_chat",
+            referenceId: "room_" + sequence,
+            priority: row.priority || "normal",
+            now: new Date(row.createdAtMs || nowMs),
+          });
+          await this.ctx.storage.transaction(async tx => {
+            const current = await tx.get(slot);
+            if (current?.sequence === sequence) await tx.put(slot, {
+              ...current, aggregationPending: false,
+              moderationGroupId: group.groupId || current.moderationGroupId || "",
+            });
+            const queue = await tx.get("filter_pending_aggregate");
+            await tx.put("filter_pending_aggregate",
+              (Array.isArray(queue) ? queue : []).filter(x => x !== sequence));
+          });
+          retried++;
+        } catch (error) {
+          console.error("Room moderation repeat retry failed",
+            String(error?.code || error?.message || "failed").slice(0,80));
+        }
+      }
+      return Response.json({ ok: true, ...result, retried });
     }
     if (url.pathname === "/ticket" && request.method === "POST") {
       return this.#issueTicket(request);
@@ -1389,6 +1461,7 @@ export class RoomRealtimeObject extends DurableObject {
           body: JSON.stringify({
             actorUid: uid, roomId, referenceId: messageId,
             ruleIds: review.matchedRuleIds,
+            priority: review.priority || "normal",
             evidence: { text: originalFlagText },
           }),
         });
