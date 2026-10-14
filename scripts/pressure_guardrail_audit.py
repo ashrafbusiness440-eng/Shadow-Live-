@@ -1164,7 +1164,10 @@ def main() -> int:
             failures.append("presence aggregation scan cap increased above 500 documents")
 
     listener_caps = {
-        "lib/features/voice/services/voice_room_session_controller.dart": 2,
+        # U5-B4: one extra *own-user* listener, scoped strictly to an
+        # active voice session, ensures existing ZEGO clients leave immediately
+        # on global entry bans and mute promptly. No poll/per-seat listeners.
+        "lib/features/voice/services/voice_room_session_controller.dart": 3,
         "lib/features/room/services/room_seat_service.dart": 1,
         "lib/features/room/services/room_moderator_service.dart": 1,
         "lib/features/room/services/room_music_service.dart": 1,
@@ -1180,6 +1183,26 @@ def main() -> int:
             failures.append(
                 f"{rel}: realtime listener count increased from baseline cap {cap} to {count}"
             )
+
+    # Raising a numerical cap alone would conceal a costly regression.
+    # Verify this third listener can only track the signed-in account and
+    # that it is explicitly cancelled on both room leave and shutdown.
+    for required in (
+        "_watchAccountModeration(targetRoomId)",
+        ".collection('users')",
+        ".doc(uid)",
+        "_roomModerationSubscription?.cancel()",
+        "_roomModerationSubscription = null",
+        "roomEntryRestrictedUntil",
+        "roomMicRestrictedUntil",
+        "unawaited(setMicMuted(true))",
+    ):
+        if required not in voice:
+            failures.append(
+                f"U5-B4 scoped moderation listener missing {required}"
+            )
+    if len(re.findall(r"_roomModerationSubscription\\?\\.cancel\\(\\)", voice)) < 2:
+        failures.append("U5-B4 moderation listener not cleaned up on leave and shutdown")
 
     for field, value in (
         ("roundDurationSeconds", "30"),
