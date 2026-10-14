@@ -158,6 +158,8 @@ Future<void> showAccountActionHistoryDialog(
                                 final linked = (record['reportId'] ?? '').toString();
                                 final expiration = (record['expiresAtMs'] as num?)
                                     ?.toInt() ?? 0;
+                                final duration = (record['durationMinutes'] as num?)
+                                    ?.toInt();
                                 final changedBy = (record['changedByUid'] ?? '').toString();
                                 final changedOperation =
                                     (record['changedByOperationId'] ?? '').toString();
@@ -205,6 +207,9 @@ Future<void> showAccountActionHistoryDialog(
                                         _historyDate(record['createdAtMs']) +
                                     '\nحالة الإجراء: ' +
                                         accountActionHistoryStateLabel(record) +
+                                    (duration != null
+                                        ? '\nمدة الجزاء: ' + duration.toString() + ' دقيقة'
+                                        : '') +
                                     (expiration > 0 ? '\nانتهاء المدة المحددة: ' +
                                         _historyDate(expiration) : '') +
                                     (changedOperation.isNotEmpty
