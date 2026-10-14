@@ -14,7 +14,7 @@ import { loadPublicProfilePresentations } from "./public-profile-presentation.js
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
-import { evidenceDeadline } from "./report-evidence-retention.js";
+import { evidenceDeadline, setReportEvidenceHold } from "./report-evidence-retention.js";
 import { reportPriority, reportPriorityRank, validReportPriority } from "./report-priority-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -89,6 +89,7 @@ function normalizeGeneralReport(reportId, data = {}) {
     priorityChangedBy: clean(data.priorityChangedBy),
     // Never return source evidence with normal report lists or details.
     // Opening it requires a different explicit capability and audited request.
+    evidenceHold: data.evidenceHold === true,
     hasSensitiveEvidence: Boolean(data.evidence &&
       typeof data.evidence === "object" &&
       Object.keys(data.evidence).length > 0),
@@ -808,6 +809,7 @@ async function requireAdmin(db, decoded, write = false) {
   if (!allowed) throw new GeneralReportError("forbidden", 403);
   return {
     uid, canReview: owner || caps.includes("reviewReports"),
+    canHoldEvidence: owner,
     canViewSensitiveEvidence: owner || caps.includes("viewReportEvidence"),
     canWarn: owner || (data.adminEnabled === true &&
       (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
@@ -825,6 +827,19 @@ async function requireAdmin(db, decoded, write = false) {
   };
 }
 
+async function holdGeneralEvidence(db, actor, body) {
+  const id = safeId(body.reportId);
+  const snap = await db.get("reports/" + id);
+  if (!snap.exists || !generalReportType(snap.data || {})) {
+    throw new GeneralReportError("report_not_found", 404);
+  }
+  return setReportEvidenceHold(db, {
+    collection: "reports", reportId: id, actorUid: actor.uid,
+    hold: body.hold, reason: body.reason,
+    operationKey: body.idempotencyKey,
+  });
+}
+
 export async function generalReports(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
@@ -838,7 +853,7 @@ export async function generalReports(request, env) {
     const db = firestoreClient(env);
     const actor = await requireAdmin(db, decoded,
       action === "reviewReport" || action === "applyAccountAction" ||
-      action === "setReportPriority");
+      action === "setReportPriority" || action === "setEvidenceHold");
     if (action === "openSensitiveEvidence") {
       if (!actor.canViewSensitiveEvidence) {
         throw new GeneralReportError("forbidden_evidence", 403);
@@ -849,7 +864,12 @@ export async function generalReports(request, env) {
         throw new GeneralReportError("recent_auth_required", 401);
       }
     }
-    const result = action === "openSensitiveEvidence"
+    if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
+      throw new GeneralReportError("forbidden", 403);
+    }
+    const result = action === "setEvidenceHold"
+      ? await holdGeneralEvidence(db, actor, body)
+      : action === "openSensitiveEvidence"
       ? await openGeneralSensitiveEvidence(db, actor, body)
       : action === "listReports"
       ? await listGeneralReports(db, body)
@@ -871,6 +891,7 @@ export async function generalReports(request, env) {
     if (!result) throw new GeneralReportError("unsupported_action", 400);
     return json(request, env, {
       ...result, canReview: actor.canReview,
+      canHoldEvidence: actor.canHoldEvidence,
       canViewSensitiveEvidence: actor.canViewSensitiveEvidence,
       canWarn: actor.canWarn,
       canSuspend: actor.canSuspend, canBan: actor.canBan,
