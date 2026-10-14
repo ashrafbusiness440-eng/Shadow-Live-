@@ -21,6 +21,7 @@ import {
   vipCosmeticsFromUser,
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
+import {roomChatRestricted} from "./room-chat-restriction.js";
 import {activeMysteriousIdentity,applyMysteriousIdentityPresentation,mysteriousRoomAuthoritySuppressed} from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentations,
@@ -2435,6 +2436,8 @@ async function sendRoomChat(db,uid,body){
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   const roomData=roomSnap.data()||{};
   const actorUser=actorUserSnap.data()||{};
+  if(!actorUserSnap.exists)throw new ApiError("not_found",404);
+  if(roomChatRestricted(actorUser))throw new ApiError("room_chat_restricted",403);
   const canModerateChat=canManageRoomAction(roomData,actorUser,uid,"moderateChat");
   if(roomData.chatEnabled===false&&!canModerateChat)throw new ApiError("room_chat_disabled",403);
 
