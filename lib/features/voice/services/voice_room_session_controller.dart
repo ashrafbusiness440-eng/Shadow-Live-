@@ -958,7 +958,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _roomRecentJoinNotices.clear();
       _roomChatReplyTarget = null;
       _roomChatMentionTarget = null;
-      _error = error.toString();
+      final rawError = error.toString();
+      _error = rawError.contains('room_entry_restricted')
+          ? 'تم منعك مؤقتًا من دخول الغرف بقرار إداري. راجع إشعاراتك لمعرفة السبب والمدة.'
+          : rawError;
       _connectionState = VoiceConnectionState.failed;
       rethrow;
     } finally {
