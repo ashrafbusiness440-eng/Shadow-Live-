@@ -82,6 +82,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool _minimized = false;
   bool _micMuted = true;
   int _micRestrictedUntilMs = 0;
+  bool _roomMicSeatMuteInFlight = false;
   bool _mysteriousModeEnabled = false;
   String _mysteriousVoiceId = 'original';
   String? _error;
@@ -831,6 +832,21 @@ class VoiceRoomSessionController extends ChangeNotifier {
     });
   }
 
+  Future<void> _syncRestrictedRoomSeat(String targetRoomId) async {
+    if (_roomMicSeatMuteInFlight || !_active ||
+        roomId != targetRoomId || !micRestricted) return;
+    _roomMicSeatMuteInFlight = true;
+    try {
+      // The actual ZEGO mute is applied before the authoritative room write.
+      await setMicMuted(true);
+      await _seatService.setSeatMuted(roomId: targetRoomId, muted: true);
+    } catch (_) {
+      // The mic stays locally muted even when the room request is unavailable.
+    } finally {
+      _roomMicSeatMuteInFlight = false;
+    }
+  }
+
   Future<void> _enforceRoomMicRestriction(
     String targetRoomId, String uid,
   ) async {
@@ -848,15 +864,14 @@ class VoiceRoomSessionController extends ChangeNotifier {
         rawSeats.whereType<Map>().any((seat) =>
           (seat['uid'] ?? '').toString() == uid && seat['muted'] == false);
     if (!activeMic) return;
-    try {
-      await _seatService.setSeatMuted(roomId: targetRoomId, muted: true);
-    } catch (_) {
-      // The local ZEGO microphone stays muted even if seat accounting fails.
-    }
+    await _syncRestrictedRoomSeat(targetRoomId);
   }
 
   Future<void> _leaveRoomEntryRestricted() async {
     if (!_active || roomId.isEmpty) return;
+    try {
+      await setMicMuted(true); // stop publishing voice before cleanup IO.
+    } catch (_) {}
     await leave(); // leaves ZEGO, socket and mic, not only room UI.
     _error = 'room_entry_restricted';
     notifyListeners();
@@ -933,6 +948,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
         if (!_micMuted &&
             ((!isOwner && !hasSeat) || (hasSeat && serverMuted))) {
           unawaited(setMicMuted(true));
+        }
+        if (hasSeat && !serverMuted && micRestricted &&
+            !_roomMicSeatMuteInFlight) {
+          unawaited(_syncRestrictedRoomSeat(targetRoomId));
         }
         notifyListeners();
       }
@@ -1113,6 +1132,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     await _roomModerationSubscription?.cancel();
     _roomModerationSubscription = null;
     _micRestrictedUntilMs = 0;
+    _roomMicSeatMuteInFlight = false;
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
