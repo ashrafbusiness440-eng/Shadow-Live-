@@ -868,6 +868,7 @@ async function createComment(db, uid, body) {
       writes.push(db.writeCreate(`content_filter_flags/${commentId}`, {
         actorUid: uid, surface: "diary_comment", referenceId: commentId,
         diaryId, ruleIds: checked.matchedRuleIds, status: "pending",
+        evidence: { text: original },
         createdAt: now,
       }));
     }
