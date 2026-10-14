@@ -167,23 +167,49 @@ export async function openReportScreenshot(db, env, actorUid, reportId) {
   };
 }
 
+// Bound actual transferred bytes, not just Content-Length (which an
+// untrusted client may omit). Cancel the body immediately at the limit.
+export async function readBoundedScreenshotRequest(request) {
+  const len = Number(request.headers.get("content-length") || 0);
+  if (len > MAX_REQUEST_BYTES) {
+    throw new ReportScreenshotError("screenshot_too_large", 413);
+  }
+  const reader = request.body?.getReader();
+  if (!reader) throw new ReportScreenshotError("invalid_request");
+  let size = 0;
+  const chunks = [];
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      size += part.value?.byteLength || 0;
+      if (size > MAX_REQUEST_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new ReportScreenshotError("screenshot_too_large", 413);
+      }
+      chunks.push(part.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const decoded = new TextDecoder().decode(Buffer.concat(chunks.map(
+    part => Buffer.from(part))));
+  let jsonBody = null;
+  try { jsonBody = JSON.parse(decoded); } catch {
+    throw new ReportScreenshotError("invalid_request");
+  }
+  if (!jsonBody || typeof jsonBody !== "object" || Array.isArray(jsonBody)) {
+    throw new ReportScreenshotError("invalid_request");
+  }
+  return jsonBody;
+}
+
 export async function reportScreenshot(request, env) {
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
   try {
-    const len = Number(request.headers.get("content-length") || 0);
-    if (len > MAX_REQUEST_BYTES) {
-      throw new ReportScreenshotError("screenshot_too_large", 413);
-    }
-    const raw = await request.text();
-    if (raw.length > MAX_REQUEST_BYTES) {
-      throw new ReportScreenshotError("screenshot_too_large", 413);
-    }
-    let body = {};
-    try { body = JSON.parse(raw); } catch {
-      throw new ReportScreenshotError("invalid_request");
-    }
+    const body = await readBoundedScreenshotRequest(request);
     if (body?.action !== "attach") {
       throw new ReportScreenshotError("invalid_action");
     }
