@@ -24,7 +24,9 @@ export function evidenceRetentionExpired(data = {}, nowMs = Date.now()) {
   const at = data.evidencePurgeAt instanceof Date
     ? data.evidencePurgeAt.getTime()
     : Date.parse(String(data.evidencePurgeAt || ""));
-  return Number.isFinite(at) && at <= nowMs &&
+  return ["rejected", "actioned", "closed"].includes(
+    String(data.status || "").trim()) &&
+    Number.isFinite(at) && at <= nowMs &&
     !evidenceHoldActive(data);
 }
 
@@ -56,7 +58,14 @@ export async function purgeReportEvidenceDocument(db, collection, reportId,
       await db.rollback(tx);
       return "skipped";
     }
-    if (evidenceHoldActive(data)) {
+    // The diary mirror in reports/ must never outlive its diary hold.
+    let linkedDiaryHold = false;
+    if (collection === "reports" &&
+        ["diary", "diary_comment"].includes(String(data.targetType || ""))) {
+      const diary = await db.get("diary_reports/" + reportId, tx);
+      linkedDiaryHold = diary.exists && evidenceHoldActive(diary.data || {});
+    }
+    if (evidenceHoldActive(data) || linkedDiaryHold) {
       const patch = {
         evidencePurgeAt: new Date(now.getTime() + RETRY_MS),
         evidenceRetentionDeferredAt: now,
