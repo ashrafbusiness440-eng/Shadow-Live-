@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import { cleanupExpiredRepeatReceipts } from "./moderation-flag-groups.js";
 
 // Only final, explicitly timestamped decisions start the 90-day clock.
 // Pending, reopened, disputed or historic unverified reports are never
@@ -146,6 +147,16 @@ export async function runDueReportEvidenceCleanup(env, {
           String(error?.code || error?.message || "failed").slice(0,90));
       }
     }
+  }
+  // Receipt cleanup shares the existing hourly bounded retention job:
+  // no scan, independent schedule or listener.
+  try {
+    const receipts = await cleanupExpiredRepeatReceipts(db, nowMs, bounded);
+    result.repeatReceiptsDeleted = receipts.deleted;
+  } catch (error) {
+    result.repeatReceiptCleanupFailed = true;
+    console.error("Repeat receipt cleanup failed",
+      String(error?.code || error?.message || "failed").slice(0,90));
   }
   return result;
 }
