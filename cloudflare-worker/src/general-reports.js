@@ -241,7 +241,14 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
     ]);
     if (operation.exists) {
       await db.rollback(trx);
-      return { ok: true, code: "duplicate", ...(operation.data?.result || {}) };
+      const previous = operation.data || {};
+      if (clean(previous.action) !== "reviewGeneralReport" ||
+          clean(previous.actorUid) !== actorUid ||
+          clean(previous.result?.reportId) !== reportId ||
+          clean(previous.result?.status) !== status) {
+        throw new GeneralReportError("idempotency_key_conflict", 409);
+      }
+      return { ok: true, code: "duplicate", ...(previous.result || {}) };
     }
     const item = report.exists
       ? normalizeGeneralReport(reportId, report.data || {})
@@ -273,7 +280,8 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
           clean(verifiedOperation.data?.targetId) !== item.targetUid ||
           clean(verifiedOperation.data?.status) !== "completed" ||
           clean(verifiedOperation.data?.result?.targetUid) !== item.targetUid ||
-          clean(verifiedOperation.data?.result?.action) !== expected) {
+          clean(verifiedOperation.data?.result?.action) !== expected ||
+          clean(verifiedOperation.data?.result?.linkedReportId) !== reportId) {
         throw new GeneralReportError("unverified_account_action", 409);
       }
     }
@@ -363,7 +371,17 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
   const accountKey = key + "_account";
   const existingResolution = await db.get("control_operations/" + reviewKey);
   if (existingResolution.exists) {
-    return { ok: true, code: "duplicate", ...(existingResolution.data?.result || {}) };
+    const saved = existingResolution.data || {};
+    const actionKind = accountAction === "warn" ? "warning"
+      : accountAction === "ban" ? "account_banned" : "account_suspended";
+    if (clean(saved.action) !== "reviewGeneralReport" ||
+        clean(saved.actorUid) !== actorUid ||
+        clean(saved.result?.reportId) !== reportId ||
+        clean(saved.result?.status) !== "actioned" ||
+        clean(saved.result?.moderationAction) !== actionKind) {
+      throw new GeneralReportError("idempotency_key_conflict", 409);
+    }
+    return { ok: true, code: "duplicate", ...(saved.result || {}) };
   }
   const report = await db.get("reports/" + reportId);
   const item = report.exists
@@ -382,6 +400,7 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
     accountAction,
     reason,
     durationMinutes: body.durationMinutes,
+    linkedReportId: reportId,
     idempotencyKey: accountKey,
   });
   return reviewGeneralReport(db, actorUid, {
