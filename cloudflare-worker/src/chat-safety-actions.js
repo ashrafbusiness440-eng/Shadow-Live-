@@ -2210,3 +2210,8 @@ export async function chatSafetyActions(request, env, ctx) {
     return json(request, env, { ok: false, code: "server_failed" }, 500);
   }
 }
+
+export const reportDeduplicationTestHooks = Object.freeze({
+  reportUser,
+  reportRoom,
+});
