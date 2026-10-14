@@ -24,6 +24,7 @@ class ReportsHubPage extends StatefulWidget {
 
 class _ReportsHubPageState extends State<ReportsHubPage> {
   late ReportsHubSection _section;
+  int _reloadCount = 0;
 
   @override
   void initState() {
@@ -97,19 +98,19 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
     switch (_section) {
       case ReportsHubSection.roomsAndMessages:
         return const GeneralReportsControlPage(
-          key: ValueKey('reports-hub-rooms'),
+          key: ValueKey('reports-hub-rooms-$_reloadCount'),
           scope: 'rooms_messages',
           embedded: true,
         );
       case ReportsHubSection.people:
         return const GeneralReportsControlPage(
-          key: ValueKey('reports-hub-people'),
+          key: ValueKey('reports-hub-people-$_reloadCount'),
           scope: 'people',
           embedded: true,
         );
       case ReportsHubSection.diaries:
         return const DiaryReportsControlPage(
-          key: ValueKey('reports-hub-diaries'),
+          key: ValueKey('reports-hub-diaries-$_reloadCount'),
           embedded: true,
         );
     }
@@ -122,6 +123,11 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
       appBar: AppBar(
         title: const Text('البلاغات'),
         actions: [
+          IconButton(
+            tooltip: 'تحديث البلاغات',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => setState(() => _reloadCount++),
+          ),
           if (widget.allowGeneral)
             IconButton(
               tooltip: 'البلاغات السابقة والمغلقة',
