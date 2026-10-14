@@ -269,7 +269,7 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
       if (!/^[A-Za-z0-9_-]{12,180}$/.test(opKey) ||
           !["warning", "account_suspended", "account_banned",
             "private_messages_restricted", "room_chat_restricted",
-            "room_entry_restricted"].includes(trustedAction) ||
+            "room_entry_restricted", "room_mic_restricted"].includes(trustedAction) ||
           status !== "actioned") {
         throw new GeneralReportError("invalid_verified_action", 400);
       }
@@ -281,7 +281,9 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
             : trustedAction === "room_chat_restricted"
               ? "restrictRoomChat"
               : trustedAction === "room_entry_restricted"
-                ? "restrictRoomEntry" : "suspend";
+                ? "restrictRoomEntry"
+                : trustedAction === "room_mic_restricted"
+                  ? "restrictRoomMic" : "suspend";
       if (!verifiedOperation.exists ||
           clean(verifiedOperation.data?.action) !== expected ||
           clean(verifiedOperation.data?.actorUid) !== actorUid ||
@@ -371,7 +373,8 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
   const reason = clean(body.reason);
   const key = clean(body.idempotencyKey);
   if (!["warn", "suspend", "ban", "restrictPrivateMessages",
-        "restrictRoomChat", "restrictRoomEntry"].includes(accountAction) ||
+        "restrictRoomChat", "restrictRoomEntry",
+        "restrictRoomMic"].includes(accountAction) ||
       reason.length < 3 || reason.length > 160 ||
       !/^[A-Za-z0-9_-]{12,148}$/.test(key)) {
     throw new GeneralReportError("invalid_account_action", 400);
@@ -388,7 +391,9 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
           : accountAction === "restrictRoomChat"
             ? "room_chat_restricted"
             : accountAction === "restrictRoomEntry"
-              ? "room_entry_restricted" : "account_suspended";
+              ? "room_entry_restricted"
+              : accountAction === "restrictRoomMic"
+                ? "room_mic_restricted" : "account_suspended";
     if (clean(saved.action) !== "reviewGeneralReport" ||
         clean(saved.actorUid) !== actorUid ||
         clean(saved.result?.reportId) !== reportId ||
@@ -432,7 +437,9 @@ async function resolveWithAccountAction(db, env, decoded, actorUid, body = {}) {
           : accountAction === "restrictRoomChat"
             ? "room_chat_restricted"
             : accountAction === "restrictRoomEntry"
-              ? "room_entry_restricted" : "account_suspended",
+              ? "room_entry_restricted"
+              : accountAction === "restrictRoomMic"
+                ? "room_mic_restricted" : "account_suspended",
   });
 }
 
@@ -465,6 +472,8 @@ async function requireAdmin(db, decoded, write = false) {
     canRestrictRoomChat: owner || (data.adminEnabled === true &&
       (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
     canRestrictRoomEntry: owner || (data.adminEnabled === true &&
+      (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
+    canRestrictRoomMic: owner || (data.adminEnabled === true &&
       (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
     canBan: owner || (data.adminEnabled === true && caps.includes("manageUsers")),
   };
@@ -502,6 +511,7 @@ export async function generalReports(request, env) {
       canRestrictPrivateMessages: actor.canRestrictPrivateMessages,
       canRestrictRoomChat: actor.canRestrictRoomChat,
       canRestrictRoomEntry: actor.canRestrictRoomEntry,
+      canRestrictRoomMic: actor.canRestrictRoomMic,
     });
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
