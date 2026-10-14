@@ -52,7 +52,8 @@ class GeneralReportItem {
   }
 
   String get title => switch (type) {
-    'user_report' => 'بلاغ عن مستخدم في المحادثة',
+    'user_report' => 'بلاغ عن مستخدم في محادثة خاصة',
+    'account_report' => 'بلاغ مباشر عن حساب',
     'room_message_report' => 'بلاغ عن رسالة داخل غرفة',
     'room_report' => 'بلاغ عن غرفة',
     _ => 'بلاغ مستخدم',
