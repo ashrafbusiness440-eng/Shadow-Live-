@@ -487,6 +487,7 @@ function inboxActorRoles(item) {
       }
       break;
     case "user_report":
+    case "account_report":
     case "room_message_report":
     case "room_report":
       candidates.push(["مقدّم البلاغ", meta.reporterUid]);
