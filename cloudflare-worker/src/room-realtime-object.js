@@ -1,4 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
+import { firestoreClient } from "./firestore.js";
+import { createRoomChatRestrictionGate } from "./room-chat-restriction.js";
 import {
   applyContentFilter, defaultFilterConfig,
   validateFilterConfig, CONTENT_FILTER_COORDINATOR_ID,
@@ -76,6 +78,10 @@ export class RoomRealtimeObject extends DurableObject {
     this.env = env;
     this.chatRateByUid = new Map();
     this.chatReportRateByUid = new Map();
+    this.isRoomChatRestricted = createRoomChatRestrictionGate(async (uid) => {
+      const snap = await firestoreClient(this.env).get(`users/${uid}`);
+      return snap.exists ? (snap.data || {}) : null;
+    });
     this._contentFilterSnapshot = null;
     this._contentFilterExpiresMs = 0;
     this._contentFilterPending = null;
@@ -1248,6 +1254,18 @@ export class RoomRealtimeObject extends DurableObject {
       attachment.canModerateChat !== true
     ) {
       this.#chatError(webSocket, requestId, "room_chat_disabled");
+      return true;
+    }
+
+    // Check the authoritative user restriction even for sockets connected
+    // before an admin applied it. Bounded TTL avoids Firestore per message.
+    try {
+      if (await this.isRoomChatRestricted(uid)) {
+        this.#chatError(webSocket, requestId, "room_chat_restricted");
+        return true;
+      }
+    } catch {
+      this.#chatError(webSocket, requestId, "room_chat_moderation_unavailable");
       return true;
     }
 
