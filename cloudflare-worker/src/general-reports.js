@@ -264,6 +264,110 @@ async function getReporterContext(db, body = {}) {
   };
 }
 
+// U6-E: read already-committed account operations, never complaints as
+// violations. No additional collection, listener, scan or background index.
+// A case is confirmed only when the completed account operation matches a
+// finalized, reviewed report. Evidence bodies are deliberately never returned.
+const ACCOUNT_HISTORY_ACTIONS = new Set([
+  "warn", "suspend", "ban", "disable", "unban", "enable",
+  "restrictPrivateMessages", "restrictRoomChat", "restrictRoomEntry",
+  "restrictRoomMic", "liftPrivateMessagesRestriction",
+  "liftRoomChatRestriction", "liftRoomEntryRestriction",
+  "liftRoomMicRestriction",
+]);
+const ACCOUNT_HISTORY_CASE_ACTIONS = Object.freeze({
+  warn: "warning", suspend: "account_suspended",
+  ban: "account_banned",
+  restrictPrivateMessages: "private_messages_restricted",
+  restrictRoomChat: "room_chat_restricted",
+  restrictRoomEntry: "room_entry_restricted",
+  restrictRoomMic: "room_mic_restricted",
+});
+const ACCOUNT_HISTORY_PAGE_SIZE = 20;
+async function accountHistoryReadMany(db, paths) {
+  if (!paths.length) return [];
+  if (typeof db.getMany === "function") return db.getMany(paths);
+  return Promise.all(paths.map((path) => db.get(path)));
+}
+
+async function getAccountActionHistory(db, body = {}) {
+  const targetUid = safeId(body.targetUid, "invalid_target_uid");
+  const cursor = clean(body.cursor);
+  if (cursor) safeId(cursor, "invalid_cursor");
+  // Firestore's single-field targetId index + document-name cursor: 21
+  // operations maximum, regardless of the account's total history.
+  const rows = await db.runQuery("control_operations", {
+    filters: [{ field: "targetId", op: "==", value: targetUid }],
+    orderBy: [{ field: "__name__", direction: "desc" }],
+    ...(cursor ? {
+      startAfter: [{ referencePath: "control_operations/" + cursor }],
+    } : {}),
+    limit: ACCOUNT_HISTORY_PAGE_SIZE + 1,
+  });
+  const page = rows.slice(0, ACCOUNT_HISTORY_PAGE_SIZE);
+  const valid = page.filter((row) => {
+    const op = row?.data || {};
+    return ACCOUNT_HISTORY_ACTIONS.has(clean(op.action)) &&
+      clean(op.targetType) === "user" &&
+      clean(op.targetId) === targetUid &&
+      clean(op.status) === "completed" &&
+      clean(op.result?.action) === clean(op.action) &&
+      clean(op.result?.targetUid) === targetUid;
+  });
+  const audits = await accountHistoryReadMany(db, valid.map(
+    (row) => "admin_audit_logs/account_" + row.id));
+  const linked = valid.filter((row) => clean(row.data?.result?.linkedReportId));
+  const reports = await accountHistoryReadMany(db, linked.map(
+    (row) => "reports/" + clean(row.data.result.linkedReportId)));
+  const reportByKey = new Map(linked.map((row, i) => [row.id, reports[i]]));
+  const nowMs = Date.now();
+  const items = valid.map((row, i) => {
+    const operation = row.data || {};
+    const result = operation.result || {};
+    const audit = audits[i]?.exists ? audits[i].data || {} : {};
+    const reportId = clean(result.linkedReportId);
+    const reportSnap = reportByKey.get(row.id);
+    const report = reportSnap?.exists ? reportSnap.data || {} : {};
+    const expectedKind = ACCOUNT_HISTORY_CASE_ACTIONS[clean(operation.action)];
+    const caseVerified = Boolean(expectedKind && reportId &&
+      reportSnap?.exists &&
+      ["actioned", "closed"].includes(clean(report.status)) &&
+      clean(report.moderationAction) === expectedKind &&
+      // A different reviewer may later close an already-actioned case.
+      // The immutable account receipt establishes who executed the action.
+      clean(report.targetUid || report.targetUserId ||
+        report.targetAuthorUid || report.targetOwnerUid) === targetUid);
+    const expiry = result.privateMessagesRestrictedUntil ||
+      result.roomChatRestrictedUntil || result.roomEntryRestrictedUntil ||
+      result.roomMicRestrictedUntil || result.suspendedUntil || null;
+    return {
+      operationId: clean(row.id),
+      action: clean(operation.action),
+      actorUid: clean(operation.actorUid),
+      reason: clean(audit.reason),
+      createdAtMs: timestampMs(operation.createdAt),
+      expiresAtMs: timestampMs(expiry),
+      expired: timestampMs(expiry) > 0 && timestampMs(expiry) <= nowMs,
+      liftedRestriction: clean(result.liftedRestriction),
+      restrictionLiftedAtMs: timestampMs(result.restrictionLiftedAt),
+      // The case link is only trustworthy after review has actually finalized.
+      caseVerified,
+      reportId: caseVerified ? reportId : "",
+      hasCaseEvidence: caseVerified && Boolean(
+        report.evidence || report.messageId || report.targetId),
+    };
+  });
+  return {
+    ok: true, targetUid, items,
+    hasMore: rows.length > ACCOUNT_HISTORY_PAGE_SIZE,
+    nextCursor: rows.length > ACCOUNT_HISTORY_PAGE_SIZE
+      ? clean(page.at(-1)?.id) : null,
+    pageSize: ACCOUNT_HISTORY_PAGE_SIZE,
+    // Counts and labels apply only to this bounded page, not to all history.
+    confirmedInPage: items.filter((item) => item.caseVerified).length,
+  };
+}
+
 async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
   const reportId = safeId(body.reportId);
   const status = clean(body.status);
@@ -645,6 +749,8 @@ export async function generalReports(request, env) {
         ? await listReportHistory(db, body)
         : action === "getReporterContext"
           ? await getReporterContext(db, body)
+        : action === "getAccountActionHistory"
+          ? await getAccountActionHistory(db, body)
         : action === "getReport"
         ? await getGeneralReport(db, body)
         : action === "reviewReport"
@@ -682,6 +788,8 @@ export const generalReportsTestHooks = Object.freeze({
   listReportHistory,
   getGeneralReport,
   getReporterContext,
+  getAccountActionHistory,
+  requireAdmin,
   reviewGeneralReport,
   setReportPriority,
   resolveWithAccountAction,

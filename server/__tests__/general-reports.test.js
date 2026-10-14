@@ -1130,3 +1130,141 @@ test("U6-D sample caps, legacy reporter id and missing report protection", async
   await assert.rejects(()=>generalReportsTestHooks.getReporterContext(
     absent,{reportId:"no_reporter"}),/reporter_unavailable/);
 });
+
+
+test("U6-E1 account history only confirms a completed action tied to the reviewed case", async () => {
+  const db=new Db({
+    "control_operations/u6e_case_a":{
+      action:"restrictRoomMic",actorUid:"admin",targetType:"user",
+      targetId:"target",status:"completed",createdAt:new Date(5000),
+      result:{targetUid:"target",action:"restrictRoomMic",
+        linkedReportId:"u6e_report",roomMicRestrictedUntil:new Date(9000)},
+    },
+    "admin_audit_logs/account_u6e_case_a":{
+      reason:"إساءة مؤكدة",actorUid:"admin",targetId:"target",
+      action:"restrictRoomMic",createdAt:new Date(5000),
+    },
+    "reports/u6e_report":{
+      targetType:"room_message",targetUid:"target",
+      reporterUid:"reporter",status:"actioned",
+      moderationAction:"room_mic_restricted",reviewedBy:"admin",
+      evidence:{message:{text:"SECRET_EVIDENCE",other:"PRIVATE"}},
+    },
+    "control_operations/u6e_manual_b":{
+      action:"warn",actorUid:"admin",targetType:"user",targetId:"target",
+      status:"completed",createdAt:new Date(3000),
+      result:{targetUid:"target",action:"warn"},
+    },
+    "admin_audit_logs/account_u6e_manual_b":{
+      action:"warn",reason:"تنبيه إداري دون بلاغ",
+    },
+    "control_operations/u6e_fake_c":{
+      action:"ban",actorUid:"admin",targetType:"user",targetId:"target",
+      status:"pending",createdAt:new Date(2000),
+      result:{targetUid:"target",action:"ban",linkedReportId:"u6e_report"},
+    },
+    "control_operations/u6e_other_d":{
+      action:"warn",actorUid:"admin",targetType:"user",targetId:"someone_else",
+      status:"completed",result:{targetUid:"someone_else",action:"warn"},
+    },
+  });
+  const result=await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"});
+  assert.equal(db.queryCalls,1);
+  assert.equal(result.items.length,2);
+  const confirmed=result.items.find(item=>item.action==="restrictRoomMic");
+  assert.equal(confirmed.caseVerified,true);
+  assert.equal(confirmed.reportId,"u6e_report");
+  assert.equal(confirmed.reason,"إساءة مؤكدة");
+  assert.equal(confirmed.expired,true);
+  assert.equal(confirmed.hasCaseEvidence,true);
+  const manual=result.items.find(item=>item.action==="warn");
+  assert.equal(manual.caseVerified,false);
+  assert.equal(manual.reportId,"");
+  assert.equal(result.confirmedInPage,1);
+  assert.equal(JSON.stringify(result).includes("SECRET_EVIDENCE"),false);
+  assert.equal([...db.docs.keys()].filter(k=>k.startsWith("notifications/")).length,0);
+});
+
+test("U6-E1 never marks an unfinished, mismatched or rejected case as proven", async () => {
+  const db=new Db({
+    ...Object.fromEntries(["rejected","under_review","actioned"].map((status,i)=>[
+      "control_operations/u6e_op_"+i,{
+        action:"warn",actorUid:"admin",targetType:"user",targetId:"target",
+        status:"completed",createdAt:new Date(1000+i),
+        result:{targetUid:"target",action:"warn",linkedReportId:"u6e_case_"+i},
+      },
+    ])),
+    "reports/u6e_case_0":{targetType:"user",targetUid:"target",
+      status:"rejected",moderationAction:"warning",reviewedBy:"admin"},
+    "reports/u6e_case_1":{targetType:"user",targetUid:"target",
+      status:"under_review",moderationAction:"warning",reviewedBy:"admin"},
+    "reports/u6e_case_2":{targetType:"user",targetUid:"other",
+      status:"actioned",moderationAction:"warning",reviewedBy:"admin"},
+  });
+  const out=await generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target"});
+  assert.equal(out.items.length,3);
+  assert.equal(out.confirmedInPage,0);
+  assert.ok(out.items.every(item=>item.caseVerified===false &&
+    item.reportId===""));
+});
+
+test("U6-E1 history paging caps reads, advances cursor, rejects arbitrary paths", async () => {
+  const docs={};
+  for(let i=0;i<47;i++){
+    const id="u6e_"+String(i).padStart(3,"0");
+    docs["control_operations/"+id]={
+      action:"warn",targetType:"user",targetId:"target",status:"completed",
+      actorUid:"admin",result:{action:"warn",targetUid:"target"},
+      createdAt:new Date(1000+i),
+    };
+    docs["admin_audit_logs/account_"+id]={reason:"مراجعة يدوية"};
+  }
+  const db=new Db(docs);
+  let cursor, count=0, pages=0;
+  do {
+    const result=await generalReportsTestHooks.getAccountActionHistory(
+      db,{targetUid:"target",...(cursor?{cursor}:{})});
+    assert.ok(result.items.length<=20);
+    assert.equal(result.pageSize,20);
+    count+=result.items.length;pages++;
+    cursor=result.nextCursor;
+    if(!result.hasMore)break;
+  }while(pages<5);
+  assert.equal(count,47);
+  assert.equal(pages,3);
+  assert.equal(db.queryCalls,3);
+  await assert.rejects(()=>generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"other/account"}),/invalid_target_uid/);
+  await assert.rejects(()=>generalReportsTestHooks.getAccountActionHistory(
+    db,{targetUid:"target",cursor:"../users"}),/invalid_cursor/);
+});
+
+
+test("U6-E1 account history is restricted to authorized active moderators", async () => {
+  const db=new Db({
+    "users/owner":{role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/reviewer":{role:"moderator",adminEnabled:true,
+      accountStatus:"active",capabilities:["reviewReports"]},
+    "users/viewer":{role:"moderator",adminEnabled:true,
+      accountStatus:"active",capabilities:["viewReports"]},
+    "users/no_access":{role:"moderator",adminEnabled:true,
+      accountStatus:"active",capabilities:[]},
+    "users/disabled":{role:"admin",adminEnabled:false,
+      accountStatus:"active",capabilities:["viewReports"]},
+    "users/suspended":{role:"admin",adminEnabled:true,
+      accountStatus:"suspended",capabilities:["viewReports"]},
+    "users/regular":{role:"user",accountStatus:"active"},
+  });
+  for (const sub of ["owner","reviewer","viewer"]) {
+    const actor=await generalReportsTestHooks.requireAdmin(db,{sub});
+    assert.equal(actor.uid,sub);
+  }
+  for (const sub of ["no_access","disabled","regular","suspended"]) {
+    await assert.rejects(
+      ()=>generalReportsTestHooks.requireAdmin(db,{sub}),
+      /forbidden|unauthorized/,
+    );
+  }
+});
