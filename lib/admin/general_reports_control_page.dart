@@ -41,6 +41,169 @@ String generalReportErrorMessage(Object error) {
   };
 }
 
+  String _accountActionName(String action) => switch (action) {
+    'warn' => 'تحذير',
+    'suspend' => 'تعليق الحساب',
+    'ban' => 'حظر الحساب',
+    'disable' => 'إيقاف الحساب',
+    'enable' => 'إعادة تفعيل الحساب',
+    'unban' => 'رفع الحظر',
+    'restrictPrivateMessages' => 'تقييد الرسائل الخاصة',
+    'restrictRoomChat' => 'تقييد الكتابة بالغرف',
+    'restrictRoomEntry' => 'منع دخول الغرف',
+    'restrictRoomMic' => 'كتم المايكروفون',
+    'liftPrivateMessagesRestriction' => 'رفع تقييد الرسائل',
+    'liftRoomChatRestriction' => 'رفع تقييد الشات بالغرف',
+    'liftRoomEntryRestriction' => 'رفع منع دخول الغرف',
+    'liftRoomMicRestriction' => 'رفع كتم المايكروفون',
+    _ => 'إجراء إداري',
+  };
+
+  String _historyDate(dynamic timestamp) {
+    final ms = (timestamp as num?)?.toInt() ?? 0;
+    return ms <= 0 ? 'غير محدد'
+        : DateTime.fromMillisecondsSinceEpoch(ms)
+            .toLocal().toString().substring(0, 16);
+  }
+
+Future<void> showAccountActionHistoryDialog(
+  BuildContext context, String targetUid,
+) async {
+  if (targetUid.isEmpty) return;
+      Map<String, dynamic> page =
+          await GeneralReportsService.accountHistory(targetUid);
+      if (!context.mounted) return;
+      final cursors = <String?>[null];
+      var index = 0;
+      var loadingPage = false;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, update) {
+            final records = (page['items'] as List? ?? const [])
+                .whereType<Map>().map((entry) =>
+                    Map<String, dynamic>.from(entry)).toList();
+            Future<void> changePage(bool next) async {
+              if (loadingPage) return;
+              if (next && page['hasMore'] != true || !next && index == 0) {
+                return;
+              }
+              final requested = next ? index + 1 : index - 1;
+              final cursor = next
+                  ? (page['nextCursor'] ?? '').toString()
+                  : cursors[requested];
+              if (next && (cursor == null || cursor.isEmpty)) return;
+              update(() => loadingPage = true);
+              try {
+                final received = await GeneralReportsService.accountHistory(
+                  targetUid, cursor: cursor,
+                );
+                if (!dialogContext.mounted) return;
+                update(() {
+                  page = received;
+                  index = requested;
+                  if (next && cursors.length <= index) cursors.add(cursor);
+                  loadingPage = false;
+                });
+              } catch (error) {
+                if (!dialogContext.mounted) return;
+                update(() => loadingPage = false);
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text(generalReportErrorMessage(error))),
+                );
+              }
+            }
+            return AlertDialog(
+              title: const Text('سجل إجراءات الحساب'),
+              content: SizedBox(
+                width: 530,
+                height: 450,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'الإجراءات المنفّذة من الإدارة فقط. البلاغ بحد ذاته ليس '
+                      'مخالفة مثبتة، ولا يُحتسب في سجل المخالفات.',
+                    ),
+                    const SizedBox(height: 8),
+                    if (loadingPage) const LinearProgressIndicator(),
+                    Expanded(
+                      child: records.isEmpty
+                          ? const Center(child: Text('لا توجد إجراءات بهذه الصفحة.'))
+                          : ListView.separated(
+                              itemCount: records.length,
+                              separatorBuilder: (_, __) => const Divider(height: 12),
+                              itemBuilder: (context, i) {
+                                final record = records[i];
+                                final confirmed = record['caseVerified'] == true;
+                                final reason = (record['reason'] ?? '').toString();
+                                final linked = (record['reportId'] ?? '').toString();
+                                final expiration = (record['expiresAtMs'] as num?)
+                                    ?.toInt() ?? 0;
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(_accountActionName(
+                                    (record['action'] ?? '').toString(),
+                                  )),
+                                  subtitle: Text(
+                                    (confirmed
+                                        ? 'مخالفة ثبتت بعد مراجعة البلاغ'
+                                        : 'إجراء إداري دون إثبات مرتبط ببلاغ') +
+                                    '\nالسبب: ' + (reason.isEmpty
+                                        ? 'غير مدوّن' : reason) +
+                                    '\nالمسؤول: ${record['actorUid'] ?? '—'}' +
+                                    '\nالتاريخ: ' +
+                                        _historyDate(record['createdAtMs']) +
+                                    (expiration > 0 ? '\nانتهاء المدة: ' +
+                                        _historyDate(expiration) +
+                                        (record['expired'] == true
+                                            ? ' (انتهت)' : '') : '') +
+                                    (linked.isNotEmpty
+                                        ? '\nرقم البلاغ المرتبط: ' + linked : '') +
+                                    (record['liftedRestriction'] != null &&
+                                        record['liftedRestriction'].toString().isNotEmpty
+                                        ? '\nتم رفع التقييد بتاريخ: ' +
+                                          _historyDate(record['restrictionLiftedAtMs'])
+                                        : ''),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [
+                        Text('صفحة ${index + 1} — حتى 20 إجراء'),
+                        TextButton(
+                          onPressed: loadingPage || index == 0
+                              ? null : () => changePage(false),
+                          child: const Text('السابق'),
+                        ),
+                        TextButton(
+                          onPressed: loadingPage || page['hasMore'] != true
+                              ? null : () => changePage(true),
+                          child: const Text('التالي'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('إغلاق'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+}
+
+
 class GeneralReportItem {
   const GeneralReportItem(this.data);
   final Map<String, dynamic> data;
@@ -417,166 +580,11 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   }
 
 
-  String _accountActionName(String action) => switch (action) {
-    'warn' => 'تحذير',
-    'suspend' => 'تعليق الحساب',
-    'ban' => 'حظر الحساب',
-    'disable' => 'إيقاف الحساب',
-    'enable' => 'إعادة تفعيل الحساب',
-    'unban' => 'رفع الحظر',
-    'restrictPrivateMessages' => 'تقييد الرسائل الخاصة',
-    'restrictRoomChat' => 'تقييد الكتابة بالغرف',
-    'restrictRoomEntry' => 'منع دخول الغرف',
-    'restrictRoomMic' => 'كتم المايكروفون',
-    'liftPrivateMessagesRestriction' => 'رفع تقييد الرسائل',
-    'liftRoomChatRestriction' => 'رفع تقييد الشات بالغرف',
-    'liftRoomEntryRestriction' => 'رفع منع دخول الغرف',
-    'liftRoomMicRestriction' => 'رفع كتم المايكروفون',
-    _ => 'إجراء إداري',
-  };
-
-  String _historyDate(dynamic timestamp) {
-    final ms = (timestamp as num?)?.toInt() ?? 0;
-    return ms <= 0 ? 'غير محدد'
-        : DateTime.fromMillisecondsSinceEpoch(ms)
-            .toLocal().toString().substring(0, 16);
-  }
-
   Future<void> _showAccountHistory(GeneralReportItem item) async {
     if (_busy.contains(item.id) || item.targetUid.isEmpty) return;
     setState(() => _busy.add(item.id));
     try {
-      Map<String, dynamic> page =
-          await GeneralReportsService.accountHistory(item.targetUid);
-      if (!mounted) return;
-      final cursors = <String?>[null];
-      var index = 0;
-      var loadingPage = false;
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, update) {
-            final records = (page['items'] as List? ?? const [])
-                .whereType<Map>().map((entry) =>
-                    Map<String, dynamic>.from(entry)).toList();
-            Future<void> changePage(bool next) async {
-              if (loadingPage) return;
-              if (next && page['hasMore'] != true || !next && index == 0) {
-                return;
-              }
-              final requested = next ? index + 1 : index - 1;
-              final cursor = next
-                  ? (page['nextCursor'] ?? '').toString()
-                  : cursors[requested];
-              if (next && (cursor == null || cursor.isEmpty)) return;
-              update(() => loadingPage = true);
-              try {
-                final received = await GeneralReportsService.accountHistory(
-                  item.targetUid, cursor: cursor,
-                );
-                if (!dialogContext.mounted) return;
-                update(() {
-                  page = received;
-                  index = requested;
-                  if (next && cursors.length <= index) cursors.add(cursor);
-                  loadingPage = false;
-                });
-              } catch (error) {
-                if (!dialogContext.mounted) return;
-                update(() => loadingPage = false);
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text(generalReportErrorMessage(error))),
-                );
-              }
-            }
-            return AlertDialog(
-              title: const Text('سجل إجراءات الحساب'),
-              content: SizedBox(
-                width: 530,
-                height: 450,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'الإجراءات المنفّذة من الإدارة فقط. البلاغ بحد ذاته ليس '
-                      'مخالفة مثبتة، ولا يُحتسب في سجل المخالفات.',
-                    ),
-                    const SizedBox(height: 8),
-                    if (loadingPage) const LinearProgressIndicator(),
-                    Expanded(
-                      child: records.isEmpty
-                          ? const Center(child: Text('لا توجد إجراءات بهذه الصفحة.'))
-                          : ListView.separated(
-                              itemCount: records.length,
-                              separatorBuilder: (_, __) => const Divider(height: 12),
-                              itemBuilder: (context, i) {
-                                final record = records[i];
-                                final confirmed = record['caseVerified'] == true;
-                                final reason = (record['reason'] ?? '').toString();
-                                final linked = (record['reportId'] ?? '').toString();
-                                final expiration = (record['expiresAtMs'] as num?)
-                                    ?.toInt() ?? 0;
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(_accountActionName(
-                                    (record['action'] ?? '').toString(),
-                                  )),
-                                  subtitle: Text(
-                                    (confirmed
-                                        ? 'مخالفة ثبتت بعد مراجعة البلاغ'
-                                        : 'إجراء إداري دون إثبات مرتبط ببلاغ') +
-                                    '\nالسبب: ' + (reason.isEmpty
-                                        ? 'غير مدوّن' : reason) +
-                                    '\nالمسؤول: ${record['actorUid'] ?? '—'}' +
-                                    '\nالتاريخ: ' +
-                                        _historyDate(record['createdAtMs']) +
-                                    (expiration > 0 ? '\nانتهاء المدة: ' +
-                                        _historyDate(expiration) +
-                                        (record['expired'] == true
-                                            ? ' (انتهت)' : '') : '') +
-                                    (linked.isNotEmpty
-                                        ? '\nرقم البلاغ المرتبط: ' + linked : '') +
-                                    (record['liftedRestriction'] != null &&
-                                        record['liftedRestriction'].toString().isNotEmpty
-                                        ? '\nتم رفع التقييد بتاريخ: ' +
-                                          _historyDate(record['restrictionLiftedAtMs'])
-                                        : ''),
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                    Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      children: [
-                        Text('صفحة ${index + 1} — حتى 20 إجراء'),
-                        TextButton(
-                          onPressed: loadingPage || index == 0
-                              ? null : () => changePage(false),
-                          child: const Text('السابق'),
-                        ),
-                        TextButton(
-                          onPressed: loadingPage || page['hasMore'] != true
-                              ? null : () => changePage(true),
-                          child: const Text('التالي'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('إغلاق'),
-                ),
-              ],
-            );
-          },
-        ),
-      );
+      await showAccountActionHistoryDialog(context, item.targetUid);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

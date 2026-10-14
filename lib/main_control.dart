@@ -19,6 +19,8 @@ import 'admin/auth_login_control_page.dart';
 import 'admin/content_filter_control_page.dart';
 import 'admin/control_relationship_types_page.dart';
 import 'admin/reports_hub_page.dart';
+import 'admin/general_reports_control_page.dart'
+    show showAccountActionHistoryDialog, generalReportErrorMessage;
 import 'admin/admin_notifications_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
@@ -729,6 +731,25 @@ class UserReadOnlyPage extends StatelessWidget {
       appBar:AppBar(title:const Text('تفاصيل المستخدم')),
       body:ListView(padding:const EdgeInsets.all(16),children:[
         _UserAccountOverviewCard(uid:uid,seed:data),
+        const SizedBox(height:10),
+        Card(child:ListTile(
+          leading:const Icon(Icons.history_rounded,color:Color(0xFFD7B85A)),
+          title:const Text('سجل مخالفات وإجراءات الحساب'),
+          subtitle:const Text(
+            'عرض الإجراءات المنفذة فقط، والمخالفات المرتبطة بقرار مراجعة. '
+            'البلاغ غير المحسوم ليس إدانة.',
+          ),
+          onTap:() async {
+            try {
+              await showAccountActionHistoryDialog(context,uid);
+            } catch (error) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content:Text(generalReportErrorMessage(error))),
+              );
+            }
+          },
+        )),
         const SizedBox(height:10),
         Card(child:ListTile(
           leading:const Icon(Icons.admin_panel_settings_outlined,color:Color(0xFFD7B85A)),
