@@ -1,4 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
+import { firestoreClient } from "./firestore.js";
+import { commitRoomFilterCase } from "./content-filter-case.js";
 import { createRoomChatRestrictionGate } from "./room-chat-restriction.js";
 import {
   applyContentFilter, defaultFilterConfig,
@@ -366,6 +368,7 @@ export class RoomRealtimeObject extends DurableObject {
       if (!uid || !roomId || !referenceId || !ruleIds.length) {
         return Response.json({ ok: false }, { status: 400 });
       }
+      const createdAtMs = Date.now();
       // Atomic fixed-size ring: no full text, unbounded scans or extra timers.
       const next = await this.ctx.storage.transaction(async (tx) => {
         const seq = (Number(await tx.get("filter_flag_sequence")) || 0) + 1;
@@ -374,11 +377,30 @@ export class RoomRealtimeObject extends DurableObject {
           [`filter_flag_slot_${seq % ROOM_FILTER_FLAG_RING_SIZE}`]: {
             sequence: seq, actorUid: uid, roomId, referenceId, ruleIds,
             evidence: originalText ? { text: originalText } : {},
-            surface: "room_chat", status: "pending", createdAtMs: Date.now(),
+            surface: "room_chat", status: "pending", createdAtMs,
+            caseLinked: false,
           },
         });
         return seq;
       });
+      // Failure in the case index never invalidates the already-stored flag
+      // or blocks the room message. Existing hourly maintenance retries it.
+      try {
+        await commitRoomFilterCase(firestoreClient(this.env), {
+          actorUid: uid, sourceId: String(next),
+          surface: "room_chat", createdAtMs,
+        });
+        const slot = "filter_flag_slot_" + (next % ROOM_FILTER_FLAG_RING_SIZE);
+        await this.ctx.storage.transaction(async tx => {
+          const flag = await tx.get(slot);
+          if (flag?.sequence === next && flag.caseLinked !== true) {
+            await tx.put(slot, { ...flag, caseLinked: true });
+          }
+        });
+      } catch (error) {
+        console.error("Room filter case index unavailable",
+          String(error?.code || error?.message || "failed").slice(0,70));
+      }
       return Response.json({ ok: true, sequence: next });
     }
     if (url.pathname === "/filter/flags" && request.method === "GET") {
@@ -446,8 +468,14 @@ export class RoomRealtimeObject extends DurableObject {
         const stored = await tx.get(keys);
         const updates = {};
         let purged = 0;
+        const casePending = [];
         for (const key of keys) {
           const item = stored.get(key);
+          if (item?.sequence && item.caseLinked !== true &&
+              /^[A-Za-z0-9_-]{1,180}$/.test(String(item.actorUid || ""))) {
+            casePending.push({ sequence:item.sequence, actorUid:item.actorUid,
+              createdAtMs:item.createdAtMs });
+          }
           if (!item?.evidence?.text || !roomFlagEvidenceExpired(item, nowMs))
             continue;
           updates[key] = { ...item, evidence: {},
@@ -457,9 +485,31 @@ export class RoomRealtimeObject extends DurableObject {
         updates.filter_flag_purge_cursor =
           (cursor + ROOM_FILTER_FLAG_PURGE_BATCH) % ROOM_FILTER_FLAG_RING_SIZE;
         await tx.put(updates);
-        return { checked: ROOM_FILTER_FLAG_PURGE_BATCH, purged };
+        return { checked: ROOM_FILTER_FLAG_PURGE_BATCH, purged,
+          casePending:casePending.slice(0,5) };
       });
-      return Response.json({ ok: true, ...result });
+      let caseRelinked = 0;
+      for (const item of result.casePending) {
+        try {
+          await commitRoomFilterCase(firestoreClient(this.env), {
+            actorUid:item.actorUid, sourceId:String(item.sequence),
+            surface:"room_chat", createdAtMs:Number(item.createdAtMs),
+          });
+          const slot = "filter_flag_slot_" +
+            (item.sequence % ROOM_FILTER_FLAG_RING_SIZE);
+          await this.ctx.storage.transaction(async tx => {
+            const flag = await tx.get(slot);
+            if (flag?.sequence === item.sequence && flag.caseLinked !== true) {
+              await tx.put(slot, { ...flag, caseLinked:true });
+            }
+          });
+          caseRelinked++;
+        } catch {
+          // Retried in the same fixed-size hourly ring sweep.
+        }
+      }
+      return Response.json({ ok:true, checked:result.checked,
+        purged:result.purged, caseRelinked });
     }
     if (url.pathname === "/ticket" && request.method === "POST") {
       return this.#issueTicket(request);
