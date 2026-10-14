@@ -24,6 +24,8 @@ test("notification content is bounded and respects optional refusal reason", () 
     /تقييد إرسال الرسائل الخاصة/);
   assert.match(build("actioned", "room_chat_restricted").body,
     /الكتابة|كتابة/);
+  assert.match(build("actioned", "room_entry_restricted").body,
+    /دخول الغرف/);
   assert.doesNotMatch(build("actioned", "unverified").body, /حظر الحساب/);
 });
 
