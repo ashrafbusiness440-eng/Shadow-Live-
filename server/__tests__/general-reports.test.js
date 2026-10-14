@@ -483,7 +483,7 @@ test("case-bound account receipts cannot be reused for another complaint", async
       db, {}, {sub:"admin"}, "admin", {
         reportId:"second_chat", accountAction:"warn",
         reason:"محاولة إعادة استخدام إيصال منفرد", idempotencyKey:sharedKey,
-      }), /idempotency_key_conflict/,
+      }), /unverified_account_action/,
   );
   await assert.rejects(
     () => generalReportsTestHooks.reviewGeneralReport(db, "admin", {
