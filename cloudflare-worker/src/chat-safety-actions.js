@@ -2,6 +2,7 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
+import { filterCaseWrites } from "./content-filter-case.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { reportPriority } from "./report-priority-policy.js";
@@ -355,6 +356,11 @@ export async function sendMessage(db, uid, body) {
     ];
 
     if (review.flagged) {
+      const caseUpdate = await filterCaseWrites(db,transaction, {
+        actorUid:uid, surface:"private_chat", sourceId:messageId,
+        createdAtMs:now.getTime(),
+      });
+      writes.push(...caseUpdate.writes);
       writes.push(db.writeCreate(`content_filter_flags/${messageId}`, {
         actorUid: uid, surface: "private_chat",
         referenceId: messageId, conversationId,
