@@ -7,7 +7,8 @@ import 'control_firebase.dart';
 /// Existing content-filter observations, inside the unified reports hub.
 /// On demand only: no automatic refresh, polling or broad collection scans.
 class SystemReportsControlPage extends StatefulWidget {
-  const SystemReportsControlPage({super.key});
+  const SystemReportsControlPage({super.key, this.initialGroupAlertId});
+  final String? initialGroupAlertId;
   @override
   State<SystemReportsControlPage> createState() =>
       _SystemReportsControlPageState();
@@ -20,12 +21,16 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
   bool _canViewSensitiveEvidence = false;
   bool _unavailable = false;
   String? _error;
+  Map<String, dynamic>? _focusedGroup;
+  String? _groupError;
   List<Map<String, dynamic>> _items = const [];
 
   @override
   void initState() {
     super.initState();
     _load();
+    final initial = widget.initialGroupAlertId?.trim() ?? '';
+    if (initial.isNotEmpty) _loadGroup(initial);
   }
 
   Future<Map<String, dynamic>> _request(String action,
@@ -65,6 +70,21 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
           _error = 'تعذّر تحميل بلاغات النظام. تحقّق من الاتصال وأعد المحاولة.');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadGroup(String groupAlertId) async {
+    try {
+      final response = await _request('getSystemFlagGroup', {
+        'groupAlertId': groupAlertId,
+      });
+      if (!mounted) return;
+      final raw = response['group'];
+      setState(() => _focusedGroup = raw is Map
+          ? Map<String, dynamic>.from(raw) : null);
+    } catch (_) {
+      if (mounted) setState(() => _groupError =
+          'تعذّر عرض ملف التنبيهات المجمّعة. يمكن تحديث القائمة والمحاولة.');
     }
   }
 
@@ -183,6 +203,53 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
         child: Text('تعذّر تحميل تنبيهات الغرف الآن؛ النتائج قد تكون ناقصة.')),
       if (_error != null) Padding(
         padding: const EdgeInsets.all(12), child: Text(_error!)),
+      if (_groupError != null) Padding(
+        padding: const EdgeInsets.all(8), child: Text(_groupError!)),
+      if (_focusedGroup != null)
+        Card(child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('ملف التنبيهات المتكررة',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('الحساب: ${_focusedGroup!['actorUid'] ?? 'غير معروف'}'),
+              Text('عدد الوقائع المرصودة: ${_focusedGroup!['count'] ?? 0}'
+                  ' — ليست مخالفات مثبتة'),
+              const Text('الدليل محفوظ لكل رسالة بشكل مستقل.'
+                  ' الإشعار لا يترتب عليه إجراء تلقائي.'),
+              SizedBox(height: 166,
+                child: ListView.builder(
+                  itemCount: (_focusedGroup!['recentReferences'] as List? ?? const [])
+                      .take(12).length,
+                  itemBuilder: (context, index) {
+                    final items = (_focusedGroup!['recentReferences'] as List? ?? const [])
+                        .take(12).toList();
+                    final raw = items[index];
+                    if (raw is! Map) return const SizedBox.shrink();
+                    final item = Map<String, dynamic>.from(raw);
+                    final surface = (item['surface'] ?? '').toString();
+                    final ref = (item['referenceId'] ?? '').toString();
+                    final flagId = surface == 'room_chat' ? ref : 'saved_$ref';
+                    return ListTile(
+                      dense: true,
+                      title: Text('واقعة ${index + 1} — $surface'),
+                      subtitle: Text(ref, overflow: TextOverflow.ellipsis),
+                      trailing: _canViewSensitiveEvidence
+                        ? IconButton(
+                            tooltip: 'فتح دليل هذه الواقعة فقط',
+                            icon: const Icon(Icons.lock_open_outlined),
+                            onPressed: _loading ? null
+                              : () => _openEvidence({'id': flagId}),
+                          ) : null,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        )),
+
       if (_type == 'images') const Padding(
         padding: EdgeInsets.all(18),
         child: Text('مراقبة الصور لم تُفعّل بعد. لا توجد نتائج فحص صور '
