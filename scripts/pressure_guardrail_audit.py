@@ -1201,7 +1201,7 @@ def main() -> int:
             failures.append(
                 f"U5-B4 scoped moderation listener missing {required}"
             )
-    if len(re.findall(r"_roomModerationSubscription\\?\\.cancel\\(\\)", voice)) < 2:
+    if voice.count("_roomModerationSubscription?.cancel()") < 2:
         failures.append("U5-B4 moderation listener not cleaned up on leave and shutdown")
 
     for field, value in (
