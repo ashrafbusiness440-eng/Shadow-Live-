@@ -172,7 +172,10 @@ async function mutateAccount(db, env, actorPayload, body) {
   const key = clean(body.idempotencyKey);
   const linkedReportId = clean(body.linkedReportId);
   // Only the internal reports endpoint may supply a case-bound receipt.
-  if (linkedReportId && !/^[A-Za-z0-9_-]{1,180}$/.test(linkedReportId)) {
+  // Diary-comment report IDs can exceed the short general-report ID format.
+  if (linkedReportId &&
+      (linkedReportId.length > 512 ||
+       linkedReportId.includes("/") || linkedReportId.includes("\\"))) {
     throw new ApiError("invalid_linked_report_id", 400);
   }
   const assertMatchingOperation = (snap) => {
