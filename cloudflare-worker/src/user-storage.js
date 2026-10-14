@@ -10,6 +10,7 @@ import { publicMediaUrl } from "./public-media.js";
 import {
   uploadModerationSnapshot, moderatedStagingKey,
   classifyModeratedUpload, publishModeratedUpload,
+  recordModerationOutcome,
 } from "./image-moderation-gate.js";
 import {
   R2_BUCKET_NAME,
@@ -646,6 +647,10 @@ async function confirmUpload(request, env, auth, body) {
       throw new StorageApiError("moderation_in_progress", 409);
     }
     if (!ticket.moderationDecision) {
+      // Record the verdict once before any public copy; a failed metric write
+      // must never be interpreted as permission to publish.
+      await recordModerationOutcome(auth.db, objectId,
+        ticket.moderationPolicy, moderationDecision);
       await auth.db.commit(null, [
         auth.db.writeUpdate(`storage_upload_tickets/${objectId}`, {
           moderationDecision, moderationCheckedAt: new Date(),
