@@ -371,6 +371,11 @@ async function getAccountActionHistory(db, body = {}) {
       // The case link is only trustworthy after review has actually finalized.
       caseVerified,
       reportId: caseVerified ? reportId : "",
+      // Only a verified case may provide a deep link to its existing review
+      // screen. The history response still never includes evidence content.
+      reportSource: caseVerified
+        ? (["diary", "diary_comment"].includes(clean(report.targetType))
+          ? "diary" : "general") : "",
       hasCaseEvidence: caseVerified && Boolean(
         report.evidence || report.messageId || report.targetId),
     };

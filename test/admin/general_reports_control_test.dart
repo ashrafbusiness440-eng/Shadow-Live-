@@ -104,6 +104,10 @@ void main() {
     expect(main.contains('await showAccountActionHistoryDialog(context,uid)'), isTrue);
     expect(main.contains('البلاغ غير المحسوم ليس إدانة'), isTrue);
     expect(screen.contains('سجل مخالفات وإجراءات الحساب'), isTrue);
+    expect(screen.contains("tooltip: 'فتح البلاغ المرتبط'"), isTrue);
+    expect(screen.contains("record['reportSource'] == 'diary'"), isTrue);
+    expect(screen.contains('DiaryReportsControlPage('), isTrue);
+    expect(screen.contains('GeneralReportsControlPage('), isTrue);
     expect(screen.contains('البلاغ بحد ذاته ليس'), isTrue);
     expect(screen.contains(r'صفحة ${index + 1}'), isTrue);
     expect(screen.contains('سياق البلاغات السابقة'), isTrue);

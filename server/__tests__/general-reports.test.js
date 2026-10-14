@@ -1175,12 +1175,14 @@ test("U6-E1 account history only confirms a completed action tied to the reviewe
   const confirmed=result.items.find(item=>item.action==="restrictRoomMic");
   assert.equal(confirmed.caseVerified,true);
   assert.equal(confirmed.reportId,"u6e_report");
+  assert.equal(confirmed.reportSource,"general");
   assert.equal(confirmed.reason,"إساءة مؤكدة");
   assert.equal(confirmed.expired,true);
   assert.equal(confirmed.hasCaseEvidence,true);
   const manual=result.items.find(item=>item.action==="warn");
   assert.equal(manual.caseVerified,false);
   assert.equal(manual.reportId,"");
+  assert.equal(manual.reportSource,"");
   assert.equal(result.confirmedInPage,1);
   assert.equal(JSON.stringify(result).includes("SECRET_EVIDENCE"),false);
   assert.equal([...db.docs.keys()].filter(k=>k.startsWith("notifications/")).length,0);
@@ -1299,6 +1301,7 @@ test("U6-E3 account history includes only confirmed content moderation, not sens
   assert.equal(out.items[0].caseVerified,true);
   assert.equal(out.items[0].reason,"تم إثبات المخالفة وحذف التعليق");
   assert.equal(out.items[0].reportId,"u6e3_report");
+  assert.equal(out.items[0].reportSource,"diary");
   assert.equal(JSON.stringify(out).includes("PRIVATE_TEXT_ONLY_FOR_REVIEW"),false);
   const unrelated=await generalReportsTestHooks.getAccountActionHistory(
     db,{targetUid:"diary_owner"});

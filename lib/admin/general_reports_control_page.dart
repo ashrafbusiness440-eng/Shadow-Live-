@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import 'admin_account_identity_tile.dart';
+import 'diary_reports_control_page.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'general_reports_history_page.dart';
@@ -147,6 +148,30 @@ Future<void> showAccountActionHistoryDialog(
                                   title: Text(_accountActionName(
                                     (record['action'] ?? '').toString(),
                                   )),
+                                  trailing: confirmed && linked.isNotEmpty
+                                      ? IconButton(
+                                          tooltip: 'فتح البلاغ المرتبط',
+                                          icon: const Icon(Icons.open_in_new_rounded),
+                                          onPressed: () {
+                                            // Navigate through the original
+                                            // report screen, which enforces
+                                            // its own permissions and evidence
+                                            // access rules on the server.
+                                            Navigator.of(dialogContext).push(
+                                              MaterialPageRoute<void>(
+                                                builder: (_) =>
+                                                  record['reportSource'] == 'diary'
+                                                    ? DiaryReportsControlPage(
+                                                        initialReportId: linked,
+                                                      )
+                                                    : GeneralReportsControlPage(
+                                                        initialReportId: linked,
+                                                      ),
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : null,
                                   subtitle: Text(
                                     (confirmed
                                         ? 'مخالفة ثبتت بعد مراجعة البلاغ'
