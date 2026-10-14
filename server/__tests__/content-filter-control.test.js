@@ -132,6 +132,7 @@ test("admin reads only bounded flagged metadata and can review a stored item", a
   assert.equal(list.items.length, 2);
   assert.equal(list.items[0].id, "saved_item_01");
   assert.equal(list.items[0].surface, "private_chat");
+  assert.equal(list.items[0].hasSensitiveEvidence,false);
   const result = await contentFilterControlInternals.reviewFlag(db, env,
     "owner_01", {
       flagId: "saved_item_01", reason: "تمت المراجعة من الإدارة",
