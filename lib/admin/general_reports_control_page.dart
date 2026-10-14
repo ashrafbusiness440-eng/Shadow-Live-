@@ -569,6 +569,13 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
             .map((m) => Map<String, dynamic>.from(m)).toList()
         : <Map<String, dynamic>>[];
     final details = item.field('details');
+    final roomState = evidence['roomState'] is Map
+        ? Map<String, dynamic>.from(evidence['roomState'] as Map)
+        : <String, dynamic>{};
+    final reportedSeats = roomState['occupiedSeats'] is List
+        ? (roomState['occupiedSeats'] as List).take(22).whereType<Map>()
+            .map((seat) => Map<String, dynamic>.from(seat)).toList()
+        : <Map<String, dynamic>>[];
     final roomId = item.field('roomId');
     final conversationId = item.field('conversationId');
 
@@ -608,6 +615,37 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
               item.targetUid,
               item.mapField('targetProfile'),
             ),
+            if (roomState.isNotEmpty)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('لقطة موثقة لحالة الغرفة وقت البلاغ'),
+                subtitle: const Text(
+                  'بيانات الغرفة والمايكات محفوظة من الخادم، وليست تسجيلًا صوتيًا.',
+                ),
+                children: [
+                  ListTile(
+                    dense: true,
+                    title: Text('اسم الغرفة: ' +
+                        (roomState['name'] ?? 'غير محدد').toString()),
+                    subtitle: Text('نوع الغرفة: ' +
+                        (roomState['type'] ?? 'غير محدد').toString()),
+                  ),
+                  ListTile(
+                    dense: true,
+                    title: Text('المايكات المشغولة: ${reportedSeats.length}'),
+                    subtitle: Text('مالك الغرفة وقت البلاغ: ' +
+                        (roomState['ownerUid'] ?? 'غير محدد').toString()),
+                  ),
+                  for (final seat in reportedSeats)
+                    ListTile(
+                      dense: true,
+                      title: Text('مايك ${seat['seatIndex'] ?? '—'} — ' +
+                          (seat['uid'] ?? '').toString()),
+                      subtitle: Text(seat['muted'] == true
+                          ? 'الميكروفون مكتوم' : 'الميكروفون مفتوح'),
+                    ),
+                ],
+              ),
             if (roomId.isNotEmpty)
               ListTile(
                 dense: true,

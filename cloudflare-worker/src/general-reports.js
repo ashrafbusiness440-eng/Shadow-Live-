@@ -79,7 +79,7 @@ function normalizeGeneralReport(reportId, data = {}) {
     reason: clean(data.reason),
     details: clean(data.details),
     status: clean(data.status) || "new",
-    evidence: type === "room_message_report" &&
+    evidence: (type === "room_message_report" || type === "room_report") &&
         data.evidence && typeof data.evidence === "object"
       ? data.evidence
       : null,
@@ -310,8 +310,9 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
           type: item.type,
           title: item.type === "user_report"
             ? "بلاغ عن مستخدم في محادثة خاصة"
-            : item.type === "room_report" ? "بلاغ عن غرفة"
-              : "بلاغ عن رسالة داخل غرفة",
+            : item.type === "account_report" ? "بلاغ مباشر عن حساب"
+              : item.type === "room_report" ? "بلاغ عن غرفة"
+                : "بلاغ عن رسالة داخل غرفة",
           body: "بلاغ قيد مراجعة الإدارة",
           targetId: reportId,
           route: "general_reports",

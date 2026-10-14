@@ -1972,6 +1972,39 @@ async function reportUser(db, uid, body) {
   });
 }
 
+// Only source the report snapshot from the room document already read
+// within the report transaction. This is a bounded verified state snapshot,
+// NOT an audio recording or a client-provided screenshot.
+export function verifiedRoomReportEvidence(room = {}, now = new Date()) {
+  const seats = Array.isArray(room.seats) ? room.seats.slice(0, 22) : [];
+  const occupied = seats.flatMap((seat, index) => {
+    const uid = clean(seat?.uid).slice(0, 180);
+    if (!uid) return [];
+    return [{
+      seatIndex: Number.isInteger(Number(seat?.index)) &&
+          Number(seat.index) >= 0 && Number(seat.index) < 32
+        ? Number(seat.index) : index,
+      uid,
+      muted: seat?.muted !== false,
+      locked: seat?.locked === true,
+      muteLocked: seat?.muteLocked === true,
+    }];
+  });
+  return {
+    source: "verified_room_document",
+    recordedAt: now,
+    roomState: {
+      name: clean(room.name || room.roomName).slice(0, 120),
+      type: clean(room.roomType || room.type || "personal").slice(0, 40),
+      ownerUid: clean(room.ownerUid || room.ownerId).slice(0, 180),
+      hostUid: clean(room.hostUid || room.hostId).slice(0, 180),
+      isActive: room.isActive !== false,
+      occupiedSeats: occupied,
+      occupiedSeatCount: occupied.length,
+    },
+  };
+}
+
 // A room complaint is different from a complaint about one chat message.
 // Only an authenticated participant presently in that actual room can report
 // it. A client-supplied owner or membership claim is never authoritative.
@@ -2046,6 +2079,7 @@ async function reportRoom(db, uid, body, realtimeNamespace) {
         reason,
         details,
         source: "room_report",
+        evidence: verifiedRoomReportEvidence(room.data || {}, now),
         status: "new",
         createdAt: now,
         updatedAt: now,

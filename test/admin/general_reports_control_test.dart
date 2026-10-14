@@ -95,6 +95,8 @@ void main() {
     expect(screen.contains("'liftRoomEntryRestriction'"), isTrue);
     expect(screen.contains("'liftRoomMicRestriction'"), isTrue);
     expect(screen.contains("'restrictRoomMic'"), isTrue);
+    expect(screen.contains('لقطة موثقة لحالة الغرفة وقت البلاغ'), isTrue);
+    expect(screen.contains('ليست تسجيلًا صوتيًا'), isTrue);
     expect(screen.contains('AdminAccountIdentityTile('), isTrue);
     expect(screen.contains("'reviewReport'"), isTrue);
     expect(screen.contains('FirebaseFirestore'), isFalse);
