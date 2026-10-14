@@ -110,9 +110,12 @@ class _DiaryReportItem {
 }
 
 class DiaryReportsControlPage extends StatefulWidget {
-  const DiaryReportsControlPage({super.key, this.initialReportId});
+  const DiaryReportsControlPage({
+    super.key, this.initialReportId, this.embedded = false,
+  });
 
   final String? initialReportId;
+  final bool embedded;
 
   @override
   State<DiaryReportsControlPage> createState() =>
@@ -669,7 +672,7 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: widget.embedded ? null : AppBar(
         title: const Text('بلاغات اليوميات'),
         actions: [
           IconButton(
@@ -684,10 +687,11 @@ class _DiaryReportsControlPageState extends State<DiaryReportsControlPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Text(
-              'مراجعة بلاغات اليوميات والتعليقات',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-            ),
+            if (!widget.embedded)
+              const Text(
+                'مراجعة بلاغات اليوميات والتعليقات',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
             const SizedBox(height: 6),
             const Text(
               'راجع البلاغ واتخذ الإجراء المناسب.',

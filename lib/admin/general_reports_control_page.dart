@@ -18,6 +18,7 @@ String generalReportErrorMessage(Object error) {
     'invalid_reason' => 'اكتب سبباً واضحاً بين 3 و200 حرف، أو اترك سبب الرفض فارغًا.',
     'invalid_idempotency_key' => 'تعذّر تسجيل العملية. أعد المحاولة.',
     'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
+    'invalid_report_scope' => 'تعذّر فتح هذا القسم من البلاغات. حدّث الصفحة.',
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
     'invalid_account_action' => 'تحقق من الإجراء وسبب القرار.',
     'warning_target_unavailable' => 'لا يمكن توجيه تحذير لهذا الحساب حاليًا.',
@@ -102,9 +103,12 @@ class GeneralReportsService {
     return result;
   }
 
-  static Future<Map<String, dynamic>> load({String? reportId}) =>
+  static Future<Map<String, dynamic>> load({String? reportId, String? scope}) =>
       reportId == null || reportId.isEmpty
-          ? _post('listReports', const <String, dynamic>{'limit': 25})
+          ? _post('listReports', <String, dynamic>{
+              'limit': 25,
+              if (scope != null) 'scope': scope,
+            })
           : _post('getReport', <String, dynamic>{'reportId': reportId});
 
   static Future<Map<String, dynamic>> history({
@@ -139,8 +143,12 @@ class GeneralReportsService {
 }
 
 class GeneralReportsControlPage extends StatefulWidget {
-  const GeneralReportsControlPage({super.key, this.initialReportId});
+  const GeneralReportsControlPage({
+    super.key, this.initialReportId, this.scope, this.embedded = false,
+  });
   final String? initialReportId;
+  final String? scope;
+  final bool embedded;
   @override
   State<GeneralReportsControlPage> createState() =>
       _GeneralReportsControlPageState();
@@ -169,6 +177,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     try {
       final result = await GeneralReportsService.load(
         reportId: widget.initialReportId,
+        scope: widget.scope,
       );
       if (!mounted) return;
       final rawList = result['items'];
@@ -532,7 +541,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+    appBar: widget.embedded ? null : AppBar(
       title: const Text('بلاغات المستخدمين والغرف'),
       actions: [
         if (widget.initialReportId == null)
@@ -557,9 +566,10 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('بلاغات المحادثات والغرف',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-          if (widget.initialReportId == null)
+          if (!widget.embedded)
+            const Text('بلاغات المحادثات والغرف',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          if (!widget.embedded && widget.initialReportId == null)
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(

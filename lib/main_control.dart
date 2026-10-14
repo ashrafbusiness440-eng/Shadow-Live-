@@ -18,8 +18,7 @@ import 'admin/control_asset_manager_page.dart';
 import 'admin/auth_login_control_page.dart';
 import 'admin/content_filter_control_page.dart';
 import 'admin/control_relationship_types_page.dart';
-import 'admin/diary_reports_control_page.dart';
-import 'admin/general_reports_control_page.dart';
+import 'admin/reports_hub_page.dart';
 import 'admin/admin_notifications_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
@@ -2990,12 +2989,17 @@ class MorePage extends StatelessWidget {
               capabilities.contains('manageAgencyManagers')));
         final canManageSystem=isOwner||
             (adminEnabled&&capabilities.contains('manageSystem'));
-        final canOpenReports=isOwner||
+        final canOpenGeneralReports=isOwner||
+            (adminEnabled&&(
+              capabilities.contains('viewReports')||
+              capabilities.contains('reviewReports')));
+        final canOpenDiaryReports=isOwner||
             (adminEnabled&&(
               capabilities.contains('viewReports')||
               capabilities.contains('reviewReports')||
               capabilities.contains('manageDiaries')||
               capabilities.contains('deleteDiaryComment')));
+        final canOpenReports=canOpenGeneralReports||canOpenDiaryReports;
         final canOpenVip=isOwner||
             (adminEnabled&&capabilities.contains('manageVipLevels'));
         final canOpenVipInformation=isOwner||
@@ -3014,9 +3018,9 @@ class MorePage extends StatelessWidget {
           if(canManageAgencyMembers)
             const ControlItem('إدارة أعضاء الوكالات','عرض الأعضاء والمديرين وتغيير الأدوار حسب Permission Matrix',Icons.groups_2_outlined),
           if(canOpenReports)
-            const ControlItem('التقارير','بلاغات اليوميات والتعليقات عبر Worker bounded + مراجعة وحذف حسب الصلاحيات',Icons.flag_outlined),
-          if(isOwner||(adminEnabled&&(capabilities.contains('viewReports')||capabilities.contains('reviewReports'))))
-            const ControlItem('بلاغات المستخدمين والغرف','بلاغات المحادثات ورسائل الغرف والغرف نفسها مع الأدلة والأطراف',Icons.report_gmailerrorred_outlined),
+            ControlItem('البلاغات','مركز موحد لبلاغات الغرف والرسائل والأشخاص ويومياتي',Icons.flag_outlined,
+              reportsGeneralAllowed:canOpenGeneralReports,
+              reportsDiaryAllowed:canOpenDiaryReports),
           if(canOpenVip)
             const ControlItem('إدارة VIP','بحث المستخدم ومنح/تغيير/سحب VIP حسب الصلاحيات',Icons.workspace_premium_outlined),
           if(canOpenVipInformation)
@@ -3043,8 +3047,10 @@ class MorePage extends StatelessWidget {
 }
 
 class ControlItem {
-  const ControlItem(this.title,this.subtitle,this.icon);
+  const ControlItem(this.title,this.subtitle,this.icon,
+    {this.reportsGeneralAllowed=false,this.reportsDiaryAllowed=false});
   final String title,subtitle; final IconData icon;
+  final bool reportsGeneralAllowed,reportsDiaryAllowed;
 }
 class ControlList extends StatelessWidget {
   const ControlList({super.key,required this.title,required this.icon,required this.items});
@@ -3053,8 +3059,10 @@ class ControlList extends StatelessWidget {
   Widget targetPage(ControlItem item) {
     if (item.title == 'الوكالات') return const AgencyControlPage();
     if (item.title == 'إدارة أعضاء الوكالات') return const AgencyManagementPage();
-    if (item.title == 'التقارير') return const DiaryReportsControlPage();
-    if (item.title == 'بلاغات المستخدمين والغرف') return const GeneralReportsControlPage();
+    if (item.title == 'البلاغات') return ReportsHubPage(
+      allowGeneral:item.reportsGeneralAllowed,
+      allowDiary:item.reportsDiaryAllowed,
+    );
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
