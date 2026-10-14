@@ -25,6 +25,14 @@ void main() {
     final notices = File('lib/admin/admin_notifications_page.dart')
         .readAsStringSync();
     expect(hub.contains('_historyOpen'), isTrue);
+    expect(hub.contains("Key('reports-back-to-list')"), isTrue);
+    expect(hub.contains("العودة إلى قائمة البلاغات"), isTrue);
+    expect(hub.contains('_focusedReportId = null'), isTrue);
+    expect(hub.contains('_reloadCount++'), isTrue);
+    final route = File('lib/admin/reports_hub_inbox_route.dart')
+        .readAsStringSync();
+    expect(route.contains("final owner = enabled && actor['role'] == 'owner'"),
+        isTrue);
     expect(hub.contains('GeneralReportsHistoryPage('), isTrue);
     expect(hub.contains('scope: _section == ReportsHubSection.people'), isTrue);
     expect(history.contains("this.embedded = false"), isTrue);
