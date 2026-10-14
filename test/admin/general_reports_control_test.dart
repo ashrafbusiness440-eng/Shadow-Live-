@@ -38,6 +38,30 @@ void main() {
         contains('حالة البلاغ'));
   });
 
+  test('U6-E6 history labels preserve unknown state instead of guessing', () {
+    expect(accountActionHistoryStateLabel({
+      'lifecycleState': 'active',
+    }), 'ما زال ساريًا');
+    expect(accountActionHistoryStateLabel({
+      'lifecycleState': 'expired',
+    }), 'انتهت المدة المحددة');
+    expect(accountActionHistoryStateLabel({
+      'lifecycleState': 'lifted',
+    }), 'رُفع بقرار إداري');
+    expect(accountActionHistoryStateLabel({
+      'lifecycleState': 'replaced',
+    }), contains('إجراء أحدث'));
+    expect(accountActionHistoryStateLabel({
+      'lifecycleState': 'permanent',
+    }), contains('دائم'));
+    expect(accountActionHistoryStateLabel({
+      'permanentSanction': true,
+    }), contains('غير مؤكدة'));
+    expect(accountActionHistoryStateLabel({
+      'lifecycleState': 'lift_recorded',
+    }), contains('رفع الجزاء'));
+  });
+
   testWidgets('authorized identity tile displays and opens reporter details RTL',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
