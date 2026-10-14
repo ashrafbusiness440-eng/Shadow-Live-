@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'image_moderation_settings_page.dart';
 
 /// Existing content-filter observations, inside the unified reports hub.
 /// On demand only: no automatic refresh, polling or broad collection scans.
@@ -250,10 +251,20 @@ class _SystemReportsControlPageState extends State<SystemReportsControlPage> {
           ),
         )),
 
-      if (_type == 'images') const Padding(
-        padding: EdgeInsets.all(18),
-        child: Text('مراقبة الصور لم تُفعّل بعد. لا توجد نتائج فحص صور '
-            'موثوقة لعرضها في هذا القسم.')),
+      if (_type == 'images') ...[
+        const Padding(
+          padding: EdgeInsets.all(18),
+          child: Text('مراقبة الصور لم تُفعّل بعد. لا توجد نتائج فحص صور '
+              'موثوقة لعرضها في هذا القسم.'),
+        ),
+        TextButton.icon(
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('تجهيز خدمة فحص الصور — للأونر'),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => const ImageModerationSettingsPage(),
+          )),
+        ),
+      ],
       Expanded(child: selected.isEmpty
         ? Center(child: Text(_type == 'images'
           ? 'فحص الصور غير متاح حاليًا'
