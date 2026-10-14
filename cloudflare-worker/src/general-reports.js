@@ -13,6 +13,7 @@ import {
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
+import { readProtectedReportEvidence } from "./report-evidence-access.js";
 import { reportPriority, reportPriorityRank, validReportPriority } from "./report-priority-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -85,10 +86,11 @@ function normalizeGeneralReport(reportId, data = {}) {
       ? clean(data.priorityOverride) : "",
     priorityReason: clean(data.priorityReason),
     priorityChangedBy: clean(data.priorityChangedBy),
-    evidence: (type === "room_message_report" || type === "room_report") &&
-        data.evidence && typeof data.evidence === "object"
-      ? data.evidence
-      : null,
+    // Never return source evidence with normal report lists or details.
+    // Opening it requires a different explicit capability and audited request.
+    hasSensitiveEvidence: Boolean(data.evidence &&
+      typeof data.evidence === "object" &&
+      Object.keys(data.evidence).length > 0),
     createdAtMs: timestampMs(data.createdAt),
     reviewReason: clean(data.reviewReason),
     moderationAction: clean(data.moderationAction),
@@ -203,6 +205,21 @@ async function listReportHistory(db, body = {}) {
     hasMore: raw.length > HISTORY_PAGE_SIZE,
     pageSize: HISTORY_PAGE_SIZE,
   };
+}
+
+async function openGeneralSensitiveEvidence(db, actor, body = {}) {
+  if (!actor?.canViewSensitiveEvidence) {
+    throw new GeneralReportError("forbidden_evidence", 403);
+  }
+  const reportId = safeId(body.reportId);
+  // The normal report endpoint already distinguishes this source from diaries.
+  const snap = await db.get("reports/" + reportId);
+  if (!snap.exists || !generalReportType(snap.data || {})) {
+    throw new GeneralReportError("report_not_found", 404);
+  }
+  return readProtectedReportEvidence(db, {
+    collection: "reports", reportId, actorUid: actor.uid,
+  });
 }
 
 async function getGeneralReport(db, body = {}) {
@@ -787,6 +804,7 @@ async function requireAdmin(db, decoded, write = false) {
   if (!allowed) throw new GeneralReportError("forbidden", 403);
   return {
     uid, canReview: owner || caps.includes("reviewReports"),
+    canViewSensitiveEvidence: owner || caps.includes("viewReportEvidence"),
     canWarn: owner || (data.adminEnabled === true &&
       (caps.includes("suspendUsers") || caps.includes("manageUsers"))),
     canSuspend: owner || (data.adminEnabled === true &&
@@ -817,7 +835,19 @@ export async function generalReports(request, env) {
     const actor = await requireAdmin(db, decoded,
       action === "reviewReport" || action === "applyAccountAction" ||
       action === "setReportPriority");
-    const result = action === "listReports"
+    if (action === "openSensitiveEvidence") {
+      if (!actor.canViewSensitiveEvidence) {
+        throw new GeneralReportError("forbidden_evidence", 403);
+      }
+      const authAge = Math.floor(Date.now() / 1000) -
+        Number(decoded.auth_time || 0);
+      if (!Number.isFinite(authAge) || authAge < 0 || authAge > 1800) {
+        throw new GeneralReportError("recent_auth_required", 401);
+      }
+    }
+    const result = action === "openSensitiveEvidence"
+      ? await openGeneralSensitiveEvidence(db, actor, body)
+      : action === "listReports"
       ? await listGeneralReports(db, body)
       : action === "listHistory"
         ? await listReportHistory(db, body)
@@ -837,6 +867,7 @@ export async function generalReports(request, env) {
     if (!result) throw new GeneralReportError("unsupported_action", 400);
     return json(request, env, {
       ...result, canReview: actor.canReview,
+      canViewSensitiveEvidence: actor.canViewSensitiveEvidence,
       canWarn: actor.canWarn,
       canSuspend: actor.canSuspend, canBan: actor.canBan,
       canRestrictPrivateMessages: actor.canRestrictPrivateMessages,
@@ -861,6 +892,7 @@ export const generalReportsTestHooks = Object.freeze({
   listGeneralReports,
   listReportHistory,
   getGeneralReport,
+  openGeneralSensitiveEvidence,
   getReporterContext,
   getAccountActionHistory,
   requireAdmin,
