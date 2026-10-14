@@ -23,6 +23,7 @@ import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
 import { publicMediaRedirect } from "./public-media.js";
 import { runDueStorageCleanup, userStorage } from "./user-storage.js";
+import { runDueReportEvidenceCleanup } from "./report-evidence-retention.js";
 import { roomGift } from "./room-gift.js";
 import { voiceSession } from "./voice-session.js";
 import { roomRealtime } from "./room-realtime.js";
@@ -301,6 +302,24 @@ export default {
         "Cloudflare R2 delayed cleanup failed",
         String(error?.message || error),
       );
+    }
+
+    // U6: reuse existing 5-minute cron only at the hourly boundary.
+    // Each run makes two bounded index queries (max 20 each), never a scan.
+    const schedule = new Date(Number(event?.scheduledTime || Date.now()));
+    if (schedule.getUTCMinutes() === 0) {
+      try {
+        const reports = await runDueReportEvidenceCleanup(env, {
+          nowMs: Date.now(), limit: 20,
+        });
+        if (reports.checked || reports.failed) {
+          console.log("Evidence retention hourly cleanup",
+            JSON.stringify(reports));
+        }
+      } catch (error) {
+        console.error("Evidence retention cleanup failed",
+          String(error?.message || "failed").slice(0, 100));
+      }
     }
 
     const db = getFirestore();
