@@ -118,10 +118,33 @@ export async function recordRoomFilterRepeat(db, occurrence) {
     await db.commit(tx, [...result.writes, db.writeCreate(receiptPath, {
       actorUid: uid, referenceId: ref, surface: "room_chat",
       groupId: result.groupId, createdAt: occurrence.now || new Date(),
+      expiresAt: new Date((occurrence.now || new Date()).getTime() + 90 * WINDOW_MS),
     })]);
     return result;
   } catch (error) {
     await db.rollback(tx).catch(() => {});
     throw error;
   }
+}
+
+// A room observation already has a bounded DO evidence slot. Extra immutable
+// replay receipts are strictly server-only and expire after 90 days.
+// One indexed query, at most 20 deletes per hourly retention run.
+export async function cleanupExpiredRepeatReceipts(db, nowMs = Date.now(),
+  limit = 20) {
+  const bounded = Math.max(1, Math.min(20, Math.trunc(limit || 20)));
+  const rows = await db.runQuery("moderation_flag_group_receipts", {
+    filters:[{ field:"expiresAt", op:"<=", value:new Date(nowMs) }],
+    orderBy:[{ field:"expiresAt", direction:"asc" }],
+    limit: bounded,
+  });
+  let deleted = 0;
+  for(const row of rows) {
+    if(!/^[A-Za-z0-9_-]{1,380}$/.test(String(row.id||""))) continue;
+    await db.commit(null,[
+      db.writeDelete("moderation_flag_group_receipts/"+row.id),
+    ]);
+    deleted++;
+  }
+  return {checked:rows.length,deleted};
 }
