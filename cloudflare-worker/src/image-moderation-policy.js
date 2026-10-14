@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 // Image safety providers are replaceable, but none is implicitly activated.
 // Enabling publishing gates belongs to U6-L2; NEVER mistake a configured
 // provider for a live moderation enforcement path.
