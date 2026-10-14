@@ -133,7 +133,8 @@ test("U6-K every persisted surface uses the same transaction and admin route",()
   const panel=fs.readFileSync("lib/admin/system_reports_control_page.dart","utf8");
   assert.match(chat,/filterCaseWrites\(db,transaction/);
   assert.equal((diary.match(/filterCaseWrites\(db,transaction/g)||[]).length,2);
-  assert.match(room,/commitRoomFilterCase\(firestoreClient\(this.env\)/);
+  assert.match(room,/persistRoomFilterCaseEvent\(this.env/);
+  assert.doesNotMatch(room,/firestore/i);
   assert.match(room,/casePending\.slice\(0,5\)/);
   assert.match(admin,/action === "getSystemFilterCase"/);
   assert.match(inbox,/case "system_filter_case"/);
