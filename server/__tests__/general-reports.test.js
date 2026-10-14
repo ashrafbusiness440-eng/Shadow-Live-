@@ -5,6 +5,7 @@ import { generalReportsTestHooks, generalReportType } from "../../cloudflare-wor
 import { adminInboxTestHooks } from "../../cloudflare-worker/src/admin-inbox.js";
 import { mutateAccount } from "../../cloudflare-worker/src/manage-user-account.js";
 import { reportPriority } from "../../cloudflare-worker/src/report-priority-policy.js";
+import { contentFilterControlInternals } from "../../cloudflare-worker/src/content-filter-control.js";
 import { manageUserAccessInternals } from "../../cloudflare-worker/src/manage-user-access.js";
 
 class Db {
