@@ -13,6 +13,7 @@ import {
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
+import { reportPriority, reportPriorityRank, validReportPriority } from "./report-priority-policy.js";
 
 const clean = (value) => String(value ?? "").trim();
 const ACTIVE_STATUSES = new Set(["open", "new", "under_review"]);
@@ -79,6 +80,11 @@ function normalizeGeneralReport(reportId, data = {}) {
     reason: clean(data.reason),
     details: clean(data.details),
     status: clean(data.status) || "new",
+    priority: reportPriority(type, data.reason, data.priorityOverride),
+    priorityOverride: validReportPriority(data.priorityOverride)
+      ? clean(data.priorityOverride) : "",
+    priorityReason: clean(data.priorityReason),
+    priorityChangedBy: clean(data.priorityChangedBy),
     evidence: (type === "room_message_report" || type === "room_report") &&
         data.evidence && typeof data.evidence === "object"
       ? data.evidence
@@ -143,7 +149,9 @@ async function listGeneralReports(db, body = {}) {
       seen.add(item.reportId);
       return true;
     })
-    .sort((a, b) => b.createdAtMs - a.createdAtMs ||
+    .sort((a, b) =>
+      reportPriorityRank(a.priority) - reportPriorityRank(b.priority) ||
+      b.createdAtMs - a.createdAtMs ||
       b.reportId.localeCompare(a.reportId));
   const selected = normalized.slice(0, limit);
   return {
@@ -317,7 +325,7 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
           targetId: reportId,
           route: "general_reports",
           createdAt: new Date(item.createdAtMs || now.getTime()),
-          priority: "high",
+          priority: item.priority,
           meta: {
             reporterUid: item.reporterUid,
             targetUid: item.targetUid,
@@ -364,6 +372,95 @@ async function reviewGeneralReport(db, actorUid, body = {}, verified = {}) {
     return { ok: true, code: "ok", ...result };
   } catch (error) {
     await db.rollback(trx);
+    throw error;
+  }
+}
+
+// Admin override is an independent, idempotent operation. It cannot mark a
+// report as resolved or punish anyone; only the inbox priority is updated.
+async function setReportPriority(db, actorUid, body = {}) {
+  const reportId = safeId(body.reportId);
+  const priority = clean(body.priority);
+  const reason = clean(body.reason);
+  const key = clean(body.idempotencyKey);
+  if (!validReportPriority(priority)) {
+    throw new GeneralReportError("invalid_report_priority", 400);
+  }
+  if (reason.length < 3 || reason.length > 200) {
+    throw new GeneralReportError("invalid_reason", 400);
+  }
+  if (!/^[A-Za-z0-9_-]{12,180}$/.test(key)) {
+    throw new GeneralReportError("invalid_idempotency_key", 400);
+  }
+  const tx = await db.beginTransaction();
+  try {
+    const opPath = "control_operations/" + key;
+    const reportPath = "reports/" + reportId;
+    const [operation, snapshot] = await Promise.all([
+      db.get(opPath, tx), db.get(reportPath, tx),
+    ]);
+    if (operation.exists) {
+      const old = operation.data || {};
+      if (clean(old.action) !== "setReportPriority" ||
+          clean(old.actorUid) !== actorUid ||
+          clean(old.targetId) !== reportId ||
+          clean(old.result?.priority) !== priority ||
+          clean(old.reason) !== reason) {
+        throw new GeneralReportError("idempotency_key_conflict", 409);
+      }
+      await db.rollback(tx);
+      return { ok: true, code: "duplicate", ...(old.result || {}) };
+    }
+    const item = snapshot.exists
+      ? normalizeGeneralReport(reportId, snapshot.data || {}) : null;
+    if (!item) throw new GeneralReportError("report_not_found", 404);
+    if (!ACTIVE_STATUSES.has(item.status)) {
+      throw new GeneralReportError("invalid_report_transition", 409);
+    }
+    const now = new Date();
+    const result = { reportId, priority };
+    const patch = {
+      priorityOverride: priority,
+      priorityReason: reason,
+      priorityChangedBy: actorUid,
+      priorityChangedAt: now,
+      updatedAt: now,
+    };
+    await db.commit(tx, [
+      db.writeUpdate(reportPath, patch, Object.keys(patch)),
+      adminInboxUpsertWrite(db, {
+        type: item.type,
+        title: item.type === "user_report"
+          ? "بلاغ عن مستخدم في محادثة خاصة"
+          : item.type === "account_report" ? "بلاغ مباشر عن حساب"
+            : item.type === "room_report" ? "بلاغ عن غرفة"
+              : "بلاغ عن رسالة داخل غرفة",
+        body: item.status === "under_review"
+          ? "بلاغ قيد مراجعة الإدارة" : "بلاغ يحتاج مراجعة",
+        targetId: reportId, route: "general_reports",
+        createdAt: new Date(item.createdAtMs || now.getTime()),
+        priority,
+        meta: {
+          reporterUid: item.reporterUid,
+          targetUid: item.targetUid,
+          roomId: item.roomId || null,
+          conversationId: item.conversationId || null,
+          status: item.status,
+        },
+      }),
+      db.writeCreate("admin_audit_logs/general_report_priority_" + key, {
+        action: "setReportPriority", actorUid, reportId,
+        reason, before: { priority: item.priority },
+        after: { priority }, createdAt: now,
+      }),
+      db.writeCreate(opPath, {
+        action: "setReportPriority", actorUid, targetId: reportId,
+        reason, status: "completed", result, createdAt: now,
+      }),
+    ]);
+    return { ok: true, code: "ok", ...result };
+  } catch (error) {
+    await db.rollback(tx);
     throw error;
   }
 }
@@ -492,7 +589,8 @@ export async function generalReports(request, env) {
     const action = clean(body.action);
     const db = firestoreClient(env);
     const actor = await requireAdmin(db, decoded,
-      action === "reviewReport" || action === "applyAccountAction");
+      action === "reviewReport" || action === "applyAccountAction" ||
+      action === "setReportPriority");
     const result = action === "listReports"
       ? await listGeneralReports(db, body)
       : action === "listHistory"
@@ -503,7 +601,9 @@ export async function generalReports(request, env) {
           ? await reviewGeneralReport(db, actor.uid, body)
           : action === "applyAccountAction"
             ? await resolveWithAccountAction(db, env, decoded, actor.uid, body)
-            : null;
+            : action === "setReportPriority"
+              ? await setReportPriority(db, actor.uid, body)
+              : null;
     if (!result) throw new GeneralReportError("unsupported_action", 400);
     return json(request, env, {
       ...result, canReview: actor.canReview,
@@ -532,5 +632,6 @@ export const generalReportsTestHooks = Object.freeze({
   listReportHistory,
   getGeneralReport,
   reviewGeneralReport,
+  setReportPriority,
   resolveWithAccountAction,
 });

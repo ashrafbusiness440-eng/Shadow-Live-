@@ -4,6 +4,7 @@ import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import { reportPriority } from "./report-priority-policy.js";
 import { checkReportDuplicateWindow, reportDuplicateSignature } from "./report-duplicate-window.js";
 import {
   agencyPolicySnapshotFor,
@@ -1958,7 +1959,7 @@ async function reportUser(db, uid, body) {
         targetId: resultData.reportId,
         route: "general_reports",
         createdAt: now,
-        priority: "high",
+        priority: reportPriority("user_report", reason),
         meta: {
           reporterUid: uid,
           targetUid: targetUserId,
@@ -2106,7 +2107,7 @@ async function reportRoom(db, uid, body, realtimeNamespace) {
         targetId: reportId,
         route: "general_reports",
         createdAt: now,
-        priority: "high",
+        priority: reportPriority("room_report", reason),
         meta: {
           reporterUid: uid,
           targetUid: ownerUid || null,

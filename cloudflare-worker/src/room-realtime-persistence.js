@@ -1,5 +1,6 @@
 import { firestoreClient } from "./firestore.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
+import { reportPriority } from "./report-priority-policy.js";
 import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
 import { roomSessionLeave } from "./voice-session-legacy.js";
 
@@ -205,7 +206,7 @@ export async function persistRoomChatReport(
       targetId: reportId,
       route: "general_reports",
       createdAt: now,
-      priority: "high",
+      priority: reportPriority("room_message_report", reason),
       meta: {
         reporterUid,
         targetUid,

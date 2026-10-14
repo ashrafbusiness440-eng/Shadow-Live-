@@ -21,6 +21,7 @@ String generalReportErrorMessage(Object error) {
         'تعذّر تأكيد العملية بسبب تكرار مختلف. حدّث البلاغ وحاول مجددًا.',
     'invalid_report_type' => 'اختر نوع بلاغ صحيح.',
     'invalid_report_scope' => 'تعذّر فتح هذا القسم من البلاغات. حدّث الصفحة.',
+    'invalid_report_priority' => 'اختر أولوية صحيحة للبلاغ.',
     'invalid_cursor' => 'تعذّر عرض هذه الصفحة. ارجع للصفحة الأولى.',
     'invalid_account_action' => 'تحقق من الإجراء وسبب القرار.',
     'warning_target_unavailable' => 'لا يمكن توجيه تحذير لهذا الحساب حاليًا.',
@@ -44,6 +45,11 @@ class GeneralReportItem {
   String get id => field('reportId');
   String get type => field('type');
   String get status => field('status');
+  String get priorityLabel => switch (field('priority')) {
+    'urgent' => 'عاجل',
+    'high' => 'مهم',
+    _ => 'عادي',
+  };
   String get reporterUid => field('reporterUid');
   String get targetUid => field('targetUid');
   String get actionLabel => switch (field('moderationAction')) {
@@ -173,6 +179,18 @@ class GeneralReportsService {
           action == 'restrictRoomEntry' || action == 'restrictRoomMic')
         'durationMinutes': durationMinutes,
       'idempotencyKey': 'gr_action_${DateTime.now().microsecondsSinceEpoch}',
+    });
+  }
+
+  static Future<void> setPriority(
+    String reportId, String priority, String reason,
+  ) async {
+    await _post('setReportPriority', <String, dynamic>{
+      'reportId': reportId,
+      'priority': priority,
+      'reason': reason,
+      'idempotencyKey':
+          'gr_priority_${DateTime.now().microsecondsSinceEpoch}',
     });
   }
 
@@ -315,6 +333,89 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         const SnackBar(content: Text(
           'تم تحديث البلاغ وتسجيل إشعار لصاحب البلاغ.',
         )),
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(generalReportErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.id));
+    }
+  }
+
+  Future<void> _changePriority(GeneralReportItem item) async {
+    if (!_canReview || _busy.contains(item.id)) return;
+    final reason = TextEditingController();
+    var priority = item.field('priority');
+    if (!const ['urgent', 'high', 'normal'].contains(priority)) {
+      priority = 'normal';
+    }
+    final selected = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('تعديل أولوية البلاغ'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('يغيّر ترتيب المراجعة فقط، ولا يفرض عقوبة على المستخدم.'),
+                DropdownButtonFormField<String>(
+                  initialValue: priority,
+                  decoration: const InputDecoration(labelText: 'الأولوية'),
+                  items: const [
+                    DropdownMenuItem(value: 'urgent', child: Text('عاجل')),
+                    DropdownMenuItem(value: 'high', child: Text('مهم')),
+                    DropdownMenuItem(value: 'normal', child: Text('عادي')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) update(() => priority = value);
+                  },
+                ),
+                TextField(
+                  controller: reason,
+                  maxLength: 200,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'سبب تغيير الأولوية — مطلوب',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (reason.text.trim().length >= 3) {
+                  Navigator.pop(dialogContext, <String, String>{
+                    'priority': priority, 'reason': reason.text.trim(),
+                  });
+                }
+              },
+              child: const Text('حفظ الأولوية'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reason.dispose();
+    if (!mounted || selected == null) return;
+    setState(() => _busy.add(item.id));
+    try {
+      await GeneralReportsService.setPriority(
+        item.id, selected['priority']!, selected['reason']!,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تحديث أولوية المراجعة وتوثيق السبب.')),
       );
       await _load();
     } catch (error) {
@@ -604,6 +705,11 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             Text('السبب: ' + item.reasonLabel),
+            Text('الأولوية: ' + item.priorityLabel +
+                (item.field('priorityOverride').isNotEmpty
+                    ? ' — تعديل إداري' : ' — ترتيب تلقائي')),
+            if (item.field('priorityReason').isNotEmpty)
+              Text('سبب تعديل الأولوية: ' + item.field('priorityReason')),
             if (details.isNotEmpty) Text('التفاصيل: ' + details),
             const SizedBox(height: 10),
             _identity('مقدّم البلاغ', item.reporterUid,
@@ -705,6 +811,16 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                 ),
               ],
             ),
+            if (_canReview && (isNew || inReview))
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _busy.contains(item.id)
+                      ? null : () => _changePriority(item),
+                  icon: const Icon(Icons.low_priority_rounded),
+                  label: const Text('تعديل الأولوية'),
+                ),
+              ),
             if (_canReview && (isNew || inReview || item.status == 'actioned'))
               Wrap(
                 spacing: 8,
