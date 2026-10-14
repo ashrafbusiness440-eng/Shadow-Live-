@@ -129,7 +129,7 @@ class RoomChatService {
 
   final VoiceRoomSessionController _session;
 
-  Future<void> reportMessage({
+  Future<String> reportMessage({
     required String roomId,
     required String messageId,
     required String reason,
