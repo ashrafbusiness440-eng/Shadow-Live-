@@ -100,7 +100,7 @@ void main() {
     expect(screen.contains("'getAccountActionHistory'"), isTrue);
     expect(screen.contains('سجل مخالفات وإجراءات الحساب'), isTrue);
     expect(screen.contains('البلاغ بحد ذاته ليس'), isTrue);
-    expect(screen.contains('صفحة ${index + 1}'), isTrue);
+    expect(screen.contains(r'صفحة ${index + 1}'), isTrue);
     expect(screen.contains('سياق البلاغات السابقة'), isTrue);
     expect(screen.contains('رفض بلاغ سابق لا يعني أنه بلاغ كيدي'), isTrue);
     expect(screen.contains('تعديل الأولوية'), isTrue);
