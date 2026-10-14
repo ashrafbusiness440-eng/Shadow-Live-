@@ -20,12 +20,50 @@ class ApiError extends Error {
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
+const liftRestrictionFields = Object.freeze({
+  liftPrivateMessagesRestriction: {
+    until: "privateMessagesRestrictedUntil",
+    minutes: "privateMessageRestrictionMinutes",
+    liftedAt: "privateMessagesRestrictionLiftedAt",
+    liftedBy: "privateMessagesRestrictionLiftedBy",
+    label: "الرسائل الخاصة",
+  },
+  liftRoomChatRestriction: {
+    until: "roomChatRestrictedUntil",
+    minutes: "roomChatRestrictionMinutes",
+    liftedAt: "roomChatRestrictionLiftedAt",
+    liftedBy: "roomChatRestrictionLiftedBy",
+    label: "الكتابة في الغرف",
+  },
+  liftRoomEntryRestriction: {
+    until: "roomEntryRestrictedUntil",
+    minutes: "roomEntryRestrictionMinutes",
+    liftedAt: "roomEntryRestrictionLiftedAt",
+    liftedBy: "roomEntryRestrictionLiftedBy",
+    label: "دخول الغرف",
+  },
+});
+function restrictionTimestamp(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  const seconds = Number(value?.seconds ?? value?._seconds);
+  if (value && typeof value === "object" && Number.isFinite(seconds)) {
+    return seconds * 1000;
+  }
+  if (typeof value === "number") return value;
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
 const allowedActions = new Set([
   "suspend",
   "warn",
   "restrictPrivateMessages",
   "restrictRoomChat",
   "restrictRoomEntry",
+  "liftPrivateMessagesRestriction",
+  "liftRoomChatRestriction",
+  "liftRoomEntryRestriction",
   "ban",
   "unban",
   "disable",
@@ -127,6 +165,16 @@ function statusPatch(action, body, actorUid, now) {
       roomEntryRestrictionMinutes: minutes,
       roomEntryRestrictedBy: actorUid,
       roomEntryRestrictionReason: clean(body.reason),
+    };
+  }
+  if (liftRestrictionFields[action]) {
+    const fields = liftRestrictionFields[action];
+    return {
+      ...base,
+      [fields.until]: null,
+      [fields.minutes]: null,
+      [fields.liftedAt]: now,
+      [fields.liftedBy]: actorUid,
     };
   }
   if (action === "suspend") {
@@ -276,7 +324,8 @@ async function mutateAccount(db, env, actorPayload, body) {
       : action === "suspend" || action === "warn" ||
           action === "restrictPrivateMessages" ||
           action === "restrictRoomChat" ||
-          action === "restrictRoomEntry"
+          action === "restrictRoomEntry" ||
+          Boolean(liftRestrictionFields[action])
         ? canSuspend
         : action === "enable"
           ? canManageUsers || hasCapability("suspendUsers")
@@ -362,6 +411,17 @@ async function mutateAccount(db, env, actorPayload, body) {
     }
 
     const now = new Date();
+    const liftConfig = liftRestrictionFields[action];
+    if (liftConfig) {
+      if ((freshTarget.adminEnabled === true && !actorIsOwner) ||
+          clean(freshTarget.accountStatus || "active") !== "active" ||
+          freshTarget.authDeleted === true) {
+        throw new ApiError("restriction_target_unavailable", 409);
+      }
+      if (restrictionTimestamp(freshTarget[liftConfig.until]) <= now.getTime()) {
+        throw new ApiError("restriction_not_active", 409);
+      }
+    }
     const patch = statusPatch(action, body, actorUid, now);
     if (action === "restrictPrivateMessages") {
       // New action must not silently shorten an existing restriction.
@@ -408,6 +468,7 @@ async function mutateAccount(db, env, actorPayload, body) {
         Math.max(0, Number(freshTarget.warningCount) || 0) + 1);
     }
     const before = {
+      ...(liftConfig ? { restrictionUntil: freshTarget[liftConfig.until] || null } : {}),
       accountStatus: clean(freshTarget.accountStatus || "active") || "active",
       suspendedUntil: freshTarget.suspendedUntil || null,
       role: clean(freshTarget.role || "user") || "user",
@@ -416,6 +477,7 @@ async function mutateAccount(db, env, actorPayload, body) {
     };
     const after = {
       ...before,
+      ...(liftConfig ? { restrictionUntil: null } : {}),
       accountStatus: patch.accountStatus || before.accountStatus,
       suspendedUntil: Object.prototype.hasOwnProperty.call(patch, "suspendedUntil")
         ? patch.suspendedUntil
@@ -445,6 +507,10 @@ async function mutateAccount(db, env, actorPayload, body) {
       } : {}),
       ...(action === "restrictRoomEntry" ? {
         roomEntryRestrictedUntil: patch.roomEntryRestrictedUntil,
+      } : {}),
+      ...(liftRestrictionFields[action] ? {
+        liftedRestriction: liftRestrictionFields[action].until,
+        restrictionLiftedAt: now,
       } : {}),
     };
 
@@ -504,6 +570,19 @@ async function mutateAccount(db, env, actorPayload, body) {
           title: "منع دخول الغرف مؤقتًا",
           body: "تم منعك مؤقتًا من دخول الغرف. السبب: " + reason +
             ". موعد انتهاء المنع: " + patch.roomEntryRestrictedUntil.toISOString(),
+          read: false,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ] : []),
+      ...(liftRestrictionFields[action] ? [
+        db.writeCreate(`notifications/account_restriction_lifted_${key}`, {
+          userId: targetUid,
+          type: "account_restriction_lifted",
+          category: "social",
+          title: "رفع تقييد إداري",
+          body: "تم رفع التقييد عن " + liftRestrictionFields[action].label +
+            ". السبب: " + reason,
           read: false,
           createdAt: now,
           updatedAt: now,
