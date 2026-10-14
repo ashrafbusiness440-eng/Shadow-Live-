@@ -388,7 +388,7 @@ export class RoomRealtimeObject extends DurableObject {
         return seq;
       });
       // Exactly one server-side group attempt per flagged message, plus a
-      // bounded persisted retry queue for a temporary Firestore outage.
+      // bounded persisted retry queue for a temporary remote database outage.
       let grouped = false;
       try {
         const result = await persistRoomFilterAggregate(this.env, {
@@ -493,7 +493,7 @@ export class RoomRealtimeObject extends DurableObject {
         return { checked: ROOM_FILTER_FLAG_PURGE_BATCH, purged };
       });
       // Retry up to 8 ungrouped room flags per existing hourly cron.
-      // Cross-DO/Firestore writes cannot share one transaction; durable
+      // Cross-DO/remote database writes cannot share one transaction; durable
       // receipts prevent duplicate moderation alerts after a retry.
       let retried = 0;
       const pending = await this.ctx.storage.get("filter_pending_aggregate");
