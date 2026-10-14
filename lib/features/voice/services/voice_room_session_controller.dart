@@ -839,6 +839,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     try {
       // The actual ZEGO mute is applied before the authoritative room write.
       await setMicMuted(true);
+      if (!_active || roomId != targetRoomId || !micRestricted) return;
       await _seatService.setSeatMuted(roomId: targetRoomId, muted: true);
     } catch (_) {
       // The mic stays locally muted even when the room request is unavailable.
