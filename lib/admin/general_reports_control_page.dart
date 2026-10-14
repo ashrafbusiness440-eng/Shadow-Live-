@@ -53,6 +53,7 @@ class GeneralReportItem {
     'private_messages_restricted' => 'القرار: تقييد الرسائل الخاصة',
     'room_chat_restricted' => 'القرار: تقييد الكتابة في الغرف',
     'room_entry_restricted' => 'القرار: منع دخول الغرف مؤقتًا',
+    'room_mic_restricted' => 'القرار: كتم المايكروفون مؤقتًا',
     _ => '',
   };
   Map<String, dynamic> mapField(String key) {
@@ -169,7 +170,7 @@ class GeneralReportsService {
       'reason': reason,
       if (action == 'suspend' || action == 'restrictPrivateMessages' ||
           action == 'restrictRoomChat' ||
-          action == 'restrictRoomEntry')
+          action == 'restrictRoomEntry' || action == 'restrictRoomMic')
         'durationMinutes': durationMinutes,
       'idempotencyKey': 'gr_action_${DateTime.now().microsecondsSinceEpoch}',
     });
@@ -208,6 +209,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _canRestrictPrivateMessages = false;
   bool _canRestrictRoomChat = false;
   bool _canRestrictRoomEntry = false;
+  bool _canRestrictRoomMic = false;
   bool _capped = false;
   String? _error;
   List<GeneralReportItem> _items = [];
@@ -244,6 +246,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         _canRestrictPrivateMessages = result['canRestrictPrivateMessages'] == true;
         _canRestrictRoomChat = result['canRestrictRoomChat'] == true;
         _canRestrictRoomEntry = result['canRestrictRoomEntry'] == true;
+        _canRestrictRoomMic = result['canRestrictRoomMic'] == true;
         _capped = result['capped'] == true;
       });
     } catch (error) {
@@ -335,7 +338,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         action == 'ban' && !_canBan ||
         action == 'restrictPrivateMessages' && !_canRestrictPrivateMessages ||
         action == 'restrictRoomChat' && !_canRestrictRoomChat ||
-        action == 'restrictRoomEntry' && !_canRestrictRoomEntry) {
+        action == 'restrictRoomEntry' && !_canRestrictRoomEntry ||
+        action == 'restrictRoomMic' && !_canRestrictRoomMic) {
       return;
     }
     final reason = TextEditingController();
@@ -353,7 +357,9 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                     ? 'تقييد الكتابة في الغرف مؤقتًا'
                     : action == 'restrictRoomEntry'
                       ? 'منع دخول الغرف مؤقتًا'
-                      : 'حظر الحساب المبلّغ عليه'),
+                      : action == 'restrictRoomMic'
+                        ? 'كتم المايكروفون في الغرف مؤقتًا'
+                        : 'حظر الحساب المبلّغ عليه'),
           content: SizedBox(
             width: 400,
             child: Column(
@@ -366,7 +372,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                       'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.'),
                 if (action == 'suspend' || action == 'restrictPrivateMessages' ||
                     action == 'restrictRoomChat' ||
-                    action == 'restrictRoomEntry')
+                    action == 'restrictRoomEntry' || action == 'restrictRoomMic')
                   DropdownButtonFormField<int>(
                     initialValue: minutes,
                     isExpanded: true,
@@ -377,7 +383,9 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                             ? 'مدة تقييد الكتابة في الغرف'
                             : action == 'restrictRoomEntry'
                               ? 'مدة منع دخول الغرف'
-                              : 'مدة التعليق',
+                              : action == 'restrictRoomMic'
+                                ? 'مدة كتم المايكروفون'
+                                : 'مدة التعليق',
                     ),
                     items: const [
                       DropdownMenuItem(value: 60, child: Text('ساعة')),
@@ -475,6 +483,10 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                     DropdownMenuItem(
                       value: 'liftRoomEntryRestriction',
                       child: Text('دخول الغرف'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'liftRoomMicRestriction',
+                      child: Text('المايكروفون في الغرف'),
                     ),
                   ],
                   onChanged: (value) {
@@ -703,6 +715,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _takeAccountAction(item, 'restrictRoomEntry'),
                       icon: const Icon(Icons.no_meeting_room_outlined),
                       label: const Text('منع دخول الغرف مؤقتًا'),
+                    ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canRestrictRoomMic)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'restrictRoomMic'),
+                      icon: const Icon(Icons.mic_off_outlined),
+                      label: const Text('كتم المايكروفون'),
                     ),
                   if (inReview && item.targetUid.isNotEmpty &&
                       _canSuspend)
