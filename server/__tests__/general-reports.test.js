@@ -524,3 +524,87 @@ test("account moderation preserves long legacy diary-comment report IDs", async 
   assert.equal(receipt.result.linkedReportId, reportId);
   assert.equal(db.docs.get("users/target").warningCount, 1);
 });
+
+
+test("U5 account DM restriction is executed before the reporter sees its outcome", async () => {
+  const db = new Db({
+    ...cases(),
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+  });
+  await generalReportsTestHooks.reviewGeneralReport(db, "admin", {
+    reportId:"legacy_chat", status:"under_review", reason:"مراجعة البلاغ",
+    idempotencyKey:"u5_review_123456789",
+  });
+  const key = "u5_restrict_123456789";
+  const action = {
+    reportId:"legacy_chat", accountAction:"restrictPrivateMessages",
+    durationMinutes: 60, reason:"مضايقات برسائل خاصة", idempotencyKey:key,
+  };
+  const result = await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", action);
+  assert.equal(result.status,"actioned");
+  assert.equal(result.moderationAction,"private_messages_restricted");
+  const target = db.docs.get("users/target");
+  assert.ok(new Date(target.privateMessagesRestrictedUntil).getTime() > Date.now());
+  assert.equal(target.accountStatus, "active");
+  const receipt = db.docs.get("control_operations/" + key + "_account");
+  assert.equal(receipt.result.action, "restrictPrivateMessages");
+  assert.equal(receipt.result.linkedReportId, "legacy_chat");
+  assert.equal(db.docs.get("notifications/report_result_" + key + "_resolution")
+    .actionKind, "private_messages_restricted");
+  assert.equal(db.docs.get("notifications/account_private_messages_" + key + "_account")
+    .userId, "target");
+  const repeated = await generalReportsTestHooks.resolveWithAccountAction(
+    db, {}, {sub:"admin"}, "admin", action);
+  assert.equal(repeated.code,"duplicate");
+  assert.equal([...db.docs.keys()].filter(k =>
+    k.startsWith("notifications/account_private_messages_" + key)).length,1);
+  await assert.rejects(() => generalReportsTestHooks.reviewGeneralReport(
+    new Db(cases()),"admin",{
+      reportId:"room_1",status:"actioned",reason:"ادعاء إجراء",
+      idempotencyKey:"u5_fake_receipt_12345",
+    },{actionKind:"private_messages_restricted",operationKey:"u5_missing_12345678"}),
+    /unverified_account_action/);
+});
+
+test("U5 restricted messages reject invalid durations and protected targets", async () => {
+  const seed = {
+    "users/admin": {role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/target": {role:"user",accountStatus:"active"},
+  };
+  for(const durationMinutes of [0, 9, 43201, "infinity"]) {
+    await assert.rejects(() => mutateAccount(new Db(seed), {}, {sub:"admin"}, {
+      targetUid:"target",accountAction:"restrictPrivateMessages",
+      durationMinutes,reason:"تقييد بسبب إساءة",
+      idempotencyKey:"u5_invalid_duration_123456",
+    }), /invalid_restriction_duration/);
+  }
+  const blockedOwner = new Db({...seed,"users/target":{role:"owner",accountStatus:"active"}});
+  await assert.rejects(() => mutateAccount(blockedOwner, {}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"restrictPrivateMessages",
+    durationMinutes:60,reason:"تقييد بسبب إساءة",
+    idempotencyKey:"u5_protected_owner_123456",
+  }), /owner_protected/);
+  const denied = new Db({...seed,
+    "users/admin":{role:"moderator",adminEnabled:true,capabilities:["reviewReports"]}});
+  await assert.rejects(() => mutateAccount(denied, {}, {sub:"admin"}, {
+    targetUid:"target",accountAction:"restrictPrivateMessages",
+    durationMinutes:60,reason:"تقييد بسبب إساءة",
+    idempotencyKey:"u5_no_permission_123456",
+  }), /forbidden/);
+});
+
+test("U5 Firestore image write and DM previews enforce active server restriction", () => {
+  const rules = fs.readFileSync("firestore.rules", "utf8");
+  const worker = fs.readFileSync("cloudflare-worker/src/chat-safety-actions.js", "utf8");
+  const ui = fs.readFileSync("lib/admin/general_reports_control_page.dart", "utf8");
+  const client = fs.readFileSync("lib/features/chat/screens/private_chat_screen.dart", "utf8");
+  assert.match(rules, /function privateMessagesAllowed\(\)/);
+  assert.match(rules, /request\.time >= userDoc\(\)\.data\.privateMessagesRestrictedUntil/);
+  assert.match(rules, /allow create: if conversationParticipant\(conversationId\)\s*&& privateMessagesAllowed\(\)/);
+  assert.match(rules, /&& \(privateMessagesAllowed\(\)\s*\|\| request\.resource\.data\.diff/);
+  assert.match(worker, /throw new ApiError\("private_messages_restricted", 403\)/);
+  assert.match(ui, /'restrictPrivateMessages'/);
+  assert.match(client, /case 'private_messages_restricted':/);
+});
