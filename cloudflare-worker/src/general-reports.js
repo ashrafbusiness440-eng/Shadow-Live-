@@ -287,6 +287,19 @@ const ACCOUNT_HISTORY_CASE_ACTIONS = Object.freeze({
   moderatorDeleteDiaryComment: "diary_comment_deleted",
 });
 const ACCOUNT_HISTORY_PAGE_SIZE = 20;
+// Read only the single current user record to prove a sanction remains active.
+// Legacy records without a durable origin marker are not linked by guesswork.
+const ACCOUNT_HISTORY_RESTRICTIONS = Object.freeze({
+  restrictPrivateMessages: ["privateMessagesRestrictionOperationId", "privateMessagesRestrictedUntil"],
+  restrictRoomChat: ["roomChatRestrictionOperationId", "roomChatRestrictedUntil"],
+  restrictRoomEntry: ["roomEntryRestrictionOperationId", "roomEntryRestrictedUntil"],
+  restrictRoomMic: ["roomMicRestrictionOperationId", "roomMicRestrictedUntil"],
+});
+const ACCOUNT_HISTORY_LIFTS = new Set([
+  "unban", "enable", "liftPrivateMessagesRestriction",
+  "liftRoomChatRestriction", "liftRoomEntryRestriction",
+  "liftRoomMicRestriction",
+]);
 async function accountHistoryReadMany(db, paths) {
   if (!paths.length) return [];
   if (typeof db.getMany === "function") return db.getMany(paths);
@@ -338,6 +351,8 @@ async function getAccountActionHistory(db, body = {}) {
   const reports = await accountHistoryReadMany(db, linked.map(
     (row) => "reports/" + clean(row.data.result.linkedReportId)));
   const reportByKey = new Map(linked.map((row, i) => [row.id, reports[i]]));
+  const targetSnap = await db.get("users/" + targetUid);
+  const target = targetSnap.exists ? targetSnap.data || {} : {};
   const nowMs = Date.now();
   const items = valid.map((row, i) => {
     const operation = row.data || {};
@@ -355,17 +370,50 @@ async function getAccountActionHistory(db, body = {}) {
       // The immutable account receipt establishes who executed the action.
       clean(report.targetUid || report.targetUserId ||
         report.targetAuthorUid || report.targetOwnerUid) === targetUid);
+    const action = clean(operation.action);
+    const restriction = ACCOUNT_HISTORY_RESTRICTIONS[action];
     const expiry = result.privateMessagesRestrictedUntil ||
       result.roomChatRestrictedUntil || result.roomEntryRestrictedUntil ||
       result.roomMicRestrictedUntil || result.suspendedUntil || null;
+    const expiryMs = timestampMs(expiry);
+    const lifecycle = operation.lifecycle || {};
+    const changeType = ["lifted", "replaced"].includes(clean(lifecycle.type)) &&
+      /^[A-Za-z0-9_-]{12,180}$/.test(clean(lifecycle.operationId)) &&
+      timestampMs(lifecycle.at) >= timestampMs(operation.createdAt)
+      ? clean(lifecycle.type) : "";
+    const isCurrentRestriction = Boolean(restriction &&
+      clean(target[restriction[0]]) === row.id &&
+      timestampMs(target[restriction[1]]) === expiryMs && expiryMs > nowMs);
+    const statusForAction = { suspend: "suspended", ban: "banned", disable: "disabled" };
+    const isCurrentAccountSanction = Boolean(statusForAction[action] &&
+      clean(target.accountModerationOperationId) === row.id &&
+      clean(target.accountStatus) === statusForAction[action] &&
+      (action !== "suspend" || (expiryMs > nowMs &&
+        timestampMs(target.suspendedUntil) === expiryMs)));
+    const timed = Boolean(restriction || action === "suspend");
+    const permanent = action === "ban" || action === "disable";
+    const isLift = ACCOUNT_HISTORY_LIFTS.has(action);
+    const lifecycleState = isLift ? "lift_recorded" :
+      changeType || (timed && expiryMs > 0 && expiryMs <= nowMs ? "expired" :
+      isCurrentRestriction || isCurrentAccountSanction
+        ? permanent ? "permanent" : "active"
+        : action === "warn" || action.startsWith("moderatorDelete")
+          ? "completed" : "unknown");
     return {
       operationId: clean(row.id),
       action: clean(operation.action),
       actorUid: clean(operation.actorUid),
       reason: clean(audit.reason),
       createdAtMs: timestampMs(operation.createdAt),
-      expiresAtMs: timestampMs(expiry),
-      expired: timestampMs(expiry) > 0 && timestampMs(expiry) <= nowMs,
+      expiresAtMs: expiryMs,
+      expired: expiryMs > 0 && expiryMs <= nowMs,
+      lifecycleState,
+      permanentSanction: permanent,
+      originalOperationId: isLift ? clean(result.originalOperationId) : "",
+      changedByOperationId: changeType ? clean(lifecycle.operationId) : "",
+      changedByUid: changeType ? clean(lifecycle.actorUid) : "",
+      changedAtMs: changeType ? timestampMs(lifecycle.at) : 0,
+      changeReason: changeType ? clean(lifecycle.reason) : "",
       liftedRestriction: clean(result.liftedRestriction),
       restrictionLiftedAtMs: timestampMs(result.restrictionLiftedAt),
       // The case link is only trustworthy after review has actually finalized.
