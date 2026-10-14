@@ -1240,3 +1240,31 @@ test("U6-E1 history paging caps reads, advances cursor, rejects arbitrary paths"
   await assert.rejects(()=>generalReportsTestHooks.getAccountActionHistory(
     db,{targetUid:"target",cursor:"../users"}),/invalid_cursor/);
 });
+
+
+test("U6-E1 account history is restricted to authorized active moderators", async () => {
+  const db=new Db({
+    "users/owner":{role:"owner",adminEnabled:true,accountStatus:"active"},
+    "users/reviewer":{role:"moderator",adminEnabled:true,
+      accountStatus:"active",capabilities:["reviewReports"]},
+    "users/viewer":{role:"moderator",adminEnabled:true,
+      accountStatus:"active",capabilities:["viewReports"]},
+    "users/no_access":{role:"moderator",adminEnabled:true,
+      accountStatus:"active",capabilities:[]},
+    "users/disabled":{role:"admin",adminEnabled:false,
+      accountStatus:"active",capabilities:["viewReports"]},
+    "users/suspended":{role:"admin",adminEnabled:true,
+      accountStatus:"suspended",capabilities:["viewReports"]},
+    "users/regular":{role:"user",accountStatus:"active"},
+  });
+  for (const sub of ["owner","reviewer","viewer"]) {
+    const actor=await generalReportsTestHooks.requireAdmin(db,{sub});
+    assert.equal(actor.uid,sub);
+  }
+  for (const sub of ["no_access","disabled","regular","suspended"]) {
+    await assert.rejects(
+      ()=>generalReportsTestHooks.requireAdmin(db,{sub}),
+      /forbidden|unauthorized/,
+    );
+  }
+});
