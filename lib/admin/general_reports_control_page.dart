@@ -29,7 +29,7 @@ String generalReportErrorMessage(Object error) {
     'owner_protected' => 'حساب المالك محمي ولا يمكن حظره أو تعليقه.',
     'not_found' => 'الحساب المبلّغ عليه غير موجود.',
     'invalid_suspend_duration' => 'مدة التعليق غير صحيحة.',
-    'invalid_restriction_duration' => 'اختر مدة صحيحة لتقييد الرسائل الخاصة.',
+    'invalid_restriction_duration' => 'اختر مدة صحيحة لتقييد الرسائل مؤقتًا.',
     _ => 'تعذّر تنفيذ الطلب. تحقق من الاتصال وأعد المحاولة.',
   };
 }
@@ -48,6 +48,7 @@ class GeneralReportItem {
     'account_banned' => 'القرار: حظر الحساب',
     'warning' => 'القرار: تحذير الحساب',
     'private_messages_restricted' => 'القرار: تقييد الرسائل الخاصة',
+    'room_chat_restricted' => 'القرار: تقييد الكتابة في الغرف',
     _ => '',
   };
   Map<String, dynamic> mapField(String key) {
@@ -130,7 +131,8 @@ class GeneralReportsService {
       'reportId': reportId,
       'accountAction': action,
       'reason': reason,
-      if (action == 'suspend' || action == 'restrictPrivateMessages')
+      if (action == 'suspend' || action == 'restrictPrivateMessages' ||
+          action == 'restrictRoomChat')
         'durationMinutes': durationMinutes,
       'idempotencyKey': 'gr_action_${DateTime.now().microsecondsSinceEpoch}',
     });
@@ -167,6 +169,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
   bool _canSuspend = false;
   bool _canBan = false;
   bool _canRestrictPrivateMessages = false;
+  bool _canRestrictRoomChat = false;
   bool _capped = false;
   String? _error;
   List<GeneralReportItem> _items = [];
@@ -201,6 +204,7 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
         _canSuspend = result['canSuspend'] == true;
         _canBan = result['canBan'] == true;
         _canRestrictPrivateMessages = result['canRestrictPrivateMessages'] == true;
+        _canRestrictRoomChat = result['canRestrictRoomChat'] == true;
         _capped = result['capped'] == true;
       });
     } catch (error) {
@@ -290,7 +294,8 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
     if (action == 'warn' && !_canWarn ||
         action == 'suspend' && !_canSuspend ||
         action == 'ban' && !_canBan ||
-        action == 'restrictPrivateMessages' && !_canRestrictPrivateMessages) {
+        action == 'restrictPrivateMessages' && !_canRestrictPrivateMessages ||
+        action == 'restrictRoomChat' && !_canRestrictRoomChat) {
       return;
     }
     final reason = TextEditingController();
@@ -304,7 +309,9 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                 ? 'تعليق الحساب المبلّغ عليه'
                 : action == 'restrictPrivateMessages'
                   ? 'تقييد الرسائل الخاصة مؤقتًا'
-                  : 'حظر الحساب المبلّغ عليه'),
+                  : action == 'restrictRoomChat'
+                    ? 'تقييد الكتابة في الغرف مؤقتًا'
+                    : 'حظر الحساب المبلّغ عليه'),
           content: SizedBox(
             width: 400,
             child: Column(
@@ -315,13 +322,17 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                       'وسيصل لصاحب البلاغ إشعار بالقرار فقط بعد تسجيله بنجاح.'
                     : 'سيتم تنفيذ العقوبة فعلًا، ولن يصلك تأكيد حتى ينجح الخادم. '
                       'عندها سيتلقى صاحب البلاغ إشعارًا بنتيجة المراجعة.'),
-                if (action == 'suspend' || action == 'restrictPrivateMessages')
+                if (action == 'suspend' || action == 'restrictPrivateMessages' ||
+                    action == 'restrictRoomChat')
                   DropdownButtonFormField<int>(
                     initialValue: minutes,
                     isExpanded: true,
                     decoration: InputDecoration(
                       labelText: action == 'restrictPrivateMessages'
-                          ? 'مدة تقييد الرسائل الخاصة' : 'مدة التعليق',
+                          ? 'مدة تقييد الرسائل الخاصة'
+                          : action == 'restrictRoomChat'
+                            ? 'مدة تقييد الكتابة في الغرف'
+                            : 'مدة التعليق',
                     ),
                     items: const [
                       DropdownMenuItem(value: 60, child: Text('ساعة')),
@@ -533,6 +544,14 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
                           ? null : () => _takeAccountAction(item, 'restrictPrivateMessages'),
                       icon: const Icon(Icons.mark_chat_unread_outlined),
                       label: const Text('تقييد الرسائل الخاصة'),
+                    ),
+                  if (inReview && item.targetUid.isNotEmpty &&
+                      _canRestrictRoomChat)
+                    OutlinedButton.icon(
+                      onPressed: _busy.contains(item.id)
+                          ? null : () => _takeAccountAction(item, 'restrictRoomChat'),
+                      icon: const Icon(Icons.comments_disabled_outlined),
+                      label: const Text('تقييد الكتابة في الغرف'),
                     ),
                   if (inReview && item.targetUid.isNotEmpty &&
                       _canSuspend)
