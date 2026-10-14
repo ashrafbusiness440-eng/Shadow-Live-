@@ -1,6 +1,7 @@
 import { firestoreClient } from "./firestore.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { reportPriority } from "./report-priority-policy.js";
+import { commitRoomFilterCase } from "./content-filter-case.js";
 import { getFirestoreForEnv } from "./legacy-firebase-admin-shim.js";
 import { roomSessionLeave } from "./voice-session-legacy.js";
 
@@ -160,6 +161,11 @@ export async function applyCustomerServiceMicExpiries(
     invitesChanged,
     seatsChanged,
   };
+}
+
+// Persistent case writes remain outside the lightweight realtime object.
+export async function persistRoomFilterCaseEvent(env, event) {
+  return commitRoomFilterCase(firestoreClient(env), event);
 }
 
 export async function persistRoomChatReport(
