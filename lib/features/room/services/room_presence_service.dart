@@ -96,8 +96,8 @@ class RoomPresenceService {
       StreamController<RoomRealtimeEvent>.broadcast();
   final Map<String, Completer<void>> _pendingChat =
       <String, Completer<void>>{};
-  final Map<String, Completer<void>> _pendingChatReports =
-      <String, Completer<void>>{};
+  final Map<String, Completer<String>> _pendingChatReports =
+      <String, Completer<String>>{};
 
   RoomPresenceSocketConnection? _socket;
   StreamSubscription<Object?>? _socketSubscription;
@@ -185,7 +185,13 @@ class RoomPresenceService {
         _pendingChat.remove(requestId)?.complete();
       } else if (requestId.isNotEmpty &&
           type == 'room.chat_report_ack') {
-        _pendingChatReports.remove(requestId)?.complete();
+        final reportId = (payload['reportId'] ?? '').toString().trim();
+        final pendingReport = _pendingChatReports.remove(requestId);
+        if (reportId.isEmpty) {
+          pendingReport?.completeError(StateError('room_report_missing_id'));
+        } else {
+          pendingReport?.complete(reportId);
+        }
       } else if (requestId.isNotEmpty && type == 'server.error') {
         final code = (payload['code'] ?? 'room_chat_failed').toString();
         final chat = _pendingChat.remove(requestId);
@@ -221,7 +227,7 @@ class RoomPresenceService {
     }
   }
 
-  Future<void> reportChatMessage({
+  Future<String> reportChatMessage({
     required String roomId,
     required String messageId,
     required String reason,
@@ -240,7 +246,7 @@ class RoomPresenceService {
         DateTime.now().microsecondsSinceEpoch.toString() +
         '_' +
         _generation.toString();
-    final completer = Completer<void>();
+    final completer = Completer<String>();
     _pendingChatReports[requestId] = completer;
     try {
       _socket!.send(
@@ -254,7 +260,7 @@ class RoomPresenceService {
           },
         }),
       );
-      await completer.future.timeout(
+      return await completer.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () => throw StateError('room_report_timeout'),
       );
