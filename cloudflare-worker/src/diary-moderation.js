@@ -8,7 +8,7 @@ import { deleteDiary, deleteComment } from "./diaries.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
-import { evidenceDeadline } from "./report-evidence-retention.js";
+import { evidenceDeadline, setReportEvidenceHold } from "./report-evidence-retention.js";
 import {
   adminInboxDeleteWrites,
   adminInboxIndexPath,
@@ -124,6 +124,7 @@ function normalizeReport(id, data = {}) {
     reasonLabel: clean(data.reasonLabel),
     status: clean(data.status || "new") || "new",
     // Normal administrative pages do not disclose original report evidence.
+    evidenceHold: data.evidenceHold === true,
     hasSensitiveEvidence: Boolean(data.evidence &&
       typeof data.evidence === "object" &&
       Object.keys(data.evidence).length > 0),
@@ -773,6 +774,19 @@ export async function diaryModeration(request, env) {
         "deleteDiaryComment",
       ]);
       return json(request, env, await getReport(db, body));
+    }
+    if (action === "setEvidenceHold") {
+      const actor = await requireCapability(db, decoded, [
+        "viewReports", "reviewReports", "manageDiaries", "deleteDiaryComment",
+      ], { recentAuth: true });
+      if (!actor.owner) throw new ModerationApiError("forbidden", 403);
+      const result = await setReportEvidenceHold(db, {
+        collection: "diary_reports",
+        reportId: safeReportId(body.reportId), actorUid: actor.uid,
+        hold: body.hold, reason: body.reason,
+        operationKey: body.idempotencyKey,
+      });
+      return json(request, env, result);
     }
     if (action === "openSensitiveEvidence") {
       const actor = await requireCapability(db, decoded, [
