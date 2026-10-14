@@ -225,7 +225,8 @@ test("report normalization and cursor parsing stay strict", () => {
   const item = normalizeReport("report_a", report("report_a", 6000));
   assert.equal(item.reportId, "report_a");
   assert.equal(item.targetType, "diary");
-  assert.equal(item.evidence.text, "evidence");
+  assert.equal(item.evidence, undefined);
+  assert.equal(item.hasSensitiveEvidence, true);
   assert.deepEqual(parseCursor("6000|report_a"), {
     createdAtMs: 6000,
     reportId: "report_a",
@@ -811,4 +812,50 @@ test("U6-E5 old report identifiers remain path-safe and may exceed 180 chars", a
   await assert.rejects(()=>
     diaryModerationTestHooks.restoreVerifiedDeletionHistory(
       db,"owner",{reportId:"bad/id"}),/invalid_report_id/);
+});
+
+test("U6-E7 diary list and deep link withhold evidence; access is scoped and audited", async () => {
+  const db=new FakeDb({
+    "diary_reports/report_private": {
+      ...report("report_private", 5000),
+      evidence:{text:"SECRET_DIARY_EVIDENCE"},
+    },
+  });
+  const list=await listReports(db,{limit:20});
+  const detail=await getReport(db,{reportId:"report_private"});
+  assert.equal(list.items[0].hasSensitiveEvidence,true);
+  assert.equal(detail.item.hasSensitiveEvidence,true);
+  assert.equal(JSON.stringify(list).includes("SECRET_DIARY_EVIDENCE"),false);
+  assert.equal(JSON.stringify(detail).includes("SECRET_DIARY_EVIDENCE"),false);
+  const open=(actor,reportId="report_private")=>
+    diaryModerationTestHooks.openDiarySensitiveEvidence(db,actor,{reportId});
+  await assert.rejects(()=>open({uid:"reviewer",owner:false,capabilities:["reviewReports"]}),
+    /forbidden_evidence/);
+  const permitted=await open({uid:"reviewer",owner:false,capabilities:["viewReportEvidence"]});
+  assert.equal(permitted.evidence.text,"SECRET_DIARY_EVIDENCE");
+  await assert.rejects(()=>open({uid:"owner",owner:true,capabilities:[]},"../report_private"),
+    /invalid_report_id/);
+  const audit=[...db.docs.entries()].filter(([k])=>
+    k.startsWith("admin_audit_logs/report_evidence_open_"));
+  assert.equal(audit.length,1);
+  assert.equal(audit[0][1].actorUid,"reviewer");
+  assert.equal(audit[0][1].sourceCollection,"diary_reports");
+  assert.equal(JSON.stringify(audit).includes("SECRET_DIARY_EVIDENCE"),false);
+});
+
+test("U6-E7 diary legacy long IDs have safe audited evidence access", async () => {
+  const reportId="diary_comment_"+"x".repeat(250);
+  const db=new FakeDb({
+    ["diary_reports/"+reportId]: {...report(reportId,5000),
+      evidence:{text:"LONG_PRIVATE_PROOF"}},
+  });
+  const out=await diaryModerationTestHooks.openDiarySensitiveEvidence(
+    db,{uid:"owner",owner:true,capabilities:[]},{reportId});
+  assert.equal(out.evidence.text,"LONG_PRIVATE_PROOF");
+  const audit=[...db.docs.values()].filter(x=>x.action==="openSensitiveReportEvidence");
+  assert.equal(audit.length,1);
+  assert.equal(audit[0].reportId,reportId);
+  db.commit=async()=>{throw Error("audit_unavailable")};
+  await assert.rejects(()=>diaryModerationTestHooks.openDiarySensitiveEvidence(
+    db,{uid:"owner",owner:true,capabilities:[]},{reportId}),/audit_unavailable/);
 });
