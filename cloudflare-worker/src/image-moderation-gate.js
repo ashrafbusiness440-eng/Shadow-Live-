@@ -67,6 +67,49 @@ export async function reserveModerationAttempt(db, objectId, policy,
   }
 }
 
+// Single per-image classification outcome, independently of publication. These
+// counters are internal attempts, never presented as a provider's bill.
+export async function recordModerationOutcome(db, objectId, policy, decision,
+  now = new Date()) {
+  const day = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const receiptPath = "image_moderation_outcomes/" + objectId;
+  const usagePath = "image_moderation_usage/" + day + "_" + policy.provider;
+  const tx = await db.beginTransaction();
+  try {
+    const [receipt, usage] = await Promise.all([
+      db.get(receiptPath, tx), db.get(usagePath, tx),
+    ]);
+    if (receipt.exists) {
+      await db.rollback(tx);
+      return false;
+    }
+    const status = ["approved", "blocked"].includes(decision.status)
+      ? decision.status : "needs_review";
+    const category = status === "approved" ? "approved"
+      : status === "blocked" ? "blocked" : "needsReview";
+    const update = {
+      [category]: Number(usage.data?.[category] || 0) + 1,
+      updatedAt: now,
+    };
+    await db.commit(tx, [
+      usage.exists
+        ? db.writeUpdate(usagePath, update, Object.keys(update))
+        : db.writeCreate(usagePath, {
+            day, provider: policy.provider, attempted: 0, ...update,
+          }),
+      db.writeCreate(receiptPath, {
+        objectId, provider: policy.provider, day,
+        status, reason: String(decision.reason || "").slice(0, 90),
+        createdAt: now,
+      }),
+    ]);
+    return true;
+  } catch (error) {
+    await db.rollback(tx).catch(() => {});
+    throw error;
+  }
+}
+
 // Inspect only an initial bounded header; uncertain animation is manual review.
 // WebP VP8X animation flag and APNG acTL are not reliably assessed by one frame.
 export function animatedImageNeedsReview(buffer, mimeType) {
