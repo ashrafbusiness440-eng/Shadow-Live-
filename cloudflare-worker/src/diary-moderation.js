@@ -571,6 +571,19 @@ async function deleteCommentTarget(db, actorUid, body) {
  * No collection sweep, counter, new penalty or auto-import. Every source
  * is bounded and independently corroborated before recording an index.
  */
+function historicalTimestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object") {
+    const seconds = Number(value.seconds ?? value._seconds);
+    if (Number.isFinite(seconds)) return seconds * 1000;
+  }
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 async function restoreVerifiedDeletionHistory(db, actorUid, body = {}) {
   const reportId = safeReportId(body.reportId);
   const tx = await db.beginTransaction();
@@ -654,8 +667,8 @@ async function restoreVerifiedDeletionHistory(db, actorUid, body = {}) {
           clean(data.commentId) === commentId &&
           clean(data.authorUid) === targetUid
         )) &&
-        (!timestampMs(op.createdAt) ||
-          timestampMs(data.createdAt) === timestampMs(op.createdAt));
+        (!historicalTimestampMs(op.createdAt) ||
+          historicalTimestampMs(data.createdAt) === historicalTimestampMs(op.createdAt));
     });
     if (!receipt?.exists || !deleteAudit?.exists ||
         clean(op.action) !== action ||
