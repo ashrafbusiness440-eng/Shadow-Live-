@@ -169,6 +169,14 @@ export async function purgeFinalImageEvidence(db, bucket, objectId,
   if (typeof bucket?.delete !== "function") {
     throw Error("private_evidence_bucket_missing");
   }
+  // Archived diary approvals may have an unlinked protected copy from
+  // an interrupted createDiary attempt; remove it with the retained stage.
+  const originalKey = clean(image.publicStorageKey);
+  if (clean(image.scope) === "diary_image" &&
+      /^users\/[^/]+\/diaries\/[a-f0-9]{32}\.(jpg|png|webp|gif)$/.test(originalKey) &&
+      originalKey.includes("/" + id + ".")) {
+    await bucket.delete("moderated-diary/" + originalKey);
+  }
   // On failure leave the claim resumable at the next hourly invocation.
   await bucket.delete(clean(image.storageKey));
   const committedAt = new Date();
