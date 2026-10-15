@@ -60,6 +60,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _markingRead = false;
   bool _sendingImage = false;
   bool _messageActionBusy = false;
+  final Set<String> _locallyHiddenMessageIds = <String>{};
+  final Set<String> _locallyDeletedMessageIds = <String>{};
   int? _selfVipLevelCache;
   String? _animatedEmojiId;
   String? _openedByUid;
@@ -659,7 +661,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     });
     return result.where((doc) {
       final hidden = doc.data()['hiddenForUids'];
-      return hidden is! List || !hidden.contains(_openedByUid);
+      return !_locallyHiddenMessageIds.contains(doc.id) &&
+          (hidden is! List || !hidden.contains(_openedByUid));
     }).toList();
   }
 
@@ -879,6 +882,15 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       final decoded = jsonDecode(response.body);
       final body = decoded is Map ? decoded : const <String, dynamic>{};
       if (response.statusCode == 200 && body['ok'] == true) {
+        if (mounted) {
+          setState(() {
+            if (both) {
+              _locallyDeletedMessageIds.add(messageId);
+            } else {
+              _locallyHiddenMessageIds.add(messageId);
+            }
+          });
+        }
         _snack(both ? 'تم حذف الرسالة من الطرفين.' : 'تم حذف الرسالة من عندك.');
         return;
       }
@@ -899,7 +911,14 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
   Widget _messageBubble(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
+    final data = <String, dynamic>{...doc.data()};
+    if (_locallyDeletedMessageIds.contains(doc.id)) {
+      data['type'] = 'deleted';
+      data['deletedForEveryone'] = true;
+      data.remove('text');
+      data.remove('storageObjectId');
+      data.remove('imageUrl');
+    }
     final mine = data['senderId'] == _uid;
     final type = (data['type'] ?? 'text').toString();
     final vipLevel = type == 'image'
