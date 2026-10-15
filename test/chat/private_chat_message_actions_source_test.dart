@@ -21,7 +21,7 @@ void main() {
     expect(source.contains("'deleteMessageForEveryone'"), isTrue);
     expect(source.contains("'حذف من الطرفين'"), isTrue);
     expect(source.contains("body['code'] == 'delete_window_expired'"), isTrue);
-    expect(source.contains("Uri.parse('\\$_apiBase/chat-actions')"), isTrue);
+    expect(source.contains(r"Uri.parse('$_apiBase/chat-actions')"), isTrue);
     expect(source.contains("final accountUid = _openedByUid;"), isTrue);
     expect(source.contains("_isActiveChatAccount(accountUid)"), isTrue);
   });
