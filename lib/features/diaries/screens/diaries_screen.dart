@@ -426,7 +426,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
     if (_publishing) return;
 
     final text = _text.text.trim();
-    if (text.isEmpty && _pickedImages.isEmpty && _approvedImageObjectIds.isEmpty) {
+    if (text.isEmpty && _pickedImages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('اكتب نصاً أو أضف صورة قبل النشر.')),
       );
@@ -439,16 +439,10 @@ class _DiariesScreenState extends State<DiariesScreen> {
       return;
     }
 
-    if (_pendingModerationImageId != null && _approvedImageObjectIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الصورة قيد المراجعة. تابع الإشعارات حتى يصدر القرار.')),
-      );
-      return;
-    }
     setState(() => _publishing = true);
     try {
-      final objectIds = <String>[..._approvedImageObjectIds];
-      for (final picked in _pickedImages.take(2 - objectIds.length)) {
+      final objectIds = <String>[];
+      for (final picked in _pickedImages) {
         final mimeType = detectSupportedImageMime(picked.bytes);
         final uploaded = await _storage.upload(
           scope: 'diary_image',
@@ -475,8 +469,6 @@ class _DiariesScreenState extends State<DiariesScreen> {
         _mentionCandidates = const <DiaryMentionCandidate>[];
         _mentionLoading = false;
         _pickedImages = const <_PickedDiaryImage>[];
-        _approvedImageObjectIds = const <String>[];
-        _pendingModerationImageId = null;
         _commentsEnabled = true;
         _composerExpanded = false;
         _showFollowing = false;
@@ -485,13 +477,6 @@ class _DiariesScreenState extends State<DiariesScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم نشر اليومية.')),
-      );
-    } on UserStoragePendingModeration catch (pending) {
-      if (!mounted) return;
-      setState(() => _pendingModerationImageId = pending.objectId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(
-          'الصورة قيد المراجعة ولم تُنشر. تابع إشعاراتك لنشرها بعد الموافقة.')),
       );
     } catch (error) {
       if (!mounted) return;
