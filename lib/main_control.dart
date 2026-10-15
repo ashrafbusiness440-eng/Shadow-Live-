@@ -2818,7 +2818,9 @@ class _IdManagementPageState extends State<UserIdManagementPage> {
         final retired=idSnap.exists&&idSnap.data()?['reserved']==true;
         throw Exception(retired?'هذا ID متقاعد ومحجوز وليس ID حاليًا.':'لم يتم العثور على حساب بهذا ID.');
       }
-      final userSnap=await controlFirestore.collection('public_profiles').doc(uid).get();
+      // The users record is authoritative. A failed public_profiles projection
+      // must not make an existing ID/account look deleted to its administrator.
+      final userSnap=await controlFirestore.collection('users').doc(uid).get();
       if(!userSnap.exists)throw Exception('الحساب المرتبط بالـID غير موجود.');
       final data=userSnap.data()??<String,dynamic>{};
       if('${data['publicId']??''}'!=currentId)throw Exception('هذا ID قديم/بديل وليس الـID الحالي للحساب.');
