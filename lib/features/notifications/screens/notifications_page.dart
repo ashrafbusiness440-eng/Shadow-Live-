@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -27,15 +30,32 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool _loading = true;
   Object? _error;
   bool _loadMoreFailed = false;
+  StreamSubscription<User?>? _authSubscription;
+  String? _pageOwnerUid;
+  int _requestEpoch = 0;
 
   @override
   void initState() {
     super.initState();
+    _pageOwnerUid = FirebaseAuth.instance.currentUser?.uid;
+    // One listener per open page, not per item; never leak stale account data.
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted || user?.uid == _pageOwnerUid) return;
+      _pageOwnerUid = user?.uid;
+      _requestEpoch++;
+      _items.clear();
+      _page = null;
+      _error = null;
+      _loadMoreFailed = false;
+      _reload();
+    });
     _reload();
   }
 
   @override
   void dispose() {
+    _requestEpoch++;
+    _authSubscription?.cancel();
     _membershipService.close();
     super.dispose();
   }
@@ -45,6 +65,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _reload() async {
+    final requestUid = FirebaseAuth.instance.currentUser?.uid;
+    if (requestUid != _pageOwnerUid) {
+      _pageOwnerUid = requestUid;
+      _items.clear();
+      _page = null;
+    }
+    final epoch = ++_requestEpoch;
     setState(() {
       _loading = true;
       _error = null;
@@ -52,7 +79,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     });
     try {
       final page = await _service.load();
-      if (!mounted) return;
+      if (!mounted || epoch != _requestEpoch ||
+          requestUid != FirebaseAuth.instance.currentUser?.uid) return;
       setState(() {
         _items
           ..clear()
@@ -61,7 +89,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || epoch != _requestEpoch ||
+          requestUid != FirebaseAuth.instance.currentUser?.uid) return;
       setState(() {
         _error = error;
         _loading = false;
@@ -71,7 +100,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   Future<void> _loadMore() async {
     final page = _page;
-    if (_loading || page?.cursor == null || page?.hasMore != true) return;
+    final requestUid = _pageOwnerUid;
+    if (_loading || page?.cursor == null || page?.hasMore != true ||
+        requestUid != FirebaseAuth.instance.currentUser?.uid) return;
+    final epoch = ++_requestEpoch;
     setState(() {
       _loading = true;
       _error = null;
@@ -79,7 +111,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     });
     try {
       final next = await _service.load(after: page!.cursor);
-      if (!mounted) return;
+      if (!mounted || epoch != _requestEpoch ||
+          requestUid != FirebaseAuth.instance.currentUser?.uid) return;
       setState(() {
         _items.addAll(next.items);
         _items.sort((a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0)
@@ -88,7 +121,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || epoch != _requestEpoch ||
+          requestUid != FirebaseAuth.instance.currentUser?.uid) return;
       setState(() {
         _error = error;
         _loadMoreFailed = true;
@@ -98,6 +132,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _open(AppNotification item) async {
+    if (_pageOwnerUid == null ||
+        _pageOwnerUid != FirebaseAuth.instance.currentUser?.uid) return;
     if (AccountActionAppealDialog.operationIdFrom(item).isNotEmpty) {
       if (!item.read) {
         await _service.markRead(item.id).catchError((_) {});
