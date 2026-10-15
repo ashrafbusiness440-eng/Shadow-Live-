@@ -669,6 +669,8 @@ String diaryErrorMessage(Object error) {
       return 'هذا التعليق لم يعد موجوداً.';
     case 'external_links_not_allowed':
       return 'الروابط الخارجية غير مسموحة في يومياتي.';
+    case 'diary_image_not_approved':
+      return 'الصورة لم تصبح جاهزة للنشر بعد. تابع إشعار المراجعة.';
     case 'invalid_diary_images':
     case 'invalid_diary_image':
       return 'تعذر استخدام إحدى الصور. حاول اختيارها من جديد.';
