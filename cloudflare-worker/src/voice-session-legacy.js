@@ -3217,7 +3217,7 @@ async function roomPresenceAnnounceJoin(db,uid,roomId){
   if(!roomSnap.exists||roomSnap.data()?.isActive===false)throw new ApiError("room_unavailable",404);
   if(present===false)throw new ApiError("presence_socket_required",409);
   if(present===null)await assertRoomRealtimePresence(db,roomId,uid);
-  // Index *only* after the Room DO confirms the user's actual socket.
+  // Index only after Room DO validation of a live socket.
   // Never update this index on a timer, on "online" status, or from a
   // client-submitted claim. Follow resolution rechecks DO live membership.
   if(present===true){
