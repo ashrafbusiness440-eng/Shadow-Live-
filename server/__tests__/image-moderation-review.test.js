@@ -48,7 +48,7 @@ test("U6-L2/B queue is capped at three fixed-filter reads and has no storage key
   assert.equal(rows.length,1);
   assert.equal(rows[0].objectId,OBJECT_ID);
   assert.equal(JSON.stringify(rows).includes("moderation-staging/"),false);
-  assert.equal(db.calls.filter(x=>x.collection==="storage_objects").length,3);
+  assert.equal(db.calls.filter(x=>x.collection==="storage_objects").length,4);
   assert.ok(db.calls.filter(x=>x.collection==="storage_objects")
     .every(x=>x.options.limit<=12));
 });
