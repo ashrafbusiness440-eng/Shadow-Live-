@@ -157,6 +157,43 @@ test("U6-L3/B deleted account keeps held private evidence off user cleanup",asyn
   assert.equal(db.docs.get(path).ownerUid,"image_evidence_archive_"+id);
   assert.equal(db.docs.get(path).originalOwnerUid,"u1");
 });
+test("U6-L3/B deleting account closes open image appeal and sets a due date",async()=>{
+  const {db,bucket,deletions}=prepare("appeal_pending");
+  db.docs.set(path,{
+    ...db.docs.get(path),evidencePurgeAt:null,
+    evidenceRetentionDueAt:null,
+  });
+  db.docs.set("image_moderation_appeals/"+id,{
+    ownerUid:"u1",status:"under_review",explanation:"راجِع الصورة",
+  });
+  db.docs.set("storage_account_cleanup_jobs/job2",{
+    ownerUid:"u1",createdAt:now,
+  });
+  const out=await runDeletedAccountStorageCleanup(db,bucket,{
+    nowMs:now.getTime(),limit:10,
+  });
+  assert.equal(out.deleted,0);
+  assert.deepEqual(deletions,[]);
+  const doc=db.docs.get(path);
+  assert.equal(doc.state,"rejected");
+  assert.equal(doc.ownerUid,"image_evidence_archive_"+id);
+  assert.equal(doc.evidencePurgeAt.toISOString(),due.toISOString());
+  assert.equal(db.docs.get("image_moderation_appeals/"+id).status,
+    "closed_account_deleted");
+  assert.equal(await purgeFinalImageEvidence(db,bucket,id,due),"purged");
+});
+test("U6-L3/B finalized expiry does not reset when account is deleted",async()=>{
+  const {db,bucket}=prepare("rejected");
+  db.docs.set("storage_account_cleanup_jobs/job3",{
+    ownerUid:"u1",createdAt:now,
+  });
+  const res=await runDeletedAccountStorageCleanup(db,bucket,{
+    nowMs:now.getTime(),limit:10,
+  });
+  assert.equal(res.deleted,0);
+  assert.equal(db.docs.get(path).evidencePurgeAt.toISOString(),
+    due.toISOString());
+});
 test("U6-L3/B all evidence operations remain opt-in, private and owner gated",()=>{
   const review=fs.readFileSync(
     "cloudflare-worker/src/image-moderation-control.js","utf8");
