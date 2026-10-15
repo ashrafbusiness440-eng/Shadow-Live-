@@ -67,6 +67,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _historyLoading = false;
   bool _historyHasMore = true;
   bool _historyFailed = false;
+  late final Stream<User?> _authChanges;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _messageChanges;
 
   bool _isActiveChatAccount(String? expectedUid) =>
       mounted &&
@@ -81,6 +83,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   @override
   void initState() {
     super.initState();
+    _authChanges = FirebaseAuth.instance.authStateChanges();
+    _messageChanges = _conversation
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .snapshots();
     _openedByUid = FirebaseAuth.instance.currentUser?.uid;
     if (FirebaseAuth.instance.currentUser?.isAnonymous ?? true) return;
     _markRead();
@@ -1128,7 +1136,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
   @override
   Widget build(BuildContext context) => StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: _authChanges,
       initialData: FirebaseAuth.instance.currentUser,
       builder: (context, authSnapshot) =>
           (authSnapshot.data?.isAnonymous ?? true) ||
@@ -1268,11 +1276,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                     bundledAsset: ShadowAssetKeys.chatWallpaperBundledPath,
                     scrimColor: const Color(0x4405060D),
                     child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _conversation
-                        .collection('messages')
-                        .orderBy('createdAt', descending: true)
-                        .limit(100)
-                        .snapshots(),
+                    stream: _messageChanges,
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
                         return const Center(
