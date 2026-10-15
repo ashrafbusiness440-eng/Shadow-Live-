@@ -437,8 +437,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         'receiverId': widget.otherUid,
         'type': 'image',
         'storageObjectId': upload.objectId,
-        'mimeType': mime,
-        'sizeBytes': bytes.length,
+        // The R2 upload service may transcode and shrink the picked image.
+        // Persist the confirmed object metadata, never its original bytes.
+        'mimeType': upload.mimeType,
+        'sizeBytes': upload.sizeBytes,
         'createdAt': FieldValue.serverTimestamp(),
       });
       await batch.commit();
@@ -486,6 +488,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       }
       if (error.message == 'follow_required') {
         _snack('إرسال الصور يحتاج متابعة متبادلة.');
+      } else if (error.message == 'image_too_large_after_compression') {
+        _snack('حجم الصورة كبير حتى بعد الضغط. اختر صورة أصغر وحاول مجددًا.');
       } else {
         _snack('تعذر رفع الصورة حالياً.');
       }
