@@ -3,12 +3,15 @@ import test from "node:test";
 import fs from "node:fs";
 import {
   approvePrivateDiaryImage, prepareApprovedDiaryPublication,
-  moderatedDiaryProtectedKey,
+  moderatedDiaryProtectedKey, claimApprovedDiaryImage,
+  releaseApprovedDiaryClaim,
 } from "../../cloudflare-worker/src/image-moderation-diary.js";
 import {
   publicMediaStorageKey, approvedDiaryMediaLinked,
 } from "../../cloudflare-worker/src/public-media.js";
-import { cleanupQueuedStorageObject } from "../../cloudflare-worker/src/user-storage.js";
+import {
+  cleanupQueuedStorageObject, claimDueApprovedDiaryCleanup,
+} from "../../cloudflare-worker/src/user-storage.js";
 
 const id = "a".repeat(32);
 const key = "private_diary_review_001";
