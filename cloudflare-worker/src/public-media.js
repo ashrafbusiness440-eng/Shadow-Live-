@@ -142,6 +142,23 @@ export function publicMediaUrl(
   );
 }
 
+// Only images attached to a published diary may be read from this prefix.
+export async function approvedDiaryMediaLinked(db, objectId, ownerUid, storageKey) {
+  const [link, media] = await Promise.all([
+    db.get("diary_image_links/" + objectId),
+    db.get("storage_objects/" + objectId),
+  ]);
+  return link.exists && media.exists &&
+    clean(link.data?.state) === "linked" &&
+    clean(link.data?.ownerUid) === ownerUid &&
+    clean(media.data?.ownerUid) === ownerUid &&
+    clean(media.data?.scope) === "diary_image" &&
+    clean(media.data?.state) === "active" &&
+    clean(media.data?.moderation?.status) === "approved" &&
+    clean(media.data?.linkedDiaryId) === clean(link.data?.diaryId) &&
+    clean(media.data?.storageKey) === storageKey;
+}
+
 export async function publicMediaRedirect(request, env) {
   if (request.method !== "GET") {
     const headers = new Headers(corsHeaders(request, env));
