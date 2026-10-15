@@ -383,8 +383,10 @@ class _DiariesScreenState extends State<DiariesScreen> {
     try {
       final files = await _picker.pickMultiImage();
       if (files.isEmpty) return;
+      final slots = 2 - _approvedImageObjectIds.length;
+      if (slots <= 0) return;
       final selected = <_PickedDiaryImage>[];
-      for (final file in files.take(2)) {
+      for (final file in files.take(slots)) {
         selected.add(
           _PickedDiaryImage(
             file: file,
@@ -393,8 +395,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
         );
       }
       if (!mounted) return;
-      setState(() => _pickedImages = selected);
-      if (files.length > 2) {
+      setState(() {
+        _pickedImages = selected;
+        _pendingModerationImageId = null;
+      });
+      if (files.length > slots) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('يمكن إضافة صورتين كحد أقصى.')),
         );
