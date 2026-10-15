@@ -189,6 +189,14 @@ export async function approvePrivateChatImage(db, bucket, actorUid, payload) {
           "/messages/" + association.messageId,
         { moderationStatus: "approved" }, ["moderationStatus"],
       ),
+      db.writeCreate("storage_delete_queue/chat_stage_" + objectId, {
+        objectId, storageKey: sourceKey,
+        ownerUid: clean(doc.ownerUid), scope: "chat_stage_only",
+        targetId: clean(doc.targetId), mimeType: clean(doc.mimeType),
+        sizeBytes: Number(doc.sizeBytes),
+        deleteAfter: new Date(now.getTime() + 15 * 60 * 1000),
+        reason: "chat_published_stage_cleanup", createdAt: now,
+      }),
       db.writeCreate("admin_audit_logs/image_chat_review_" + key, {
         action: "approvePrivateChatImage", actorUid, objectId,
         conversationId: association.conversationId,
