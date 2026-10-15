@@ -4,6 +4,22 @@ import '../services/account_action_appeal_service.dart';
 import '../services/notification_service.dart';
 
 class AccountActionAppealDialog {
+  static Future<void> _showOutcome(BuildContext context, String message) async {
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('نتيجة الطلب'),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('موافق'),
+          ),
+        ],
+      ),
+    );
+  }
   static String operationIdFrom(AppNotification item) {
     const types = <String>{
       'account_sanction',
@@ -46,9 +62,9 @@ class AccountActionAppealDialog {
     } catch (error) {
       if (!error.toString().contains('appeal_not_found')) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('تعذّر التحقق من حالة الاعتراض. حاول مجددًا.'),
-          ));
+          await _showOutcome(
+            context, 'تعذّر التحقق من حالة الاعتراض. حاول مجددًا.',
+          );
         }
         return;
       }
@@ -106,18 +122,20 @@ class AccountActionAppealDialog {
           explanation: details.text.trim(),
         );
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(result['duplicate'] == true
+        await _showOutcome(
+          context,
+          result['duplicate'] == true
               ? 'اعتراضك مسجّل سابقًا وقيد المراجعة.'
-              : 'تم استلام اعتراضك وستصلك نتيجة المراجعة.'),
-        ));
+              : 'تم استلام اعتراضك وستصلك نتيجة المراجعة.',
+        );
       } catch (error) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(error.toString().contains('sanction_not_found')
-              ? 'الإجراء غير متاح للاعتراض من هذا الإشعار.'
-              : 'تعذّر إرسال الاعتراض. تحقق من الاتصال وحاول مجددًا.'),
-        ));
+        await _showOutcome(
+          context,
+          error.toString().contains('sanction_not_found')
+              ? 'هذا الإجراء غير متاح للاعتراض.'
+              : 'تعذّر إرسال الاعتراض. تحقق من الاتصال وحاول مجددًا.',
+        );
       }
     } finally {
       details.dispose();
