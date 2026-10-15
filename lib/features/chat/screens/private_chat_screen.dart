@@ -443,8 +443,32 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       });
       await batch.commit();
       uploadedObjectId = null;
-    } on UserStoragePendingModeration catch (_) {
-      _snack('الصورة قيد المراجعة ولم تُرسل بالمحادثة بعد.');
+    } on UserStoragePendingModeration catch (pending) {
+      // The conversation stores only an inaccessible image reference until
+      // the owner approves the exact private R2 bytes and linked message.
+      try {
+        final messageRef = _conversation.collection('messages').doc();
+        final batch = FirebaseFirestore.instance.batch();
+        batch.update(_conversation, {
+          'lastMessage': '📷 صورة قيد المراجعة',
+          'lastSenderId': _uid,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'unreadCounts.' + _uid: 0,
+          'unreadCounts.' + widget.otherUid: FieldValue.increment(1),
+        });
+        batch.set(messageRef, {
+          'senderId': _uid,
+          'receiverId': widget.otherUid,
+          'type': 'image',
+          'storageObjectId': pending.objectId,
+          'moderationStatus': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        await batch.commit();
+        _snack('أُرسلت صورة قيد المراجعة. لن تظهر حتى موافقة الإدارة.');
+      } catch (_) {
+        _snack('تعذر ربط الصورة بالمحادثة. لم يتم نشرها.');
+      }
     } on FirebaseException catch (error) {
       if (uploadedObjectId != null) {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
