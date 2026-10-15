@@ -1050,8 +1050,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       );
 
   @override
-  Widget build(BuildContext context) =>
-      (FirebaseAuth.instance.currentUser?.isAnonymous ?? true)
+  Widget build(BuildContext context) => StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      initialData: FirebaseAuth.instance.currentUser,
+      builder: (context, authSnapshot) =>
+          (authSnapshot.data?.isAnonymous ?? true) ||
+                  authSnapshot.data?.uid != _openedByUid
       ? const Directionality(
           textDirection: TextDirection.rtl,
           child: Scaffold(
@@ -1243,5 +1247,6 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             ),
           ),
         ),
-      );
+      ),
+    );
 }
