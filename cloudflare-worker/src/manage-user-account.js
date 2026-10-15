@@ -658,6 +658,7 @@ async function mutateAccount(db, env, actorPayload, body) {
         db.writeCreate(`notifications/account_private_messages_${key}`, {
           userId: targetUid,
           type: "account_private_messages_restricted",
+          operationId: key,
           category: "social",
           title: "تقييد إرسال الرسائل الخاصة",
           body: "تم تقييد إرسال الرسائل الخاصة مؤقتًا. السبب: " + reason +
@@ -671,6 +672,7 @@ async function mutateAccount(db, env, actorPayload, body) {
         db.writeCreate(`notifications/account_room_chat_${key}`, {
           userId: targetUid,
           type: "account_room_chat_restricted",
+          operationId: key,
           category: "social",
           title: "تقييد الكتابة في الغرف",
           body: "تم تقييد إرسال الرسائل داخل الغرف مؤقتًا. السبب: " + reason +
@@ -684,6 +686,7 @@ async function mutateAccount(db, env, actorPayload, body) {
         db.writeCreate(`notifications/account_room_entry_${key}`, {
           userId: targetUid,
           type: "account_room_entry_restricted",
+          operationId: key,
           category: "social",
           title: "منع دخول الغرف مؤقتًا",
           body: "تم منعك مؤقتًا من دخول الغرف. السبب: " + reason +
@@ -697,6 +700,7 @@ async function mutateAccount(db, env, actorPayload, body) {
         db.writeCreate(`notifications/account_room_mic_${key}`, {
           userId: targetUid,
           type: "account_room_mic_restricted",
+          operationId: key,
           category: "social",
           title: "كتم المايكروفون في الغرف",
           body: "تم تقييد استخدام المايكروفون مؤقتًا. السبب: " + reason +
@@ -717,6 +721,20 @@ async function mutateAccount(db, env, actorPayload, body) {
           read: false,
           createdAt: now,
           updatedAt: now,
+        }),
+      ] : []),
+      ...(["suspend", "ban"].includes(action) ? [
+        db.writeCreate(`notifications/account_sanction_${key}`, {
+          userId: targetUid,
+          operationId: key,
+          type: "account_sanction",
+          category: "security",
+          title: action === "ban" ? "قرار حظر الحساب" : "قرار تعليق الحساب",
+          body: (action === "ban" ? "تم حظر حسابك. " :
+            "تم تعليق حسابك مؤقتًا. ") +
+            "السبب: " + reason +
+            ". يمكنك طلب مراجعة القرار من إشعار الإجراءات.",
+          read: false, createdAt: now, updatedAt: now,
         }),
       ] : []),
       ...(action === "warn" ? [
