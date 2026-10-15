@@ -150,6 +150,23 @@ export async function listAccountActionAppeals(db) {
   };
 }
 
+// Exact case read for a clicked inbox item: no collection scan or evidence.
+export async function getAccountActionAppeal(db, operationIdInput) {
+  const id = clean(operationIdInput);
+  if (!safeId(id)) throw new AccountActionAppealError("invalid_appeal_request");
+  const snap = await db.get(appealPath(id));
+  if (!snap.exists) throw new AccountActionAppealError("appeal_not_found", 404);
+  const data = snap.data || {};
+  return { ok: true, appeal: {
+    operationId: id, userUid: clean(data.userUid),
+    linkedReportId: clean(data.linkedReportId),
+    action: clean(data.action),
+    explanation: clean(data.explanation).slice(0, 800),
+    status: clean(data.status),
+    decisionReason: clean(data.decisionReason),
+  } };
+}
+
 // Acceptance is allowed only after a DIFFERENT, genuine completed reversal
 // operation. Reviewing an appeal never lifts a sanction on its own.
 export async function reviewAccountActionAppeal(db, reviewerUid, body = {}) {
