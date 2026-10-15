@@ -1932,6 +1932,14 @@ async function prepareRead(request, env, auth, body) {
     throw new StorageApiError("image_pending_moderation", 423);
   }
   await authorizeRead(auth.db, auth.uid, metadata);
+  if (clean(metadata.storageKey).startsWith("moderated-diary/")) {
+    const link = await auth.db.get("diary_image_links/" + metadata.objectId);
+    if (clean(metadata.state) !== "active" ||
+        !link.exists || clean(link.data?.state) !== "linked" ||
+        clean(link.data?.diaryId) !== clean(metadata.linkedDiaryId)) {
+      throw new StorageApiError("diary_image_not_published", 404);
+    }
+  }
   if (["needs_review", "blocked"].includes(clean(metadata.state)) ||
       (metadata.moderation &&
        clean(metadata.moderation.status) !== "approved")) {
