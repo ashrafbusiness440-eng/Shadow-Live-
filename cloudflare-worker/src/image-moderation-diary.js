@@ -137,13 +137,14 @@ export function moderatedDiaryProtectedKey(publicKey) {
   return "moderated-diary/" + value;
 }
 
-export async function prepareApprovedDiaryPublication(bucket, image, objectId) {
+export async function prepareApprovedDiaryPublication(bucket, image, objectId, operationKey) {
   const doc = image || {};
   const uid = clean(doc.ownerUid);
   const extension = storageExtensionForMime(doc.mimeType);
   if (!ID.test(clean(objectId)) || !uid || uid !== clean(doc.targetId) ||
       clean(doc.scope) !== "diary_image" ||
-      clean(doc.state) !== "approved_pending_diary_link" ||
+      clean(doc.state) !== "diary_linking" ||
+      clean(doc.diaryLinkOperationKey) !== clean(operationKey) ||
       clean(doc.moderation?.status) !== "approved" || !extension ||
       doc.evidenceHold === true || doc.legalHold === true ||
       doc.investigationHold === true) {
