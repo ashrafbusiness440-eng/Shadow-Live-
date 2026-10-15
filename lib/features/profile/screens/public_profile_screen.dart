@@ -10,6 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../widgets/profile_gift_showcase.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../chat/services/chat_safety_service.dart';
 import '../../diaries/screens/diaries_screen.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
@@ -38,6 +39,7 @@ class PublicProfileScreen extends StatefulWidget {
 class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   final _follow = FollowService();
+  final _reports = ChatSafetyService();
   final _relationships = RelationshipService();
   late final UserLevelService _levelService;
   late final ProfileVisitService _profileVisits;
@@ -46,6 +48,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   late Future<FollowCounts> _followCountsFuture;
   bool _changingFollow = false;
   bool _sendingRelationship = false;
+  bool _reportingProfile = false;
 
   bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
   bool get _guest => FirebaseAuth.instance.currentUser?.isAnonymous == true;
@@ -269,6 +272,132 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     }
   }
 
+
+  Future<void> _reportProfile() async {
+    if (_isSelf || _reportingProfile) return;
+    if (_guest) {
+      await _guestAction();
+      return;
+    }
+    setState(() => _reportingProfile = true);
+    final detailsController = TextEditingController();
+    var reason = 'harassment';
+    var sending = false;
+    const labels = <String, String>{
+      'spam': 'محتوى مزعج',
+      'harassment': 'مضايقة أو إساءة',
+      'inappropriate_content': 'محتوى غير مناسب',
+      'scam': 'احتيال أو تضليل',
+      'other': 'سبب آخر',
+    };
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            backgroundColor: const Color(0xFF111522),
+            title: const Text('الإبلاغ عن الحساب'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: reason,
+                  dropdownColor: const Color(0xFF171C2A),
+                  decoration: const InputDecoration(labelText: 'سبب البلاغ'),
+                  items: labels.entries.map((entry) => DropdownMenuItem(
+                    value: entry.key,
+                    child: Text(entry.value),
+                  )).toList(),
+                  onChanged: sending ? null : (value) {
+                    if (value != null) setDialogState(() => reason = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: detailsController,
+                  maxLength: 500,
+                  minLines: 2,
+                  maxLines: 4,
+                  enabled: !sending,
+                  decoration: const InputDecoration(
+                    hintText: 'تفاصيل إضافية (اختياري)',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null :
+                  () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton.icon(
+                onPressed: sending ? null : () async {
+                  setDialogState(() => sending = true);
+                  try {
+                    await _reports.reportProfile(
+                      targetUserId: widget.userId,
+                      reason: reason,
+                      details: detailsController.text.trim(),
+                    );
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text(
+                          'تم إرسال بلاغ الحساب إلى الإدارة للمراجعة.',
+                        )),
+                      );
+                    }
+                  } on StateError catch (error) {
+                    final message = switch (error.message) {
+                      'report_recent_duplicate' =>
+                        'سبق إرسال بلاغ عن نفس السبب مؤخرًا.',
+                      'rate_limited' =>
+                        'أرسلت عدة بلاغات مؤخرًا. حاول لاحقًا.',
+                      'not_found' =>
+                        'الحساب لم يعد متاحًا. حدّث الصفحة.',
+                      _ => 'تعذر إرسال البلاغ. حاول مرة أخرى.',
+                    };
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(message)),
+                      );
+                    }
+                    if (dialogContext.mounted) {
+                      setDialogState(() => sending = false);
+                    }
+                  } catch (_) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text(
+                          'تعذر إرسال البلاغ. تحقق من الاتصال وحاول مجددًا.',
+                        )),
+                      );
+                    }
+                    if (dialogContext.mounted) {
+                      setDialogState(() => sending = false);
+                    }
+                  }
+                },
+                icon: sending
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.flag_outlined),
+                label: const Text('إرسال البلاغ'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      detailsController.dispose();
+      if (mounted) setState(() => _reportingProfile = false);
+    }
+  }
+
   void _openLevel(int tabIndex) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -355,6 +484,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                   backgroundColor: const Color(0xFF0B0D16),
                   foregroundColor: Colors.white,
                   title: Text(isSelf ? 'بروفايلي' : 'الملف الشخصي'),
+                  actions: [
+                    if (!isSelf)
+                      IconButton(
+                        tooltip: 'الإبلاغ عن الحساب',
+                        onPressed: _reportingProfile ? null : _reportProfile,
+                        icon: const Icon(Icons.flag_outlined),
+                      ),
+                  ],
                   flexibleSpace: FlexibleSpaceBar(
                     background: _header(
                       profile: data,

@@ -118,3 +118,82 @@ test("U6-B preserves clear Arabic duplicate errors without adding listeners or b
   assert.match(dm,/'report_recent_duplicate'/);
   assert.doesNotMatch(src,/\.snapshots\(|Timer\.periodic|setInterval|runQuery\(/);
 });
+
+test("U6 profile reporting reaches the people inbox without inventing a chat", async () => {
+  const db = new MockDb({
+    "users/target": {role:"user",accountStatus:"active"},
+    "users/other": {role:"user",accountStatus:"active"},
+  });
+  const request = (idempotencyKey, reason="harassment", targetUserId="target") => ({
+    targetUserId, reason, details:"سلوك مخالف في الملف الشخصي",
+    idempotencyKey,
+    conversationId:"forged_conversation_must_be_ignored",
+    evidence:{sensitive:"never trust attached client evidence"},
+  });
+  const first = await reportDeduplicationTestHooks.reportProfile(
+    db,"reporter",request("profile_report_20261015_01"),
+  );
+  assert.equal(first.ok,true);
+  const report = db.docs.get("reports/" + first.reportId);
+  assert.equal(report.type,"account");
+  assert.equal(report.targetType,"user");
+  assert.equal(report.source,"profile");
+  assert.equal(report.reporterUid,"reporter");
+  assert.equal(report.targetUid,"target");
+  assert.equal(report.status,"new");
+  assert.equal(report.conversationId,undefined);
+  assert.equal(report.evidence,undefined);
+  assert.equal(db.docs.get("report_rate_limits/reporter").count,1);
+  assert.equal(
+    db.docs.get("admin_inbox_items/account_report__" + first.reportId).type,
+    "account_report",
+  );
+  assert.equal(db.reads.filter(p=>p.startsWith("conversations/")).length,0);
+  assert.equal(db.docs.get("users/target").accountStatus,"active");
+
+  await assert.rejects(
+    reportDeduplicationTestHooks.reportProfile(
+      db,"reporter",request("profile_report_20261015_02")),
+    /report_recent_duplicate/,
+  );
+  assert.equal(db.docs.get("report_rate_limits/reporter").count,1);
+
+  const retry = await reportDeduplicationTestHooks.reportProfile(
+    db,"reporter",request("profile_report_20261015_01"),
+  );
+  assert.equal(retry.code,"duplicate");
+
+  await assert.rejects(
+    reportDeduplicationTestHooks.reportProfile(
+      db,"reporter",request("profile_report_20261015_01","harassment","other")),
+    /idempotency_key_conflict/,
+  );
+  await assert.rejects(
+    reportDeduplicationTestHooks.reportProfile(
+      db,"reporter",request("profile_report_20261015_03","spam","reporter")),
+    /invalid_request/,
+  );
+  await assert.rejects(
+    reportDeduplicationTestHooks.reportProfile(
+      db,"reporter",request("profile_report_20261015_04","spam","../target")),
+    /invalid_request/,
+  );
+  const second = await reportDeduplicationTestHooks.reportProfile(
+    db,"reporter",request("profile_report_20261015_05","spam"),
+  );
+  assert.equal(second.ok,true);
+  assert.equal(db.docs.get("report_rate_limits/reporter").count,2);
+});
+
+test("U6 profile complaint reuses authenticated chat reporting client and Arabic UX", () => {
+  const profile = readFileSync("lib/features/profile/screens/public_profile_screen.dart","utf8");
+  const service = readFileSync("lib/features/chat/services/chat_safety_service.dart","utf8");
+  const server = readFileSync("cloudflare-worker/src/chat-safety-actions.js","utf8");
+  assert.match(profile,/tooltip: 'الإبلاغ عن الحساب'/);
+  assert.match(profile,/await _reports\.reportProfile\(/);
+  assert.match(profile,/_guestAction\(\)/);
+  assert.match(service,/Future<String> reportProfile\(/);
+  assert.match(service,/_submitReport\(/);
+  assert.match(server,/case "reportProfile"/);
+  assert.doesNotMatch(profile,/\.snapshots\(|Timer\.periodic/);
+});

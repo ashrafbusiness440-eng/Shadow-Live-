@@ -74,6 +74,31 @@ class ChatSafetyService {
     required String conversationId,
     required String reason,
     required String details,
+  }) => _submitReport(
+    action: 'reportUser',
+    targetUserId: targetUserId,
+    conversationId: conversationId,
+    reason: reason,
+    details: details,
+  );
+
+  Future<String> reportProfile({
+    required String targetUserId,
+    required String reason,
+    required String details,
+  }) => _submitReport(
+    action: 'reportProfile',
+    targetUserId: targetUserId,
+    reason: reason,
+    details: details,
+  );
+
+  Future<String> _submitReport({
+    required String action,
+    required String targetUserId,
+    String? conversationId,
+    required String reason,
+    required String details,
   }) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
@@ -86,9 +111,9 @@ class ChatSafetyService {
         'content-type': 'application/json',
       },
       body: jsonEncode({
-        'action': 'reportUser',
+        'action': action,
         'targetUserId': targetUserId,
-        'conversationId': conversationId,
+        if (conversationId != null) 'conversationId': conversationId,
         'reason': reason,
         'details': details,
         'idempotencyKey': idempotencyKey,
