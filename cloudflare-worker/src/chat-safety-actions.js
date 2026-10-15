@@ -1861,9 +1861,9 @@ async function setBlock(db, uid, body) {
   });
 }
 
-async function reportUser(db, uid, body) {
+async function reportUser(db, uid, body, fromProfile = false) {
   const targetUserId = clean(body.targetUserId);
-  const conversationId = clean(body.conversationId);
+  const conversationId = fromProfile ? "" : clean(body.conversationId);
   const reason = clean(body.reason);
   const details = clean(body.details);
   const key = clean(body.idempotencyKey);
@@ -1878,8 +1878,10 @@ async function reportUser(db, uid, body) {
   if (
     !targetUserId ||
     targetUserId === uid ||
-    !conversationId ||
-    conversationId.includes("/") ||
+    targetUserId.length > 180 ||
+    targetUserId.includes("/") || targetUserId.includes("\\") ||
+    (!fromProfile && (!conversationId ||
+      conversationId.includes("/") || conversationId.includes("\\"))) ||
     !allowedReasons.has(reason) ||
     details.length > 500 ||
     !validKey(key)
@@ -1900,12 +1902,22 @@ async function reportUser(db, uid, body) {
     const [op, target, conversation, rate, config] = await Promise.all([
       db.get(opPath, transaction),
       db.get(targetPath, transaction),
-      db.get(conversationPath, transaction),
+      fromProfile ? Promise.resolve({ exists: true, data: {} }) :
+        db.get(conversationPath, transaction),
       db.get(ratePath, transaction),
       db.get(configPath, transaction),
     ]);
 
+    const expectedAction = fromProfile ? "reportProfile" : "reportUser";
     if (op.exists) {
+      if (clean(op.data?.action) !== expectedAction ||
+          clean(op.data?.reporterId) !== uid ||
+          clean(op.data?.targetUserId) !== targetUserId ||
+          (clean(op.data?.reason) && clean(op.data.reason) !== reason) ||
+          (clean(op.data?.conversationId) &&
+            clean(op.data.conversationId) !== conversationId)) {
+        throw new ApiError("idempotency_key_conflict", 409);
+      }
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
@@ -1913,15 +1925,14 @@ async function reportUser(db, uid, body) {
       throw new ApiError("not_found", 404);
     }
 
-    const participants = Array.isArray(conversation.data?.participants)
-      ? conversation.data.participants
-      : [];
-    if (
-      participants.length !== 2 ||
-      !participants.includes(uid) ||
-      !participants.includes(targetUserId)
-    ) {
-      throw new ApiError("invalid_conversation", 409);
+    if (!fromProfile) {
+      const participants = Array.isArray(conversation.data?.participants)
+        ? conversation.data.participants : [];
+      if (participants.length !== 2 ||
+          !participants.includes(uid) ||
+          !participants.includes(targetUserId)) {
+        throw new ApiError("invalid_conversation", 409);
+      }
     }
 
     const cfg = config.data || {};
@@ -1932,7 +1943,10 @@ async function reportUser(db, uid, body) {
     const currentCount = sameWindow ? Math.max(0, Number(rate.data?.count || 0)) : 0;
     const duplicate = checkReportDuplicateWindow(
       rate.data || {},
-      reportDuplicateSignature("private_chat", targetUserId, conversationId, reason),
+      reportDuplicateSignature(
+        fromProfile ? "profile" : "private_chat",
+        targetUserId, fromProfile ? "profile" : conversationId, reason,
+      ),
       nowMs,
     );
     if (duplicate.duplicate) throw new ApiError("report_recent_duplicate", 409);
@@ -1950,36 +1964,41 @@ async function reportUser(db, uid, body) {
         updatedAt: now,
       }, ["windowStartedAt", "count", "recentReportKeys", "updatedAt"]),
       db.writeCreate(reportPath, {
-        type: "user",
-        reporterId: uid,
-        targetUserId,
-        conversationId,
-        reason,
-        details,
-        source: "private_chat",
-        status: "open",
-        createdAt: now,
-        updatedAt: now,
+        ...(fromProfile ? {
+          type: "account", targetType: "user",
+          reporterUid: uid, targetUid: targetUserId, source: "profile",
+        } : {
+          type: "user", reporterId: uid, targetUserId,
+          conversationId, source: "private_chat",
+        }),
+        reason, details,
+        status: fromProfile ? "new" : "open",
+        createdAt: now, updatedAt: now,
       }),
       adminInboxUpsertWrite(db, {
-        type: "user_report",
-        title: "بلاغ عن مستخدم في محادثة خاصة",
+        type: fromProfile ? "account_report" : "user_report",
+        title: fromProfile ? "بلاغ مباشر عن ملف شخصي" :
+          "بلاغ عن مستخدم في محادثة خاصة",
         body: "بلاغ يحتاج مراجعة",
         targetId: resultData.reportId,
         route: "general_reports",
         createdAt: now,
-        priority: reportPriority("user_report", reason),
+        priority: reportPriority(
+          fromProfile ? "account_report" : "user_report", reason,
+        ),
         meta: {
           reporterUid: uid,
           targetUid: targetUserId,
-          conversationId,
-          status: "open",
+          ...(fromProfile ? {} : { conversationId }),
+          status: fromProfile ? "new" : "open",
         },
       }),
       db.writeCreate(opPath, {
         reporterId: uid,
         targetUserId,
-        action: "reportUser",
+        action: expectedAction,
+        reason,
+        ...(fromProfile ? {} : { conversationId }),
         status: "completed",
         result: resultData,
         createdAt: now,
@@ -1988,6 +2007,12 @@ async function reportUser(db, uid, body) {
 
     return { ok: true, code: "ok", ...resultData };
   });
+}
+
+async function reportProfile(db, uid, body) {
+  // Reuse the same rate-limit document, deduplication, transaction and inbox.
+  // Profile complaints MUST NOT fabricate a private conversation.
+  return reportUser(db, uid, body, true);
 }
 
 // Only source the report snapshot from the room document already read
@@ -2177,6 +2202,9 @@ export async function chatSafetyActions(request, env, ctx) {
       case "reportUser":
         result = await reportUser(db, decoded.sub, body);
         break;
+      case "reportProfile":
+        result = await reportProfile(db, decoded.sub, body);
+        break;
       case "reportRoom":
         result = await reportRoom(db, decoded.sub, body, env.ROOM_REALTIME);
         break;
@@ -2223,5 +2251,6 @@ export async function chatSafetyActions(request, env, ctx) {
 
 export const reportDeduplicationTestHooks = Object.freeze({
   reportUser,
+  reportProfile,
   reportRoom,
 });
