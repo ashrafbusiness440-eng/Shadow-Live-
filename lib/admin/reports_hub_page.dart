@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'diary_reports_control_page.dart';
+import 'account_action_appeals_control_page.dart';
 import 'general_reports_control_page.dart';
 import 'general_reports_history_page.dart';
 import 'system_reports_control_page.dart';
@@ -157,6 +158,16 @@ class _ReportsHubPageState extends State<ReportsHubPage> {
       appBar: AppBar(
         title: const Text('البلاغات'),
         actions: [
+          if (widget.allowGeneral && _section == ReportsHubSection.people)
+            IconButton(
+              tooltip: 'اعتراضات الإجراءات',
+              icon: const Icon(Icons.gavel_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const AccountActionAppealsControlPage(),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: 'تحديث البلاغات',
             icon: const Icon(Icons.refresh_rounded),
