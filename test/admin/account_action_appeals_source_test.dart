@@ -17,6 +17,8 @@ void main() {
     expect(page.contains("'getAccountActionAppeal'"), isTrue);
     expect(page.contains("'reviewAccountActionAppeal'"), isTrue);
     expect(page.contains('reversalOperationId'), isTrue);
+    expect(page.contains("'getAccountActionHistory'"), isTrue);
+    expect(page.contains('reversalController'), isFalse);
     expect(page.contains('لم يتم إثبات رفع هذه العقوبة'), isTrue);
     expect(page.contains('setInterval'), isFalse);
   });
