@@ -31,5 +31,9 @@ void main() {
     expect(source.contains('final byTime = bm.compareTo(am);'), isTrue);
     expect(source.contains('b.id.compareTo(a.id)'), isTrue);
     expect(source.contains("itemCount: docs.length + (canLoadOlder ? 1 : 0)"), isTrue);
+    expect(source.contains('while (_chatImageLoads.length > 16)'), isTrue);
+    expect(source.contains("_chatImageLoads.remove(_chatImageLoads.keys.first)"), isTrue);
+    expect(source.contains("'إعادة تحميل الصورة'"), isTrue);
+    expect(source.contains('setState(() => _chatImageLoads.remove(objectId))'), isTrue);
   });
 }
