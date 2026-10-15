@@ -32,7 +32,7 @@ void main() {
       '_isActiveChatAccount(senderUid)'.allMatches(text).length,
       greaterThanOrEqualTo(4),
     );
-    expect(text.contains("final key = [senderUid,"), isTrue);
+    expect(text.contains("final key = [senderUid!,"), isTrue);
 
     final image = source.substring(
       source.indexOf('Future<void> _sendImage() async {'),
