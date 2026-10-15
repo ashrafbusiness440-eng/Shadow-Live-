@@ -69,6 +69,7 @@ export async function readImageReviewPreview(request, env, db, actorUid, objectI
   const mimeType = clean(doc.mimeType);
   if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mimeType) ||
       Number(doc.sizeBytes) < 1 || Number(doc.sizeBytes) > MAX_PREVIEW_BYTES ||
+      !clean(doc.etag) ||
       clean(doc.storageKey) !== moderatedStagingKey(clean(doc.publicStorageKey)) ||
       typeof env?.USER_STORAGE?.get !== "function") {
     throw new ImageReviewError("image_preview_unavailable", 409);
@@ -83,7 +84,7 @@ export async function readImageReviewPreview(request, env, db, actorUid, objectI
   )]);
   const obj = await env.USER_STORAGE.get(clean(doc.storageKey));
   if (!obj || Number(obj.size) < 1 || Number(obj.size) > MAX_PREVIEW_BYTES ||
-      (clean(doc.etag) && clean(obj.etag) !== clean(doc.etag))) {
+      clean(obj.etag) !== clean(doc.etag)) {
     throw new ImageReviewError("image_preview_unavailable", 409);
   }
   const headers = new Headers(corsHeaders(request, env));
