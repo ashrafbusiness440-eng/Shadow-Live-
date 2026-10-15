@@ -45,6 +45,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final Set<String> _checkedHideIds = {};
   bool _hideReadLoading = false;
   bool _hideReadFailed = false;
+  int _inboxGeneration = 0;
 
   bool _isActiveInboxUser(String? ownerUid) =>
       mounted && ownerUid != null && ownerUid.isNotEmpty &&
@@ -52,6 +53,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       FirebaseAuth.instance.currentUser?.uid == ownerUid;
 
   void _resetInboxState() {
+    _inboxGeneration++;
     _inboxStream = null;
     _olderInboxDocuments.clear();
     _inboxCursor = null;
@@ -99,6 +101,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> live,
   ) async {
     final ownerUid = _pagedOwnerUid;
+    final generation = _inboxGeneration;
     if (!_isActiveInboxUser(ownerUid) || live.isEmpty ||
         _inboxPageLoading || !_inboxHasMore) return;
     final cursor = _inboxCursor ?? live.last;
@@ -114,7 +117,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           .startAfterDocument(cursor)
           .limit(_inboxPageSize)
           .get();
-      if (!_isActiveInboxUser(ownerUid)) return;
+      if (!_isActiveInboxUser(ownerUid) || generation != _inboxGeneration) return;
       setState(() {
         for (final doc in live) {
           _olderInboxDocuments[doc.id] = doc;
@@ -126,11 +129,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _inboxHasMore = page.docs.length == _inboxPageSize;
       });
     } catch (_) {
-      if (_isActiveInboxUser(ownerUid)) {
+      if (_isActiveInboxUser(ownerUid) && generation == _inboxGeneration) {
         setState(() => _inboxPageFailed = true);
       }
     } finally {
-      if (_isActiveInboxUser(ownerUid)) {
+      if (_isActiveInboxUser(ownerUid) && generation == _inboxGeneration) {
         setState(() => _inboxPageLoading = false);
       }
     }
@@ -143,6 +146,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> visible,
   ) async {
     final ownerUid = _pagedOwnerUid;
+    final generation = _inboxGeneration;
     if (!_isActiveInboxUser(ownerUid) || _hideReadLoading || _hideReadFailed) {
       return;
     }
@@ -153,8 +157,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       final found = <String, Timestamp?>{};
       for (var start = 0; start < unchecked.length; start += 30) {
-        if (!_isActiveInboxUser(ownerUid)) return;
-        final end = (start + 30).clamp(0, unchecked.length);
+        if (!_isActiveInboxUser(ownerUid) || generation != _inboxGeneration) return;
+        final end = start + 30 < unchecked.length ? start + 30 : unchecked.length;
         final chunk = unchecked.sublist(start, end);
         final result = await FirebaseFirestore.instance
             .collection('conversation_hides')
@@ -162,7 +166,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             .collection('items')
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
-        if (!_isActiveInboxUser(ownerUid)) return;
+        if (!_isActiveInboxUser(ownerUid) || generation != _inboxGeneration) return;
         for (final id in chunk) {
           found[id] = null;
         }
@@ -170,17 +174,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
           found[doc.id] = doc.data()['hiddenAt'] as Timestamp?;
         }
       }
-      if (!_isActiveInboxUser(ownerUid)) return;
+      if (!_isActiveInboxUser(ownerUid) || generation != _inboxGeneration) return;
       setState(() {
         _hiddenAtByConversation.addAll(found);
         _checkedHideIds.addAll(unchecked);
       });
     } catch (_) {
-      if (_isActiveInboxUser(ownerUid)) {
+      if (_isActiveInboxUser(ownerUid) && generation == _inboxGeneration) {
         setState(() => _hideReadFailed = true);
       }
     } finally {
-      _hideReadLoading = false;
+      if (_isActiveInboxUser(ownerUid) && generation == _inboxGeneration) {
+        _hideReadLoading = false;
+      }
     }
   }
 
