@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, writeBatch} from "firebase/firestore";
+import {collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, writeBatch, serverTimestamp, increment} from "firebase/firestore";
 
 let env;
 const projectId="shadow-live-economy-test";
@@ -668,22 +668,48 @@ test("public profile rejects oversized mood fields",async()=>{
   }));
 });
 
-test("chat image message accepts private R2 object metadata",async()=>{
-  const userDb=phoneUserDb();
-  await assertSucceeds(setDoc(
-    doc(userDb,"conversations","rules_chat","messages","r2_image"),
-    {
-      senderId:uid,
-      receiverId:otherUid,
-      type:"image",
-      storageObjectId:"c".repeat(32),
-      mimeType:"image/webp",
-      sizeBytes:4096,
-      createdAt:new Date(),
-    },
-  ));
+test("chat image message accepts private R2 object metadata in an atomic batch",async()=>{
+  const db=phoneUserDb();
+  const conversation=doc(db,"conversations","rules_chat");
+  const message=doc(conversation,"messages","r2_image");
+  const data={senderId:uid,receiverId:otherUid,type:"image",
+    storageObjectId:"c".repeat(32),mimeType:"image/webp",
+    sizeBytes:4096,createdAt:serverTimestamp()};
+  await assertFails(setDoc(message,data));
+  await assertFails(updateDoc(conversation,{lastMessage:"fake",lastSenderId:uid}));
+  const batch=writeBatch(db);
+  batch.update(conversation,{lastMessage:"📷 صورة",lastSenderId:uid,
+    lastMessageId:"r2_image",updatedAt:serverTimestamp(),
+    ["unreadCounts."+uid]:0,["unreadCounts."+otherUid]:increment(1)});
+  batch.set(message,data);
+  await assertSucceeds(batch.commit());
 });
 
+test("message read receipt cannot spoof other participant count or preview",async()=>{
+  const db=phoneUserDb();
+  const conversation=doc(db,"conversations","rules_chat");
+  await assertSucceeds(updateDoc(conversation,{["unreadCounts."+uid]:0}));
+  await assertFails(updateDoc(conversation,{["unreadCounts."+otherUid]:99}));
+  await assertFails(updateDoc(conversation,{["unreadCounts."+uid]:3}));
+  await assertFails(updateDoc(conversation,{updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(conversation,{lastMessage:"spoof",lastSenderId:uid}));
+});
+
+test("pending image preview must correspond to a newly batched message",async()=>{
+  const db=phoneUserDb();
+  const conversation=doc(db,"conversations","rules_chat");
+  const pending=doc(conversation,"messages","r2_pending");
+  const batch=writeBatch(db);
+  batch.update(conversation,{lastMessage:"📷 صورة قيد المراجعة",lastSenderId:uid,
+    lastMessageId:"r2_pending",updatedAt:serverTimestamp(),
+    ["unreadCounts."+uid]:0,["unreadCounts."+otherUid]:increment(1)});
+  batch.set(pending,{senderId:uid,receiverId:otherUid,type:"image",
+    storageObjectId:"d".repeat(32),mimeType:"image/webp",sizeBytes:4096,
+    moderationStatus:"pending",createdAt:serverTimestamp()});
+  await assertSucceeds(batch.commit());
+  await assertFails(updateDoc(conversation,{lastMessage:"📷 صورة",
+    lastMessageId:"r2_pending",updatedAt:serverTimestamp()}));
+});
 test("regular user cannot change protected balances earnings agency or mic activity",async()=>{
   const userDb=phoneUserDb();
   const ref=doc(userDb,"users",uid);
