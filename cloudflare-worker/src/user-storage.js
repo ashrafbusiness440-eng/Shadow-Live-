@@ -1877,6 +1877,9 @@ export async function runDueStorageCleanup(
 
 async function prepareRead(request, env, auth, body) {
   const metadata = await metadataForObject(auth.db, body.objectId);
+  if (clean(metadata.storageKey).startsWith("moderation-staging/")) {
+    throw new StorageApiError("image_pending_moderation", 423);
+  }
   await authorizeRead(auth.db, auth.uid, metadata);
   if (["needs_review", "blocked"].includes(clean(metadata.state)) ||
       (metadata.moderation &&
