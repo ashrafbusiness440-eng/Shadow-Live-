@@ -248,6 +248,49 @@ test("U6-L4/A expired author claim may be reclaimed by bounded sweeper",async()=
   assert.equal(status.status,"deleted");
   assert.deepEqual(deletions,["moderated-diary/"+pub,stage]);
 });
+test("U6-L4/A cleanup receipt only deletes stage, not active published image",async()=>{
+  const {db}=fixture("active");
+  db.docs.set("storage_objects/"+id,{
+    ...db.docs.get("storage_objects/"+id),
+    state:"active",
+    storageKey:"moderated-diary/"+pub,
+    linkedDiaryId:"diary_123",
+    moderation:{status:"approved",reviewStatus:"approved"},
+  });
+  db.docs.set("diary_image_links/"+id,{
+    objectId:id,ownerUid:"u1",diaryId:"diary_123",state:"linked",
+  });
+  const receiptId="diary_stage_"+id;
+  const receipt={objectId:id,storageKey:stage,ownerUid:"u1",
+    targetId:"u1",mimeType:"image/png",scope:"diary_stage_only",
+    reason:"diary_published_stage_cleanup"};
+  db.docs.set("storage_delete_queue/"+receiptId,receipt);
+  const removed=[];
+  const result=await cleanupQueuedStorageObject(db,{
+    delete:async key=>removed.push(key),
+  },{id:receiptId,data:receipt},Date.now());
+  assert.equal(result.status,"deleted");
+  assert.deepEqual(removed,[stage]);
+  assert.equal(db.docs.has("storage_delete_queue/"+receiptId),false);
+  assert.equal(db.docs.get("storage_objects/"+id).state,"active");
+  assert.equal(db.docs.get("storage_objects/"+id).storageKey,
+    "moderated-diary/"+pub);
+  assert.equal(db.docs.get("diary_image_links/"+id).state,"linked");
+});
+test("U6-L4/A stage cleanup rejects forged R2 storage keys",async()=>{
+  const {db}=fixture("active");
+  const receiptId="diary_stage_"+id;
+  const item={id:receiptId,data:{
+    objectId:id,storageKey:"moderation-staging/other/forged.png",
+    ownerUid:"u1",targetId:"u1",mimeType:"image/png",
+    scope:"diary_stage_only",reason:"diary_published_stage_cleanup",
+  }};
+  const deletes=[];
+  await assert.rejects(()=>cleanupQueuedStorageObject(db,{
+    delete:async key=>deletes.push(key),
+  },item,Date.now()),/invalid_diary_stage_cleanup/);
+  assert.deepEqual(deletes,[]);
+});
 test("U6-L4/A author diary post cannot link an unapproved staged image", () => {
   const code = fs.readFileSync("cloudflare-worker/src/diaries.js", "utf8");
   assert.match(code, /approved_pending_diary_link/);
