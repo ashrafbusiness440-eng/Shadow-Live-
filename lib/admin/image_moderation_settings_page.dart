@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
@@ -26,6 +27,8 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
   String? _notice;
   Map<String, dynamic> _providers = {};
   Map<String, dynamic> _usage = {};
+  List<Map<String, dynamic>> _reviewCases = [];
+  bool _reviewBusy = false;
 
   @override
   void initState() {
@@ -114,6 +117,155 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _loadReviews() async {
+    if (_reviewBusy) return;
+    setState(() => _reviewBusy = true);
+    try {
+      final data = await _post({'action': 'list_images', 'limit': 12});
+      if (!mounted) return;
+      final cases = (data['images'] as List?) ?? [];
+      setState(() => _reviewCases = cases.whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e)).toList());
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'تعذّر تحميل الصور المعلّقة. حاول مجددًا.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
+  Future<void> _preview(String objectId) async {
+    if (_reviewBusy) return;
+    setState(() => _reviewBusy = true);
+    try {
+      final token = await controlAuth.currentUser?.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final res = await http.post(shadowApiEndpoint('image-moderation-control'),
+          headers: {'authorization': 'Bearer $token',
+            'content-type': 'application/json'},
+          body: jsonEncode({'action': 'preview_image', 'objectId': objectId}))
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200 || res.bodyBytes.length > 3 * 1024 * 1024) {
+        throw StateError('image_preview_failed');
+      }
+      final bytes = Uint8List.fromList(res.bodyBytes);
+      if (!mounted) return;
+      await showDialog<void>(context: context, builder: (dialogContext) =>
+          AlertDialog(
+            title: const Text('معاينة صورة خاصة'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400, maxHeight: 420),
+              child: Image.memory(bytes, fit: BoxFit.contain)),
+            actions: [TextButton(onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق'))],
+          ));
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'تعذّر فتح الصورة. قد تحتاج إلى تسجيل الدخول مجددًا للتحقق.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
+  static const Map<String, String> _scopeLabels = {
+    'profile_image': 'الصورة الشخصية',
+    'profile_avatar_animation': 'صورة الحساب المتحركة',
+    'profile_cover': 'غلاف الحساب',
+    'room_cover': 'غلاف الغرفة',
+    'agency_logo': 'شعار الوكالة',
+    'agency_background': 'خلفية الوكالة',
+    'agency_room_image': 'صورة غرفة الوكالة',
+    'chat_image': 'صورة محادثة خاصة',
+    'diary_image': 'صورة يومية',
+  };
+
+  Future<void> _approve(String objectId) async {
+    if (_reviewBusy) return;
+    final approved = await showDialog<bool>(
+        context: context, builder: (dialogContext) => AlertDialog(
+          title: const Text('الموافقة على نشر الصورة'),
+          content: const Text('هل تحققت من الصورة؟ عند الموافقة '
+              'ستصبح الصورة الجديدة ظاهرة في مكانها المناسب، '
+              'وتبقى الصورة القديمة حتى اكتمال الاعتماد.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('اعتماد الصورة')),
+          ],
+        ));
+    if (approved != true || !mounted) return;
+    setState(() => _reviewBusy = true);
+    try {
+      await _post({
+        'action': 'approve_image', 'objectId': objectId,
+        'reason': 'تمت مراجعة الصورة بصريًا واعتماد نشرها',
+        'idempotencyKey': 'image_approval_' + objectId,
+      });
+      if (!mounted) return;
+      setState(() => _notice = 'تم اعتماد الصورة وإرسال النتيجة لصاحبها.');
+      await _loadReviewsAfterDecision();
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'تعذّر اعتماد الصورة. قد تكون الصورة تغيّرت أو انتهت الصلاحية. '
+          'تحقّق وأعد المحاولة بنفس الطلب.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
+  Future<void> _reject(String objectId) async {
+    if (_reviewBusy) return;
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(
+        context: context, builder: (dialogContext) => AlertDialog(
+          title: const Text('رفض نشر الصورة'),
+          content: TextField(
+            controller: reason, maxLength: 200, maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'اكتب سبب الرفض ليصل إلى صاحب الصورة')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('تأكيد الرفض')),
+          ],
+        ));
+    final message = reason.text.trim();
+    reason.dispose();
+    if (confirmed != true || !mounted) return;
+    if (message.length < 3) {
+      setState(() => _notice = 'اكتب سببًا واضحًا لا يقل عن 3 أحرف.');
+      return;
+    }
+    setState(() => _reviewBusy = true);
+    try {
+      await _post({
+        'action': 'reject_image', 'objectId': objectId,
+        'reason': message,
+        'idempotencyKey': 'image_review_' +
+            DateTime.now().microsecondsSinceEpoch.toString(),
+      });
+      if (!mounted) return;
+      setState(() => _notice =
+          'تم رفض نشر الصورة وإرسال النتيجة إلى صاحبها.');
+      await _loadReviewsAfterDecision();
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'لم يُحفظ القرار. تحقّق من الصلاحية أو أعد تسجيل الدخول.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
+  Future<void> _loadReviewsAfterDecision() async {
+    final data = await _post({'action': 'list_images', 'limit': 12});
+    if (!mounted) return;
+    final cases = (data['images'] as List?) ?? [];
+    setState(() => _reviewCases = cases.whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e)).toList());
   }
 
   @override
@@ -231,6 +383,53 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
           if (_notice != null) Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(_notice!)),
+          const SizedBox(height: 22),
+          const Text('مراجعة الصور المعلّقة',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          const Text('القائمة محدودة لأحدث عينة متاحة. عرض الصورة '
+              'يسجّل الاطلاع عليها ولا يمنح حق النشر تلقائيًا.'),
+          OutlinedButton.icon(
+            onPressed: _reviewBusy ? null : _loadReviews,
+            icon: const Icon(Icons.fact_check_outlined),
+            label: Text(_reviewBusy ? 'جارٍ التحميل...' : 'عرض الصور للمراجعة'),
+          ),
+          for (final item in _reviewCases) Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('نوع الصورة: ${_scopeLabels[item['scope']] ?? 'صورة'}'),
+                  Text('صاحب الصورة: ${item['ownerUid'] ?? '—'}'),
+                  Text('الحالة: ${item['state'] ?? '—'}'),
+                  Text('السبب: ${item['reason'] ?? 'غير محدد'}'),
+                  Wrap(spacing: 10, children: [
+                    OutlinedButton(
+                      onPressed: _reviewBusy ? null : () =>
+                          _preview((item['objectId'] ?? '').toString()),
+                      child: const Text('معاينة آمنة')),
+                    if (['needs_review', 'approved_pending_copy'].contains(item['state']) &&
+                        _scopeLabels.containsKey(item['scope']) &&
+                        !['chat_image', 'diary_image']
+                            .contains(item['scope']))
+                      FilledButton(
+                        onPressed: _reviewBusy ? null : () =>
+                            _approve((item['objectId'] ?? '').toString()),
+                        child: const Text('اعتماد النشر')),
+                    OutlinedButton(
+                      onPressed: _reviewBusy ? null : () =>
+                          _reject((item['objectId'] ?? '').toString()),
+                      child: const Text('رفض النشر')),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+          const Text('الصور المشتبه بها من الحسابات والغرف والوكالات '
+              'يمكن اعتمادها يدويًا. صور المحادثات واليوميات والصور '
+              'المحجوبة آليًا لا تُنشر تلقائيًا؛ تبقى للمراجعة '
+              'والاعتراض وفق الضوابط المعتمدة.'),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: _busy ? null : _save,

@@ -1053,10 +1053,16 @@ async function confirmUpload(request, env, auth, body) {
   }
 
   if (moderationDecision) {
+    // An approval belongs to the bytes inspected by the provider, not merely
+    // the latest HEAD response. Never publish an unscanned signed-PUT replay.
+    const reviewedEtag = clean(moderationDecision.reviewedEtag);
+    if (!reviewedEtag || reviewedEtag !== clean(object.etag)) {
+      throw new StorageApiError("moderated_object_changed", 409);
+    }
     // This is deliberately after pointer conflict checks and before commit.
     // A failed copy leaves the private upload ticket untouched.
     await publishModeratedUpload(bucket, clean(ticket.storageKey),
-      clean(ticket.publicStorageKey), expectedMime);
+      clean(ticket.publicStorageKey), expectedMime, reviewedEtag);
   }
   await auth.db.commit(transaction, writes);
   if (moderationDecision) {

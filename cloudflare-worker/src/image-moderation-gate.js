@@ -159,9 +159,17 @@ export async function classifyModeratedUpload({
     if (animatedImageNeedsReview(bytes, ticket.mimeType)) {
       return { status: "needs_review", reason: "animation_manual_review" };
     }
-    return await runImageModerationProvider(env, policy, {
+    // Bind a clean verdict to the exact R2 object that was inspected.
+    // An overwritten signed PUT must not replay an old approval.
+    const inspectedEtag = String(object.etag || "").trim();
+    if (!inspectedEtag) {
+      return { status: "needs_review", reason: "image_unavailable" };
+    }
+    const verdict = await runImageModerationProvider(env, policy, {
       bytes, mimeType: ticket.mimeType,
     });
+    return verdict.status === "approved"
+      ? { ...verdict, reviewedEtag: inspectedEtag } : verdict;
   } catch {
     return { status: "needs_review", reason: "provider_unavailable" };
   }
@@ -170,13 +178,14 @@ export async function classifyModeratedUpload({
 // Never hand a pending asset a public R2 location. A failed copy leaves the
 // ticket for operator intervention; this function does not approve on failure.
 export async function publishModeratedUpload(bucket, stagingKey, publicKey,
-  mimeType) {
+  mimeType, expectedEtag = "") {
   if (stagingKey !== moderatedStagingKey(publicKey)) {
     throw Error("publication_key_mismatch");
   }
   const staged = await bucket.get(stagingKey);
   if (!staged || Number(staged.size || 0) <= 0 ||
-      Number(staged.size || 0) > 3 * 1024 * 1024) {
+      Number(staged.size || 0) > 3 * 1024 * 1024 ||
+      (expectedEtag && String(staged.etag || "") !== expectedEtag)) {
     throw Error("moderation_staged_object_unavailable");
   }
   await bucket.put(publicKey, staged.body, {
