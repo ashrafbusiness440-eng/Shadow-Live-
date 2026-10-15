@@ -21,9 +21,9 @@ void main() {
       greaterThanOrEqualTo(4),
     );
     expect(
-      RegExp(r'requestUid != FirebaseAuth.instance.currentUser\\?\\.uid')
-          .allMatches(source)
-          .length,
+      'requestUid != FirebaseAuth.instance.currentUser?.uid'
+              .allMatches(source)
+              .length,
       greaterThanOrEqualTo(4),
     );
     expect(source.contains('_authSubscription?.cancel()'), isTrue);
