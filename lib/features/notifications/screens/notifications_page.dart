@@ -81,9 +81,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final next = await _service.load(after: page!.cursor);
       if (!mounted) return;
       setState(() {
-        // The backend already returns a globally ordered page; preserve
-        // the cursor's stable timestamp + document-ID tie-breaker.
         _items.addAll(next.items);
+        _items.sort((a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0)
+            .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
         _page = next;
         _loading = false;
       });
