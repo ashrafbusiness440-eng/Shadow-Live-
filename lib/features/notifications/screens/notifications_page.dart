@@ -172,8 +172,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final status = item.reviewStatus ?? '';
     final canAppeal = RegExp(r'^[a-f0-9]{32}$').hasMatch(objectId) &&
         (status == 'blocked' || status == 'rejected');
+    final canComposeDiary = RegExp(r'^[a-f0-9]{32}$').hasMatch(objectId) &&
+        status == 'approved_pending_diary_link';
     final note = TextEditingController();
-    final sent = await showDialog<bool>(
+    final action = await showDialog<String>(
       context: context,
       builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
@@ -188,6 +190,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 const SizedBox(height: 12),
                 Text(status == 'approved'
                     ? 'تم اعتماد نشر الصورة.'
+                    : status == 'approved_pending_diary_link'
+                        ? 'الصورة معتمدة وما زالت خاصة. يمكنك الآن إنشاء يومية بها.'
                     : status == 'appeal_pending'
                         ? 'اعتراضك قيد المراجعة. ستصلك النتيجة في الإشعارات.'
                         : status == 'rejected'
@@ -205,11 +209,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
+              onPressed: () => Navigator.pop(dialogContext, 'close'),
               child: const Text('إغلاق')),
+            if (canComposeDiary)
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, 'compose'),
+                child: const Text('إنشاء يومية بهذه الصورة')),
             if (canAppeal)
               FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
+                onPressed: () => Navigator.pop(dialogContext, 'appeal'),
                 child: const Text('إرسال الاعتراض')),
           ],
         ),
@@ -217,7 +225,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
     final explanation = note.text.trim();
     note.dispose();
-    if (sent != true || !mounted) return;
+    if (!mounted) return;
+    if (action == 'compose' && canComposeDiary) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => DiariesScreen(initialApprovedImageObjectId: objectId),
+      ));
+      return;
+    }
+    if (action != 'appeal' || !canAppeal) return;
     final storage = UserStorageService();
     try {
       final result = await storage.appealImage(
