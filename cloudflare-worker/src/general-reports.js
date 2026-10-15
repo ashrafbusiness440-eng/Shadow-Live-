@@ -13,6 +13,11 @@ import {
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import { reporterReportNotificationWrites } from "./reporter-report-notifications.js";
 import { mutateAccount } from "./manage-user-account.js";
+import {
+  AccountActionAppealError, submitAccountActionAppeal,
+  getOwnAccountActionAppeal, listAccountActionAppeals,
+  reviewAccountActionAppeal,
+} from "./account-action-appeals.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
 import { openReportScreenshot } from "./report-screenshot.js";
 import { evidenceDeadline, setReportEvidenceHold } from "./report-evidence-retention.js";
@@ -938,7 +943,19 @@ export async function generalReports(request, env) {
     const body = await readJson(request);
     const action = clean(body.action);
     const db = firestoreClient(env);
+    // Dedicated self-only action: signed-in sanctioned users may appeal their
+    // OWN verified operation, but never access the admin or report-read paths.
+    if (action === "submitAccountActionAppeal" ||
+        action === "getOwnAccountActionAppeal") {
+      const uid = clean(decoded?.sub);
+      if (!uid) throw new GeneralReportError("unauthorized", 401);
+      const result = action === "submitAccountActionAppeal"
+        ? await submitAccountActionAppeal(db, uid, body)
+        : await getOwnAccountActionAppeal(db, uid, body);
+      return json(request, env, result);
+    }
     const actor = await requireAdmin(db, decoded,
+      action === "reviewAccountActionAppeal" ||
       action === "reviewReport" || action === "applyAccountAction" ||
       action === "setReportPriority" || action === "reviewSystemFlag" ||
       action === "setEvidenceHold");
@@ -957,7 +974,13 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "getSystemFlagGroup"
+    const result = action === "listAccountActionAppeals"
+      ? await listAccountActionAppeals(db)
+      : action === "reviewAccountActionAppeal"
+      ? (actor.canReview
+        ? await reviewAccountActionAppeal(db, actor.uid, body)
+        : (() => { throw new GeneralReportError("forbidden", 403); })())
+      : action === "getSystemFlagGroup"
       ? await getSystemFlagGroup(db, body)
       : action === "openReportScreenshot"
       ? await openReportScreenshot(db, env, actor.uid, safeId(body.reportId))
@@ -1006,6 +1029,9 @@ export async function generalReports(request, env) {
     if (clean(error?.code) === "evidence_retention_expired") {
       return json(request, env, { ok: false, code: error.code }, 410);
     }
+    if (error instanceof AccountActionAppealError) {
+      return json(request, env, { ok: false, code: error.code }, error.status);
+    }
     if (error instanceof GeneralReportError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
@@ -1030,4 +1056,8 @@ export const generalReportsTestHooks = Object.freeze({
   reviewGeneralReport,
   setReportPriority,
   resolveWithAccountAction,
+  submitAccountActionAppeal,
+  getOwnAccountActionAppeal,
+  listAccountActionAppeals,
+  reviewAccountActionAppeal,
 });
