@@ -145,32 +145,10 @@ class _AccountActionAppealsControlPageState
       }
       setState(() => _busy = true);
       try {
-        String reversalOperationId = '';
-        if (isAccept) {
-          // Reuse the existing bounded, verified account action history.
-          // The reviewer never types or guesses the operation receipt.
-          final history = await _post('getAccountActionHistory', {
-            'targetUid': (item['userUid'] ?? '').toString(),
-          });
-          final records = (history['items'] as List? ?? const [])
-              .whereType<Map>();
-          for (final record in records) {
-            if (record['originalOperationId'] == item['operationId'] &&
-                record['lifecycleState'] == 'lift_recorded') {
-              reversalOperationId = (record['operationId'] ?? '').toString();
-              break;
-            }
-          }
-          if (reversalOperationId.isEmpty) {
-            throw StateError('reversal_not_verified');
-          }
-        }
         await _post('reviewAccountActionAppeal', {
           'operationId': (item['operationId'] ?? '').toString(),
           'decision': decision,
           'reason': reason,
-          if (isAccept)
-            'reversalOperationId': reversalOperationId,
           'idempotencyKey':
               'account_appeal_${DateTime.now().microsecondsSinceEpoch}',
         });
