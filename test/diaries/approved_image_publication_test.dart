@@ -34,7 +34,11 @@ void main() {
     final worker = File('cloudflare-worker/src/image-moderation-control.js')
         .readAsStringSync();
     expect(errors.contains("case 'diary_image_not_approved':"), isTrue);
-    expect(worker.contains('IMAGE_MODERATION_PUBLICATION_GATE_READY = false'),
+    final policy = File('cloudflare-worker/src/image-moderation-policy.js')
+        .readAsStringSync();
+    expect(policy.contains('IMAGE_MODERATION_PUBLICATION_GATE_READY = false'),
+        isTrue);
+    expect(worker.contains('export { IMAGE_MODERATION_PUBLICATION_GATE_READY }'),
         isTrue);
   });
 }
