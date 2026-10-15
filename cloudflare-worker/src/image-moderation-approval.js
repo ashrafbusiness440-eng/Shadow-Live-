@@ -107,14 +107,23 @@ async function beginImageApproval(db, actorUid, objectId, key, reason) {
       await db.rollback(tx);
       return {complete:clean(operation.data.status)==="completed"};
     }
-    if (!snap.exists || clean(snap.data?.state)!=="needs_review") {
+    if (!snap.exists || !["needs_review", "appeal_pending"].includes(
+      clean(snap.data?.state))) {
       throw new ImageReviewError("image_not_approvable",409);
     }
     const doc=snap.data;
+    if (clean(doc.state)==="appeal_pending") {
+      const appeal=await db.get("image_moderation_appeals/"+objectId,tx);
+      if (!appeal.exists || clean(appeal.data?.status)!=="under_review" ||
+          clean(appeal.data?.ownerUid)!==clean(doc.ownerUid)) {
+        throw new ImageReviewError("image_appeal_conflict",409);
+      }
+    }
     validateSource(doc,objectId);
     await ensurePointer(db,tx,doc);
     await verifyTarget(db,tx,doc);
     const now=new Date();
+    const isAppeal=clean(doc.state)==="appeal_pending";
     await db.commit(tx,[
       db.writeUpdate("storage_objects/"+objectId,{
         state:"approved_pending_copy",
@@ -131,6 +140,9 @@ async function beginImageApproval(db, actorUid, objectId, key, reason) {
         action:"approvePendingImageIntent",actorUid,objectId,
         scope:clean(doc.scope),reason,createdAt:now,
       }),
+      ...(isAppeal?[db.writeUpdate("image_moderation_appeals/"+objectId,{
+        status:"approving",reviewedBy:actorUid,updatedAt:now,
+      },["status","reviewedBy","updatedAt"])]:[]),
     ]);
     return {complete:false};
   } catch (error) {
@@ -236,6 +248,11 @@ export async function approveImageReview(db,bucket,request,actorUid,payload) {
       scope:doc.scope,targetId:doc.targetId,objectId,extension,
     });
     if (!publicUrl) throw new ImageReviewError("public_media_url_missing",409);
+    const appeal=await db.get("image_moderation_appeals/"+objectId,tx);
+    if (appeal.exists && (clean(appeal.data.status)!=="approving" ||
+        clean(appeal.data.reviewedBy)!==actorUid)) {
+      throw new ImageReviewError("image_appeal_conflict",409);
+    }
     const now=new Date();
     const writes=[
       db.writeUpdate("storage_objects/"+objectId,{
@@ -258,10 +275,15 @@ export async function approveImageReview(db,bucket,request,actorUid,payload) {
       }),
       db.writeCreate("notifications/image_review_"+key,{
         userId:doc.ownerUid,type:"image_moderation",category:"social",
-        title:"تمت الموافقة على صورتك",body:"تمت مراجعة الصورة وقبول نشرها.",
+        title:"تمت الموافقة على صورتك",
+        body:appeal.exists?"تم قبول اعتراضك ونشر الصورة.":"تمت مراجعة الصورة وقبول نشرها.",
         read:false,objectId,reviewStatus:"approved",createdAt:now,updatedAt:now,
       }),
       ...targetWrites(db,doc,objectId,publicUrl,now,target),
+      ...(appeal.exists?[db.writeUpdate("image_moderation_appeals/"+objectId,{
+        status:"approved",decisionReason:reason,
+        decidedBy:actorUid,decidedAt:now,updatedAt:now,
+      },["status","decisionReason","decidedBy","decidedAt","updatedAt"])]:[]),
     ];
     if(pointer.id) {
       const old=pointer.previous.data;

@@ -402,25 +402,27 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                 children: [
                   Text('نوع الصورة: ${_scopeLabels[item['scope']] ?? 'صورة'}'),
                   Text('صاحب الصورة: ${item['ownerUid'] ?? '—'}'),
-                  Text('الحالة: ${item['state'] ?? '—'}'),
+                  Text('الحالة: ${item['state'] == 'appeal_pending' ? 'اعتراض قيد المراجعة' : (item['state'] ?? '—')}'),
+                  if (item['state'] == 'appeal_pending')
+                    Text('توضيح صاحب الصورة: ${item['appealExplanation']?.toString().isNotEmpty == true ? item['appealExplanation'] : 'لم يضف توضيحًا'}'),
                   Text('السبب: ${item['reason'] ?? 'غير محدد'}'),
                   Wrap(spacing: 10, children: [
                     OutlinedButton(
                       onPressed: _reviewBusy ? null : () =>
                           _preview((item['objectId'] ?? '').toString()),
                       child: const Text('معاينة آمنة')),
-                    if (['needs_review', 'approved_pending_copy'].contains(item['state']) &&
+                    if (['needs_review', 'approved_pending_copy', 'appeal_pending'].contains(item['state']) &&
                         _scopeLabels.containsKey(item['scope']) &&
                         !['chat_image', 'diary_image']
                             .contains(item['scope']))
                       FilledButton(
                         onPressed: _reviewBusy ? null : () =>
                             _approve((item['objectId'] ?? '').toString()),
-                        child: const Text('اعتماد النشر')),
+                        child: Text(item['state'] == 'appeal_pending' ? 'قبول الاعتراض' : 'اعتماد النشر')),
                     OutlinedButton(
                       onPressed: _reviewBusy ? null : () =>
                           _reject((item['objectId'] ?? '').toString()),
-                      child: const Text('رفض النشر')),
+                      child: Text(item['state'] == 'appeal_pending' ? 'رفض الاعتراض' : 'رفض النشر')),
                   ]),
                 ],
               ),
@@ -428,8 +430,9 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
           ),
           const Text('الصور المشتبه بها من الحسابات والغرف والوكالات '
               'يمكن اعتمادها يدويًا. صور المحادثات واليوميات والصور '
-              'المحجوبة آليًا لا تُنشر تلقائيًا؛ تبقى للمراجعة '
-              'والاعتراض وفق الضوابط المعتمدة.'),
+              'المحجوبة آليًا لا تُنشر تلقائيًا؛ اعتراضاتها تُراجع '
+              'بقرار بشري موثّق. صور اليوميات والخاصة تبقى محجوبة '
+              'لحين اكتمال ربط النشر الآمن.'),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: _busy ? null : _save,

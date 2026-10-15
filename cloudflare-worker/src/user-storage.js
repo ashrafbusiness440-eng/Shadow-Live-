@@ -1,3 +1,6 @@
+import {
+  ImageAppealError, submitImageModerationAppeal,
+} from "./image-moderation-appeal.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
@@ -197,6 +200,8 @@ function rateLimitForAction(action) {
       return 8;
     case "confirmUpload":
       return 12;
+    case "appealImage":
+      return 3;
     case "prepareRead":
       return 180;
     case "delete":
@@ -1959,7 +1964,7 @@ export async function userStorage(request, env) {
 
     const body = await readJson(request);
     const action = clean(body.action);
-    if (!["prepareUpload", "confirmUpload", "prepareRead"].includes(action)) {
+    if (!["prepareUpload", "confirmUpload", "prepareRead", "appealImage"].includes(action)) {
       throw new StorageApiError("invalid_action", 400);
     }
 
@@ -1980,12 +1985,16 @@ export async function userStorage(request, env) {
     if (action === "confirmUpload") {
       return await confirmUpload(request, env, auth, body);
     }
+    if (action === "appealImage") {
+      const result = await submitImageModerationAppeal(auth.db, auth.uid, body);
+      return json(request, env, result);
+    }
     return await prepareRead(request, env, auth, body);
   } catch (error) {
     const quotaResponse = firestoreQuotaResponse(request, env, error);
     if (quotaResponse) return quotaResponse;
 
-    if (error instanceof StorageApiError) {
+    if (error instanceof StorageApiError || error instanceof ImageAppealError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
 

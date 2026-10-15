@@ -36,7 +36,40 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   Future<void> _pickPhone() async {final x=await _imagePicker.pickImage(source:ImageSource.gallery,imageQuality:25,maxWidth:512,maxHeight:512,requestFullMetadata:false);if(x==null)return;final b=await x.readAsBytes();if(!mounted)return;setState((){_pickedImageBytes=b;_selectedAvatarAsset=null;});if(Navigator.canPop(context))Navigator.pop(context);}
   Future<void> _showImages() async {await showModalBottomSheet<void>(context:context,backgroundColor:const Color(0xFF08111F),shape:const RoundedRectangleBorder(borderRadius:BorderRadius.vertical(top:Radius.circular(28))),builder:(sheetContext)=>Directionality(textDirection:TextDirection.rtl,child:SafeArea(child:Padding(padding:const EdgeInsets.all(20),child:Column(mainAxisSize:MainAxisSize.min,children:[const Text('اختر صورة الحساب',style:TextStyle(color:Colors.white,fontSize:22,fontWeight:FontWeight.w900)),const SizedBox(height:18),Wrap(spacing:12,runSpacing:12,children:_avatars.map((a)=>GestureDetector(onTap:(){setState((){_selectedAvatarAsset=a;_pickedImageBytes=null;});Navigator.pop(sheetContext);},child:CircleAvatar(radius:38,backgroundImage:AssetImage(a)))).toList()),const SizedBox(height:20),SizedBox(width:double.infinity,child:OutlinedButton.icon(onPressed:_pickPhone,icon:const Icon(Icons.photo_library_rounded,color:Color(0xFFFFD54A)),label:const Text('اختيار صورة من الهاتف',style:TextStyle(color:Colors.white))))])))));}
   Future<void> _pickBirth() async {final n=DateTime.now();final last=DateTime(n.year-18,n.month,n.day);final d=await showDatePicker(context:context,initialDate:DateTime(2000),firstDate:DateTime(1940),lastDate:last,helpText:'اختر تاريخ الميلاد',cancelText:'إلغاء',confirmText:'اختيار');if(d!=null&&mounted)setState(()=>_birthDate=d);}
-  Future<void> _next() async {if(_saving||!_ready)return;final err=_validateName(_displayNameController.text);if(err!=null){setState(()=>_displayNameError=err);return;}if(!_hasImage){_msg('اختر صورة للحساب');return;}if(_birthDate==null){_msg('اختر تاريخ الميلاد');return;}if(_selectedLocation==null){_msg('اختر الدولة');return;}final u=FirebaseAuth.instance.currentUser;if(u==null){_msg('انتهت جلسة تسجيل الدخول، سجّل الدخول من جديد');return;}setState(()=>_saving=true);try{String? photo,photoObjectId;if(_pickedImageBytes!=null){final result=await _storage.upload(scope:'profile_image',bytes:_pickedImageBytes!,mimeType:detectSupportedImageMime(_pickedImageBytes!)).timeout(const Duration(seconds:45));photo=result.publicUrl?.trim();photoObjectId=result.objectId.trim();if(photo==null||photo.isEmpty||photoObjectId.isEmpty)throw StateError('profile_r2_upload_incomplete');}await _firebase.updateUserProfile(u.uid,{'uid':u.uid,'displayName':_displayNameController.text.trim(),'bio':_bioController.text.trim(),'gender':_gender,'birthDate':Timestamp.fromDate(_birthDate!),'location':_selectedLocation!,if(photo!=null)'profileImageUrl':photo,if(photoObjectId!=null)'profileImageObjectId':photoObjectId,'profileAvatarAsset':photo==null?_selectedAvatarAsset:null,'setupStep':'success','setupComplete':false}).timeout(const Duration(seconds:12));await _firebase.ensurePublicId(u.uid).timeout(const Duration(seconds:12));if(mounted)Navigator.of(context).pushReplacementNamed('/account-success');}on UserStoragePendingModeration catch (_){if(mounted)_msg('تم استلام الصورة للمراجعة، ولن تظهر حتى الموافقة. اختر صورة افتراضية مؤقتاً.');}catch(e){if(mounted)_msg('تعذر حفظ الملف الشخصي. حاول مجدداً.');}finally{if(mounted)setState(()=>_saving=false);}}
+  Future<void> _next() async {if(_saving||!_ready)return;final err=_validateName(_displayNameController.text);if(err!=null){setState(()=>_displayNameError=err);return;}if(!_hasImage){_msg('اختر صورة للحساب');return;}if(_birthDate==null){_msg('اختر تاريخ الميلاد');return;}if(_selectedLocation==null){_msg('اختر الدولة');return;}final u=FirebaseAuth.instance.currentUser;if(u==null){_msg('انتهت جلسة تسجيل الدخول، سجّل الدخول من جديد');return;}setState(()=>_saving=true);try{String? photo,photoObjectId;if(_pickedImageBytes!=null){final result=await _storage.upload(scope:'profile_image',bytes:_pickedImageBytes!,mimeType:detectSupportedImageMime(_pickedImageBytes!)).timeout(const Duration(seconds:45));photo=result.publicUrl?.trim();photoObjectId=result.objectId.trim();if(photo==null||photo.isEmpty||photoObjectId.isEmpty)throw StateError('profile_r2_upload_incomplete');}await _firebase.updateUserProfile(u.uid,{'uid':u.uid,'displayName':_displayNameController.text.trim(),'bio':_bioController.text.trim(),'gender':_gender,'birthDate':Timestamp.fromDate(_birthDate!),'location':_selectedLocation!,if(photo!=null)'profileImageUrl':photo,if(photoObjectId!=null)'profileImageObjectId':photoObjectId,'profileAvatarAsset':photo==null?_selectedAvatarAsset:null,'setupStep':'success','setupComplete':false}).timeout(const Duration(seconds:12));await _firebase.ensurePublicId(u.uid).timeout(const Duration(seconds:12));if(mounted)Navigator.of(context).pushReplacementNamed('/account-success');}on UserStoragePendingModeration catch (pending){if(mounted)_imageReviewNotice(pending);}catch(e){if(mounted)_msg('تعذر حفظ الملف الشخصي. حاول مجدداً.');}finally{if(mounted)setState(()=>_saving=false);}}
+  void _imageReviewNotice(UserStoragePendingModeration pending) {
+    final blocked=pending.status=='blocked';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content:Text(blocked
+          ? 'تم حجب الصورة مؤقتًا. يمكنك طلب مراجعتها أو اختيار صورة افتراضية.'
+          : 'تم استلام الصورة للمراجعة. اختر صورة افتراضية حتى يصدر القرار.'),
+      action:blocked?SnackBarAction(label:'اعتراض',
+        onPressed:()=>_requestImageAppeal(pending.objectId)):null,
+    ));
+  }
+  Future<void> _requestImageAppeal(String objectId) async {
+    final explanation=TextEditingController();
+    final submit=await showDialog<bool>(context:context,builder:(dialogContext)=>
+      AlertDialog(title:const Text('اعتراض على حجب الصورة'),
+        content:Column(mainAxisSize:MainAxisSize.min,children:[
+          const Text('سيُراجع الاعتراض بشريًا. تبقى الصورة غير منشورة حتى القرار.'),
+          TextField(controller:explanation,maxLength:800,maxLines:3,
+            decoration:const InputDecoration(hintText:'توضيح اختياري')),
+        ]),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(dialogContext,false),
+            child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),
+            child:const Text('إرسال الاعتراض')),
+        ]));
+    final reason=explanation.text.trim();
+    explanation.dispose();
+    if(submit!=true||!mounted)return;
+    try{
+      await _storage.appealImage(objectId,explanation:reason);
+      _msg('تم استلام اعتراضك، وستصلك نتيجة المراجعة.');
+    }catch(_){_msg('تعذّر إرسال الاعتراض. حاول مجددًا.');}
+  }
   void _msg(String s)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));
   void _back(){
     if(_saving)return;
