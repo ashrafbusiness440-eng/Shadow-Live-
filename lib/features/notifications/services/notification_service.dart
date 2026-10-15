@@ -12,6 +12,8 @@ class AppNotification {
     required this.requestId,
     required this.diaryId,
     required this.commentId,
+    this.objectId,
+    this.reviewStatus,
     required this.agencyId,
     required this.requestType,
     required this.applicantUid,
@@ -32,6 +34,8 @@ class AppNotification {
   final String? requestId;
   final String? diaryId;
   final String? commentId;
+  final String? objectId;
+  final String? reviewStatus;
   final String? agencyId;
   final String? requestType;
   final String? applicantUid;
@@ -82,6 +86,8 @@ class AppNotification {
       requestId: _nullable(data['requestId']),
       diaryId: _nullable(data['diaryId']),
       commentId: _nullable(data['commentId']),
+      objectId: _nullable(data['objectId']),
+      reviewStatus: _nullable(data['reviewStatus']),
       agencyId: _nullable(data['agencyId']),
       requestType: _nullable(data['requestType']),
       applicantUid: _nullable(data['applicantUid'] ?? data['memberUid']),
