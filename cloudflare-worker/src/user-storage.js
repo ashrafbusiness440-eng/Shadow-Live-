@@ -1717,6 +1717,11 @@ export async function cleanupQueuedStorageObject(
     throw new StorageApiError("invalid_storage_delete_queue_item", 500);
   }
 
+  if (clean(item.data?.reason) === "diary_approved_unlinked") {
+    const claimed = await claimDueApprovedDiaryCleanup(db, item, nowMs);
+    if (!claimed) return { status: "deferred", objectId };
+  }
+
   const stillReferenced = await storageQueueObjectStillReferenced(
     db,
     item.data,
@@ -1741,7 +1746,7 @@ export async function cleanupQueuedStorageObject(
   if (clean(item.data?.reason) === "diary_approved_unlinked") {
     const doc = await db.get("storage_objects/" + objectId);
     if (!doc.exists ||
-        clean(doc.data?.state) !== "approved_pending_diary_link" ||
+        clean(doc.data?.state) !== "diary_orphan_deleting" ||
         clean(doc.data?.scope) !== "diary_image" ||
         clean(doc.data?.storageKey) !== storageKey) {
       throw new StorageApiError("invalid_diary_cleanup_state", 409);
