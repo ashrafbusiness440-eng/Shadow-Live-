@@ -60,6 +60,13 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   int? _selfVipLevelCache;
   String? _animatedEmojiId;
   String? _openedByUid;
+  static const int _historyPageSize = 50;
+  final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>>
+      _loadedHistory = {};
+  DocumentSnapshot<Map<String, dynamic>>? _historyCursor;
+  bool _historyLoading = false;
+  bool _historyHasMore = true;
+  bool _historyFailed = false;
 
   bool _isActiveChatAccount(String? expectedUid) =>
       mounted &&
@@ -557,6 +564,76 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       }
       _snack('تعذر إرسال الصورة.');
     }
+  }
+
+  Future<void> _loadOlderMessages(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> recent,
+  ) async {
+    final ownerUid = _openedByUid;
+    if (!_isActiveChatAccount(ownerUid) || _historyLoading ||
+        recent.isEmpty || (_historyCursor != null && !_historyHasMore)) {
+      return;
+    }
+    // The first cursor comes from the bounded live window. Next pages use
+    // the last fetched document, so no offset, full collection scan or polling.
+    final cursor = _historyCursor ?? recent.last;
+    setState(() {
+      _historyLoading = true;
+      _historyFailed = false;
+    });
+    try {
+      final page = await _conversation
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .startAfterDocument(cursor)
+          .limit(_historyPageSize)
+          .get();
+      if (!_isActiveChatAccount(ownerUid)) return;
+      setState(() {
+        // Preserve the live window that preceded the first pagination; it
+        // must not disappear when >100 new messages arrive while reading.
+        for (final doc in recent) {
+          _loadedHistory[doc.id] = doc;
+        }
+        for (final doc in page.docs) {
+          _loadedHistory[doc.id] = doc;
+        }
+        _historyCursor = page.docs.isEmpty ? cursor : page.docs.last;
+        _historyHasMore = page.docs.length == _historyPageSize;
+      });
+    } catch (_) {
+      if (_isActiveChatAccount(ownerUid)) {
+        setState(() => _historyFailed = true);
+      }
+    } finally {
+      if (mounted) setState(() => _historyLoading = false);
+    }
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _combinedMessages(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> recent,
+  ) {
+    // Once history is expanded, retain the changing live window to avoid gaps
+    // when a newer message pushes an older one outside the 100-item stream.
+    if (_historyCursor != null) {
+      for (final doc in recent) {
+        _loadedHistory[doc.id] = doc;
+      }
+    }
+    final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+      for (final doc in _loadedHistory.values) doc.id: doc,
+      for (final doc in recent) doc.id: doc,
+    };
+    final result = byId.values.toList();
+    result.sort((a, b) {
+      final av = a.data()['createdAt'];
+      final bv = b.data()['createdAt'];
+      final am = av is Timestamp ? av.millisecondsSinceEpoch : 0;
+      final bm = bv is Timestamp ? bv.millisecondsSinceEpoch : 0;
+      final byTime = bm.compareTo(am);
+      return byTime != 0 ? byTime : b.id.compareTo(a.id);
+    });
+    return result;
   }
 
   Future<int> _selfVipLevel() async {
@@ -1208,17 +1285,60 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         );
                       }
                       WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
-                      final docs = snapshot.data!.docs;
+                      final liveDocs = snapshot.data!.docs;
+                      final docs = _combinedMessages(liveDocs);
                       if (docs.isEmpty) {
                         return const Center(
                           child: Text('ابدأ المحادثة برسالة 👋', style: TextStyle(color: Colors.white54)),
                         );
                       }
+                      final canLoadOlder = _historyCursor == null
+                          ? liveDocs.length == 100
+                          : _historyHasMore;
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.all(14),
-                        itemCount: docs.length,
-                        itemBuilder: (_, index) => _messageBubble(docs[index].data()),
+                        itemCount: docs.length + (canLoadOlder ? 1 : 0),
+                        itemBuilder: (_, index) {
+                          if (index == docs.length) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_historyFailed)
+                                      const Padding(
+                                        padding: EdgeInsets.only(bottom: 8),
+                                        child: Text(
+                                          'تعذر تحميل الرسائل الأقدم. حاول مجددًا.',
+                                          style: TextStyle(color: Colors.white70),
+                                        ),
+                                      ),
+                                    OutlinedButton.icon(
+                                      onPressed: _historyLoading
+                                          ? null
+                                          : () => _loadOlderMessages(liveDocs),
+                                      icon: _historyLoading
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons.history_rounded),
+                                      label: Text(_historyLoading
+                                          ? 'جارٍ تحميل الرسائل...'
+                                          : 'عرض رسائل أقدم'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                          return _messageBubble(docs[index].data());
+                        },
                       );
                     },
                     ),
