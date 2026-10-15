@@ -618,14 +618,29 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 9);
     if (type == 'image') {
       final objectId = (data['storageObjectId'] ?? '').toString().trim();
+      final reviewStatus = (data['moderationStatus'] ?? '').toString().trim();
       final legacyUrl = (data['imageUrl'] ?? '').toString().trim();
       padding = const EdgeInsets.all(4);
       content = ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
-          child: objectId.isNotEmpty
-              ? _r2ChatImage(objectId)
+          child: reviewStatus == 'pending' || reviewStatus == 'rejected'
+              ? SizedBox(
+                  width: 180,
+                  height: 120,
+                  child: Center(
+                    child: Text(
+                      reviewStatus == 'pending'
+                          ? 'الصورة قيد المراجعة'
+                          : 'تم رفض الصورة',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                )
+              : objectId.isNotEmpty
+                  ? _r2ChatImage(objectId)
               : legacyUrl.isNotEmpty
                   ? GestureDetector(
                       onTap: () => showDialog<void>(
