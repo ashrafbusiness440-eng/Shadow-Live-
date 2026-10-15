@@ -260,6 +260,56 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
     }
   }
 
+  Future<void> _changeEvidenceHold(String objectId, bool hold) async {
+    if (_reviewBusy) return;
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(hold ? 'حفظ دليل الصورة' : 'إلغاء حجز الدليل'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(hold ? 'سيبقى الدليل محفوظًا إلى أن تنتهي المراجعة '
+              'أو التحقيق أو الالتزامات اللازمة.'
+              : 'لن يُحذف الدليل فورًا. يعود موعد الحذف السابق '
+                  'بعد انتهاء الحجز.'),
+          TextField(controller: reason, maxLength: 200, maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'اكتب سبب الإجراء الإداري')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('تأكيد')),
+        ],
+      ));
+    final message = reason.text.trim();
+    reason.dispose();
+    if (confirmed != true || !mounted) return;
+    if (message.length < 3) {
+      setState(() => _notice = 'اكتب سببًا واضحًا لا يقل عن 3 أحرف.');
+      return;
+    }
+    setState(() => _reviewBusy = true);
+    try {
+      await _post({
+        'action': 'hold_image_evidence', 'objectId': objectId,
+        'hold': hold, 'reason': message,
+        'idempotencyKey': 'image_evidence_hold_' +
+            DateTime.now().microsecondsSinceEpoch.toString(),
+      });
+      if (!mounted) return;
+      setState(() => _notice = hold
+          ? 'تم حفظ دليل الصورة وتسجيل سبب الحجز.'
+          : 'تم إلغاء الحجز. يسري موعد حذف الدليل المقرر.');
+      await _loadReviewsAfterDecision();
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'تعذّر تعديل احتفاظ الدليل. تحقق من الصلاحية أو حاول مجددًا.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
   Future<void> _loadReviewsAfterDecision() async {
     final data = await _post({'action': 'list_images', 'limit': 12});
     if (!mounted) return;
@@ -406,6 +456,12 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                   if (item['state'] == 'appeal_pending')
                     Text('توضيح صاحب الصورة: ${item['appealExplanation']?.toString().isNotEmpty == true ? item['appealExplanation'] : 'لم يضف توضيحًا'}'),
                   Text('السبب: ${item['reason'] ?? 'غير محدد'}'),
+                  if (item['evidenceHold'] == true)
+                    const Text('الدليل محفوظ بقرار إداري؛ الحذف موقوف.'),
+                  if (item['state'] == 'rejected' &&
+                      item['evidencePurgeAt'] != null)
+                    const Text('الدليل مهيّأ للحذف بعد انقضاء المهلة، '
+                        'ما لم يوجد حجز إداري.'),
                   Wrap(spacing: 10, children: [
                     OutlinedButton(
                       onPressed: _reviewBusy ? null : () =>
@@ -419,10 +475,22 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                         onPressed: _reviewBusy ? null : () =>
                             _approve((item['objectId'] ?? '').toString()),
                         child: Text(item['state'] == 'appeal_pending' ? 'قبول الاعتراض' : 'اعتماد النشر')),
-                    OutlinedButton(
-                      onPressed: _reviewBusy ? null : () =>
-                          _reject((item['objectId'] ?? '').toString()),
-                      child: Text(item['state'] == 'appeal_pending' ? 'رفض الاعتراض' : 'رفض النشر')),
+                    if (['needs_review', 'blocked', 'appeal_pending']
+                        .contains(item['state']))
+                      OutlinedButton(
+                        onPressed: _reviewBusy ? null : () =>
+                            _reject((item['objectId'] ?? '').toString()),
+                        child: Text(item['state'] == 'appeal_pending' ? 'رفض الاعتراض' : 'رفض النشر')),
+                    if (['rejected', 'blocked', 'appeal_pending']
+                        .contains(item['state']))
+                      OutlinedButton.icon(
+                        onPressed: _reviewBusy ? null : () =>
+                            _changeEvidenceHold((item['objectId'] ?? '').toString(),
+                                item['evidenceHold'] != true),
+                        icon: Icon(item['evidenceHold'] == true
+                            ? Icons.lock_open_outlined : Icons.lock_outline),
+                        label: Text(item['evidenceHold'] == true
+                            ? 'إلغاء حجز الدليل' : 'حفظ الدليل')),
                   ]),
                 ],
               ),
