@@ -3,7 +3,7 @@ import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
 import { publicMediaUrl } from "./public-media.js";
-import { prepareApprovedDiaryPublication } from "./image-moderation-diary.js";
+import { prepareApprovedDiaryPublication, claimApprovedDiaryImage, releaseApprovedDiaryClaim } from "./image-moderation-diary.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { filterRepeatGroupWrites } from "./moderation-flag-groups.js";
