@@ -7,7 +7,7 @@ void main() {
     final source = File('lib/features/chat/screens/private_chat_screen.dart')
         .readAsStringSync();
     final start = source.indexOf('  Future<void> _sendImage() async {');
-    final once = source.indexOf('  Future<void> _sendImageOnce() async {');
+    final once = source.indexOf('  Future<void> _sendImageOnce(String senderUid) async {');
     final end = source.indexOf('  Future<int> _selfVipLevel()', once);
     expect(start, greaterThanOrEqualTo(0));
     expect(once, greaterThan(start));
@@ -15,9 +15,9 @@ void main() {
     final wrapper = source.substring(start, once);
     final body = source.substring(once, end);
 
-    expect(wrapper.contains('if (_sendingImage || !mounted) return;'), isTrue);
+    expect(wrapper.contains('if (_sendingImage || !_isActiveChatAccount(senderUid)) return;'), isTrue);
     expect(wrapper.contains('setState(() => _sendingImage = true);'), isTrue);
-    expect(wrapper.contains('await _sendImageOnce();'), isTrue);
+    expect(wrapper.contains('await _sendImageOnce(senderUid!);'), isTrue);
     expect(wrapper.contains('if (mounted) setState(() => _sendingImage = false);'), isTrue);
     expect(body.contains('await _follow.isMutual(widget.otherUid)'), isTrue);
     expect(body.contains('await _storageReady()'), isTrue);
