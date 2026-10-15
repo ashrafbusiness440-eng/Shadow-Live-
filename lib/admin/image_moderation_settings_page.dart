@@ -4,6 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+const _readinessTitles = <String, String>{
+  'publication_gate': 'منع نشر الصور غير المفحوصة',
+  'storage_binding': 'اتصال التخزين الآمن',
+  'provider_binding': 'تجهيز خدمة فحص الصور',
+  'provider_live_acceptance': 'تجربة فعلية للخدمة قبل التشغيل',
+  'private_user_notice': 'إبلاغ مستخدمي المحادثات الخاصة',
+  'paid_billing_approval': 'موافقة صريحة على تكاليف الخدمة',
+};
+const _readinessStatuses = <String, String>{
+  'configured': 'مجهّز مبدئيًا، وليس اختبارًا حيًا',
+  'blocked': 'مقفول لحين اكتمال شروط الحماية',
+  'missing': 'التجهيز غير مكتمل',
+  'not_verified': 'لم يتم التحقق بعد',
+  'not_required': 'غير مطلوب للاختيار الحالي',
+};
+
 
 /// Owner settings are intentionally preparation-only until publication
 /// enforcement is installed, verified and separately activated.
@@ -27,6 +43,8 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
   String? _notice;
   Map<String, dynamic> _providers = {};
   Map<String, dynamic> _usage = {};
+  List<Map<String, dynamic>> _readinessChecks = [];
+  String _activationStatus = "not_approved";
   List<Map<String, dynamic>> _reviewCases = [];
   bool _reviewBusy = false;
 
@@ -74,6 +92,19 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
         _usage = data['usage'] is Map
             ? Map<String, dynamic>.from(data['usage'] as Map)
             : {};
+        final report = data['readiness'];
+        final rawReport = report is Map
+            ? Map<String, dynamic>.from(report)
+            : <String, dynamic>{};
+        _activationStatus = (rawReport['activationStatus'] ?? 'not_approved')
+            .toString();
+        final rows = rawReport['checks'];
+        _readinessChecks = rows is List
+            ? rows.whereType<Map>()
+                .take(6)
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList(growable: false)
+            : [];
       });
     } catch (_) {
       if (mounted) setState(() => _notice =
@@ -426,6 +457,23 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
               ? 'الخدمة جاهزة للتشغيل بعد الموافقة.'
               : 'فحص الصور غير مفعّل.'),
           ),
+          const Divider(),
+          const Text('فحص الجاهزية قبل تشغيل الحماية',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          const Text('هذه مراجعة آمنة دون رفع صور أو الاتصال بخدمة مدفوعة. '
+              'وجود إعداد الخدمة لا يعني أن فحصها الفعلي نجح.'),
+          Text(_activationStatus == 'not_approved'
+              ? 'تشغيل الفحص الآلي لم يحصل على اعتماد نهائي.'
+              : 'حالة التفعيل: $_activationStatus'),
+          for (final check in _readinessChecks)
+            ListTile(
+              dense: true,
+              title: Text(_readinessTitles[check['id']?.toString()] ??
+                  'تحقق إضافي'),
+              subtitle: Text(_readinessStatuses[check['status']?.toString()] ??
+                  'غير مؤكد'),
+            ),
           SwitchListTile(
             title: const Text('تشغيل فحص الصور الجديدة'),
             subtitle: Text(_gateReady
@@ -593,11 +641,11 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
               ),
             ),
           ),
-          const Text('الصور المشتبه بها من الحسابات والغرف والوكالات '
-              'يمكن اعتمادها يدويًا. صور المحادثات واليوميات والصور '
-              'المحجوبة آليًا لا تُنشر تلقائيًا؛ اعتراضاتها تُراجع '
-              'بقرار بشري موثّق. صور اليوميات والخاصة تبقى محجوبة '
-              'لحين اكتمال ربط النشر الآمن.'),
+          const Text('يمكن مراجعة صور الحسابات والغرف والوكالات '
+              'والموافقة عليها بقرار بشري موثّق. صور اليوميات تُعتمد '
+              'أولاً ثم ينشرها صاحبها عندما ينشئ اليومية. صور '
+              'المحادثات الخاصة لا تُعرض إلا للمشاركين بعد اعتمادها '
+              'وربطها برسالة حقيقية. الفحص الآلي ما زال معطّلًا.'),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: _busy ? null : _save,

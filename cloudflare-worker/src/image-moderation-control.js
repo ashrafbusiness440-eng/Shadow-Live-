@@ -9,6 +9,7 @@ import { approveImageReview } from "./image-moderation-approval.js";
 import { approvePrivateDiaryImage } from "./image-moderation-diary.js";
 import { approvePrivateChatImage } from "./image-moderation-chat.js";
 import { setImageEvidenceHold } from "./image-moderation-retention.js";
+import { assessImageModerationReadiness } from "./image-moderation-readiness.js";
 import {
   IMAGE_MODERATION_PATH, IMAGE_MODERATION_PROVIDERS,
   defaultImageModerationPolicy, validateImageModerationPolicy,
@@ -134,6 +135,11 @@ export async function imageModerationControl(request, env) {
         ok: true, config, usage,
         publicationGateReady: IMAGE_MODERATION_PUBLICATION_GATE_READY,
         providerConfigured: imageModerationProviderReady(env, config.provider),
+        readiness: assessImageModerationReadiness({
+          policy: config, env,
+          providerConfigured: imageModerationProviderReady(env, config.provider),
+          publicationGateReady: IMAGE_MODERATION_PUBLICATION_GATE_READY,
+        }),
         providers: Object.fromEntries(Object.entries(IMAGE_MODERATION_PROVIDERS)
           .map(([id, spec]) => [id, {
             mode: spec.mode, label: spec.label,
