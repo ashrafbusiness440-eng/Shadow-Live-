@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'control_firebase.dart';
+import 'account_action_appeals_control_page.dart';
 import 'reports_hub_page.dart';
 
 /// Inbox navigation reuses the same reports hub; no parallel report UI.
 ReportsHubSection reportSectionForInboxType(String type) => switch (type) {
   'diary_report' => ReportsHubSection.diaries,
   'account_report' => ReportsHubSection.people,
+  'account_action_appeal' => ReportsHubSection.people,
   'system_repeat_flag' => ReportsHubSection.system,
   'user_report' || 'room_message_report' || 'room_report' =>
     ReportsHubSection.roomsAndMessages,
@@ -65,6 +67,14 @@ class _ReportsHubInboxRouteState extends State<ReportsHubInboxRoute> {
         final diaries = general || (enabled &&
             (capabilities.contains('manageDiaries') ||
              capabilities.contains('deleteDiaryComment')));
+        if (widget.reportType == 'account_action_appeal') {
+          return general
+              ? AccountActionAppealsControlPage(
+                  initialOperationId: widget.reportId)
+              : const Scaffold(
+                  body: Center(child: Text('ليس لديك صلاحية لمراجعة الاعتراض.')),
+                );
+        }
         return ReportsHubPage(
           allowGeneral: general,
           allowDiary: diaries,

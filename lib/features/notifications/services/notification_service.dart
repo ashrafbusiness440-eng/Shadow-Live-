@@ -13,6 +13,7 @@ class AppNotification {
     required this.diaryId,
     required this.commentId,
     this.objectId,
+    this.operationId,
     this.reviewStatus,
     required this.agencyId,
     required this.requestType,
@@ -35,6 +36,7 @@ class AppNotification {
   final String? diaryId;
   final String? commentId;
   final String? objectId;
+  final String? operationId;
   final String? reviewStatus;
   final String? agencyId;
   final String? requestType;
@@ -87,6 +89,7 @@ class AppNotification {
       diaryId: _nullable(data['diaryId']),
       commentId: _nullable(data['commentId']),
       objectId: _nullable(data['objectId']),
+      operationId: _nullable(data['operationId']),
       reviewStatus: _nullable(data['reviewStatus']),
       agencyId: _nullable(data['agencyId']),
       requestType: _nullable(data['requestType']),
