@@ -456,7 +456,8 @@ async function createDiary(db, uid, body, options = {}) {
       const privateCopy = privateCopies.get(objectId);
       const existingPublic = state === "active" &&
         !!clean(object.data?.publicUrl) && !privateCopy;
-      const approvedPrivate = state === "approved_pending_diary_link" &&
+      const approvedPrivate = state === "diary_linking" &&
+        clean(object.data?.diaryLinkOperationKey) === operationKey &&
         !!privateCopy &&
         clean(object.data?.moderation?.status) === "approved" &&
         clean(object.data?.etag) === privateCopy.reviewedEtag &&
