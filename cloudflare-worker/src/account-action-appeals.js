@@ -178,7 +178,7 @@ export async function reviewAccountActionAppeal(db, reviewerUid, body = {}) {
   if (!safeId(operationId) || !safeId(key) ||
       !["accepted", "rejected"].includes(decision) ||
       reason.length < 3 || reason.length > 200 ||
-      (decision === "accepted" && !safeId(reversalId)) ||
+      (decision === "accepted" && reversalId && !safeId(reversalId)) ||
       (decision === "rejected" && reversalId)) {
     throw new AccountActionAppealError("invalid_appeal_review");
   }
@@ -195,7 +195,7 @@ export async function reviewAccountActionAppeal(db, reviewerUid, body = {}) {
           clean(d.action) !== "reviewAccountActionAppeal" ||
           clean(d.targetId) !== operationId ||
           clean(d.result?.decision) !== decision ||
-          clean(d.result?.reversalOperationId) !== reversalId) {
+          (reversalId && clean(d.result?.reversalOperationId) !== reversalId)) {
         throw new AccountActionAppealError("appeal_conflict", 409);
       }
       await db.rollback(tx);
@@ -215,8 +215,17 @@ export async function reviewAccountActionAppeal(db, reviewerUid, body = {}) {
         clean(appeal.data?.action) !== sourceAction) {
       throw new AccountActionAppealError("appeal_source_conflict", 409);
     }
+    // The original completed receipt stores its exact successor (written
+    // transactionally by account management). This point-read is stronger
+    // and cheaper than paging through a potentially long admin history.
+    const verifiedReversalId = decision === "accepted"
+      ? clean(source.data?.lifecycle?.operationId) : "";
     if (decision === "accepted") {
-      const reversal = await db.get(operationPath(reversalId), tx);
+      if (!safeId(verifiedReversalId) ||
+          (reversalId && reversalId !== verifiedReversalId)) {
+        throw new AccountActionAppealError("reversal_not_verified", 409);
+      }
+      const reversal = await db.get(operationPath(verifiedReversalId), tx);
       const r = reversal.data || {};
       const lifecycle = source.data?.lifecycle || {};
       if (!reversal.exists || clean(r.action) !== ACTIONS[sourceAction][1] ||
@@ -225,13 +234,13 @@ export async function reviewAccountActionAppeal(db, reviewerUid, body = {}) {
           clean(r.result?.targetUid) !== targetUid ||
           clean(r.result?.originalOperationId) !== operationId ||
           clean(lifecycle.type) !== "lifted" ||
-          clean(lifecycle.operationId) !== reversalId) {
+          clean(lifecycle.operationId) !== verifiedReversalId) {
         throw new AccountActionAppealError("reversal_not_verified", 409);
       }
     }
     const now = new Date();
     const result = { operationId, decision,
-      reversalOperationId: decision === "accepted" ? reversalId : "" };
+      reversalOperationId: verifiedReversalId };
     await db.commit(tx, [
       db.writeUpdate(appealPath(operationId), {
         status: decision, decisionReason: reason,
