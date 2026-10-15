@@ -24,6 +24,7 @@ class DiariesScreen extends StatefulWidget {
     this.title = 'يومياتي',
     this.onGuestAction,
     this.initialDiaryId,
+    this.initialApprovedImageObjectId,
     this.openCommentsOnStart = false,
     this.profileUserId,
     this.embedded = false,
@@ -32,6 +33,7 @@ class DiariesScreen extends StatefulWidget {
   final String title;
   final Future<void> Function()? onGuestAction;
   final String? initialDiaryId;
+  final String? initialApprovedImageObjectId;
   final bool openCommentsOnStart;
   final String? profileUserId;
   final bool embedded;
@@ -77,6 +79,8 @@ class _DiariesScreenState extends State<DiariesScreen> {
   bool _composerExpanded = false;
   bool _commentsEnabled = true;
   List<_PickedDiaryImage> _pickedImages = const <_PickedDiaryImage>[];
+  List<String> _approvedImageObjectIds = const <String>[];
+  String? _pendingModerationImageId;
   final Set<String> _likedDiaryIds = <String>{};
   final Set<String> _busyLikeIds = <String>{};
   final Set<String> _busyReportIds = <String>{};
@@ -109,6 +113,1374 @@ class _DiariesScreenState extends State<DiariesScreen> {
   void initState() {
     super.initState();
     _load(reset: true, following: false);
+    final approvedId = widget.initialApprovedImageObjectId?.trim() ?? '';
+    if (RegExp(r'^[a-f0-9]{32} = widget.initialDiaryId?.trim() ?? '';
+    if (initialDiaryId.isNotEmpty) {
+      _loadInitialDiary(initialDiaryId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _mentionDebounce?.cancel();
+    _text.dispose();
+    _service.close();
+    _storage.close();
+    super.dispose();
+  }
+
+  void _composerChanged(String _) {
+    _mentionDebounce?.cancel();
+    final query = activeDiaryMentionQuery(_text);
+    if (query == null) {
+      if (_mentionCandidates.isNotEmpty || _mentionLoading) {
+        setState(() {
+          _mentionCandidates = const <DiaryMentionCandidate>[];
+          _mentionLoading = false;
+        });
+      }
+      return;
+    }
+
+    final request = ++_mentionRequest;
+    setState(() => _mentionLoading = true);
+    _mentionDebounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final items = await _service.searchMentions(query);
+        if (!mounted || request != _mentionRequest) return;
+        setState(() {
+          _mentionCandidates = items;
+          _mentionLoading = false;
+        });
+      } catch (_) {
+        if (!mounted || request != _mentionRequest) return;
+        setState(() {
+          _mentionCandidates = const <DiaryMentionCandidate>[];
+          _mentionLoading = false;
+        });
+      }
+    });
+  }
+
+  void _selectMention(DiaryMentionCandidate candidate) {
+    applyDiaryMention(_text, candidate);
+    _mentionDebounce?.cancel();
+    _mentionRequest += 1;
+    setState(() {
+      _mentionCandidates = const <DiaryMentionCandidate>[];
+      _mentionLoading = false;
+    });
+  }
+
+  Future<void> _loadInitialDiary(String diaryId) async {
+    try {
+      final item = await _service.getDiary(diaryId);
+      if (!mounted) return;
+      setState(() {
+        _latest = _merge(_latest, <DiaryItem>[item]);
+        _showFollowing = false;
+      });
+      if (widget.openCommentsOnStart && !_initialDiaryOpened) {
+        _initialDiaryOpened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openComments(item);
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    }
+  }
+
+  Future<void> _reportDiary(DiaryItem item) async {
+    if (_busyReportIds.contains(item.diaryId)) return;
+    if (_guest) {
+      await _guestAction();
+      return;
+    }
+    if (!_signedIn || item.diaryId.isEmpty) return;
+
+    // The report sheet is an explicit user action. Never send more than one
+    // report per diary while a reason is being picked or a write is pending.
+    final reporterUid = _uid;
+    setState(() => _busyReportIds.add(item.diaryId));
+    try {
+      final reason = await showDiaryReportReasonSheet(context);
+      if (!mounted || reason == null || _uid != reporterUid) return;
+      final duplicate = await _service.reportDiary(
+        diaryId: item.diaryId,
+        reason: reason,
+      );
+      if (!mounted || _uid != reporterUid) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            duplicate
+                ? 'سبق إرسال بلاغك عن هذه اليومية.'
+                : 'تم إرسال البلاغ للمراجعة.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted || _uid != reporterUid) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    } finally {
+      _busyReportIds.remove(item.diaryId);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _guestAction() async {
+    if (widget.onGuestAction != null) {
+      await widget.onGuestAction!();
+      return;
+    }
+    if (!mounted) return;
+    final shouldLogin = await showShadowConfirmation(
+      context,
+      title: 'تسجيل الدخول',
+      message: 'يمكنك مشاهدة اليوميات العامة كضيف، لكن يلزم تسجيل الدخول للتفاعل.',
+      confirmLabel: 'تسجيل الدخول',
+    );
+    if (shouldLogin && mounted) {
+      context.read<AuthBloc>().add(SignOutRequested());
+    }
+  }
+
+  Future<void> _load({
+    required bool reset,
+    bool? following,
+  }) async {
+    final targetFollowing = following ?? _showFollowing;
+    if (!_profileMode && targetFollowing && _guest) return;
+
+    if (_profileMode) {
+      if (_loadingProfile) return;
+      setState(() {
+        _loadingProfile = true;
+        if (reset) _profileError = null;
+      });
+      try {
+        final page = await _service.listUser(
+          widget.profileUserId!.trim(),
+          cursor: reset ? null : _profileCursor,
+        );
+        if (!mounted) return;
+        setState(() {
+          _profileItems = _merge(
+            reset ? const <DiaryItem>[] : _profileItems,
+            page.items,
+          );
+          _profileCursor = page.nextCursor;
+          _profileHasMore = page.hasMore;
+          _profileError = null;
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() => _profileError = error);
+      } finally {
+        if (mounted) setState(() => _loadingProfile = false);
+      }
+      return;
+    }
+
+    if (targetFollowing ? _loadingFollowing : _loadingLatest) return;
+    setState(() {
+      if (targetFollowing) {
+        _loadingFollowing = true;
+        if (reset) _followingError = null;
+      } else {
+        _loadingLatest = true;
+        if (reset) _latestError = null;
+      }
+    });
+
+    try {
+      final cursor = reset
+          ? null
+          : (targetFollowing ? _followingCursor : _latestCursor);
+      final page = targetFollowing
+          ? await _service.listFollowing(cursor: cursor)
+          : await _service.listLatest(cursor: cursor);
+
+      if (!mounted) return;
+      setState(() {
+        if (targetFollowing) {
+          _following = _merge(
+            reset ? const <DiaryItem>[] : _following,
+            page.items,
+          );
+          _followingCursor = page.nextCursor;
+          _followingHasMore = page.hasMore;
+          _followingError = null;
+        } else {
+          _latest = _merge(
+            reset ? const <DiaryItem>[] : _latest,
+            page.items,
+          );
+          _latestCursor = page.nextCursor;
+          _latestHasMore = page.hasMore;
+          _latestError = null;
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        if (targetFollowing) {
+          _followingError = error;
+        } else {
+          _latestError = error;
+        }
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (targetFollowing) {
+            _loadingFollowing = false;
+          } else {
+            _loadingLatest = false;
+          }
+        });
+      }
+    }
+  }
+
+  List<DiaryItem> _merge(List<DiaryItem> current, List<DiaryItem> next) {
+    final map = <String, DiaryItem>{
+      for (final item in current) item.diaryId: item,
+      for (final item in next) item.diaryId: item,
+    };
+    final merged = map.values.toList(growable: false);
+    merged.sort((a, b) {
+      final time = b.createdAtMs.compareTo(a.createdAtMs);
+      if (time != 0) return time;
+      return b.diaryId.compareTo(a.diaryId);
+    });
+    return merged;
+  }
+
+  Future<void> _selectFeed(bool following) async {
+    if (following && _guest) {
+      await _guestAction();
+      return;
+    }
+    if (_showFollowing == following) return;
+    setState(() => _showFollowing = following);
+    if (following && _following.isEmpty && _followingError == null) {
+      await _load(reset: true, following: true);
+    }
+  }
+
+  Future<void> _pickImages() async {
+    if (_guest) {
+      await _guestAction();
+      return;
+    }
+    try {
+      final files = await _picker.pickMultiImage();
+      if (files.isEmpty) return;
+      final selected = <_PickedDiaryImage>[];
+      for (final file in files.take(2)) {
+        selected.add(
+          _PickedDiaryImage(
+            file: file,
+            bytes: await file.readAsBytes(),
+          ),
+        );
+      }
+      if (!mounted) return;
+      setState(() => _pickedImages = selected);
+      if (files.length > 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('يمكن إضافة صورتين كحد أقصى.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر اختيار الصور. حاول مرة أخرى.')),
+      );
+    }
+  }
+
+  void _removeImage(int index) {
+    if (index < 0 || index >= _pickedImages.length) return;
+    final next = [..._pickedImages]..removeAt(index);
+    setState(() => _pickedImages = next);
+  }
+
+  Future<void> _publish() async {
+    if (_guest || !_signedIn) {
+      await _guestAction();
+      return;
+    }
+    if (_publishing) return;
+
+    final text = _text.text.trim();
+    if (text.isEmpty && _pickedImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اكتب نصاً أو أضف صورة قبل النشر.')),
+      );
+      return;
+    }
+    if (text.length > 500) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى للنص 500 حرف.')),
+      );
+      return;
+    }
+
+    setState(() => _publishing = true);
+    try {
+      final objectIds = <String>[];
+      for (final picked in _pickedImages) {
+        final mimeType = detectSupportedImageMime(picked.bytes);
+        final uploaded = await _storage.upload(
+          scope: 'diary_image',
+          bytes: picked.bytes,
+          mimeType: mimeType,
+        );
+        if (uploaded.objectId.trim().isEmpty) {
+          throw StateError('storage_confirm_invalid');
+        }
+        objectIds.add(uploaded.objectId.trim());
+      }
+
+      await _service.createDiary(
+        text: text,
+        imageObjectIds: objectIds,
+        commentsEnabled: _commentsEnabled,
+      );
+
+      if (!mounted) return;
+      _text.clear();
+      _mentionDebounce?.cancel();
+      _mentionRequest += 1;
+      setState(() {
+        _mentionCandidates = const <DiaryMentionCandidate>[];
+        _mentionLoading = false;
+        _pickedImages = const <_PickedDiaryImage>[];
+        _commentsEnabled = true;
+        _composerExpanded = false;
+        _showFollowing = false;
+      });
+      await _load(reset: true, following: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نشر اليومية.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _publishing = false);
+    }
+  }
+
+  void _replaceDiary(
+    String diaryId,
+    DiaryItem Function(DiaryItem item) update,
+  ) {
+    setState(() {
+      _latest = _latest
+          .map((item) => item.diaryId == diaryId ? update(item) : item)
+          .toList(growable: false);
+      _following = _following
+          .map((item) => item.diaryId == diaryId ? update(item) : item)
+          .toList(growable: false);
+      _profileItems = _profileItems
+          .map((item) => item.diaryId == diaryId ? update(item) : item)
+          .toList(growable: false);
+    });
+  }
+
+  Future<void> _toggleLike(DiaryItem item) async {
+    if (_guest || !_signedIn) {
+      await _guestAction();
+      return;
+    }
+    if (_busyLikeIds.contains(item.diaryId)) return;
+    setState(() => _busyLikeIds.add(item.diaryId));
+    try {
+      final result = await _service.toggleLike(item.diaryId);
+      if (!mounted) return;
+      setState(() {
+        if (result.liked) {
+          _likedDiaryIds.add(item.diaryId);
+        } else {
+          _likedDiaryIds.remove(item.diaryId);
+        }
+      });
+      _replaceDiary(
+        item.diaryId,
+        (current) => current.copyWith(likeCount: result.likeCount),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(diaryErrorMessage(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _busyLikeIds.remove(item.diaryId));
+    }
+  }
+
+  Future<void> _recordView(DiaryItem item) async {
+    if (!_signedIn || _viewRecordedThisSession.contains(item.diaryId)) return;
+    _viewRecordedThisSession.add(item.diaryId);
+    try {
+      final result = await _service.recordView(item.diaryId);
+      if (!mounted) return;
+      _replaceDiary(
+        item.diaryId,
+        (current) => current.copyWith(viewCount: result.viewCount),
+      );
+    } catch (_) {
+      _viewRecordedThisSession.remove(item.diaryId);
+    }
+  }
+
+  Future<void> _openComments(DiaryItem item) async {
+    await _recordView(item);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF080B12),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => DiaryCommentsSheet(
+        diary: item,
+        service: _service,
+        onGuestAction: _guestAction,
+        onCommentCountChanged: (count) {
+          if (!mounted) return;
+          _replaceDiary(
+            item.diaryId,
+            (current) => current.copyWith(commentCount: count),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openGifts(DiaryItem item) async {
+    await _recordView(item);
+    if (!mounted) return;
+    if (_guest || !_signedIn) {
+      await _guestAction();
+      return;
+    }
+
+    await showDirectGiftSheet(
+      context,
+      receiverId: item.ownerUid,
+      receiverName: item.ownerName,
+      diaryId: item.diaryId,
+      onGiftSent: (quantity, paidCost) {
+        if (!mounted) return;
+        _replaceDiary(
+          item.diaryId,
+          (current) => current.copyWith(
+            giftCount: current.giftCount + quantity,
+            giftCoins: current.giftCoins + paidCost,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openImage(
+    DiaryItem item,
+    DiaryImageItem image,
+  ) async {
+    await _recordView(item);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: .92),
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  minScale: .8,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.network(
+                      image.publicUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _imageError(),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 8,
+                child: IconButton.filledTonal(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _timeLabel(int createdAtMs) {
+    if (createdAtMs <= 0) return '';
+    final now = DateTime.now();
+    final created = DateTime.fromMillisecondsSinceEpoch(createdAtMs);
+    final diff = now.difference(created);
+    if (diff.inMinutes < 1) return 'الآن';
+    if (diff.inMinutes < 60) return 'منذ ${diff.inMinutes} د';
+    if (diff.inHours < 24) return 'منذ ${diff.inHours} س';
+    if (diff.inDays < 7) return 'منذ ${diff.inDays} ي';
+    return '${created.day}/${created.month}/${created.year}';
+  }
+
+  ImageProvider<Object>? _avatar(DiaryItem item) {
+    if (item.ownerProfileImageUrl.isNotEmpty) {
+      return NetworkImage(item.ownerProfileImageUrl);
+    }
+    if (item.ownerProfileAvatarAsset.isNotEmpty) {
+      return AssetImage(item.ownerProfileAvatarAsset);
+    }
+    return null;
+  }
+
+  void _openProfile(DiaryItem item) {
+    if (item.ownerUid.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PublicProfileScreen(userId: item.ownerUid),
+      ),
+    );
+  }
+
+  Widget _composer() {
+    if (_guest || !_signedIn) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101522),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFF7B2DFF).withValues(alpha: .35),
+          ),
+        ),
+        child: Column(
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.visibility_rounded, color: Color(0xFFFFD54A)),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'يمكنك مشاهدة اليوميات العامة كضيف',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'للنشر والتفاعل والمتابعة، أنشئ حساباً أو سجّل الدخول.',
+              style: TextStyle(color: Colors.white60, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _guestAction,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF7B2DFF),
+                ),
+                icon: const Icon(Icons.login_rounded),
+                label: const Text('تسجيل الدخول'),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // A single compact entry leaves room for the first real diary post.
+    // Keep the existing editor and publishing service alive only on request;
+    // drafts and selected photos are preserved when collapsing the editor.
+    if (!_composerExpanded) {
+      return Container(
+        key: const ValueKey('diary-compact-composer'),
+        margin: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101522),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: .08)),
+        ),
+        child: Row(
+          children: [
+            ProfileAvatarWithFrame(
+              diameter: 40,
+              userId: _uid,
+              backgroundColor: const Color(0xFF272C39),
+              placeholderColor: Colors.white70,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Material(
+                color: const Color(0xFF090C14),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  key: const ValueKey('diary-open-composer'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setState(() => _composerExpanded = true),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 13,
+                    ),
+                    child: Text(
+                      _text.text.trim().isEmpty
+                          ? 'شو حابب تشارك اليوم؟'
+                          : _text.text.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('diary-open-photos'),
+              tooltip: 'إضافة صور لليومية',
+              onPressed: () async {
+                setState(() => _composerExpanded = true);
+                await _pickImages();
+              },
+              icon: const Icon(
+                Icons.add_photo_alternate_outlined,
+                color: Color(0xFFFFD54A),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      key: const ValueKey('diary-expanded-composer'),
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'اكتب يوميتك',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('diary-collapse-composer'),
+                tooltip: 'إغلاق المحرر مع حفظ المسودة',
+                onPressed: _publishing
+                    ? null
+                    : () => setState(() => _composerExpanded = false),
+                icon: const Icon(Icons.keyboard_arrow_up_rounded,
+                    color: Colors.white70),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _text,
+            enabled: !_publishing,
+            onChanged: _composerChanged,
+            maxLength: 500,
+            minLines: 2,
+            maxLines: 6,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'اكتب يوميتك...',
+              hintStyle: const TextStyle(color: Colors.white38),
+              counterStyle: const TextStyle(color: Colors.white38),
+              filled: true,
+              fillColor: const Color(0xFF090C14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          DiaryMentionSuggestions(
+            items: _mentionCandidates,
+            loading: _mentionLoading,
+            onSelected: _selectMention,
+          ),
+          if (_pickedImages.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                for (var i = 0; i < _pickedImages.length; i++)
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: i == 0 && _pickedImages.length > 1 ? 6 : 0,
+                      ),
+                      child: Stack(
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 1,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Image.memory(
+                                _pickedImages[i].bytes,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: Material(
+                              color: Colors.black.withValues(alpha: .7),
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: _publishing
+                                    ? null
+                                    : () => _removeImage(i),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(5),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _publishing ? null : _pickImages,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFFFD54A),
+                  side: BorderSide(
+                    color: Colors.white.withValues(alpha: .22),
+                  ),
+                ),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: Text(
+                  _pickedImages.isEmpty
+                      ? 'إضافة صور'
+                      : '${_pickedImages.length}/2',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text(
+                    'السماح بالتعليقات',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                  value: _commentsEnabled,
+                  onChanged: _publishing
+                      ? null
+                      : (value) => setState(() => _commentsEnabled = value),
+                ),
+              ),
+            ],
+          ),
+          const Text(
+            'صورتان كحد أقصى • يتم ضغط الصور تلقائياً قبل الرفع',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: _publishing ? null : _publish,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF7B2DFF),
+              disabledBackgroundColor: const Color(0xFF30233F),
+              padding: const EdgeInsets.symmetric(vertical: 13),
+            ),
+            icon: _publishing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_rounded),
+            label: Text(_publishing ? 'جاري النشر...' : 'نشر اليومية'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _feedSelector() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0E111A),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _feedButton(
+                label: 'الأحدث',
+                selected: !_showFollowing,
+                onTap: () => _selectFeed(false),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _feedButton(
+                label: 'المتابَعون',
+                selected: _showFollowing,
+                onTap: () => _selectFeed(true),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _feedButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: selected ? const Color(0xFF7B2DFF) : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white60,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _diaryCard(DiaryItem item) {
+    return Container(
+      key: ValueKey('diary-post-card-${item.diaryId}'),
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E121C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: .07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => _openProfile(item),
+            child: Row(
+              children: [
+                ProfileAvatarWithFrame(
+                  diameter: 40,
+                  userId: item.ownerUid,
+                  backgroundColor: const Color(0xFF272C39),
+                  placeholderColor: Colors.white54,
+                  fallbackProfile: <String, dynamic>{
+                    'profileImageUrl': item.ownerProfileImageUrl,
+                    'profileAvatarAsset': item.ownerProfileAvatarAsset,
+                  },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.ownerName.isEmpty
+                            ? 'مستخدم Shadow Live'
+                            : item.ownerName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          if (item.ownerPublicId.isNotEmpty) ...[
+                            Flexible(
+                              child: Text(
+                                'ID: ${item.ownerPublicId}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                            const Text(
+                              ' • ',
+                              style: TextStyle(color: Colors.white30),
+                            ),
+                          ],
+                          Text(
+                            _timeLabel(item.createdAtMs),
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_guest || item.ownerUid != _uid)
+                  PopupMenuButton<String>(
+                    key: ValueKey('diary-post-menu-${item.diaryId}'),
+                    tooltip: 'خيارات اليومية',
+                    enabled: !_busyReportIds.contains(item.diaryId),
+                    onSelected: (action) {
+                      if (action == 'report' &&
+                          !_busyReportIds.contains(item.diaryId)) {
+                        unawaited(_reportDiary(item));
+                      }
+                    },
+                    itemBuilder: (_) => const <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'report',
+                        child: Row(
+                          children: [
+                            Icon(Icons.flag_outlined,
+                                color: Color(0xFFFFD54A), size: 20),
+                            SizedBox(width: 10),
+                            Text('إبلاغ عن اليومية'),
+                          ],
+                        ),
+                      ),
+                    ],
+                    icon: _busyReportIds.contains(item.diaryId)
+                        ? const Icon(Icons.hourglass_top_rounded,
+                            color: Colors.white54, size: 20)
+                        : const Icon(Icons.more_horiz_rounded,
+                            color: Colors.white70, size: 22),
+                  ),
+              ],
+            ),
+          ),
+          if (item.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              item.text,
+              style: const TextStyle(
+                color: Colors.white,
+                height: 1.55,
+                fontSize: 15,
+              ),
+            ),
+          ],
+          if (item.images.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _networkImages(item),
+          ],
+          const SizedBox(height: 10),
+          Divider(color: Colors.white.withValues(alpha: .07), height: 1),
+          // Four equally sized reaction targets: a Wrap plus a loose Center
+          // gave each item the entire row width on narrow web viewports.
+          // Keep all four actions visible on one horizontal RTL line.
+          Row(
+            children: [
+              Expanded(
+                child: _metric(
+                  _likedDiaryIds.contains(item.diaryId)
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  item.likeCount,
+                  onTap: () => _toggleLike(item),
+                  active: _likedDiaryIds.contains(item.diaryId),
+                  busy: _busyLikeIds.contains(item.diaryId),
+                ),
+              ),
+              Expanded(
+                child: _metric(
+                  item.commentsEnabled
+                      ? Icons.chat_bubble_outline_rounded
+                      : Icons.comments_disabled_outlined,
+                  item.commentCount,
+                  onTap: () => _openComments(item),
+                ),
+              ),
+              Expanded(
+                child: _metric(
+                  Icons.card_giftcard_rounded,
+                  item.giftCount,
+                  onTap: () => _openGifts(item),
+                ),
+              ),
+              Expanded(
+                child: _metric(Icons.visibility_outlined, item.viewCount),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _networkImages(DiaryItem item) {
+    final images = item.images;
+    if (images.length == 1) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openImage(item, images.first),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AspectRatio(
+            aspectRatio: 4 / 3,
+            child: Image.network(
+              images.first.publicUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _imageError(),
+            ),
+          ),
+        ),
+      );
+    }
+    return Row(
+      children: [
+        for (var i = 0; i < images.take(2).length; i++)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(left: i == 0 ? 6 : 0),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _openImage(item, images[i]),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Image.network(
+                      images[i].publicUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _imageError(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _imageError() {
+    return const ColoredBox(
+      color: Color(0xFF191D28),
+      child: Center(
+        child: Icon(Icons.broken_image_outlined, color: Colors.white30),
+      ),
+    );
+  }
+
+  Widget _metric(
+    IconData icon,
+    int value, {
+    VoidCallback? onTap,
+    bool active = false,
+    bool busy = false,
+  }) {
+    final content = Padding(
+      padding: const EdgeInsetsDirectional.symmetric(horizontal: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (busy)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Icon(
+              icon,
+              size: 18,
+              color: active ? const Color(0xFFFF5B73) : Colors.white38,
+            ),
+          const SizedBox(width: 4),
+          Text(
+            _compact(value),
+            style: TextStyle(
+              color: active ? const Color(0xFFFF8A9B) : Colors.white38,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+    final touchTarget = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 44),
+      child: Center(child: content),
+    );
+    if (onTap == null) return touchTarget;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: busy ? null : onTap,
+      child: touchTarget,
+    );
+  }
+
+  String _compact(int value) {
+    if (value >= 1000000) {
+      final number = value / 1000000;
+      return '${number.toStringAsFixed(number >= 10 ? 0 : 1)}M';
+    }
+    if (value >= 1000) {
+      final number = value / 1000;
+      return '${number.toStringAsFixed(number >= 10 ? 0 : 1)}K';
+    }
+    return value.toString();
+  }
+
+  Widget _feedBody() {
+    if (!_profileMode && _showFollowing && _guest) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            const Icon(
+              Icons.people_alt_outlined,
+              size: 48,
+              color: Colors.white30,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'سجّل الدخول لمشاهدة يوميات الأشخاص الذين تتابعهم.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white60, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _guestAction,
+              child: const Text('تسجيل الدخول'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_items.isEmpty && _loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 36),
+        child: LoadingIndicator(
+          size: 30,
+          color: Color(0xFF8A3DFF),
+          message: 'جارٍ تحميل اليوميات...',
+        ),
+      );
+    }
+    if (_items.isEmpty && _error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: ShadowReadState(
+          icon: Icons.wifi_off_rounded,
+          message: diaryErrorMessage(_error!),
+          onRetry: () => _load(reset: true),
+        ),
+      );
+    }
+    if (_items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: ShadowReadState(
+          icon: Icons.article_outlined,
+          message: _profileMode
+              ? 'ما في يوميات منشورة لهذا المستخدم.'
+              : (_showFollowing
+                  ? 'ما في يوميات جديدة من الأشخاص اللي بتتابعهم.'
+                  : 'ما في يوميات منشورة لسه.'),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (final item in _items) _diaryCard(item),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
+            child: ShadowReadState(
+              icon: Icons.wifi_off_rounded,
+              message: diaryErrorMessage(_error!),
+              onRetry: _loading ? null : () => _load(reset: true),
+            ),
+          )
+        else if (_hasMore)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 24),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _loading ? null : () => _load(reset: false),
+                child: _loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('تحميل المزيد'),
+              ),
+            ),
+          )
+        else
+          const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          top: !widget.embedded,
+          bottom: false,
+          child: RefreshIndicator(
+            color: const Color(0xFF8A3DFF),
+            onRefresh: () => _load(reset: true),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                if (!widget.embedded)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'تحديث',
+                          onPressed: _loading ? null : () => _load(reset: true),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (!_profileMode) _composer(),
+                if (!_profileMode) _feedSelector(),
+                if (_profileMode && widget.embedded)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'يوميات المستخدم',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'تحديث',
+                          onPressed: _loading ? null : () => _load(reset: true),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                _feedBody(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(approvedId)) {
+      _approvedImageObjectIds = <String>[approvedId];
+      _composerExpanded = true;
+    }
     final initialDiaryId = widget.initialDiaryId?.trim() ?? '';
     if (initialDiaryId.isNotEmpty) {
       _loadInitialDiary(initialDiaryId);
