@@ -169,6 +169,53 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
     }
   }
 
+  static const Map<String, String> _scopeLabels = {
+    'profile_image': 'الصورة الشخصية',
+    'profile_avatar_animation': 'صورة الحساب المتحركة',
+    'profile_cover': 'غلاف الحساب',
+    'room_cover': 'غلاف الغرفة',
+    'agency_logo': 'شعار الوكالة',
+    'agency_background': 'خلفية الوكالة',
+    'agency_room_image': 'صورة غرفة الوكالة',
+    'chat_image': 'صورة محادثة خاصة',
+    'diary_image': 'صورة يومية',
+  };
+
+  Future<void> _approve(String objectId) async {
+    if (_reviewBusy) return;
+    final approved = await showDialog<bool>(
+        context: context, builder: (dialogContext) => AlertDialog(
+          title: const Text('الموافقة على نشر الصورة'),
+          content: const Text('هل تحققت من الصورة؟ عند الموافقة '
+              'ستصبح الصورة الجديدة ظاهرة في مكانها المناسب، '
+              'وتبقى الصورة القديمة حتى اكتمال الاعتماد.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('اعتماد الصورة')),
+          ],
+        ));
+    if (approved != true || !mounted) return;
+    setState(() => _reviewBusy = true);
+    try {
+      await _post({
+        'action': 'approve_image', 'objectId': objectId,
+        'reason': 'تمت مراجعة الصورة بصريًا واعتماد نشرها',
+        'idempotencyKey': 'image_approval_' + objectId,
+      });
+      if (!mounted) return;
+      setState(() => _notice = 'تم اعتماد الصورة وإرسال النتيجة لصاحبها.');
+      await _loadReviewsAfterDecision();
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'تعذّر اعتماد الصورة. قد تكون الصورة تغيّرت أو انتهت الصلاحية. '
+          'تحقّق وأعد المحاولة بنفس الطلب.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
   Future<void> _reject(String objectId) async {
     if (_reviewBusy) return;
     final reason = TextEditingController();
@@ -353,7 +400,7 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('نوع الصورة: ${item['scope'] ?? '—'}'),
+                  Text('نوع الصورة: ${_scopeLabels[item['scope']] ?? 'صورة'}'),
                   Text('صاحب الصورة: ${item['ownerUid'] ?? '—'}'),
                   Text('الحالة: ${item['state'] ?? '—'}'),
                   Text('السبب: ${item['reason'] ?? 'غير محدد'}'),
@@ -362,7 +409,15 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                       onPressed: _reviewBusy ? null : () =>
                           _preview((item['objectId'] ?? '').toString()),
                       child: const Text('معاينة آمنة')),
-                    FilledButton(
+                    if (item['state'] == 'needs_review' &&
+                        _scopeLabels.containsKey(item['scope']) &&
+                        !['chat_image', 'diary_image']
+                            .contains(item['scope']))
+                      FilledButton(
+                        onPressed: _reviewBusy ? null : () =>
+                            _approve((item['objectId'] ?? '').toString()),
+                        child: const Text('اعتماد النشر')),
+                    OutlinedButton(
                       onPressed: _reviewBusy ? null : () =>
                           _reject((item['objectId'] ?? '').toString()),
                       child: const Text('رفض النشر')),
@@ -371,8 +426,10 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
               ),
             ),
           ),
-          const Text('اعتماد ونشر الصور المعلّقة يبقى مقفلًا '
-              'حتى استكمال الربط الآمن لجميع أنواع الصور.'),
+          const Text('الصور المشتبه بها من الحسابات والغرف والوكالات '
+              'يمكن اعتمادها يدويًا. صور المحادثات واليوميات والصور '
+              'المحجوبة آليًا لا تُنشر تلقائيًا؛ تبقى للمراجعة '
+              'والاعتراض وفق الضوابط المعتمدة.'),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: _busy ? null : _save,
