@@ -118,3 +118,51 @@ export async function approvePrivateDiaryImage(db, bucket, actorUid, payload) {
     throw error;
   }
 }
+
+// A distinct protected prefix prevents legacy diary URLs from exposing images.
+export function moderatedDiaryProtectedKey(publicKey) {
+  const value = clean(publicKey);
+  if (!/^users\/[^/]+\/diaries\/[a-f0-9]{32}\.(jpg|png|webp|gif)$/.test(value)) {
+    throw new ImageReviewError("invalid_diary_storage_key", 409);
+  }
+  return "moderated-diary/" + value;
+}
+
+export async function prepareApprovedDiaryPublication(bucket, image, objectId) {
+  const doc = image || {};
+  const uid = clean(doc.ownerUid);
+  const extension = storageExtensionForMime(doc.mimeType);
+  if (!ID.test(clean(objectId)) || !uid || uid !== clean(doc.targetId) ||
+      clean(doc.scope) !== "diary_image" ||
+      clean(doc.state) !== "approved_pending_diary_link" ||
+      clean(doc.moderation?.status) !== "approved" || !extension ||
+      doc.evidenceHold === true || doc.legalHold === true ||
+      doc.investigationHold === true) {
+    throw new ImageReviewError("diary_approval_required", 409);
+  }
+  const originalPublicKey = buildStorageObjectKey({
+    scope: "diary_image", uid, targetId: uid, objectId, extension,
+  });
+  const sourceKey = moderatedStagingKey(originalPublicKey);
+  if (clean(doc.storageKey) !== sourceKey ||
+      clean(doc.publicStorageKey) !== originalPublicKey ||
+      !clean(doc.etag) || Number(doc.sizeBytes) < 1 ||
+      Number(doc.sizeBytes) > 3 * 1024 * 1024 ||
+      typeof bucket?.get !== "function" ||
+      typeof bucket?.put !== "function") {
+    throw new ImageReviewError("diary_image_integrity_conflict", 409);
+  }
+  const object = await bucket.get(sourceKey);
+  if (!object || clean(object.etag) !== clean(doc.etag) ||
+      Number(object.size) !== Number(doc.sizeBytes)) {
+    throw new ImageReviewError("diary_image_integrity_conflict", 409);
+  }
+  const protectedKey = moderatedDiaryProtectedKey(originalPublicKey);
+  await bucket.put(protectedKey, object.body, {
+    httpMetadata: { contentType: clean(doc.mimeType) },
+  });
+  return {
+    sourceKey, protectedKey, reviewedEtag: clean(doc.etag),
+    extension, publicScope: "moderated_diary_image",
+  };
+}
