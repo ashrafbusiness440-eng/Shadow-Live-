@@ -59,6 +59,14 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _sendingImage = false;
   int? _selfVipLevelCache;
   String? _animatedEmojiId;
+  String? _openedByUid;
+
+  bool _isActiveChatAccount(String? expectedUid) =>
+      mounted &&
+      expectedUid != null &&
+      expectedUid.isNotEmpty &&
+      expectedUid == _openedByUid &&
+      FirebaseAuth.instance.currentUser?.uid == expectedUid;
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
   DocumentReference<Map<String, dynamic>> get _conversation => FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
@@ -66,6 +74,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   @override
   void initState() {
     super.initState();
+    _openedByUid = FirebaseAuth.instance.currentUser?.uid;
     if (FirebaseAuth.instance.currentUser?.isAnonymous ?? true) return;
     _markRead();
     _loadSafetyStatus();
@@ -85,16 +94,32 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
-  Future<void> _markRead() async {if (_markingRead) return;_markingRead = true;try {await _conversation.update({'unreadCounts.$_uid': 0});} catch (_) {} finally {_markingRead = false;}}
+  Future<void> _markRead() async {
+    final ownerUid = _openedByUid;
+    if (_markingRead || !_isActiveChatAccount(ownerUid)) return;
+    _markingRead = true;
+    try {
+      if (!_isActiveChatAccount(ownerUid)) return;
+      await _conversation.update({'unreadCounts.$ownerUid': 0});
+    } catch (_) {
+      // A revoked session or denied read receipt must not expose chat data.
+    } finally {
+      _markingRead = false;
+    }
+  }
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _sending || text.length > 2000) return;
+    final sender = FirebaseAuth.instance.currentUser;
+    final senderUid = sender?.uid;
+    if (text.isEmpty || _sending || text.length > 2000 ||
+        !_isActiveChatAccount(senderUid)) return;
     setState(() => _sending = true);
     try {
-      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final token = await sender!.getIdToken();
+      if (!_isActiveChatAccount(senderUid)) return;
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
-      final key = [_uid, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
+      final key = [senderUid!, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
       final response = await http.post(
         Uri.parse('$_apiBase/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
@@ -108,6 +133,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           'idempotencyKey': key,
         }),
       );
+      if (!_isActiveChatAccount(senderUid)) return;
       Map<String, dynamic> body = <String, dynamic>{};
       try {
         final decoded = jsonDecode(response.body);
@@ -145,7 +171,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           _snack('تعذر إرسال الرسالة حالياً.');
       }
     } catch (_) {
-      _snack('تعذر إرسال الرسالة حالياً.');
+      if (_isActiveChatAccount(senderUid)) {
+        _snack('تعذر إرسال الرسالة حالياً.');
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -380,26 +408,32 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
   Future<void> _sendImage() async {
-    if (_sendingImage || !mounted) return;
-    // Lock immediately, including follow/storage checks and the image picker.
-    // Otherwise two rapid taps can open two pickers and upload twice.
+    final senderUid = FirebaseAuth.instance.currentUser?.uid;
+    if (_sendingImage || !_isActiveChatAccount(senderUid)) return;
+    // Acquire the lock before awaiting any permission, storage, or picker work.
     setState(() => _sendingImage = true);
     try {
-      await _sendImageOnce();
+      await _sendImageOnce(senderUid!);
     } catch (_) {
-      if (mounted) _snack('تعذر تجهيز الصورة. حاول مرة ثانية.');
+      if (_isActiveChatAccount(senderUid)) {
+        _snack('تعذر تجهيز الصورة. حاول مرة ثانية.');
+      }
     } finally {
       if (mounted) setState(() => _sendingImage = false);
     }
   }
 
-  Future<void> _sendImageOnce() async {
+  Future<void> _sendImageOnce(String senderUid) async {
+    if (!_isActiveChatAccount(senderUid)) return;
     final mutual = await _follow.isMutual(widget.otherUid);
+    if (!_isActiveChatAccount(senderUid)) return;
     if (!mutual) {
       _snack('إرسال الصور متاح فقط عند وجود متابعة متبادلة بينكما.');
       return;
     }
-    if (!await _storageReady()) {
+    final storageReady = await _storageReady();
+    if (!_isActiveChatAccount(senderUid)) return;
+    if (!storageReady) {
       _snack('إرسال الصور غير متاح حالياً. تحقق من اتصال التخزين وحاول مجدداً.');
       return;
     }
@@ -410,8 +444,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       maxHeight: 1920,
       requestFullMetadata: false,
     );
-    if (picked == null) return;
+    if (!_isActiveChatAccount(senderUid) || picked == null) return;
     final bytes = await picked.readAsBytes();
+    if (!_isActiveChatAccount(senderUid)) return;
     if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
       _snack('حجم الصورة يجب أن يكون أقل من 8MB.');
       return;
@@ -425,6 +460,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       return;
     }
 
+    if (!_isActiveChatAccount(senderUid)) return;
     String? uploadedObjectId;
     try {
       final upload = await _storage.upload(
@@ -434,18 +470,21 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         targetId: widget.conversationId,
       );
       uploadedObjectId = upload.objectId;
+      if (!_isActiveChatAccount(senderUid)) {
+        throw StateError('account_changed');
+      }
 
       final messageRef = _conversation.collection('messages').doc();
       final batch = FirebaseFirestore.instance.batch();
       batch.update(_conversation, {
         'lastMessage': '📷 صورة',
-        'lastSenderId': _uid,
+        'lastSenderId': senderUid,
         'updatedAt': FieldValue.serverTimestamp(),
-        'unreadCounts.' + _uid: 0,
+        'unreadCounts.' + senderUid: 0,
         'unreadCounts.' + widget.otherUid: FieldValue.increment(1),
       });
       batch.set(messageRef, {
-        'senderId': _uid,
+        'senderId': senderUid,
         'receiverId': widget.otherUid,
         'type': 'image',
         'storageObjectId': upload.objectId,
@@ -458,6 +497,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       await batch.commit();
       uploadedObjectId = null;
     } on UserStoragePendingModeration catch (pending) {
+      // A pending object belongs to the account that initiated the upload.
+      // Do not link it to a chat after sign-out, account switch, or navigation.
+      if (!_isActiveChatAccount(senderUid)) {
+        await _deleteUploadedObjectQuietly(pending.objectId);
+        return;
+      }
       // The conversation stores only an inaccessible image reference until
       // the owner approves the exact private R2 bytes and linked message.
       try {
@@ -465,13 +510,13 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         final batch = FirebaseFirestore.instance.batch();
         batch.update(_conversation, {
           'lastMessage': '📷 صورة قيد المراجعة',
-          'lastSenderId': _uid,
+          'lastSenderId': senderUid,
           'updatedAt': FieldValue.serverTimestamp(),
-          'unreadCounts.' + _uid: 0,
+          'unreadCounts.' + senderUid: 0,
           'unreadCounts.' + widget.otherUid: FieldValue.increment(1),
         });
         batch.set(messageRef, {
-          'senderId': _uid,
+          'senderId': senderUid,
           'receiverId': widget.otherUid,
           'type': 'image',
           'storageObjectId': pending.objectId,
@@ -498,6 +543,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       if (uploadedObjectId != null) {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
+      if (!_isActiveChatAccount(senderUid)) return;
       if (error.message == 'follow_required') {
         _snack('إرسال الصور يحتاج متابعة متبادلة.');
       } else if (error.message == 'image_too_large_after_compression') {
@@ -1004,8 +1050,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       );
 
   @override
-  Widget build(BuildContext context) =>
-      (FirebaseAuth.instance.currentUser?.isAnonymous ?? true)
+  Widget build(BuildContext context) => StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      initialData: FirebaseAuth.instance.currentUser,
+      builder: (context, authSnapshot) =>
+          (authSnapshot.data?.isAnonymous ?? true) ||
+                  authSnapshot.data?.uid != _openedByUid
       ? const Directionality(
           textDirection: TextDirection.rtl,
           child: Scaffold(
@@ -1197,5 +1247,6 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             ),
           ),
         ),
-      );
+      ),
+    );
 }
