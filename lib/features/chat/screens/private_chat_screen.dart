@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../shared/widgets/shadow_global_wallpaper.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/services/report_screenshot_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
