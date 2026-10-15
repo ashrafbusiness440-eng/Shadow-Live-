@@ -36,7 +36,8 @@ void main() {
   test('composer retains all existing publishing protections', () {
     expect(screen.contains("if (_guest || !_signedIn)"), isTrue);
     expect(screen.contains("maxLength: 500"), isTrue);
-    expect(screen.contains("files.take(2)"), isTrue);
+    expect(screen.contains('final slots = 2 - _approvedImageObjectIds.length;'), isTrue);
+    expect(screen.contains('files.take(slots)'), isTrue);
     expect(screen.contains("scope: 'diary_image'"), isTrue);
     expect(screen.contains("commentsEnabled: _commentsEnabled"), isTrue);
     expect(screen.contains("DiaryMentionSuggestions("), isTrue);
