@@ -598,7 +598,12 @@ async function createDiary(db, uid, body, options = {}) {
       await options.env?.USER_STORAGE?.delete(copy.sourceKey).catch(() => {});
     }
   }
-  return result;
+    return result;
+  } finally {
+    for (const id of claimedIds) {
+      await releaseApprovedDiaryClaim(db, uid, id, operationKey).catch(() => {});
+    }
+  }
 }
 
 async function deleteDiary(db, uid, body, options = {}) {
