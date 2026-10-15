@@ -1467,7 +1467,7 @@ async function deleteAccountOwnedStorageObject({
      item.data?.legalHold === true ||
      item.data?.investigationHold === true ||
      ["needs_review", "blocked", "appeal_pending", "rejected",
-      "evidence_purging"].includes(state));
+      "evidence_purging", "approved_pending_diary_link"].includes(state));
   if (requiresArchive) {
     // An account that no longer exists cannot receive an appeal decision or
     // approve a public image. Close open appeals and start a bounded deadline.
