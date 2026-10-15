@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../../../shared/services/storage_service.dart';
 import '../../voice/services/voice_room_session_controller.dart';
+import '../../notifications/widgets/account_action_appeal_dialog.dart';
 
 class AccountEnforcementHost extends StatefulWidget {
   const AccountEnforcementHost({super.key, required this.child});
@@ -22,11 +23,13 @@ class _AccountNotice {
     required this.title,
     required this.message,
     required this.icon,
+    this.operationId,
   });
 
   final String title;
   final String message;
   final IconData icon;
+  final String? operationId;
 }
 
 class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
@@ -135,6 +138,13 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
     final data = snapshot.data() ?? const <String, dynamic>{};
     final status = (data['accountStatus'] ?? 'active').toString();
     final reason = (data['moderationReason'] ?? '').toString().trim();
+    // The owner's own user document supplies the immutable sanction receipt.
+    // The Worker independently verifies who owns the linked operation.
+    final sourceOperationId =
+        (data['accountModerationOperationId'] ?? '').toString().trim();
+    final appealOperationId =
+        RegExp(r'^[A-Za-z0-9_-]{12,180}$').hasMatch(sourceOperationId)
+            ? sourceOperationId : null;
     final suspendedUntil = _date(data['suspendedUntil']);
     final revokedAt = _date(data['sessionsRevokedAt']);
     final revokedMs = revokedAt?.millisecondsSinceEpoch;
@@ -151,6 +161,7 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
               untilText +
               (reason.isEmpty ? '' : '\nالسبب: ' + reason),
           icon: Icons.timer_off_outlined,
+          operationId: appealOperationId,
         ),
       );
       return;
@@ -164,6 +175,7 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
               'تم حظر هذا الحساب بشكل دائم بواسطة إدارة Shadow Live.' +
               (reason.isEmpty ? '' : '\nالسبب: ' + reason),
           icon: Icons.block,
+          operationId: appealOperationId,
         ),
       );
       return;
@@ -296,6 +308,22 @@ class _AccountEnforcementHostState extends State<AccountEnforcementHost> {
                                   ),
                                 ),
                                 const SizedBox(height: 24),
+                                if (notice.operationId != null) ...[
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () =>
+                                          AccountActionAppealDialog.openOperation(
+                                            context,
+                                            operationId: notice.operationId!,
+                                            message: notice.message,
+                                          ),
+                                      icon: const Icon(Icons.rate_review_outlined),
+                                      label: const Text('الاعتراض على القرار'),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
                                 SizedBox(
                                   width: double.infinity,
                                   height: 52,
