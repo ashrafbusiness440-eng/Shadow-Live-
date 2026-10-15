@@ -204,12 +204,8 @@ export async function approveImageReview(db,bucket,request,actorUid,payload) {
   // Operator-approved image; it is copied once and still not linked until
   // the final Firestore transaction passes freshness/ownership checks.
   try {
-    const preview=await bucket.get(snapshot.data.storageKey);
-    if (!preview || clean(preview.etag)!==clean(snapshot.data.etag)) {
-      throw new ImageReviewError("image_integrity_conflict",409);
-    }
     await publishModeratedUpload(bucket,clean(snapshot.data.storageKey),
-      source.publicKey,source.mimeType);
+      source.publicKey,source.mimeType,clean(snapshot.data.etag));
   } catch(error) {
     if(error instanceof ImageReviewError) throw error;
     throw new ImageReviewError("approved_image_copy_failed",503);
