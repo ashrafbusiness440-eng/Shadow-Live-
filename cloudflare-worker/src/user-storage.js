@@ -1692,6 +1692,25 @@ export async function cleanupQueuedStorageObject(
     return { status: "deferred", objectId, nextDeleteAt };
   }
 
+  if (clean(item.data?.reason) === "diary_approved_unlinked") {
+    const doc = await db.get("storage_objects/" + objectId);
+    if (!doc.exists ||
+        clean(doc.data?.state) !== "approved_pending_diary_link" ||
+        clean(doc.data?.scope) !== "diary_image" ||
+        clean(doc.data?.storageKey) !== storageKey) {
+      throw new StorageApiError("invalid_diary_cleanup_state", 409);
+    }
+    const extension = storageExtensionForMime(doc.data.mimeType);
+    const expected = buildStorageObjectKey({
+      scope: "diary_image", uid: doc.data.ownerUid,
+      targetId: doc.data.targetId, objectId, extension,
+    });
+    if (clean(doc.data.publicStorageKey) !== expected ||
+        storageKey !== "moderation-staging/" + expected) {
+      throw new StorageApiError("invalid_diary_cleanup_key", 409);
+    }
+    await bucket.delete("moderated-diary/" + expected);
+  }
   await bucket.delete(storageKey);
   const now = new Date(nowMs);
   const scope = clean(item.data?.scope);
