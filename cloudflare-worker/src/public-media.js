@@ -232,9 +232,12 @@ export async function publicMediaRedirect(request, env) {
       );
     }
 
+    const responseHeaders = mediaHeaders(request, env, object, extension);
+    if (scope === "moderated_diary_image") {
+      responseHeaders.set("Cache-Control", "no-store");
+    }
     const response = new Response(object.body, {
-      status: 200,
-      headers: mediaHeaders(request, env, object, extension),
+      status: 200, headers: responseHeaders,
     });
 
     if (cache) {
