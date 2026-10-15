@@ -24,9 +24,19 @@ class AccountActionAppealDialog {
     return found?.group(1) ?? '';
   }
 
-  static Future<void> open(BuildContext context, AppNotification item) async {
-    final operationId = operationIdFrom(item);
-    if (operationId.isEmpty) return;
+  static Future<void> open(BuildContext context, AppNotification item) =>
+      openOperation(context,
+        operationId: operationIdFrom(item),
+        message: item.body,
+      );
+
+  // The same authenticated, self-only flow works on a locked account.
+  static Future<void> openOperation(BuildContext context, {
+    required String operationId,
+    required String message,
+  }) async {
+    if (!RegExp(r'^[A-Za-z0-9_-]{12,180}$').hasMatch(operationId)) return;
+    final service = AccountActionAppealService();
     final service = AccountActionAppealService();
     String? status;
     String reason = '';
@@ -55,7 +65,7 @@ class AccountActionAppealDialog {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(item.body),
+                Text(message),
                 const SizedBox(height: 12),
                 if (status != null)
                   Text(status == 'under_review'
