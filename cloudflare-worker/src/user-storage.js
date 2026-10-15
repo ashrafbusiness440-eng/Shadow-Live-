@@ -2,6 +2,7 @@ import {
   ImageAppealError, submitImageModerationAppeal,
 } from "./image-moderation-appeal.js";
 import { finalImageEvidenceFields } from "./image-moderation-retention.js";
+import { verifyPrivateChatImageMessage } from "./image-moderation-chat.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
@@ -1717,6 +1718,45 @@ export async function cleanupQueuedStorageObject(
     throw new StorageApiError("invalid_storage_delete_queue_item", 500);
   }
 
+  // Bounded cleanup of the formerly staged chat bytes, without touching the
+  // approved private message, its metadata, or conversation attachments.
+  if (clean(item.data?.reason) === "chat_published_stage_cleanup") {
+    const uid = clean(item.data?.ownerUid);
+    const conversationId = clean(item.data?.targetId);
+    const extension = storageExtensionForMime(item.data?.mimeType);
+    if (!/^[a-f0-9]{32}$/.test(objectId) ||
+        clean(item.id) !== "chat_stage_" + objectId ||
+        clean(item.data?.scope) !== "chat_stage_only" ||
+        !uid || !conversationId || !extension) {
+      throw new StorageApiError("invalid_chat_stage_cleanup", 409);
+    }
+    const originalKey = buildStorageObjectKey({
+      scope: "chat_image", uid, targetId: conversationId,
+      objectId, extension,
+    });
+    if (storageKey !== "moderation-staging/" + originalKey) {
+      throw new StorageApiError("invalid_chat_stage_cleanup", 409);
+    }
+    const current = await db.get("storage_objects/" + objectId);
+    if (current.exists && (
+        clean(current.data?.scope) !== "chat_image" ||
+        clean(current.data?.publicStorageKey) !== originalKey ||
+        clean(current.data?.targetId) !== conversationId ||
+        (clean(current.data?.ownerUid) !== uid &&
+         clean(current.data?.originalOwnerUid) !== uid))) {
+      throw new StorageApiError("chat_stage_cleanup_conflict", 409);
+    }
+    await bucket.delete(storageKey);
+    await db.commit(null, [
+      db.writeDelete("storage_delete_queue/" + item.id),
+      db.writeCreate("storage_audit_logs/" + auditId(), {
+        actorUid: "system", action: "cleanupApprovedChatStage",
+        objectId, targetId: conversationId, createdAt: new Date(nowMs),
+      }),
+    ]);
+    return { status: "deleted", objectId };
+  }
+
   // A successful diary post retains a short-lived private staging copy when
   // the immediate best-effort delete fails. This receipt must never delete
   // the active image metadata or the approved protected media itself.
@@ -1970,6 +2010,17 @@ async function prepareRead(request, env, auth, body) {
     throw new StorageApiError("image_pending_moderation", 423);
   }
   await authorizeRead(auth.db, auth.uid, metadata);
+  if (clean(metadata.scope) === "chat_image") {
+    if (clean(metadata.state) !== "active") {
+      throw new StorageApiError("image_pending_moderation", 423);
+    }
+    try {
+      await verifyPrivateChatImageMessage(
+        auth.db, metadata, metadata.objectId);
+    } catch {
+      throw new StorageApiError("chat_image_message_unavailable", 404);
+    }
+  }
   if (clean(metadata.storageKey).startsWith("moderated-diary/")) {
     const link = await auth.db.get("diary_image_links/" + metadata.objectId);
     if (clean(metadata.state) !== "active" ||

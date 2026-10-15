@@ -40,10 +40,10 @@ function safeImage(doc, id) {
   };
 }
 
-// No unbounded scan: six fixed-size, single-field indexed queries.
+// No unbounded scan: seven fixed-size, single-field indexed queries.
 export async function listImageReviewCases(db, limit = 12) {
   const cap = Math.max(1, Math.min(12, Math.trunc(Number(limit) || 12)));
-  const [pending, blocked, publishing, appeals, rejected, approvedDiary] = await Promise.all([
+  const [pending, blocked, publishing, appeals, rejected, approvedDiary, chatPublishing] = await Promise.all([
     db.runQuery("storage_objects", {
       filters: [{ field: "state", op: "==", value: "needs_review" }],
       limit: cap,
@@ -68,22 +68,27 @@ export async function listImageReviewCases(db, limit = 12) {
       filters: [{ field: "state", op: "==", value: "approved_pending_diary_link" }],
       limit: cap,
     }),
+    db.runQuery("storage_objects", {
+      filters: [{ field: "state", op: "==", value: "chat_approval_publishing" }],
+      limit: cap,
+    }),
   ]);
   return [
     ...appeals.slice(0, cap),
     ...blocked.slice(0, cap),
     ...rejected.slice(0, cap),
     ...approvedDiary.slice(0, cap),
+    ...chatPublishing.slice(0, cap),
     ...pending.slice(0, cap),
     ...publishing.slice(0, cap),
-  ].slice(0, 72).map((row) => safeImage(row.data || {}, row.id))
+  ].slice(0, 84).map((row) => safeImage(row.data || {}, row.id))
     .filter((row) => OBJECT_ID.test(row.objectId));
 }
 
 export async function readImageReviewPreview(request, env, db, actorUid, objectId) {
   const id = objectIdOrFail(objectId);
   const snap = await db.get("storage_objects/" + id);
-  if (!snap.exists || !["needs_review", "blocked", "rejected", "approved_pending_copy", "appeal_pending", "approved_pending_diary_link"].includes(
+  if (!snap.exists || !["needs_review", "blocked", "rejected", "approved_pending_copy", "appeal_pending", "approved_pending_diary_link", "chat_approval_publishing"].includes(
     clean(snap.data?.state))) throw new ImageReviewError("image_review_not_found", 404);
   const doc = snap.data;
   const mimeType = clean(doc.mimeType);
@@ -174,6 +179,25 @@ export async function rejectImageReview(db, actorUid, payload) {
         reason, createdAt: now,
       }),
     ];
+    if (clean(image.data.scope) === "chat_image") {
+      const conversationId = clean(image.data.targetId);
+      if (conversationId && conversationId.length <= 180 &&
+          !conversationId.includes("/")) {
+        const messages = await db.runQuery(
+          "conversations/" + conversationId + "/messages", {
+            filters: [{ field: "storageObjectId", op: "==", value: id }],
+            limit: 2,
+          });
+        if (messages.length === 1 &&
+            clean(messages[0].data?.senderId) === ownerUid &&
+            clean(messages[0].data?.type) === "image") {
+          writes.push(db.writeUpdate(
+            "conversations/" + conversationId + "/messages/" + messages[0].id,
+            { moderationStatus: "rejected" }, ["moderationStatus"],
+          ));
+        }
+      }
+    }
     if (appealPending) {
       writes.push(db.writeUpdate("image_moderation_appeals/" + id, {
         status: "rejected", decisionReason: reason,

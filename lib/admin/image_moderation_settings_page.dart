@@ -181,6 +181,44 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
     'diary_image': 'صورة يومية',
   };
 
+  Future<void> _approveChatPrivate(String objectId) async {
+    if (_reviewBusy) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('موافقة على صورة محادثة'),
+        content: const Text('اعتماد الصورة يسمح بقراءتها داخل المحادثة '
+            'المحددة للمشاركين فقط، بعد التحقق من الرسالة والصلاحيات. '
+            'لن تُنشر الصورة على رابط عام.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('اعتماد داخل المحادثة')),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    setState(() => _reviewBusy = true);
+    try {
+      await _post({
+        'action': 'approve_chat_private',
+        'objectId': objectId,
+        'reason': 'تمت مراجعة صورة المحادثة واعتمادها بشكل خاص',
+        'idempotencyKey': 'image_chat_private_' + objectId,
+      });
+      if (!mounted) return;
+      setState(() => _notice =
+          'تم قبول الصورة داخل المحادثة فقط. لا يوجد رابط عام.');
+      await _loadReviewsAfterDecision();
+    } catch (_) {
+      if (mounted) setState(() => _notice =
+          'تعذر اعتماد الصورة. تأكد من وجود الرسالة وصلاحيات المشاركين.');
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
   Future<void> _approveDiaryPrivate(String objectId) async {
     if (_reviewBusy) return;
     final confirmed = await showDialog<bool>(
@@ -516,6 +554,16 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                         onPressed: _reviewBusy ? null : () =>
                             _approve((item['objectId'] ?? '').toString()),
                         child: Text(item['state'] == 'appeal_pending' ? 'قبول الاعتراض' : 'اعتماد النشر')),
+                    if (item['scope'] == 'chat_image' &&
+                        ['needs_review', 'appeal_pending',
+                         'chat_approval_publishing']
+                            .contains(item['state']))
+                      FilledButton(
+                        onPressed: _reviewBusy ? null : () =>
+                            _approveChatPrivate(
+                                (item['objectId'] ?? '').toString()),
+                        child: Text(item['state'] == 'chat_approval_publishing'
+                            ? 'إعادة محاولة الاعتماد' : 'اعتماد داخل المحادثة')),
                     if (item['scope'] == 'diary_image' &&
                         ['needs_review', 'appeal_pending']
                             .contains(item['state']))

@@ -7,6 +7,7 @@ import {
 } from "./image-moderation-review.js";
 import { approveImageReview } from "./image-moderation-approval.js";
 import { approvePrivateDiaryImage } from "./image-moderation-diary.js";
+import { approvePrivateChatImage } from "./image-moderation-chat.js";
 import { setImageEvidenceHold } from "./image-moderation-retention.js";
 import {
   IMAGE_MODERATION_PATH, IMAGE_MODERATION_PROVIDERS,
@@ -145,7 +146,7 @@ export async function imageModerationControl(request, env) {
       const images = await listImageReviewCases(db, body.limit);
       return json(request, env, { ok: true, images });
     }
-    if (!["save", "preview_image", "reject_image", "approve_image", "approve_diary_private", "hold_image_evidence"].includes(action))
+    if (!["save", "preview_image", "reject_image", "approve_image", "approve_diary_private", "approve_chat_private", "hold_image_evidence"].includes(action))
       throw new ImageModerationControlError("unsupported_action");
     const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time);
     if (!Number.isFinite(authAge) || authAge < 0 || authAge > 1800)
@@ -164,6 +165,11 @@ export async function imageModerationControl(request, env) {
     }
     if (action === "approve_diary_private") {
       const result = await approvePrivateDiaryImage(db, env.USER_STORAGE, uid, body);
+      return json(request, env, result);
+    }
+    if (action === "approve_chat_private") {
+      const result = await approvePrivateChatImage(
+        db, env.USER_STORAGE, uid, body);
       return json(request, env, result);
     }
     if (action === "hold_image_evidence") {
