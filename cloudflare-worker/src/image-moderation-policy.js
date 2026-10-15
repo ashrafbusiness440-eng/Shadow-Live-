@@ -3,6 +3,9 @@ import { Buffer } from "node:buffer";
 // Image safety providers are replaceable, but none is implicitly activated.
 // Enabling publishing gates belongs to U6-L2; NEVER mistake a configured
 // provider for a live moderation enforcement path.
+// U6-L5/B: one server-side publication gate for owner settings AND uploads.
+// A stored enabled=true value can never authorize AI usage before acceptance.
+export const IMAGE_MODERATION_PUBLICATION_GATE_READY = false;
 export const IMAGE_MODERATION_PATH = "system_config/image_moderation";
 export const IMAGE_MODERATION_PROVIDERS = Object.freeze({
   cloudflare_vision: Object.freeze({
