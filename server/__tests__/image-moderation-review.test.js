@@ -75,6 +75,10 @@ test("U6-L2/B protected preview audits BEFORE opening private R2 bytes",async()=
   db.docs.set("storage_objects/"+OBJECT_ID,altered);
   await assert.rejects(()=>readImageReviewPreview(req,env,db,
     "owner_1",OBJECT_ID),ImageReviewError);
+  db.docs.set("storage_objects/"+OBJECT_ID,{...document(),etag:""});
+  await assert.rejects(()=>readImageReviewPreview(req,env,db,
+    "owner_1",OBJECT_ID),/image_preview_unavailable/);
+  assert.equal(getCalls,1);
 });
 test("U6-L2/B rejection is audited, user notified and idempotent",async()=>{
   const db=new DB();
