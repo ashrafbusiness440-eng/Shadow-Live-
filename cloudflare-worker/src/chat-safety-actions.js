@@ -229,11 +229,11 @@ export async function changePrivateMessageVisibility(db, actorUid, body) {
       return { ok: true, code: "ok", messageId };
     }
 
+    if (senderId !== actorUid) throw new ApiError("forbidden", 403);
     if (message.data?.deletedForEveryone === true) {
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", messageId };
     }
-    if (senderId !== actorUid) throw new ApiError("forbidden", 403);
     if (!mayDeletePrivateMessageForEveryone(
       message.data, actorUid, Date.now(),
     )) {
