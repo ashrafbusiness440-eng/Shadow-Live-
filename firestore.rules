@@ -261,6 +261,11 @@ service cloud.firestore {
         && request.resource.data.get('vipExpiresAt', null) == source.get('vipExpiresAt', null)
         && request.resource.data.get('profileAvatarAnimationUrl', '') == source.get('profileAvatarAnimationUrl', '')
         && request.resource.data.get('profileAvatarAnimationObjectId', '') == source.get('profileAvatarAnimationObjectId', '')
+        // Frame decoration is a server-issued projection, never client-authored.
+        && request.resource.data.get('activeProfileFrameAssetKey', '') == source.get('activeProfileFrameAssetKey', '')
+        && request.resource.data.get('activeProfileFrameImageUrl', '') == source.get('activeProfileFrameImageUrl', '')
+        && request.resource.data.get('activeProfileFrameExpiresAtMs', 0) == source.get('activeProfileFrameExpiresAtMs', 0)
+        && request.resource.data.get('activeProfileFramePermanent', false) == source.get('activeProfileFramePermanent', false)
         && request.resource.data.badges == source.get('publicBadges', []);
     }
 
@@ -692,6 +697,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileImageObjectId','profileAvatarAsset',
           'profileAvatarAnimationUrl','profileAvatarAnimationObjectId',
+          'activeProfileFrameAssetKey','activeProfileFrameImageUrl','activeProfileFrameExpiresAtMs','activeProfileFramePermanent',
           'coverImageUrl','coverImageObjectId','bio','location','moodEmoji','moodText','interests','vipLevel','effectiveVipLevel','vipExpiresAt','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
