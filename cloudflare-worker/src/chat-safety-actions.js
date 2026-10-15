@@ -1884,8 +1884,10 @@ async function reportUser(db, uid, body, fromProfile = false) {
       conversationId.includes("/") || conversationId.includes("\\"))) ||
     !allowedReasons.has(reason) ||
     details.length > 500 ||
-    !validKey(key)
+    !validKey(key) || key.length > 173
   ) {
+    // reports/report_{key} must remain <=180 characters for existing
+    // general-reports review and evidence ID validation.
     throw new ApiError("invalid_request", 400);
   }
 
@@ -1976,9 +1978,13 @@ async function reportUser(db, uid, body, fromProfile = false) {
         createdAt: now, updatedAt: now,
       }),
       adminInboxUpsertWrite(db, {
-        type: fromProfile ? "account_report" : "user_report",
-        title: fromProfile ? "بلاغ مباشر عن ملف شخصي" :
-          "بلاغ عن مستخدم في محادثة خاصة",
+        ...(fromProfile ? {
+          type: "account_report",
+          title: "بلاغ مباشر عن ملف شخصي",
+        } : {
+          type: "user_report",
+          title: "بلاغ عن مستخدم في محادثة خاصة",
+        }),
         body: "بلاغ يحتاج مراجعة",
         targetId: resultData.reportId,
         route: "general_reports",
@@ -2203,6 +2209,9 @@ export async function chatSafetyActions(request, env, ctx) {
         result = await reportUser(db, decoded.sub, body);
         break;
       case "reportProfile":
+        if (clean(decoded?.firebase?.sign_in_provider) === "anonymous") {
+          throw new ApiError("auth_required", 403);
+        }
         result = await reportProfile(db, decoded.sub, body);
         break;
       case "reportRoom":
