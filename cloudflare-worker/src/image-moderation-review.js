@@ -34,13 +34,16 @@ function safeImage(doc, id) {
     reason: clean(doc.moderation?.reason).slice(0, 100),
     reviewStatus: clean(doc.moderation?.reviewStatus),
     appealExplanation: clean(doc.moderation?.appealExplanation).slice(0, 800),
+    evidenceHold: doc.evidenceHold === true || doc.legalHold === true ||
+      doc.investigationHold === true,
+    evidencePurgeAt: doc.evidencePurgeAt || null,
   };
 }
 
-// No unbounded scan: four fixed-size, single-field indexed queries.
+// No unbounded scan: five fixed-size, single-field indexed queries.
 export async function listImageReviewCases(db, limit = 12) {
   const cap = Math.max(1, Math.min(12, Math.trunc(Number(limit) || 12)));
-  const [pending, blocked, publishing, appeals] = await Promise.all([
+  const [pending, blocked, publishing, appeals, rejected] = await Promise.all([
     db.runQuery("storage_objects", {
       filters: [{ field: "state", op: "==", value: "needs_review" }],
       limit: cap,
@@ -57,13 +60,18 @@ export async function listImageReviewCases(db, limit = 12) {
       filters: [{ field: "state", op: "==", value: "appeal_pending" }],
       limit: cap,
     }),
+    db.runQuery("storage_objects", {
+      filters: [{ field: "state", op: "==", value: "rejected" }],
+      limit: cap,
+    }),
   ]);
   return [
     ...appeals.slice(0, cap),
     ...blocked.slice(0, cap),
+    ...rejected.slice(0, cap),
     ...pending.slice(0, cap),
     ...publishing.slice(0, cap),
-  ].slice(0, 48).map((row) => safeImage(row.data || {}, row.id))
+  ].slice(0, 60).map((row) => safeImage(row.data || {}, row.id))
     .filter((row) => OBJECT_ID.test(row.objectId));
 }
 
