@@ -219,7 +219,7 @@ test("U6-L3/B all evidence operations remain opt-in, private and owner gated",()
     "cloudflare-worker/src/report-evidence-retention.js","utf8");
   assert.match(review,/hold_image_evidence/);
   assert.match(review,/recent_auth_required/);
-  assert.match(review,/IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
+  assert.match(control,/export \\{ IMAGE_MODERATION_PUBLICATION_GATE_READY \\}/);
   assert.match(user,/image_moderation_evidence_locked/);
   assert.match(cron,/runDueImageEvidenceCleanup/);
 });
