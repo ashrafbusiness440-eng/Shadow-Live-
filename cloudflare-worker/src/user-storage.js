@@ -1662,6 +1662,49 @@ export async function runDeletedAccountStorageCleanup(
   };
 }
 
+export async function claimDueApprovedDiaryCleanup(db, item, nowMs) {
+  const id = clean(item?.data?.objectId || item?.id);
+  const queuePath = "storage_delete_queue/" + item.id;
+  const imagePath = "storage_objects/" + id;
+  const tx = await db.beginTransaction();
+  try {
+    const [image, queue] = await Promise.all([
+      db.get(imagePath, tx), db.get(queuePath, tx),
+    ]);
+    if (!image.exists || !queue.exists ||
+        clean(queue.data?.reason) !== "diary_approved_unlinked" ||
+        timestampMs(queue.data?.deleteAfter) > nowMs) {
+      await db.rollback(tx);
+      return false;
+    }
+    const state = clean(image.data?.state);
+    if (state === "diary_orphan_deleting") {
+      await db.rollback(tx);
+      return true;
+    }
+    if (state === "diary_linking" &&
+        timestampMs(image.data?.diaryLinkExpiresAt) > nowMs) {
+      await db.rollback(tx);
+      return false;
+    }
+    if (!["approved_pending_diary_link", "diary_linking"].includes(state)) {
+      await db.rollback(tx);
+      return false;
+    }
+    await db.commit(tx, [
+      db.writeUpdate(imagePath, {
+        state: "diary_orphan_deleting",
+        diaryLinkOperationKey: null,
+        diaryLinkExpiresAt: null,
+      }, ["state", "diaryLinkOperationKey", "diaryLinkExpiresAt"]),
+    ]);
+    return true;
+  } catch (error) {
+    await db.rollback(tx).catch(() => {});
+    throw error;
+  }
+}
+
 export async function cleanupQueuedStorageObject(
   db,
   bucket,
