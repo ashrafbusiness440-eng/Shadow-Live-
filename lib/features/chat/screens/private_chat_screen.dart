@@ -380,7 +380,20 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
   Future<void> _sendImage() async {
-    if (_sendingImage) return;
+    if (_sendingImage || !mounted) return;
+    // Lock immediately, including follow/storage checks and the image picker.
+    // Otherwise two rapid taps can open two pickers and upload twice.
+    setState(() => _sendingImage = true);
+    try {
+      await _sendImageOnce();
+    } catch (_) {
+      if (mounted) _snack('تعذر تجهيز الصورة. حاول مرة ثانية.');
+    } finally {
+      if (mounted) setState(() => _sendingImage = false);
+    }
+  }
+
+  Future<void> _sendImageOnce() async {
     final mutual = await _follow.isMutual(widget.otherUid);
     if (!mutual) {
       _snack('إرسال الصور متاح فقط عند وجود متابعة متبادلة بينكما.');
@@ -412,7 +425,6 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       return;
     }
 
-    setState(() => _sendingImage = true);
     String? uploadedObjectId;
     try {
       final upload = await _storage.upload(
@@ -494,8 +506,6 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
       _snack('تعذر إرسال الصورة.');
-    } finally {
-      if (mounted) setState(() => _sendingImage = false);
     }
   }
 
