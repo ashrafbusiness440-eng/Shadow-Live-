@@ -589,6 +589,21 @@ async function createDiary(db, uid, body, options = {}) {
               ? ["storageKey", "publicUrl", "moderation"] : [])],
         ),
       );
+      if (privateCopies.has(image.objectId)) {
+        const copy = privateCopies.get(image.objectId);
+        writes.push(db.writeCreate(
+          `storage_delete_queue/diary_stage_${image.objectId}`, {
+            objectId: image.objectId,
+            storageKey: copy.sourceKey,
+            ownerUid: uid, scope: "diary_stage_only",
+            targetId: uid, mimeType: image.mimeType,
+            sizeBytes: image.sizeBytes,
+            deleteAfter: new Date(now.getTime() + 15 * 60 * 1000),
+            reason: "diary_published_stage_cleanup",
+            createdAt: now,
+          },
+        ));
+      }
     }
 
     await db.commit(transaction, writes);
