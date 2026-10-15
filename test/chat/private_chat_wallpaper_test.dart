@@ -36,7 +36,7 @@ void main() {
     expect(chat.contains(".collection('messages')"), isTrue);
     expect(chat.contains(".orderBy('createdAt', descending: true)"), isTrue);
     expect(chat.contains('.limit(100)'), isTrue);
-    expect(chat.contains('_messageBubble(docs[index].data())'), isTrue);
+    expect(chat.contains('_messageBubble(docs[index])'), isTrue);
     expect(chat.contains('_blockedComposer()'), isTrue);
     expect(chat.contains('_composer()'), isTrue);
     final interior = chat.indexOf('private-chat-interior-wallpaper');

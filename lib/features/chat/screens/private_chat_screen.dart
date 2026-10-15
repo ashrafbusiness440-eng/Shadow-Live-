@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../shared/widgets/shadow_global_wallpaper.dart';
+import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/services/report_screenshot_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
@@ -57,6 +59,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   );
   bool _markingRead = false;
   bool _sendingImage = false;
+  bool _messageActionBusy = false;
+  final Set<String> _locallyHiddenMessageIds = <String>{};
+  final Set<String> _locallyDeletedMessageIds = <String>{};
   int? _selfVipLevelCache;
   String? _animatedEmojiId;
   String? _openedByUid;
@@ -654,7 +659,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       final byTime = bm.compareTo(am);
       return byTime != 0 ? byTime : b.id.compareTo(a.id);
     });
-    return result;
+    return result.where((doc) {
+      final hidden = doc.data()['hiddenForUids'];
+      return !_locallyHiddenMessageIds.contains(doc.id) &&
+          (hidden is! List || !hidden.contains(_openedByUid));
+    }).toList();
   }
 
   Future<int> _selfVipLevel() async {
@@ -768,7 +777,148 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
-  Widget _messageBubble(Map<String, dynamic> data) {
+
+  bool _canDeleteMessageForEveryone(Map<String, dynamic> data) {
+    if (data['senderId'] != _openedByUid ||
+        data['deletedForEveryone'] == true) return false;
+    final createdAt = data['createdAt'];
+    if (createdAt is! Timestamp) return false;
+    final elapsed = DateTime.now().difference(createdAt.toDate());
+    return !elapsed.isNegative &&
+        elapsed <= const Duration(minutes: 5);
+  }
+
+  Future<void> _showMessageActions(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    if (!_isActiveChatAccount(_openedByUid) || _messageActionBusy) return;
+    final data = doc.data();
+    final type = (data['type'] ?? 'text').toString();
+    final copyText = (data['text'] ?? '').toString();
+    final canCopy = type == 'text' && copyText.isNotEmpty;
+    final canDeleteBoth = _canDeleteMessageForEveryone(data);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF171C2A),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canCopy)
+              ListTile(
+                leading: const Icon(Icons.copy_rounded, color: Colors.white70),
+                title: const Text('نسخ الرسالة',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Clipboard.setData(ClipboardData(text: copyText));
+                  _snack('تم نسخ الرسالة');
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded,
+                  color: Colors.white70),
+              title: const Text('حذف من عندي',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _runMessageAction(doc.id, 'hideMessageForMe');
+              },
+            ),
+            if (canDeleteBoth)
+              ListTile(
+                leading: const Icon(Icons.delete_forever_rounded,
+                    color: Colors.redAccent),
+                title: const Text('حذف من الطرفين',
+                    style: TextStyle(color: Colors.redAccent)),
+                subtitle: const Text('خلال 5 دقائق من الإرسال',
+                    style: TextStyle(color: Colors.white54)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _runMessageAction(doc.id, 'deleteMessageForEveryone');
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runMessageAction(String messageId, String action) async {
+    final accountUid = _openedByUid;
+    if (!_isActiveChatAccount(accountUid) || _messageActionBusy) return;
+    final both = action == 'deleteMessageForEveryone';
+    final confirmed = await showShadowConfirmation(
+      context,
+      title: both ? 'حذف الرسالة من الطرفين؟' : 'حذف الرسالة من عندك؟',
+      message: both
+          ? 'لن تظهر الرسالة لأي منكما بعد حذفها. حذف الهدية لا يعيد الرصيد.'
+          : 'ستختفي هذه الرسالة من محادثتك فقط.',
+      confirmLabel: both ? 'حذف من الطرفين' : 'حذف من عندي',
+      destructive: true,
+    );
+    if (!confirmed || !_isActiveChatAccount(accountUid) ||
+        _messageActionBusy) return;
+    setState(() => _messageActionBusy = true);
+    try {
+      final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+      if (!_isActiveChatAccount(accountUid)) return;
+      if (token == null || token.isEmpty) {
+        throw StateError('not_signed_in');
+      }
+      final response = await http.post(
+        Uri.parse('$_apiBase/chat-actions'),
+        headers: {
+          'authorization': 'Bearer $token',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': action,
+          'conversationId': widget.conversationId,
+          'messageId': messageId,
+        }),
+      );
+      if (!_isActiveChatAccount(accountUid)) return;
+      final decoded = jsonDecode(response.body);
+      final body = decoded is Map ? decoded : const <String, dynamic>{};
+      if (response.statusCode == 200 && body['ok'] == true) {
+        if (mounted) {
+          setState(() {
+            if (both) {
+              _locallyDeletedMessageIds.add(messageId);
+            } else {
+              _locallyHiddenMessageIds.add(messageId);
+            }
+          });
+        }
+        _snack(both ? 'تم حذف الرسالة من الطرفين.' : 'تم حذف الرسالة من عندك.');
+        return;
+      }
+      if (body['code'] == 'delete_window_expired') {
+        _snack('انتهت مهلة حذف الرسالة من الطرفين (5 دقائق).');
+      } else if (body['code'] == 'message_not_found') {
+        _snack('هذه الرسالة لم تعد متاحة.');
+      } else {
+        _snack('تعذر حذف الرسالة حالياً. حاول مجدداً.');
+      }
+    } catch (_) {
+      if (_isActiveChatAccount(accountUid)) {
+        _snack('تعذر حذف الرسالة حالياً. حاول مجدداً.');
+      }
+    } finally {
+      if (mounted) setState(() => _messageActionBusy = false);
+    }
+  }
+
+  Widget _messageBubble(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = <String, dynamic>{...doc.data()};
+    if (_locallyDeletedMessageIds.contains(doc.id)) {
+      data['type'] = 'deleted';
+      data['deletedForEveryone'] = true;
+      data.remove('text');
+      data.remove('storageObjectId');
+      data.remove('imageUrl');
+    }
     final mine = data['senderId'] == _uid;
     final type = (data['type'] ?? 'text').toString();
     final vipLevel = type == 'image'
@@ -776,7 +926,17 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         : ((data['vipLevel'] ?? data['senderVipLevel']) as num?)?.toInt() ?? 0;
     Widget content;
     EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 9);
-    if (type == 'image') {
+    if (type == 'deleted' || data['deletedForEveryone'] == true) {
+      content = const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.block_rounded, color: Colors.white54, size: 15),
+          SizedBox(width: 7),
+          Text('تم حذف هذه الرسالة',
+              style: TextStyle(color: Colors.white70)),
+        ],
+      );
+    } else if (type == 'image') {
       final objectId = (data['storageObjectId'] ?? '').toString().trim();
       final reviewStatus = (data['moderationStatus'] ?? '').toString().trim();
       final legacyUrl = (data['imageUrl'] ?? '').toString().trim();
@@ -959,7 +1119,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             : '';
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
+      child: GestureDetector(
+        onLongPress: () => _showMessageActions(doc),
+        child: Container(
         constraints: const BoxConstraints(maxWidth: 300),
         margin: const EdgeInsets.only(bottom: 8),
         child: VipCosmeticSurface(
@@ -1002,6 +1164,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               ],
             ),
           ),
+        ),
         ),
       ),
     );
@@ -1356,7 +1519,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                               ),
                             );
                           }
-                          return _messageBubble(docs[index].data());
+                          return _messageBubble(docs[index]);
                         },
                       );
                     },
