@@ -118,8 +118,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     try {
       final token = await sender!.getIdToken();
       if (!_isActiveChatAccount(senderUid)) return;
-      if (token.isEmpty) throw StateError('not_signed_in');
-      final key = [senderUid, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
+      if (token == null || token.isEmpty) throw StateError('not_signed_in');
+      final key = [senderUid!, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
       final response = await http.post(
         Uri.parse('$_apiBase/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
