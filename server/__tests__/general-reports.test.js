@@ -1651,3 +1651,59 @@ test("U6-H original sensitive words expire after a reviewed flag and remain hidd
   const list=await flags.contentFilterControlInternals.listFlags(db,{});
   assert.equal(JSON.stringify(list).includes("EXPIRED_WORD"),false);
 });
+
+
+test("U6-M2 manual recovery only indexes pending legacy cases, 20 per owner action", async()=>{
+  const seed={};
+  for(let i=0;i<47;i++){
+    seed["reports/legacy_legacy_"+String(i).padStart(3,"0")]={
+      type:"user",source:"private_chat",reporterId:"reporter",targetUserId:"target",
+      status:i%7===0?"closed":"under_review",reason:"abuse",
+      evidence:{raw:"protected_case_only"},createdAt:new Date(1000+i),
+    };
+  }
+  const db=new Db(seed),owner={uid:"owner",canHoldEvidence:true};
+  const restore=generalReportsTestHooks.restoreLegacyReportIndexPage;
+  let cursor,restored=0,pages=0;
+  do{
+    const r=await restore(db,owner,{type:"user_report",...(cursor?{cursor}:{})});
+    assert.ok(r.inspected<=20);
+    assert.ok(r.restored<=20);
+    restored+=r.restored;
+    pages++;
+    cursor=r.nextCursor;
+    assert.ok(pages<=3);
+  }while(cursor);
+  assert.equal(pages,3);
+  assert.equal(restored,40);
+  assert.equal(db.queryCalls,3);
+  const indexed=[...db.docs.entries()].filter(([p])=>
+    p.startsWith("admin_inbox_items/user_report__"));
+  assert.equal(indexed.length,40);
+  assert.ok(indexed.every(([,v])=>!JSON.stringify(v).includes("protected_case_only")));
+  assert.ok([...db.docs.entries()].filter(([p])=>p.startsWith("reports/"))
+    .every(([,v])=>v.evidence.raw==="protected_case_only"));
+  const writesBefore=[...db.docs.keys()].length;
+  const retry=await restore(db,owner,{type:"user_report"});
+  assert.equal(retry.restored,0);
+  assert.equal([...db.docs.keys()].length,writesBefore);
+});
+
+test("U6-M2 legacy recovery rejects unauthorized, invalid types, invalid cursors",async()=>{
+  const db=new Db(cases()),restore=generalReportsTestHooks.restoreLegacyReportIndexPage;
+  const noAccess={uid:"admin",canReview:true,canHoldEvidence:false};
+  await assert.rejects(()=>restore(db,noAccess,{type:"user_report"}),/forbidden/);
+  await assert.rejects(()=>restore(db,{uid:"owner",canHoldEvidence:true},
+    {type:"diary"}),/invalid_report_type/);
+  await assert.rejects(()=>restore(db,{uid:"owner",canHoldEvidence:true},
+    {type:"user_report",cursor:"../../users"}),/invalid_cursor/);
+  assert.equal(db.queryCalls,0);
+  const direct=new Db({"reports/account1":{
+    targetType:"user",source:"profile",status:"new",
+  }});
+  const result=await restore(direct,{uid:"owner",canHoldEvidence:true},
+    {type:"account_report"});
+  assert.equal(result.restored,1);
+  assert.equal(direct.docs.get("admin_inbox_items/account_report__account1").type,
+    "account_report");
+});
