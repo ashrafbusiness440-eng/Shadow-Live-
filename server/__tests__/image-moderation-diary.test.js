@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { approvePrivateDiaryImage } from "../../cloudflare-worker/src/image-moderation-diary.js";
+import {
+  approvePrivateDiaryImage, prepareApprovedDiaryPublication,
+  moderatedDiaryProtectedKey,
+} from "../../cloudflare-worker/src/image-moderation-diary.js";
+import {
+  publicMediaStorageKey, approvedDiaryMediaLinked,
+} from "../../cloudflare-worker/src/public-media.js";
+import { cleanupQueuedStorageObject } from "../../cloudflare-worker/src/user-storage.js";
 
 const id = "a".repeat(32);
 const key = "private_diary_review_001";
@@ -17,9 +24,15 @@ class DB {
   }
   writeCreate(path, fields) { return { kind: "create", path, fields }; }
   writeUpdate(path, fields) { return { kind: "update", path, fields }; }
+  writeDelete(path) { return { kind: "delete", path }; }
   async commit(_tx, writes) {
     for (const w of writes) {
       if (w.kind === "create" && this.docs.has(w.path)) throw Error("exists");
+      if (w.kind === "delete") {
+        this.docs.delete(w.path);
+        this.writes.push(w);
+        continue;
+      }
       this.docs.set(w.path, { ...(this.docs.get(w.path) || {}), ...w.fields });
       this.writes.push(w);
     }
@@ -113,4 +126,82 @@ test("U6-L4/A control remains owner+recent-auth; no automatic gate activation", 
   assert.match(control, /approve_diary_private/);
   assert.match(control, /IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
   assert.match(ui, /الموافقة دون نشر/);
+});
+
+test("U6-L4/A protected copy is never accessible until linked and active", async () => {
+  const { db } = fixture("approved_pending_diary_link");
+  const doc = db.docs.get("storage_objects/" + id);
+  doc.moderation.status = "approved";
+  const stored = [];
+  const bucket = {
+    get: async k => {
+      assert.equal(k, stage);
+      return { etag: "reviewed-etag", size: 4,
+        body: new Uint8Array([1, 2, 3, 4]) };
+    },
+    put: async (...args) => { stored.push(args); },
+  };
+  const prepared = await prepareApprovedDiaryPublication(bucket, doc, id);
+  assert.equal(prepared.protectedKey, "moderated-diary/" + pub);
+  assert.equal(moderatedDiaryProtectedKey(pub), prepared.protectedKey);
+  assert.equal(publicMediaStorageKey({
+    scope: "moderated_diary_image", targetId: "u1", filename: id + ".png",
+  }), prepared.protectedKey);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0][0], prepared.protectedKey);
+  assert.equal(await approvedDiaryMediaLinked(
+    db, id, "u1", prepared.protectedKey), false);
+  db.docs.set("diary_image_links/" + id, {
+    ownerUid: "u1", state: "linked", diaryId: "diary_1",
+  });
+  doc.state = "active";
+  doc.storageKey = prepared.protectedKey;
+  doc.linkedDiaryId = "diary_1";
+  assert.equal(await approvedDiaryMediaLinked(
+    db, id, "u1", prepared.protectedKey), true);
+  doc.linkedDiaryId = "another";
+  assert.equal(await approvedDiaryMediaLinked(
+    db, id, "u1", prepared.protectedKey), false);
+});
+test("U6-L4/A wrong reviewed fingerprint or hold cannot publish image", async () => {
+  const { db } = fixture("approved_pending_diary_link");
+  const doc = db.docs.get("storage_objects/" + id);
+  doc.moderation.status = "approved";
+  const calls = [];
+  const bucket = {
+    get: async () => ({ etag: "different", size: 4,
+      body: new Uint8Array([1, 2, 3, 4]) }),
+    put: async (...args) => calls.push(args),
+  };
+  await assert.rejects(() =>
+    prepareApprovedDiaryPublication(bucket, doc, id));
+  doc.evidenceHold = true;
+  await assert.rejects(() =>
+    prepareApprovedDiaryPublication(bucket, doc, id));
+  assert.equal(calls.length, 0);
+});
+test("U6-L4/A seven-day orphan cleanup removes BOTH private R2 copies", async () => {
+  const { db } = fixture("approved_pending_diary_link");
+  const deleted = [];
+  const queueItem = { id, data: {
+    objectId: id, scope: "diary_image", ownerUid: "u1",
+    targetId: "u1", storageKey: stage, sizeBytes: 4,
+    reason: "diary_approved_unlinked",
+  }};
+  const result = await cleanupQueuedStorageObject(db, {
+    delete: async k => deleted.push(k),
+  }, queueItem, Date.now());
+  assert.equal(result.status, "deleted");
+  assert.deepEqual(deleted, ["moderated-diary/" + pub, stage]);
+  assert.equal(db.docs.has("storage_objects/" + id), false);
+});
+test("U6-L4/A author diary post cannot link an unapproved staged image", () => {
+  const code = fs.readFileSync("cloudflare-worker/src/diaries.js", "utf8");
+  assert.match(code, /approved_pending_diary_link/);
+  assert.match(code, /prepareApprovedDiaryPublication/);
+  assert.match(code, /linkedDiaryId: diaryId/);
+  assert.match(code, /publicMediaUrl/);
+  const media = fs.readFileSync("cloudflare-worker/src/public-media.js", "utf8");
+  assert.match(media, /scope === "moderated_diary_image"/);
+  assert.match(media, /Cache-Control", "no-store"/);
 });
