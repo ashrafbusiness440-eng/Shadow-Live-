@@ -1909,9 +1909,7 @@ async function deleteObject(request, env, auth) {
   );
   await authorizeDelete(auth.db, auth.uid, metadata);
   // End users cannot bypass evidence retention by deleting staged images.
-  if (clean(metadata.storageKey).startsWith("moderation-staging/") &&
-      ["needs_review", "blocked", "appeal_pending", "rejected",
-       "evidence_purging", "evidence_purged"].includes(clean(metadata.state))) {
+  if (clean(metadata.storageKey).startsWith("moderation-staging/")) {
     throw new StorageApiError("image_moderation_evidence_locked", 409);
   }
 
