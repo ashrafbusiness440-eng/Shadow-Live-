@@ -390,30 +390,37 @@ async function createDiary(db, uid, body, options = {}) {
   // author create request. Until the Firestore link commits the separate
   // protected public-media scope cannot serve those bytes.
   const privateCopies = new Map();
-  for (const imageId of imageObjectIds) {
-    const snap = await db.get("storage_objects/" + imageId);
-    if (!snap.exists || clean(snap.data?.state) !== "approved_pending_diary_link") {
-      continue;
+  const claimedIds = [];
+  try {
+    for (const imageId of imageObjectIds) {
+      const snap = await db.get("storage_objects/" + imageId);
+      if (!snap.exists || !["approved_pending_diary_link", "diary_linking"]
+          .includes(clean(snap.data?.state))) continue;
+      try {
+        const claimed = await claimApprovedDiaryImage(
+          db, uid, imageId, operationKey);
+        claimedIds.push(imageId);
+        const copy = await prepareApprovedDiaryPublication(
+          options.env?.USER_STORAGE, claimed, imageId, operationKey);
+        const url = publicMediaUrl(options.request, {
+          scope: copy.publicScope, targetId: uid,
+          objectId: imageId, extension: copy.extension,
+        });
+        if (!url) throw new Error("private_publication_url_missing");
+        privateCopies.set(imageId, { ...copy, url });
+      } catch (_) {
+        throw new DiaryApiError("diary_image_not_approved", 409);
+      }
     }
-    if (clean(snap.data?.ownerUid) !== uid ||
-        clean(snap.data?.targetId) !== uid) {
-      throw new DiaryApiError("invalid_diary_image", 409);
+  } catch (error) {
+    for (const id of claimedIds) {
+      await releaseApprovedDiaryClaim(db, uid, id, operationKey).catch(() => {});
     }
-    try {
-      const copy = await prepareApprovedDiaryPublication(
-        options.env?.USER_STORAGE, snap.data, imageId);
-      const url = publicMediaUrl(options.request, {
-        scope: copy.publicScope, targetId: uid,
-        objectId: imageId, extension: copy.extension,
-      });
-      if (!url) throw new Error("private_publication_url_missing");
-      privateCopies.set(imageId, { ...copy, url });
-    } catch (_) {
-      throw new DiaryApiError("diary_image_not_approved", 409);
-    }
+    throw error;
   }
 
-  const result = await runTransaction(db, async (transaction) => {
+  try {
+    const result = await runTransaction(db, async (transaction) => {
     const operationPath = `diary_operations/${operationKey}`;
     const operation = await db.get(operationPath, transaction);
     if (operation.exists) {
