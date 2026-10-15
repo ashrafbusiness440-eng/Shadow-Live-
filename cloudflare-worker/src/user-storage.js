@@ -2,6 +2,7 @@ import {
   ImageAppealError, submitImageModerationAppeal,
 } from "./image-moderation-appeal.js";
 import { finalImageEvidenceFields } from "./image-moderation-retention.js";
+import { verifyPrivateChatImageMessage } from "./image-moderation-chat.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
@@ -1970,6 +1971,17 @@ async function prepareRead(request, env, auth, body) {
     throw new StorageApiError("image_pending_moderation", 423);
   }
   await authorizeRead(auth.db, auth.uid, metadata);
+  if (clean(metadata.scope) === "chat_image") {
+    if (clean(metadata.state) !== "active") {
+      throw new StorageApiError("image_pending_moderation", 423);
+    }
+    try {
+      await verifyPrivateChatImageMessage(
+        auth.db, metadata, metadata.objectId);
+    } catch {
+      throw new StorageApiError("chat_image_message_unavailable", 404);
+    }
+  }
   if (clean(metadata.storageKey).startsWith("moderated-diary/")) {
     const link = await auth.db.get("diary_image_links/" + metadata.objectId);
     if (clean(metadata.state) !== "active" ||
