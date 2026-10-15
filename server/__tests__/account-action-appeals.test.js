@@ -135,8 +135,17 @@ test("U6-M1 acceptance requires proven reversal of this precise original sanctio
   await assert.rejects(()=>reviewAccountActionAppeal(db,"reviewer",payload),
     /reversal_not_verified/);
   db.docs.get("control_operations/"+reversalId).result.originalOperationId=opId;
-  const accepted=await reviewAccountActionAppeal(db,"reviewer",payload);
+  // The UI never pages through history or asks for the technical receipt.
+  // The server resolves exactly one successor from the source operation.
+  const accepted=await reviewAccountActionAppeal(db,"reviewer",{
+    ...payload, reversalOperationId:"",
+  });
   assert.equal(accepted.decision,"accepted");
+  assert.equal(accepted.reversalOperationId,reversalId);
+  assert.equal((await reviewAccountActionAppeal(db,"reviewer",{
+    ...payload, reversalOperationId:"",
+  })).duplicate,true);
+
   assert.equal(db.docs.get("account_action_appeals/"+opId).status,"accepted");
   assert.match(db.docs.get("notifications/account_appeal_decision_"+opId).body,
     /رفع العقوبة/);
@@ -154,4 +163,17 @@ test("U6-M1 production route is self-only and admin review stays capability and 
   assert.match(src,/actor\.canReview/);
   assert.match(inbox,/case "account_action_appeal":/);
   assert.doesNotMatch(src,/setInterval\(/);
+});
+
+test("U6-M1 no historical paging: admin accept is a single verified provenance read",()=>{
+  const control=fs.readFileSync(
+    "lib/admin/account_action_appeals_control_page.dart","utf8");
+  assert.doesNotMatch(control,/getAccountActionHistory/);
+  assert.doesNotMatch(control,/reversalOperationId.*:/);
+  assert.match(control,/reviewAccountActionAppeal/);
+  const server=fs.readFileSync(
+    "cloudflare-worker/src/account-action-appeals.js","utf8");
+  assert.match(server,/source\.data\?\.lifecycle\?\.operationId/);
+  assert.match(server,/db\.get\(operationPath\(verifiedReversalId\), tx\)/);
+  assert.doesNotMatch(server,/while\s*\(/);
 });
