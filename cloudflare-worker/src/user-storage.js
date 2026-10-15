@@ -1,6 +1,7 @@
 import {
   ImageAppealError, submitImageModerationAppeal,
 } from "./image-moderation-appeal.js";
+import { finalImageEvidenceFields } from "./image-moderation-retention.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
@@ -1465,20 +1466,40 @@ async function deleteAccountOwnedStorageObject({
     (item.data?.evidenceHold === true ||
      item.data?.legalHold === true ||
      item.data?.investigationHold === true ||
-     ["appeal_pending", "rejected", "evidence_purging"].includes(state));
+     ["needs_review", "blocked", "appeal_pending", "rejected",
+      "evidence_purging"].includes(state));
   if (requiresArchive) {
+    // An account that no longer exists cannot receive an appeal decision or
+    // approve a public image. Close open appeals and start a bounded deadline.
+    // Do not reset an already-finalized decision or release a legal hold.
+    const archiveAt = new Date(nowMs);
     const archivalUid = "image_evidence_archive_" + objectId;
-    await db.commit(null, [
+    const appealPath = "image_moderation_appeals/" + objectId;
+    const appeal = await db.get(appealPath);
+    const dueFields = item.data?.evidenceRetentionDueAt
+      ? {} : finalImageEvidenceFields(archiveAt);
+    const writes = [
       db.writeUpdate("storage_objects/" + objectId, {
         ownerUid: archivalUid, originalOwnerUid: ownerUid,
-        ownerAccountDeletedAt: new Date(nowMs),
-      }, ["ownerUid", "originalOwnerUid", "ownerAccountDeletedAt"]),
+        ownerAccountDeletedAt: archiveAt,
+        state: state === "evidence_purging" ? state : "rejected",
+        ...dueFields,
+      }, ["ownerUid", "originalOwnerUid", "ownerAccountDeletedAt",
+        "state", ...Object.keys(dueFields)]),
       db.writeCreate("storage_audit_logs/image_evidence_archive_" + objectId, {
         action: "preserveHeldImageEvidenceOnAccountDeletion",
-        objectId, subjectUid: ownerUid, createdAt: new Date(nowMs),
+        objectId, subjectUid: ownerUid, createdAt: archiveAt,
       }),
-    ]);
-    return {objectId, deleted: false, transferredToUid: archivalUid};
+    ];
+    if (appeal.exists && ["under_review", "approving"].includes(
+      clean(appeal.data?.status))) {
+      writes.push(db.writeUpdate(appealPath, {
+        status: "closed_account_deleted", updatedAt: archiveAt,
+        closedReason: "account_deleted",
+      }, ["status", "updatedAt", "closedReason"]));
+    }
+    await db.commit(null, writes);
+    return { objectId, deleted: false, transferredToUid: archivalUid };
   }
 
   const transferredToUid = await transferSharedRoomCoverOnAccountDeletion({
