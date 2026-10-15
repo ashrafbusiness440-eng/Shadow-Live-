@@ -198,5 +198,5 @@ test("U6-L4/B private read authorizes exact message and never public media",asyn
   const control=fs.readFileSync(
     "cloudflare-worker/src/image-moderation-control.js","utf8");
   assert.match(control,/approve_chat_private/);
-  assert.match(control,/export \\{ IMAGE_MODERATION_PUBLICATION_GATE_READY \\}/);
+  assert.match(control,/export \{ IMAGE_MODERATION_PUBLICATION_GATE_READY \}/);
 });
