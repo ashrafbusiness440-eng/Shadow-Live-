@@ -434,6 +434,14 @@ class GeneralReportsService {
     if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
   });
 
+  // Owner explicitly requests each small page. No background collection scan.
+  static Future<Map<String, dynamic>> restoreLegacyPage({
+    required String type, String? cursor,
+  }) => _post('restoreLegacyReportIndexPage', <String, dynamic>{
+    'type': type,
+    if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+  });
+
   static Future<void> applyAccountAction(
     String reportId, String action, String reason, int durationMinutes,
   ) async {
@@ -1498,6 +1506,19 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
               ),
             ),
           const SizedBox(height: 6),
+          if (_canHoldEvidence && widget.initialReportId == null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const GeneralReportsLegacyRecoveryPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.restore_page_outlined),
+                label: const Text('استرجاع البلاغات القديمة غير الظاهرة'),
+              ),
+            ),
           const Text(
             'اضغط على بيانات الحساب لعرض الهوية العامة ونسخ ID. '
             'كل تغيير حالة ينفذه الخادم ويُسجل في سجل الإدارة.',
@@ -1530,6 +1551,140 @@ class _GeneralReportsControlPageState extends State<GeneralReportsControlPage> {
           for (final item in _items) _card(item),
         ],
       ),
+    ),
+  );
+}
+
+
+/// Owner-only, explicit 20-case pages. Opening this screen performs zero
+/// database requests; no poll, listener, historical replay or auto-punishment.
+class GeneralReportsLegacyRecoveryPage extends StatefulWidget {
+  const GeneralReportsLegacyRecoveryPage({super.key});
+
+  @override
+  State<GeneralReportsLegacyRecoveryPage> createState() =>
+      _GeneralReportsLegacyRecoveryPageState();
+}
+
+class _GeneralReportsLegacyRecoveryPageState
+    extends State<GeneralReportsLegacyRecoveryPage> {
+  static const _types = <String, String>{
+    'user_report': 'بلاغات المحادثات الخاصة',
+    'account_report': 'بلاغات الحسابات والملفات الشخصية',
+    'room_message_report': 'بلاغات رسائل الغرف',
+    'room_report': 'بلاغات الغرف',
+  };
+  String _type = 'user_report';
+  String? _cursor;
+  bool _busy = false;
+  bool _complete = false;
+  String? _error;
+  int _inspected = 0;
+  int _restored = 0;
+  int _already = 0;
+  int _skipped = 0;
+
+  void _select(String? type) {
+    if (_busy || type == null || !_types.containsKey(type)) return;
+    setState(() {
+      _type = type;
+      _cursor = null;
+      _complete = false;
+      _inspected = 0;
+      _restored = 0;
+      _already = 0;
+      _skipped = 0;
+      _error = null;
+    });
+  }
+
+  Future<void> _nextPage() async {
+    if (_busy || _complete) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await GeneralReportsService.restoreLegacyPage(
+        type: _type, cursor: _cursor,
+      );
+      if (!mounted) return;
+      final more = result['hasMore'] == true;
+      final next = (result['nextCursor'] ?? '').toString().trim();
+      setState(() {
+        _inspected += (result['inspected'] as num?)?.toInt() ?? 0;
+        _restored += (result['restored'] as num?)?.toInt() ?? 0;
+        _already += (result['alreadyIndexed'] as num?)?.toInt() ?? 0;
+        _skipped += ((result['notActive'] as num?)?.toInt() ?? 0) +
+          ((result['invalid'] as num?)?.toInt() ?? 0);
+        _complete = !more;
+        _cursor = more && next.isNotEmpty ? next : null;
+        if (more && next.isEmpty) {
+          _complete = true;
+          _error = 'تعذّر الانتقال إلى الدفعة التالية. يرجى مراجعة الإدارة.';
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() {
+        _error = 'تعذّر فحص هذه الدفعة. لم يتم تأكيد اكتمال الاسترجاع؛ حاول مجددًا.';
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.rtl,
+    child: Scaffold(
+      appBar: AppBar(title: const Text('استرجاع البلاغات القديمة')),
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        const Text(
+          'أداة خاصة بصاحب التطبيق. بعض البلاغات القديمة قد لا تظهر '
+          'بإشعارات الإدارة رغم بقائها محفوظة. '
+          'هذه العملية تفحص 20 بلاغًا فقط في كل ضغطة، '
+          'وتعيد البلاغات المفتوحة الناقصة للفهرس دون تكرارها. '
+          'البلاغات المغلقة لا تُفتح مجددًا ولا تتغير العقوبات.',
+        ),
+        const SizedBox(height: 18),
+        DropdownButtonFormField<String>(
+          value: _type,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'نوع البلاغات'),
+          items: _types.entries.map((entry) => DropdownMenuItem<String>(
+            value: entry.key, child: Text(entry.value),
+          )).toList(),
+          onChanged: _busy ? null : _select,
+        ),
+        const SizedBox(height: 18),
+        if (_busy) const LinearProgressIndicator(),
+        Card(child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('تم فحص $_inspected بلاغًا من النوع المحدد'),
+            Text('أُعيد إلى فهرس الإدارة: $_restored'),
+            Text('كان ظاهرًا بالفعل: $_already'),
+            Text('مغلق أو غير مؤهل للاسترجاع: $_skipped'),
+            if (_complete)
+              const Text('انتهى فحص هذا النوع ضمن الصفحات المسترجعة.'),
+          ]),
+        )),
+        if (_error != null) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(_error!, style: const TextStyle(color: Colors.amber)),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: _busy || _complete ? null : _nextPage,
+          icon: const Icon(Icons.fact_check_outlined),
+          label: Text(_cursor == null
+              ? 'فحص أول 20 بلاغًا واسترجاع الناقص'
+              : 'فحص الدفعة التالية من 20 بلاغًا'),
+        ),
+        const SizedBox(height: 12),
+        const Text('باقي الأنواع تُفحص بتغيير الاختيار أعلاه. '
+          'لا يوجد تشغيل تلقائي أو رسوم فحص صور.'),
+      ]),
     ),
   );
 }
