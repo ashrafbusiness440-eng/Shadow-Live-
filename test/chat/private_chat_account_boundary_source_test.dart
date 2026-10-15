@@ -15,8 +15,8 @@ void main() {
     expect(source.contains('authSnapshot.data?.uid != _openedByUid'), isTrue);
 
     // Read receipts target the original account, not whoever logs in next.
-    expect(source.contains("await _conversation.update({'unreadCounts.$ownerUid': 0});"), isTrue);
-    expect(source.contains("await _conversation.update({'unreadCounts.$_uid': 0});"), isFalse);
+    expect(source.contains(r"await _conversation.update({'unreadCounts.$ownerUid': 0});"), isTrue);
+    expect(source.contains(r"await _conversation.update({'unreadCounts.$_uid': 0});"), isFalse);
   });
 
   test('text and image sends reject late account changes', () {
