@@ -1078,6 +1078,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               Expanded(
                 child: TextField(
                   controller: _controller,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
                   minLines: 1,
                   maxLines: 5,
                   maxLength: 2000,
