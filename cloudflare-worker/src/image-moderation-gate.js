@@ -1,4 +1,5 @@
 import {
+  IMAGE_MODERATION_PUBLICATION_GATE_READY,
   IMAGE_MODERATION_PATH, defaultImageModerationPolicy,
   imageModerationApplies, runImageModerationProvider,
 } from "./image-moderation-policy.js";
@@ -17,11 +18,17 @@ export async function uploadModerationSnapshot(db, scope) {
   const policy = doc.exists
     ? { ...defaultImageModerationPolicy(), ...(doc.data || {}) }
     : defaultImageModerationPolicy();
-  return imageModerationApplies(policy, scope) ? {
+  if (!imageModerationApplies(policy, scope)) return null;
+  // A stale or externally changed enabled=true policy must NEVER run AI or
+  // publish unchecked images while final owner acceptance is still blocked.
+  if (!IMAGE_MODERATION_PUBLICATION_GATE_READY) {
+    throw new Error("publication_gate_not_ready");
+  }
+  return {
     enabled: true, provider: policy.provider, mode: policy.mode,
     scope: policy.scope, dailyLimit: policy.dailyLimit,
     version: Number(policy.version || 0),
-  } : null;
+  };
 }
 
 // Atomic fixed-day reservation BEFORE contacting any provider.
