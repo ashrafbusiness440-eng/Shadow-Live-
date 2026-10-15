@@ -35,10 +35,10 @@ function safeImage(doc, id) {
   };
 }
 
-// No unbounded scan: two fixed-size, single-field indexed queries.
+// No unbounded scan: three fixed-size, single-field indexed queries.
 export async function listImageReviewCases(db, limit = 12) {
   const cap = Math.max(1, Math.min(12, Math.trunc(Number(limit) || 12)));
-  const [pending, blocked] = await Promise.all([
+  const [pending, blocked, publishing] = await Promise.all([
     db.runQuery("storage_objects", {
       filters: [{ field: "state", op: "==", value: "needs_review" }],
       limit: cap,
@@ -47,18 +47,23 @@ export async function listImageReviewCases(db, limit = 12) {
       filters: [{ field: "state", op: "==", value: "blocked" }],
       limit: cap,
     }),
+    db.runQuery("storage_objects", {
+      filters: [{ field: "state", op: "==", value: "approved_pending_copy" }],
+      limit: cap,
+    }),
   ]);
   return [
-    ...pending.slice(0, cap),
     ...blocked.slice(0, cap),
-  ].slice(0, 24).map((row) => safeImage(row.data || {}, row.id))
+    ...pending.slice(0, cap),
+    ...publishing.slice(0, cap),
+  ].slice(0, 36).map((row) => safeImage(row.data || {}, row.id))
     .filter((row) => OBJECT_ID.test(row.objectId));
 }
 
 export async function readImageReviewPreview(request, env, db, actorUid, objectId) {
   const id = objectIdOrFail(objectId);
   const snap = await db.get("storage_objects/" + id);
-  if (!snap.exists || !["needs_review", "blocked", "rejected"].includes(
+  if (!snap.exists || !["needs_review", "blocked", "rejected", "approved_pending_copy"].includes(
     clean(snap.data?.state))) throw new ImageReviewError("image_review_not_found", 404);
   const doc = snap.data;
   const mimeType = clean(doc.mimeType);
