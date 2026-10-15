@@ -31,6 +31,159 @@ class _ChatListScreenState extends State<ChatListScreen> {
   String? _notificationOwnerUid;
   Stream<bool>? _unreadNotifications;
 
+  static const int _inboxPageSize = 40;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _inboxStream;
+  String? _pagedOwnerUid;
+  final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>>
+      _olderInboxDocuments = {};
+  QueryDocumentSnapshot<Map<String, dynamic>>? _inboxCursor;
+  bool _inboxPageLoading = false;
+  bool _inboxHasMore = true;
+  bool _inboxPageFailed = false;
+
+  final Map<String, Timestamp?> _hiddenAtByConversation = {};
+  final Set<String> _checkedHideIds = {};
+  bool _hideReadLoading = false;
+  bool _hideReadFailed = false;
+
+  bool _isActiveInboxUser(String? ownerUid) =>
+      mounted && ownerUid != null && ownerUid.isNotEmpty &&
+      ownerUid == _pagedOwnerUid &&
+      FirebaseAuth.instance.currentUser?.uid == ownerUid;
+
+  void _resetInboxState() {
+    _inboxStream = null;
+    _olderInboxDocuments.clear();
+    _inboxCursor = null;
+    _inboxPageLoading = false;
+    _inboxHasMore = true;
+    _inboxPageFailed = false;
+    _hiddenAtByConversation.clear();
+    _checkedHideIds.clear();
+    _hideReadLoading = false;
+    _hideReadFailed = false;
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _watchInbox(String ownerUid) {
+    return _inboxStream ??= FirebaseFirestore.instance
+        .collection('conversations')
+        .where('participants', arrayContains: ownerUid)
+        .orderBy('updatedAt', descending: true)
+        .limit(_inboxPageSize)
+        .snapshots();
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _combinedInbox(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> live,
+  ) {
+    if (_inboxCursor != null) {
+      for (final doc in live) {
+        _olderInboxDocuments[doc.id] = doc;
+      }
+    }
+    final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+      for (final doc in _olderInboxDocuments.values) doc.id: doc,
+      for (final doc in live) doc.id: doc,
+    };
+    final docs = byId.values.toList()
+      ..sort((a, b) {
+        final at = (a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        final bt = (b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        final timeOrder = bt.compareTo(at);
+        return timeOrder != 0 ? timeOrder : b.id.compareTo(a.id);
+      });
+    return docs;
+  }
+
+  Future<void> _loadOlderInbox(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> live,
+  ) async {
+    final ownerUid = _pagedOwnerUid;
+    if (!_isActiveInboxUser(ownerUid) || live.isEmpty ||
+        _inboxPageLoading || !_inboxHasMore) return;
+    final cursor = _inboxCursor ?? live.last;
+    setState(() {
+      _inboxPageLoading = true;
+      _inboxPageFailed = false;
+    });
+    try {
+      final page = await FirebaseFirestore.instance
+          .collection('conversations')
+          .where('participants', arrayContains: ownerUid!)
+          .orderBy('updatedAt', descending: true)
+          .startAfterDocument(cursor)
+          .limit(_inboxPageSize)
+          .get();
+      if (!_isActiveInboxUser(ownerUid)) return;
+      setState(() {
+        for (final doc in live) {
+          _olderInboxDocuments[doc.id] = doc;
+        }
+        for (final doc in page.docs) {
+          _olderInboxDocuments[doc.id] = doc;
+        }
+        _inboxCursor = page.docs.isEmpty ? cursor : page.docs.last;
+        _inboxHasMore = page.docs.length == _inboxPageSize;
+      });
+    } catch (_) {
+      if (_isActiveInboxUser(ownerUid)) {
+        setState(() => _inboxPageFailed = true);
+      }
+    } finally {
+      if (_isActiveInboxUser(ownerUid)) {
+        setState(() => _inboxPageLoading = false);
+      }
+    }
+  }
+
+  // Firestore doc-id lookups read at most 30 hide markers per request,
+  // restricted to the 40 currently displayed conversations per page.
+  // Unchecked rows are not shown until privacy markers are loaded.
+  Future<void> _checkInboxHides(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> visible,
+  ) async {
+    final ownerUid = _pagedOwnerUid;
+    if (!_isActiveInboxUser(ownerUid) || _hideReadLoading || _hideReadFailed) {
+      return;
+    }
+    final unchecked = visible.map((doc) => doc.id)
+        .where((id) => !_checkedHideIds.contains(id)).toList();
+    if (unchecked.isEmpty) return;
+    _hideReadLoading = true;
+    try {
+      final found = <String, Timestamp?>{};
+      for (var start = 0; start < unchecked.length; start += 30) {
+        if (!_isActiveInboxUser(ownerUid)) return;
+        final end = (start + 30).clamp(0, unchecked.length);
+        final chunk = unchecked.sublist(start, end);
+        final result = await FirebaseFirestore.instance
+            .collection('conversation_hides')
+            .doc(ownerUid)
+            .collection('items')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        if (!_isActiveInboxUser(ownerUid)) return;
+        for (final id in chunk) {
+          found[id] = null;
+        }
+        for (final doc in result.docs) {
+          found[doc.id] = doc.data()['hiddenAt'] as Timestamp?;
+        }
+      }
+      if (!_isActiveInboxUser(ownerUid)) return;
+      setState(() {
+        _hiddenAtByConversation.addAll(found);
+        _checkedHideIds.addAll(unchecked);
+      });
+    } catch (_) {
+      if (_isActiveInboxUser(ownerUid)) {
+        setState(() => _hideReadFailed = true);
+      }
+    } finally {
+      _hideReadLoading = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -72,7 +225,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _retryRead() {
-    if (mounted) setState(() => _readRetry++);
+    if (mounted) {
+      setState(() {
+        _readRetry++;
+        _resetInboxState();
+      });
+    }
   }
 
   String? get uid => FirebaseAuth.instance.currentUser?.uid;
@@ -379,6 +537,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final me = uid;
+    if (_pagedOwnerUid != me) {
+      _resetInboxState();
+      _pagedOwnerUid = me;
+    }
     if (_identityOwnerUid != me) {
       _identityReads.clear();
       _identityOwnerUid = me;
@@ -434,7 +596,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   key: ValueKey('conversations-$_readRetry'),
-                  stream: FirebaseFirestore.instance.collection('conversations').where('participants', arrayContains: me).snapshots(),
+                  stream: _watchInbox(me),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return ShadowReadState(
@@ -450,66 +612,99 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         message: 'جارٍ تحميل المحادثات...',
                       );
                     }
-                    final allDocs = [...snapshot.data!.docs]
-                      ..sort((a, b) => ((b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
-                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance
-                          .collection('conversation_hides')
-                          .doc(me)
-                          .collection('items')
-                          .snapshots(),
-                      builder: (context, hiddenSnapshot) {
-                        if (hiddenSnapshot.hasError) {
-                          return ShadowReadState(
-                            icon: Icons.error_outline_rounded,
-                            message: 'تعذر تحديث قائمة المحادثات. تحقق من الاتصال.',
-                            onRetry: _retryRead,
+                    final live = snapshot.data!.docs;
+                    final allDocs = _combinedInbox(live);
+                    final unchecked = allDocs.any(
+                      (doc) => !_checkedHideIds.contains(doc.id),
+                    );
+                    if (unchecked && !_hideReadFailed) {
+                      WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _checkInboxHides(allDocs),
+                      );
+                    }
+                    if (_hideReadFailed) {
+                      return ShadowReadState(
+                        icon: Icons.shield_outlined,
+                        message: 'تعذر التأكد من خصوصية قائمة المحادثات.',
+                        onRetry: _retryRead,
+                      );
+                    }
+                    if (unchecked) {
+                      return const LoadingIndicator(
+                        size: 30,
+                        color: Color(0xFF8A3DFF),
+                        message: 'جارٍ ترتيب المحادثات...',
+                      );
+                    }
+                    final docs = allDocs.where((doc) {
+                      final hiddenAt = _hiddenAtByConversation[doc.id];
+                      if (hiddenAt == null) return true;
+                      final updatedAt = doc.data()['updatedAt'] as Timestamp?;
+                      return updatedAt != null &&
+                          updatedAt.millisecondsSinceEpoch >
+                              hiddenAt.millisecondsSinceEpoch;
+                    }).toList();
+                    final canLoadOlder = _inboxCursor == null
+                        ? live.length == _inboxPageSize
+                        : _inboxHasMore;
+                    if (docs.isEmpty && !canLoadOlder) {
+                      return const ShadowReadState(
+                        icon: Icons.forum_outlined,
+                        message: 'ما عندك محادثات بعد. اضغط + لتبدأ محادثة.',
+                      );
+                    }
+                    return ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+                      itemCount: docs.length + (canLoadOlder ? 1 : 0),
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, index) {
+                        if (index == docs.length) {
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_inboxPageFailed)
+                                  const Text(
+                                    'تعذر تحميل المحادثات الأقدم. حاول مجدداً.',
+                                    style: TextStyle(color: Colors.white70),
+                                  ),
+                                OutlinedButton.icon(
+                                  onPressed: _inboxPageLoading
+                                      ? null
+                                      : () => _loadOlderInbox(live),
+                                  icon: _inboxPageLoading
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.history_rounded),
+                                  label: Text(_inboxPageLoading
+                                      ? 'جارٍ تحميل المحادثات...'
+                                      : 'عرض محادثات أقدم'),
+                                ),
+                              ],
+                            ),
                           );
                         }
-                        if (!hiddenSnapshot.hasData) {
-                          return const LoadingIndicator(
-                            size: 30,
-                            color: Color(0xFF8A3DFF),
-                            message: 'جارٍ ترتيب المحادثات...',
-                          );
-                        }
-                        final hidden = <String, Timestamp?>{
-                          for (final d in hiddenSnapshot.data?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-                            d.id: d.data()['hiddenAt'] as Timestamp?,
-                        };
-                        final docs = allDocs.where((doc) {
-                          final hiddenAt = hidden[doc.id];
-                          if (hiddenAt == null) return true;
-                          final updatedAt = doc.data()['updatedAt'] as Timestamp?;
-                          return updatedAt != null &&
-                              updatedAt.millisecondsSinceEpoch > hiddenAt.millisecondsSinceEpoch;
-                        }).toList();
-                        if (docs.isEmpty) {
-                          return const ShadowReadState(
-                            icon: Icons.forum_outlined,
-                            message: 'ما عندك محادثات بعد. اضغط + لتبدأ محادثة.',
-                          );
-                        }
-                        return ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-                          itemCount: docs.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (_, index) {
-                            final doc = docs[index];
-                            final data = doc.data();
-                            final participants = List<String>.from(data['participants'] ?? const []);
-                            final other = participants.firstWhere((id) => id != me, orElse: () => '');
-                            final unread = ((data['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
-                            return _ConversationTile(
-                              id: doc.id,
-                              otherUid: other,
-                              identityFuture: _identityFor(other),
-                              lastMessage: '${data['lastMessage'] ?? ''}',
-                              unread: unread,
-                              updatedAt: data['updatedAt'],
-                              onDelete: () => _hideConversation(doc.id),
-                            );
-                          },
+                        final doc = docs[index];
+                        final data = doc.data();
+                        final participants = List<String>.from(
+                            data['participants'] ?? const []);
+                        final other = participants.firstWhere(
+                            (id) => id != me, orElse: () => '');
+                        final unread =
+                            ((data['unreadCounts'] as Map?)?[me] as num?)?.toInt() ?? 0;
+                        return _ConversationTile(
+                          id: doc.id,
+                          otherUid: other,
+                          identityFuture: _identityFor(other),
+                          lastMessage: '${data['lastMessage'] ?? ''}',
+                          unread: unread,
+                          updatedAt: data['updatedAt'],
+                          onDelete: () => _hideConversation(doc.id),
                         );
                       },
                     );
@@ -559,6 +754,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
       await batch.commit();
 
       if (!mounted || uid != me) return;
+      // The write succeeded; a follow-up single-document read gets the
+      // server's hiddenAt for correct reappearance after a newer message.
+      Timestamp? serverHiddenAt;
+      try {
+        final receipt = await FirebaseFirestore.instance
+            .collection('conversation_hides').doc(me)
+            .collection('items').doc(conversationId).get();
+        serverHiddenAt = receipt.data()?['hiddenAt'] as Timestamp?;
+      } catch (_) {
+        // The hide already succeeded. Keep it hidden locally until Refresh.
+      }
+      if (!mounted || uid != me) return;
+      setState(() {
+        _checkedHideIds.add(conversationId);
+        _hiddenAtByConversation[conversationId] =
+            serverHiddenAt ?? Timestamp.fromDate(
+                DateTime.now().add(const Duration(days: 1)));
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إخفاء المحادثة من قائمتك.')),
       );
