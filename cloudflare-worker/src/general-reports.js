@@ -218,6 +218,100 @@ async function listReportHistory(db, body = {}) {
   };
 }
 
+// Owner-triggered repair of legacy reports beyond the one-time v1->v2 inbox
+// migration's first 20 records per source. One explicit request reads ONLY
+// 21 source documents of ONE selected type, then at most 20 exact document
+// pairs in a transaction. No background job, full scan or evidence read.
+async function restoreLegacyReportIndexPage(db, actor, body = {}) {
+  if (!actor?.canHoldEvidence) throw new GeneralReportError("forbidden", 403);
+  const type = clean(body.type);
+  const filters = HISTORY_FILTERS[type];
+  if (!filters) throw new GeneralReportError("invalid_report_type", 400);
+  const cursor = clean(body.cursor);
+  if (cursor) safeId(cursor, "invalid_cursor");
+  const raw = await db.runQuery("reports", {
+    filters,
+    orderBy: [{ field: "__name__", direction: "desc" }],
+    ...(cursor ? { startAfter: [{ referencePath: "reports/" + cursor }] } : {}),
+    limit: HISTORY_PAGE_SIZE + 1,
+  });
+  const page = raw.slice(0, HISTORY_PAGE_SIZE);
+  const transaction = await db.beginTransaction();
+  let restored = 0, alreadyIndexed = 0, notActive = 0, invalid = 0;
+  try {
+    // All source and index reads precede all writes: a report closed during
+    // recovery must never be put back into the moderation inbox.
+    const inspected = await Promise.all(page.map(async (row) => {
+      const id = clean(row?.id);
+      if (!/^[A-Za-z0-9_-]{1,180}$/.test(id)) return { invalid: true };
+      const indexPath = adminInboxIndexPath(type, id);
+      const [source, indexed] = await Promise.all([
+        db.get("reports/" + id, transaction),
+        db.get(indexPath, transaction),
+      ]);
+      return { id, source, indexed };
+    }));
+    const writes = [];
+    for (const { id, source, indexed, invalid: badId } of inspected) {
+      if (badId) { invalid++; continue; }
+      const report = source?.exists
+        ? normalizeGeneralReport(id, source.data || {}) : null;
+      if (!report || report.type !== type ||
+          !ACTIVE_STATUSES.has(report.status)) {
+        notActive++;
+        continue;
+      }
+      // Preserve existing acknowledgement/priority and avoid overwriting
+      // the latest indexed record or creating a duplicate.
+      if (indexed?.exists) { alreadyIndexed++; continue; }
+      const title = {
+        user_report: "بلاغ عن مستخدم في محادثة خاصة",
+        account_report: "بلاغ مباشر عن حساب",
+        room_message_report: "بلاغ عن رسالة داخل غرفة",
+        room_report: "بلاغ عن غرفة",
+      }[type];
+      writes.push(adminInboxUpsertWrite(db, {
+        type, title, body: "بلاغ قديم يحتاج مراجعة",
+        targetId: id, route: "general_reports",
+        createdAt: source.data?.createdAt || new Date(0),
+        priority: "high",
+        meta: {
+          reporterUid: report.reporterUid || null,
+          targetUid: report.targetUid || null,
+          roomId: report.roomId || null,
+          conversationId: report.conversationId || null,
+          status: report.status,
+        },
+      }));
+      restored++;
+    }
+    if (writes.length) {
+      writes.push(db.writeCreate(
+        "admin_audit_logs/legacy_report_restore_" + crypto.randomUUID(), {
+          action: "restoreLegacyReportIndexPage",
+          actorUid: actor.uid, reportType: type,
+          restored, inspected: page.length,
+          createdAt: new Date(),
+        },
+      ));
+      await db.commit(transaction, writes);
+    } else {
+      await db.rollback(transaction);
+    }
+  } catch (error) {
+    await db.rollback(transaction).catch(() => {});
+    throw error;
+  }
+  return {
+    ok: true, type, inspected: page.length,
+    restored, alreadyIndexed, notActive, invalid,
+    hasMore: raw.length > HISTORY_PAGE_SIZE,
+    nextCursor: raw.length > HISTORY_PAGE_SIZE
+      ? clean(page.at(-1)?.id) : null,
+    pageSize: HISTORY_PAGE_SIZE,
+  };
+}
+
 async function openGeneralSensitiveEvidence(db, actor, body = {}) {
   if (!actor?.canViewSensitiveEvidence) {
     throw new GeneralReportError("forbidden_evidence", 403);
@@ -956,6 +1050,7 @@ export async function generalReports(request, env) {
       return json(request, env, result);
     }
     const actor = await requireAdmin(db, decoded,
+      action === "restoreLegacyReportIndexPage" ||
       action === "reviewAccountActionAppeal" ||
       action === "reviewReport" || action === "applyAccountAction" ||
       action === "setReportPriority" || action === "reviewSystemFlag" ||
@@ -975,7 +1070,9 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "getAccountActionAppeal"
+    const result = action === "restoreLegacyReportIndexPage"
+      ? await restoreLegacyReportIndexPage(db, actor, body)
+      : action === "getAccountActionAppeal"
       ? await getAccountActionAppeal(db, body.operationId)
       : action === "listAccountActionAppeals"
       ? await listAccountActionAppeals(db)
@@ -1048,6 +1145,7 @@ export const generalReportsTestHooks = Object.freeze({
   normalizeGeneralReport,
   listGeneralReports,
   listReportHistory,
+  restoreLegacyReportIndexPage,
   getGeneralReport,
   openGeneralSensitiveEvidence,
   reviewSystemFlag,
