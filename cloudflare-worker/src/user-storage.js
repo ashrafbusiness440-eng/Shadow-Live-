@@ -1,6 +1,7 @@
 import {
   ImageAppealError, submitImageModerationAppeal,
 } from "./image-moderation-appeal.js";
+import { finalImageEvidenceFields } from "./image-moderation-retention.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
   firestoreQuotaResponse,
@@ -1456,6 +1457,51 @@ async function deleteAccountOwnedStorageObject({
     throw new Error("invalid_account_cleanup_object");
   }
 
+  // Preserve mandatory or legally held private evidence on account deletion.
+  // The synthetic owner is not a loginable UID; old user-data cleanup advances
+  // while the existing hourly evidence purge controls the retained bytes.
+  const scopeKey = clean(item.data?.storageKey);
+  const state = clean(item.data?.state);
+  const requiresArchive = scopeKey.startsWith("moderation-staging/") &&
+    (item.data?.evidenceHold === true ||
+     item.data?.legalHold === true ||
+     item.data?.investigationHold === true ||
+     ["needs_review", "blocked", "appeal_pending", "rejected",
+      "evidence_purging"].includes(state));
+  if (requiresArchive) {
+    // An account that no longer exists cannot receive an appeal decision or
+    // approve a public image. Close open appeals and start a bounded deadline.
+    // Do not reset an already-finalized decision or release a legal hold.
+    const archiveAt = new Date(nowMs);
+    const archivalUid = "image_evidence_archive_" + objectId;
+    const appealPath = "image_moderation_appeals/" + objectId;
+    const appeal = await db.get(appealPath);
+    const dueFields = item.data?.evidenceRetentionDueAt
+      ? {} : finalImageEvidenceFields(archiveAt);
+    const writes = [
+      db.writeUpdate("storage_objects/" + objectId, {
+        ownerUid: archivalUid, originalOwnerUid: ownerUid,
+        ownerAccountDeletedAt: archiveAt,
+        state: state === "evidence_purging" ? state : "rejected",
+        ...dueFields,
+      }, ["ownerUid", "originalOwnerUid", "ownerAccountDeletedAt",
+        "state", ...Object.keys(dueFields)]),
+      db.writeCreate("storage_audit_logs/image_evidence_archive_" + objectId, {
+        action: "preserveHeldImageEvidenceOnAccountDeletion",
+        objectId, subjectUid: ownerUid, createdAt: archiveAt,
+      }),
+    ];
+    if (appeal.exists && ["under_review", "approving"].includes(
+      clean(appeal.data?.status))) {
+      writes.push(db.writeUpdate(appealPath, {
+        status: "closed_account_deleted", updatedAt: archiveAt,
+        closedReason: "account_deleted",
+      }, ["status", "updatedAt", "closedReason"]));
+    }
+    await db.commit(null, writes);
+    return { objectId, deleted: false, transferredToUid: archivalUid };
+  }
+
   const transferredToUid = await transferSharedRoomCoverOnAccountDeletion({
     db,
     deletedUid: ownerUid,
@@ -1840,6 +1886,12 @@ async function deleteObject(request, env, auth) {
     url.searchParams.get("objectId"),
   );
   await authorizeDelete(auth.db, auth.uid, metadata);
+  // End users cannot bypass evidence retention by deleting staged images.
+  if (clean(metadata.storageKey).startsWith("moderation-staging/") &&
+      ["needs_review", "blocked", "appeal_pending", "rejected",
+       "evidence_purging", "evidence_purged"].includes(clean(metadata.state))) {
+    throw new StorageApiError("image_moderation_evidence_locked", 409);
+  }
 
   const now = new Date();
   const writes = [];

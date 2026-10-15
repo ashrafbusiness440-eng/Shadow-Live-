@@ -1,5 +1,6 @@
 import { firestoreClient } from "./firestore.js";
 import { cleanupExpiredRepeatReceipts } from "./moderation-flag-groups.js";
+import { runDueImageEvidenceCleanup } from "./image-moderation-retention.js";
 
 // Only final, explicitly timestamped decisions start the 90-day clock.
 // Pending, reopened, disputed or historic unverified reports are never
@@ -157,6 +158,17 @@ export async function runDueReportEvidenceCleanup(env, {
     result.repeatReceiptCleanupFailed = true;
     console.error("Repeat receipt cleanup failed",
       String(error?.code || error?.message || "failed").slice(0,90));
+  }
+  // Image evidence shares this existing hourly sweep. One indexed,
+  // bounded query; never enumerate the R2 bucket or scan user accounts.
+  try {
+    result.imageEvidence = await runDueImageEvidenceCleanup(env, db, {
+      nowMs, limit: 12,
+    });
+  } catch (error) {
+    result.imageEvidenceFailed = true;
+    console.error("Image evidence cleanup failed",
+      String(error?.code || error?.message || "failed").slice(0, 90));
   }
   return result;
 }

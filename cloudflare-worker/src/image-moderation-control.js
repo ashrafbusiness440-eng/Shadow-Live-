@@ -6,6 +6,7 @@ import {
   readImageReviewPreview, rejectImageReview,
 } from "./image-moderation-review.js";
 import { approveImageReview } from "./image-moderation-approval.js";
+import { setImageEvidenceHold } from "./image-moderation-retention.js";
 import {
   IMAGE_MODERATION_PATH, IMAGE_MODERATION_PROVIDERS,
   defaultImageModerationPolicy, validateImageModerationPolicy,
@@ -143,7 +144,7 @@ export async function imageModerationControl(request, env) {
       const images = await listImageReviewCases(db, body.limit);
       return json(request, env, { ok: true, images });
     }
-    if (!["save", "preview_image", "reject_image", "approve_image"].includes(action))
+    if (!["save", "preview_image", "reject_image", "approve_image", "hold_image_evidence"].includes(action))
       throw new ImageModerationControlError("unsupported_action");
     const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time);
     if (!Number.isFinite(authAge) || authAge < 0 || authAge > 1800)
@@ -158,6 +159,14 @@ export async function imageModerationControl(request, env) {
     if (action === "approve_image") {
       const result = await approveImageReview(
         db, env.USER_STORAGE, request, uid, body);
+      return json(request, env, result);
+    }
+    if (action === "hold_image_evidence") {
+      const result = await setImageEvidenceHold(db, {
+        actorUid: uid, objectId: body.objectId,
+        hold: body.hold, reason: body.reason,
+        idempotencyKey: body.idempotencyKey,
+      });
       return json(request, env, result);
     }
     const result = await saveImageModerationConfiguration(db, uid, body);
