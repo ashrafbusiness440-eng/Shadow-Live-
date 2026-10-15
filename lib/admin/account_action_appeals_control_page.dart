@@ -96,7 +96,6 @@ class _AccountActionAppealsControlPageState
   Future<void> _decide(Map<String, dynamic> item, String decision) async {
     if (_busy || !_canReview) return;
     final reasonController = TextEditingController();
-    final reversalController = TextEditingController();
     final isAccept = decision == 'accepted';
     try {
       final confirm = await showDialog<bool>(
@@ -110,9 +109,8 @@ class _AccountActionAppealsControlPageState
                   padding: EdgeInsets.only(bottom: 14),
                   child: Text(
                     'ارفع العقوبة أولًا من أدوات إدارة الحساب. '
-                    'ثم أدخل رقم عملية الرفع؛ الخادم يتأكد أنها '
-                    'تخص هذا القرار، ولن يعتبر الاعتراض مقبولًا '
-                    'إذا لم يتم رفع العقوبة فعلًا.',
+                    'النظام يتحقق من سجل الإجراءات تلقائيًا قبل '
+                    'قبول الاعتراض، دون الحاجة لأي أرقام أو خطوات تقنية.',
                   ),
                 ),
               TextField(
@@ -123,15 +121,6 @@ class _AccountActionAppealsControlPageState
                   labelText: 'سبب القرار (مطلوب)',
                 ),
               ),
-              if (isAccept)
-                TextField(
-                  controller: reversalController,
-                  maxLength: 180,
-                  decoration: const InputDecoration(
-                    labelText: 'رقم عملية رفع العقوبة',
-                    helperText: 'من سجل إجراءات الحساب، بعد تنفيذ الرفع',
-                  ),
-                ),
             ]),
           ),
           actions: [
@@ -148,21 +137,40 @@ class _AccountActionAppealsControlPageState
       );
       if (confirm != true || !mounted) return;
       final reason = reasonController.text.trim();
-      if (reason.length < 3 || reason.length > 200 ||
-          isAccept && reversalController.text.trim().length < 12) {
+      if (reason.length < 3 || reason.length > 200) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('اكتب سببًا واضحًا وتأكد من رقم عملية رفع العقوبة.'),
+          content: Text('اكتب سبب القرار بشكل واضح.'),
         ));
         return;
       }
       setState(() => _busy = true);
       try {
+        String reversalOperationId = '';
+        if (isAccept) {
+          // Reuse the existing bounded, verified account action history.
+          // The reviewer never types or guesses the operation receipt.
+          final history = await _post('getAccountActionHistory', {
+            'targetUid': (item['userUid'] ?? '').toString(),
+          });
+          final records = (history['items'] as List? ?? const [])
+              .whereType<Map>();
+          for (final record in records) {
+            if (record['originalOperationId'] == item['operationId'] &&
+                record['lifecycleState'] == 'lift_recorded') {
+              reversalOperationId = (record['operationId'] ?? '').toString();
+              break;
+            }
+          }
+          if (reversalOperationId.isEmpty) {
+            throw StateError('reversal_not_verified');
+          }
+        }
         await _post('reviewAccountActionAppeal', {
           'operationId': (item['operationId'] ?? '').toString(),
           'decision': decision,
           'reason': reason,
           if (isAccept)
-            'reversalOperationId': reversalController.text.trim(),
+            'reversalOperationId': reversalOperationId,
           'idempotencyKey':
               'account_appeal_${DateTime.now().microsecondsSinceEpoch}',
         });
@@ -188,7 +196,6 @@ class _AccountActionAppealsControlPageState
       await _load();
     } finally {
       reasonController.dispose();
-      reversalController.dispose();
     }
   }
 
