@@ -467,6 +467,50 @@ test("public profile accepts R2 media object ids",async()=>{
   }));
 });
 
+test("signup public profile accepts the four default frame projection fields",async()=>{
+  // FirebaseService._syncPublicProfile includes these even on a new account.
+  // Previously the hasOnly allowlist rejected every such client-side write.
+  const userDb=phoneUserDb();
+  await assertSucceeds(setDoc(doc(userDb,"public_profiles",uid),{
+    uid,
+    displayName:"New Account",
+    username:"",
+    publicId:"",
+    searchTokens:["new","account"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    profileAvatarAnimationUrl:"",
+    profileAvatarAnimationObjectId:"",
+    activeProfileFrameAssetKey:"",
+    activeProfileFrameImageUrl:"",
+    activeProfileFrameExpiresAtMs:0,
+    activeProfileFramePermanent:false,
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"",
+    moodText:"",
+    interests:[],
+    vipLevel:0,
+    effectiveVipLevel:0,
+    vipExpiresAt:null,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  }));
+});
+
+test("public profile rejects a self-assigned premium frame",async()=>{
+  const userDb=phoneUserDb();
+  await assertFails(updateDoc(doc(userDb,"public_profiles",uid),{
+    activeProfileFrameAssetKey:"premium-not-authorized",
+    activeProfileFramePermanent:true,
+  }));
+});
+
 test("public profile rejects forged effective VIP projection",async()=>{
   const userDb=phoneDbFor(vipProjectionUid);
   await assertFails(setDoc(doc(userDb,"public_profiles",vipProjectionUid),{
