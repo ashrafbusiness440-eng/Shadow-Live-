@@ -132,16 +132,18 @@ class NotificationService {
     Query<Map<String, dynamic>> query = _firestore
         .collection('notifications')
         .where('userId', isEqualTo: uid)
-        // Sort on the server BEFORE applying the page limit. Sorting only
-        // the first 50 document IDs can hide recent notifications on later pages.
-        .orderBy('createdAt', descending: true)
-        .orderBy(FieldPath.documentId, descending: true)
+        .orderBy(FieldPath.documentId)
         .limit(pageLimit);
     if (after != null) query = query.startAfterDocument(after);
     final snapshot = await query.get();
     final items = snapshot.docs
         .map((doc) => AppNotification.fromMap(doc.id, doc.data()))
         .toList();
+    items.sort((a, b) {
+      final left = a.createdAt?.millisecondsSinceEpoch ?? 0;
+      final right = b.createdAt?.millisecondsSinceEpoch ?? 0;
+      return right.compareTo(left);
+    });
     return NotificationPage(
       items: items,
       cursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
