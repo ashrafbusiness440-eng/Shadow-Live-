@@ -75,6 +75,8 @@ test("U6-M1 one appeal for a verified sanctioned user, no case or sanction mutat
 
 test("U6-M1 other users, forged/unreviewed receipts and malformed submissions fail closed",async()=>{
   const db=make();
+  // Existing valid stranger: prove the server does not leak the target's case.
+  db.docs.set("users/stranger",{role:"user",accountStatus:"active"});
   await assert.rejects(()=>submit(db,"stranger"),/sanction_not_found/);
   await assert.rejects(()=>submit(db,"target",{operationId:"../target"}),/invalid_appeal_request/);
   await assert.rejects(()=>submit(db,"target",{explanation:"x".repeat(801)}),
