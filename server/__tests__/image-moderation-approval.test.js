@@ -116,3 +116,13 @@ test("U6-L2/B approved replacement defers old deletion until new commit",async()
   assert.equal(db.docs.get("storage_delete_queue/"+old).reason,"replaced");
   assert.equal(db.docs.get("users/u1").profileImageObjectId,id);
 });
+
+test("U6-L2/B review approval refuses missing R2 fingerprint",async()=>{
+  const {db,bucket,objects,request}=prepare();
+  const doc=db.docs.get("storage_objects/"+id);
+  db.docs.set("storage_objects/"+id,{...doc,etag:""});
+  await assert.rejects(()=>approveImageReview(db,bucket,request,
+    "owner_1",payload),/image_integrity_conflict/);
+  assert.equal(objects.has(publicKey),false);
+  assert.equal(db.docs.get("storage_objects/"+id).state,"needs_review");
+});
