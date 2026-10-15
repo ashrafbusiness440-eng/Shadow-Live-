@@ -555,13 +555,15 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                             _approve((item['objectId'] ?? '').toString()),
                         child: Text(item['state'] == 'appeal_pending' ? 'قبول الاعتراض' : 'اعتماد النشر')),
                     if (item['scope'] == 'chat_image' &&
-                        ['needs_review', 'appeal_pending']
+                        ['needs_review', 'appeal_pending',
+                         'chat_approval_publishing']
                             .contains(item['state']))
                       FilledButton(
                         onPressed: _reviewBusy ? null : () =>
                             _approveChatPrivate(
                                 (item['objectId'] ?? '').toString()),
-                        child: const Text('اعتماد داخل المحادثة')),
+                        child: Text(item['state'] == 'chat_approval_publishing'
+                            ? 'إعادة محاولة الاعتماد' : 'اعتماد داخل المحادثة')),
                     if (item['scope'] == 'diary_image' &&
                         ['needs_review', 'appeal_pending']
                             .contains(item['state']))
