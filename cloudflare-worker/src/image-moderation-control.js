@@ -2,6 +2,10 @@ import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { firestoreClient } from "./firestore.js";
 import { verifyFirebaseIdToken, assertUserDocumentSessionState } from "./firebase-auth.js";
 import {
+  ImageReviewError, listImageReviewCases,
+  readImageReviewPreview, rejectImageReview,
+} from "./image-moderation-review.js";
+import {
   IMAGE_MODERATION_PATH, IMAGE_MODERATION_PROVIDERS,
   defaultImageModerationPolicy, validateImageModerationPolicy,
   imageModerationProviderReady,
@@ -134,19 +138,32 @@ export async function imageModerationControl(request, env) {
           }])),
       });
     }
-    if (action !== "save")
+    if (action === "list_images") {
+      const images = await listImageReviewCases(db, body.limit);
+      return json(request, env, { ok: true, images });
+    }
+    if (!["save", "preview_image", "reject_image"].includes(action))
       throw new ImageModerationControlError("unsupported_action");
     const authAge = Math.floor(Date.now() / 1000) - Number(decoded.auth_time);
     if (!Number.isFinite(authAge) || authAge < 0 || authAge > 1800)
       throw new ImageModerationControlError("recent_auth_required", 401);
+    if (action === "preview_image") {
+      return readImageReviewPreview(request, env, db, uid, body.objectId);
+    }
+    if (action === "reject_image") {
+      const result = await rejectImageReview(db, uid, body);
+      return json(request, env, result);
+    }
     const result = await saveImageModerationConfiguration(db, uid, body);
     return json(request, env, result);
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
-    const status = error instanceof ImageModerationControlError
+    const controlled = error instanceof ImageModerationControlError ||
+      error instanceof ImageReviewError;
+    const status = controlled
       ? error.status : clean(error?.message) === "unauthorized" ? 401 : 500;
-    const code = error instanceof ImageModerationControlError
+    const code = controlled
       ? error.code : status === 401 ? "unauthorized" : "moderation_control_failed";
     return json(request, env, { ok: false, code }, status);
   }
