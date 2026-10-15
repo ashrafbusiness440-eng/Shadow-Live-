@@ -32,6 +32,8 @@ void main() {
     expect(source.contains("data['deletedForEveryone'] == true"), isTrue);
     expect(source.contains("'تم حذف هذه الرسالة'"), isTrue);
     expect(source.contains("doc.data()['hiddenForUids']"), isTrue);
+    expect(source.contains('_locallyHiddenMessageIds.add(messageId)'), isTrue);
+    expect(source.contains('_locallyDeletedMessageIds.add(messageId)'), isTrue);
     expect(source.contains('hidden.contains(_openedByUid)'), isTrue);
     expect(source.contains('stream: _messageChanges,'), isTrue);
   });
