@@ -24,6 +24,7 @@ class DiariesScreen extends StatefulWidget {
     this.title = 'يومياتي',
     this.onGuestAction,
     this.initialDiaryId,
+    this.initialApprovedImageObjectId,
     this.openCommentsOnStart = false,
     this.profileUserId,
     this.embedded = false,
@@ -32,6 +33,7 @@ class DiariesScreen extends StatefulWidget {
   final String title;
   final Future<void> Function()? onGuestAction;
   final String? initialDiaryId;
+  final String? initialApprovedImageObjectId;
   final bool openCommentsOnStart;
   final String? profileUserId;
   final bool embedded;
@@ -77,6 +79,8 @@ class _DiariesScreenState extends State<DiariesScreen> {
   bool _composerExpanded = false;
   bool _commentsEnabled = true;
   List<_PickedDiaryImage> _pickedImages = const <_PickedDiaryImage>[];
+  List<String> _approvedImageObjectIds = const <String>[];
+  String? _pendingModerationImageId;
   final Set<String> _likedDiaryIds = <String>{};
   final Set<String> _busyLikeIds = <String>{};
   final Set<String> _busyReportIds = <String>{};
@@ -109,6 +113,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
   void initState() {
     super.initState();
     _load(reset: true, following: false);
+    final approvedId = widget.initialApprovedImageObjectId?.trim() ?? '';
+    if (RegExp(r'^[a-f0-9]{32}$').hasMatch(approvedId)) {
+      _approvedImageObjectIds = <String>[approvedId];
+      _composerExpanded = true;
+    }
     final initialDiaryId = widget.initialDiaryId?.trim() ?? '';
     if (initialDiaryId.isNotEmpty) {
       _loadInitialDiary(initialDiaryId);
@@ -378,8 +387,10 @@ class _DiariesScreenState extends State<DiariesScreen> {
     try {
       final files = await _picker.pickMultiImage();
       if (files.isEmpty) return;
+      final slots = 2 - _approvedImageObjectIds.length;
+      if (slots <= 0) return;
       final selected = <_PickedDiaryImage>[];
-      for (final file in files.take(2)) {
+      for (final file in files.take(slots)) {
         selected.add(
           _PickedDiaryImage(
             file: file,
@@ -388,8 +399,11 @@ class _DiariesScreenState extends State<DiariesScreen> {
         );
       }
       if (!mounted) return;
-      setState(() => _pickedImages = selected);
-      if (files.length > 2) {
+      setState(() {
+        _pickedImages = selected;
+        _pendingModerationImageId = null;
+      });
+      if (files.length > slots) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('يمكن إضافة صورتين كحد أقصى.')),
         );
@@ -416,7 +430,7 @@ class _DiariesScreenState extends State<DiariesScreen> {
     if (_publishing) return;
 
     final text = _text.text.trim();
-    if (text.isEmpty && _pickedImages.isEmpty) {
+    if (text.isEmpty && _pickedImages.isEmpty && _approvedImageObjectIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('اكتب نصاً أو أضف صورة قبل النشر.')),
       );
@@ -429,10 +443,16 @@ class _DiariesScreenState extends State<DiariesScreen> {
       return;
     }
 
+    if (_pendingModerationImageId != null && _approvedImageObjectIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الصورة قيد المراجعة. تابع الإشعارات حتى يصدر القرار.')),
+      );
+      return;
+    }
     setState(() => _publishing = true);
     try {
-      final objectIds = <String>[];
-      for (final picked in _pickedImages) {
+      final objectIds = <String>[..._approvedImageObjectIds];
+      for (final picked in _pickedImages.take(2 - objectIds.length)) {
         final mimeType = detectSupportedImageMime(picked.bytes);
         final uploaded = await _storage.upload(
           scope: 'diary_image',
@@ -459,6 +479,8 @@ class _DiariesScreenState extends State<DiariesScreen> {
         _mentionCandidates = const <DiaryMentionCandidate>[];
         _mentionLoading = false;
         _pickedImages = const <_PickedDiaryImage>[];
+        _approvedImageObjectIds = const <String>[];
+        _pendingModerationImageId = null;
         _commentsEnabled = true;
         _composerExpanded = false;
         _showFollowing = false;
@@ -467,6 +489,13 @@ class _DiariesScreenState extends State<DiariesScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم نشر اليومية.')),
+      );
+    } on UserStoragePendingModeration catch (pending) {
+      if (!mounted) return;
+      setState(() => _pendingModerationImageId = pending.objectId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(
+          'الصورة قيد المراجعة ولم تُنشر. تابع إشعاراتك لنشرها بعد الموافقة.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -844,6 +873,21 @@ class _DiariesScreenState extends State<DiariesScreen> {
             loading: _mentionLoading,
             onSelected: _selectMention,
           ),
+          if (_approvedImageObjectIds.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: InputChip(
+                label: const Text('صورة معتمدة — تُنشر مع اليومية فقط'),
+                onDeleted: _publishing ? null : () => setState(() =>
+                    _approvedImageObjectIds = const <String>[]),
+              ),
+            ),
+          if (_pendingModerationImageId != null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('الصورة قيد المراجعة. انشرها من إشعار الموافقة.',
+                style: TextStyle(color: Color(0xFFFFD54A))),
+            ),
           if (_pickedImages.isNotEmpty) ...[
             const SizedBox(height: 4),
             Row(

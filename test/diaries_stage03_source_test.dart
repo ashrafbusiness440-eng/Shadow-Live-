@@ -31,7 +31,8 @@ void main() {
 
     expect(screen.contains('maxLength: 500'), isTrue);
     expect(screen.contains("scope: 'diary_image'"), isTrue);
-    expect(screen.contains('files.take(2)'), isTrue);
+    expect(screen.contains('final slots = 2 - _approvedImageObjectIds.length;'), isTrue);
+    expect(screen.contains('files.take(slots)'), isTrue);
     expect(screen.contains('listFollowing'), isTrue);
     expect(screen.contains("const Text('تحميل المزيد')"), isTrue);
     expect(screen.contains('UserStorageService'), isTrue);

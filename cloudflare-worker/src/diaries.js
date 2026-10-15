@@ -2,6 +2,8 @@ import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
+import { publicMediaUrl } from "./public-media.js";
+import { prepareApprovedDiaryPublication, claimApprovedDiaryImage, releaseApprovedDiaryClaim } from "./image-moderation-diary.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { filterRepeatGroupWrites } from "./moderation-flag-groups.js";
@@ -373,7 +375,7 @@ function isAnonymousToken(decoded) {
   return clean(decoded?.firebase?.sign_in_provider) === "anonymous";
 }
 
-async function createDiary(db, uid, body) {
+async function createDiary(db, uid, body, options = {}) {
   const original = diaryText(body.text);
   const checked = await filterContent(db, "diary_post", original);
   if (checked.blocked) throw new DiaryApiError("content_blocked", 422);
@@ -384,7 +386,41 @@ async function createDiary(db, uid, body) {
   const signature = createSignature(text, imageObjectIds, commentsEnabled);
   assertNotEmpty(text, imageObjectIds);
 
-  return runTransaction(db, async (transaction) => {
+  // Private, human-approved diary bytes are copied only upon an explicit
+  // author create request. Until the Firestore link commits the separate
+  // protected public-media scope cannot serve those bytes.
+  const privateCopies = new Map();
+  const claimedIds = [];
+  try {
+    for (const imageId of imageObjectIds) {
+      const snap = await db.get("storage_objects/" + imageId);
+      if (!snap.exists || !["approved_pending_diary_link", "diary_linking"]
+          .includes(clean(snap.data?.state))) continue;
+      try {
+        const claimed = await claimApprovedDiaryImage(
+          db, uid, imageId, operationKey);
+        claimedIds.push(imageId);
+        const copy = await prepareApprovedDiaryPublication(
+          options.env?.USER_STORAGE, claimed, imageId, operationKey);
+        const url = publicMediaUrl(options.request, {
+          scope: copy.publicScope, targetId: uid,
+          objectId: imageId, extension: copy.extension,
+        });
+        if (!url) throw new Error("private_publication_url_missing");
+        privateCopies.set(imageId, { ...copy, url });
+      } catch (_) {
+        throw new DiaryApiError("diary_image_not_approved", 409);
+      }
+    }
+  } catch (error) {
+    for (const id of claimedIds) {
+      await releaseApprovedDiaryClaim(db, uid, id, operationKey).catch(() => {});
+    }
+    throw error;
+  }
+
+  try {
+    const result = await runTransaction(db, async (transaction) => {
     const operationPath = `diary_operations/${operationKey}`;
     const operation = await db.get(operationPath, transaction);
     if (operation.exists) {
@@ -416,17 +452,32 @@ async function createDiary(db, uid, body) {
       const object = objectSnaps[index];
       const link = linkSnaps[index];
       if (!object.exists) throw new DiaryApiError("diary_image_not_found", 409);
+      const state = clean(object.data?.state);
+      const privateCopy = privateCopies.get(objectId);
+      const existingPublic = state === "active" &&
+        !!clean(object.data?.publicUrl) && !privateCopy;
+      const approvedPrivate = state === "diary_linking" &&
+        clean(object.data?.diaryLinkOperationKey) === operationKey &&
+        !!privateCopy &&
+        clean(object.data?.moderation?.status) === "approved" &&
+        clean(object.data?.etag) === privateCopy.reviewedEtag &&
+        clean(object.data?.storageKey) === privateCopy.sourceKey &&
+        object.data?.evidenceHold !== true &&
+        object.data?.legalHold !== true &&
+        object.data?.investigationHold !== true;
       if (
         clean(object.data?.scope) !== "diary_image" ||
         clean(object.data?.ownerUid) !== uid ||
         clean(object.data?.targetId) !== uid ||
-        clean(object.data?.state) !== "active" ||
-        !clean(object.data?.publicUrl)
+        (!existingPublic && !approvedPrivate)
       ) {
         throw new DiaryApiError("invalid_diary_image", 409);
       }
       if (link.exists) throw new DiaryApiError("diary_image_already_linked", 409);
-      images.push(publicImageSnapshot(objectId, object.data));
+      images.push(publicImageSnapshot(objectId, {
+        ...object.data,
+        ...(privateCopy ? { publicUrl: privateCopy.url } : {}),
+      }));
     }
 
     const diaryId = randomId("diary");
@@ -523,15 +574,52 @@ async function createDiary(db, uid, body) {
             linkedDiaryId: diaryId,
             linkedAt: now,
             updatedAt: now,
+            ...(privateCopies.has(image.objectId) ? {
+              storageKey: privateCopies.get(image.objectId).protectedKey,
+              publicUrl: privateCopies.get(image.objectId).url,
+              moderation: {
+                ...(objectSnaps[imageObjectIds.indexOf(image.objectId)].data
+                  .moderation || {}),
+                reviewStatus: "approved",
+              },
+            } : {}),
           },
-          ["state", "linkedDiaryId", "linkedAt", "updatedAt"],
+          ["state", "linkedDiaryId", "linkedAt", "updatedAt",
+            ...(privateCopies.has(image.objectId)
+              ? ["storageKey", "publicUrl", "moderation"] : [])],
         ),
       );
+      if (privateCopies.has(image.objectId)) {
+        const copy = privateCopies.get(image.objectId);
+        writes.push(db.writeCreate(
+          `storage_delete_queue/diary_stage_${image.objectId}`, {
+            objectId: image.objectId,
+            storageKey: copy.sourceKey,
+            ownerUid: uid, scope: "diary_stage_only",
+            targetId: uid, mimeType: image.mimeType,
+            sizeBytes: image.sizeBytes,
+            deleteAfter: new Date(now.getTime() + 15 * 60 * 1000),
+            reason: "diary_published_stage_cleanup",
+            createdAt: now,
+          },
+        ));
+      }
     }
 
     await db.commit(transaction, writes);
     return { ok: true, ...result };
   });
+  if (result.ok && result.code !== "duplicate") {
+    for (const copy of privateCopies.values()) {
+      await options.env?.USER_STORAGE?.delete(copy.sourceKey).catch(() => {});
+    }
+  }
+    return result;
+  } finally {
+    for (const id of claimedIds) {
+      await releaseApprovedDiaryClaim(db, uid, id, operationKey).catch(() => {});
+    }
+  }
 }
 
 async function deleteDiary(db, uid, body, options = {}) {
@@ -1587,7 +1675,8 @@ export async function diaries(request, env) {
       return json(request, env, await reportComment(auth.db, auth.uid, body));
     }
     if (action === "createDiary") {
-      return json(request, env, await createDiary(auth.db, auth.uid, body));
+      return json(request, env, await createDiary(auth.db, auth.uid, body,
+        { env, request }));
     }
     if (action === "deleteDiary") {
       return json(request, env, await deleteDiary(auth.db, auth.uid, body));

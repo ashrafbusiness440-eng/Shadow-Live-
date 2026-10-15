@@ -1,4 +1,5 @@
 import { corsHeaders } from "./http.js";
+import { firestoreClient } from "./firestore.js";
 
 const PUBLIC_MEDIA_CACHE_SECONDS = 300;
 
@@ -7,6 +8,7 @@ const PUBLIC_SCOPES = new Set([
   "profile_avatar_animation",
   "profile_cover",
   "diary_image",
+  "moderated_diary_image",
   "room_cover",
   "agency_logo",
   "agency_background",
@@ -95,6 +97,8 @@ export function publicMediaStorageKey({ scope, targetId, filename }) {
       return `users/${encodedTarget}/covers/${canonicalFile}`;
     case "diary_image":
       return `users/${encodedTarget}/diaries/${canonicalFile}`;
+    case "moderated_diary_image":
+      return `moderated-diary/users/${encodedTarget}/diaries/${canonicalFile}`;
     case "room_cover":
       return `rooms/${encodedTarget}/covers/${canonicalFile}`;
     case "agency_logo":
@@ -138,6 +142,23 @@ export function publicMediaUrl(
   );
 }
 
+// Only images attached to a published diary may be read from this prefix.
+export async function approvedDiaryMediaLinked(db, objectId, ownerUid, storageKey) {
+  const [link, media] = await Promise.all([
+    db.get("diary_image_links/" + objectId),
+    db.get("storage_objects/" + objectId),
+  ]);
+  return link.exists && media.exists &&
+    clean(link.data?.state) === "linked" &&
+    clean(link.data?.ownerUid) === ownerUid &&
+    clean(media.data?.ownerUid) === ownerUid &&
+    clean(media.data?.scope) === "diary_image" &&
+    clean(media.data?.state) === "active" &&
+    clean(media.data?.moderation?.status) === "approved" &&
+    clean(media.data?.linkedDiaryId) === clean(link.data?.diaryId) &&
+    clean(media.data?.storageKey) === storageKey;
+}
+
 export async function publicMediaRedirect(request, env) {
   if (request.method !== "GET") {
     const headers = new Headers(corsHeaders(request, env));
@@ -173,12 +194,26 @@ export async function publicMediaRedirect(request, env) {
       filename,
     });
 
+    if (scope === "moderated_diary_image") {
+      const linked = await approvedDiaryMediaLinked(
+        firestoreClient(env), match[1], targetId, storageKey);
+      if (!linked) {
+        const headers = new Headers(corsHeaders(request, env));
+        headers.set("Cache-Control", "no-store");
+        headers.set("Content-Type", "application/json; charset=utf-8");
+        return new Response(JSON.stringify({
+          ok: false, code: "public_media_not_found",
+        }), { status: 404, headers });
+      }
+    }
+
     const requestOrigin = request.headers.get("Origin") || "";
     const cacheUrl = new URL(url.toString());
     if (requestOrigin) {
       cacheUrl.searchParams.set("__shadow_origin", requestOrigin);
     }
-    const cache = publicMediaCache();
+    const cache = scope === "moderated_diary_image"
+      ? null : publicMediaCache();
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
     if (cache) {
       try {
@@ -197,9 +232,12 @@ export async function publicMediaRedirect(request, env) {
       );
     }
 
+    const responseHeaders = mediaHeaders(request, env, object, extension);
+    if (scope === "moderated_diary_image") {
+      responseHeaders.set("Cache-Control", "no-store");
+    }
     const response = new Response(object.body, {
-      status: 200,
-      headers: mediaHeaders(request, env, object, extension),
+      status: 200, headers: responseHeaders,
     });
 
     if (cache) {

@@ -1467,7 +1467,7 @@ async function deleteAccountOwnedStorageObject({
      item.data?.legalHold === true ||
      item.data?.investigationHold === true ||
      ["needs_review", "blocked", "appeal_pending", "rejected",
-      "evidence_purging"].includes(state));
+      "evidence_purging", "approved_pending_diary_link"].includes(state));
   if (requiresArchive) {
     // An account that no longer exists cannot receive an appeal decision or
     // approve a public image. Close open appeals and start a bounded deadline.
@@ -1497,6 +1497,9 @@ async function deleteAccountOwnedStorageObject({
         status: "closed_account_deleted", updatedAt: archiveAt,
         closedReason: "account_deleted",
       }, ["status", "updatedAt", "closedReason"]));
+    }
+    if (state === "approved_pending_diary_link") {
+      writes.push(db.writeDelete("storage_delete_queue/" + objectId));
     }
     await db.commit(null, writes);
     return { objectId, deleted: false, transferredToUid: archivalUid };
@@ -1659,6 +1662,49 @@ export async function runDeletedAccountStorageCleanup(
   };
 }
 
+export async function claimDueApprovedDiaryCleanup(db, item, nowMs) {
+  const id = clean(item?.data?.objectId || item?.id);
+  const queuePath = "storage_delete_queue/" + item.id;
+  const imagePath = "storage_objects/" + id;
+  const tx = await db.beginTransaction();
+  try {
+    const [image, queue] = await Promise.all([
+      db.get(imagePath, tx), db.get(queuePath, tx),
+    ]);
+    if (!image.exists || !queue.exists ||
+        clean(queue.data?.reason) !== "diary_approved_unlinked" ||
+        timestampMs(queue.data?.deleteAfter) > nowMs) {
+      await db.rollback(tx);
+      return false;
+    }
+    const state = clean(image.data?.state);
+    if (state === "diary_orphan_deleting") {
+      await db.rollback(tx);
+      return true;
+    }
+    if (state === "diary_linking" &&
+        timestampMs(image.data?.diaryLinkExpiresAt) > nowMs) {
+      await db.rollback(tx);
+      return false;
+    }
+    if (!["approved_pending_diary_link", "diary_linking"].includes(state)) {
+      await db.rollback(tx);
+      return false;
+    }
+    await db.commit(tx, [
+      db.writeUpdate(imagePath, {
+        state: "diary_orphan_deleting",
+        diaryLinkOperationKey: null,
+        diaryLinkExpiresAt: null,
+      }, ["state", "diaryLinkOperationKey", "diaryLinkExpiresAt"]),
+    ]);
+    return true;
+  } catch (error) {
+    await db.rollback(tx).catch(() => {});
+    throw error;
+  }
+}
+
 export async function cleanupQueuedStorageObject(
   db,
   bucket,
@@ -1669,6 +1715,49 @@ export async function cleanupQueuedStorageObject(
   const storageKey = clean(item?.data?.storageKey);
   if (!objectId || !storageKey) {
     throw new StorageApiError("invalid_storage_delete_queue_item", 500);
+  }
+
+  // A successful diary post retains a short-lived private staging copy when
+  // the immediate best-effort delete fails. This receipt must never delete
+  // the active image metadata or the approved protected media itself.
+  if (clean(item.data?.reason) === "diary_published_stage_cleanup") {
+    const uid = clean(item.data?.ownerUid);
+    const targetUid = clean(item.data?.targetId);
+    const extension = storageExtensionForMime(item.data?.mimeType);
+    if (!/^[a-f0-9]{32}$/.test(objectId) ||
+        clean(item.id) !== "diary_stage_" + objectId ||
+        clean(item.data.scope) !== "diary_stage_only" ||
+        !uid || uid !== targetUid || !extension) {
+      throw new StorageApiError("invalid_diary_stage_cleanup", 409);
+    }
+    const expected = buildStorageObjectKey({
+      scope: "diary_image", uid, targetId: uid, objectId, extension,
+    });
+    if (storageKey !== "moderation-staging/" + expected) {
+      throw new StorageApiError("invalid_diary_stage_cleanup", 409);
+    }
+    const current = await db.get("storage_objects/" + objectId);
+    if (current.exists &&
+        (clean(current.data.scope) !== "diary_image" ||
+         clean(current.data.publicStorageKey) !== expected ||
+         clean(current.data.ownerUid) !== uid &&
+         clean(current.data.originalOwnerUid) !== uid)) {
+      throw new StorageApiError("diary_stage_cleanup_conflict", 409);
+    }
+    await bucket.delete(storageKey);
+    await db.commit(null, [
+      db.writeDelete("storage_delete_queue/" + item.id),
+      db.writeCreate("storage_audit_logs/" + auditId(), {
+        actorUid: "system", action: "cleanupPublishedDiaryStage",
+        objectId, targetId: uid, createdAt: new Date(nowMs),
+      }),
+    ]);
+    return { status: "deleted", objectId };
+  }
+
+  if (clean(item.data?.reason) === "diary_approved_unlinked") {
+    const claimed = await claimDueApprovedDiaryCleanup(db, item, nowMs);
+    if (!claimed) return { status: "deferred", objectId };
   }
 
   const stillReferenced = await storageQueueObjectStillReferenced(
@@ -1692,6 +1781,25 @@ export async function cleanupQueuedStorageObject(
     return { status: "deferred", objectId, nextDeleteAt };
   }
 
+  if (clean(item.data?.reason) === "diary_approved_unlinked") {
+    const doc = await db.get("storage_objects/" + objectId);
+    if (!doc.exists ||
+        clean(doc.data?.state) !== "diary_orphan_deleting" ||
+        clean(doc.data?.scope) !== "diary_image" ||
+        clean(doc.data?.storageKey) !== storageKey) {
+      throw new StorageApiError("invalid_diary_cleanup_state", 409);
+    }
+    const extension = storageExtensionForMime(doc.data.mimeType);
+    const expected = buildStorageObjectKey({
+      scope: "diary_image", uid: doc.data.ownerUid,
+      targetId: doc.data.targetId, objectId, extension,
+    });
+    if (clean(doc.data.publicStorageKey) !== expected ||
+        storageKey !== "moderation-staging/" + expected) {
+      throw new StorageApiError("invalid_diary_cleanup_key", 409);
+    }
+    await bucket.delete("moderated-diary/" + expected);
+  }
   await bucket.delete(storageKey);
   const now = new Date(nowMs);
   const scope = clean(item.data?.scope);
@@ -1858,7 +1966,18 @@ export async function runDueStorageCleanup(
 
 async function prepareRead(request, env, auth, body) {
   const metadata = await metadataForObject(auth.db, body.objectId);
+  if (clean(metadata.storageKey).startsWith("moderation-staging/")) {
+    throw new StorageApiError("image_pending_moderation", 423);
+  }
   await authorizeRead(auth.db, auth.uid, metadata);
+  if (clean(metadata.storageKey).startsWith("moderated-diary/")) {
+    const link = await auth.db.get("diary_image_links/" + metadata.objectId);
+    if (clean(metadata.state) !== "active" ||
+        !link.exists || clean(link.data?.state) !== "linked" ||
+        clean(link.data?.diaryId) !== clean(metadata.linkedDiaryId)) {
+      throw new StorageApiError("diary_image_not_published", 404);
+    }
+  }
   if (["needs_review", "blocked"].includes(clean(metadata.state)) ||
       (metadata.moderation &&
        clean(metadata.moderation.status) !== "approved")) {
@@ -1887,9 +2006,7 @@ async function deleteObject(request, env, auth) {
   );
   await authorizeDelete(auth.db, auth.uid, metadata);
   // End users cannot bypass evidence retention by deleting staged images.
-  if (clean(metadata.storageKey).startsWith("moderation-staging/") &&
-      ["needs_review", "blocked", "appeal_pending", "rejected",
-       "evidence_purging", "evidence_purged"].includes(clean(metadata.state))) {
+  if (clean(metadata.storageKey).startsWith("moderation-staging/")) {
     throw new StorageApiError("image_moderation_evidence_locked", 409);
   }
 
