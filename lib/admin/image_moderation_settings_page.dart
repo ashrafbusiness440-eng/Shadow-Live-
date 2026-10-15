@@ -409,7 +409,7 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                       onPressed: _reviewBusy ? null : () =>
                           _preview((item['objectId'] ?? '').toString()),
                       child: const Text('معاينة آمنة')),
-                    if (item['state'] == 'needs_review' &&
+                    if (['needs_review', 'approved_pending_copy'].contains(item['state']) &&
                         _scopeLabels.containsKey(item['scope']) &&
                         !['chat_image', 'diary_image']
                             .contains(item['scope']))
