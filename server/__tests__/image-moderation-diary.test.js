@@ -15,6 +15,7 @@ import {
 
 const id = "a".repeat(32);
 const key = "private_diary_review_001";
+const operationKey = "diary_author_link_operation_001";
 const pub = "users/u1/diaries/" + id + ".png";
 const stage = "moderation-staging/" + pub;
 
@@ -135,6 +136,8 @@ test("U6-L4/A protected copy is never accessible until linked and active", async
   const { db } = fixture("approved_pending_diary_link");
   const doc = db.docs.get("storage_objects/" + id);
   doc.moderation.status = "approved";
+  doc.state = "diary_linking";
+  doc.diaryLinkOperationKey = operationKey;
   const stored = [];
   const bucket = {
     get: async k => {
@@ -144,7 +147,7 @@ test("U6-L4/A protected copy is never accessible until linked and active", async
     },
     put: async (...args) => { stored.push(args); },
   };
-  const prepared = await prepareApprovedDiaryPublication(bucket, doc, id);
+  const prepared = await prepareApprovedDiaryPublication(bucket, doc, id, operationKey);
   assert.equal(prepared.protectedKey, "moderated-diary/" + pub);
   assert.equal(moderatedDiaryProtectedKey(pub), prepared.protectedKey);
   assert.equal(publicMediaStorageKey({
@@ -170,6 +173,8 @@ test("U6-L4/A wrong reviewed fingerprint or hold cannot publish image", async ()
   const { db } = fixture("approved_pending_diary_link");
   const doc = db.docs.get("storage_objects/" + id);
   doc.moderation.status = "approved";
+  doc.state = "diary_linking";
+  doc.diaryLinkOperationKey = operationKey;
   const calls = [];
   const bucket = {
     get: async () => ({ etag: "different", size: 4,
@@ -177,10 +182,10 @@ test("U6-L4/A wrong reviewed fingerprint or hold cannot publish image", async ()
     put: async (...args) => calls.push(args),
   };
   await assert.rejects(() =>
-    prepareApprovedDiaryPublication(bucket, doc, id));
+    prepareApprovedDiaryPublication(bucket, doc, id, operationKey));
   doc.evidenceHold = true;
   await assert.rejects(() =>
-    prepareApprovedDiaryPublication(bucket, doc, id));
+    prepareApprovedDiaryPublication(bucket, doc, id, operationKey));
   assert.equal(calls.length, 0);
 });
 test("U6-L4/A seven-day orphan cleanup removes BOTH private R2 copies", async () => {
@@ -190,7 +195,9 @@ test("U6-L4/A seven-day orphan cleanup removes BOTH private R2 copies", async ()
     objectId: id, scope: "diary_image", ownerUid: "u1",
     targetId: "u1", storageKey: stage, sizeBytes: 4,
     reason: "diary_approved_unlinked",
+    deleteAfter: new Date(Date.now() - 1000),
   }};
+  db.docs.set("storage_delete_queue/" + id, queueItem.data);
   const result = await cleanupQueuedStorageObject(db, {
     delete: async k => deleted.push(k),
   }, queueItem, Date.now());
