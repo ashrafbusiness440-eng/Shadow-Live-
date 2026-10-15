@@ -110,7 +110,10 @@ test("U6-L2/B image review never auto-enables, auto-punishes, or opens a second 
   assert.match(control,/user\.data\?\.role\) !== "owner"/);
   assert.match(control,/readImageReviewPreview/);
   assert.match(control,/rejectImageReview/);
-  assert.match(control,/IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
+  assert.match(control,/export \{ IMAGE_MODERATION_PUBLICATION_GATE_READY \}/);
+  assert.match(fs.readFileSync(
+    "cloudflare-worker/src/image-moderation-policy.js", "utf8"),
+    /IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
   assert.equal(control.includes("setInterval"),false);
   assert.equal(ui.includes("GOOGLE_VISION_API_KEY"),false);
 });
