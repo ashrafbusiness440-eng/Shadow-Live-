@@ -205,6 +205,49 @@ test("U6-L4/A seven-day orphan cleanup removes BOTH private R2 copies", async ()
   assert.deepEqual(deleted, ["moderated-diary/" + pub, stage]);
   assert.equal(db.docs.has("storage_objects/" + id), false);
 });
+test("U6-L4/A active author link claim blocks orphan deletion until released", async()=>{
+  const {db}=fixture("approved_pending_diary_link");
+  const doc=db.docs.get("storage_objects/"+id);
+  doc.moderation.status="approved";
+  const item={id,data:{
+    objectId:id,scope:"diary_image",ownerUid:"u1",
+    targetId:"u1",storageKey:stage,sizeBytes:4,
+    reason:"diary_approved_unlinked",
+    deleteAfter:new Date(Date.now()-1000),
+  }};
+  db.docs.set("storage_delete_queue/"+id,item.data);
+  const now=new Date();
+  const claim=await claimApprovedDiaryImage(db,"u1",id,operationKey,now);
+  assert.equal(claim.state,"diary_linking");
+  const deletions=[];
+  const bucket={delete:async key=>deletions.push(key)};
+  const blocked=await cleanupQueuedStorageObject(db,bucket,item,now.getTime());
+  assert.equal(blocked.status,"deferred");
+  assert.deepEqual(deletions,[]);
+  assert.equal(await releaseApprovedDiaryClaim(db,"u1",id,operationKey),true);
+  const completed=await cleanupQueuedStorageObject(db,bucket,item,now.getTime());
+  assert.equal(completed.status,"deleted");
+  assert.deepEqual(deletions,["moderated-diary/"+pub,stage]);
+});
+test("U6-L4/A expired author claim may be reclaimed by bounded sweeper",async()=>{
+  const {db}=fixture("approved_pending_diary_link");
+  const doc=db.docs.get("storage_objects/"+id);
+  doc.moderation.status="approved";
+  const item={id,data:{
+    objectId:id,scope:"diary_image",ownerUid:"u1",
+    targetId:"u1",storageKey:stage,sizeBytes:4,
+    reason:"diary_approved_unlinked",
+    deleteAfter:new Date(Date.now()-1000),
+  }};
+  db.docs.set("storage_delete_queue/"+id,item.data);
+  const before=new Date(Date.now()-20*60*1000);
+  await claimApprovedDiaryImage(db,"u1",id,operationKey,before);
+  const deletions=[];
+  const status=await cleanupQueuedStorageObject(db,
+    {delete:async key=>deletions.push(key)},item,Date.now());
+  assert.equal(status.status,"deleted");
+  assert.deepEqual(deletions,["moderated-diary/"+pub,stage]);
+});
 test("U6-L4/A author diary post cannot link an unapproved staged image", () => {
   const code = fs.readFileSync("cloudflare-worker/src/diaries.js", "utf8");
   assert.match(code, /approved_pending_diary_link/);
