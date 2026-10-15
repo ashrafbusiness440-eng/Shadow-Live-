@@ -163,7 +163,10 @@ export async function approvePrivateChatImage(db, bucket, actorUid, payload) {
         clean(receipt.data?.actorUid) !== actorUid ||
         clean(receipt.data?.objectId) !== objectId ||
         clean(snap.data?.storageKey) !== sourceKey ||
-        clean(snap.data?.etag) !== clean(doc.etag)) {
+        clean(snap.data?.etag) !== clean(doc.etag) ||
+        snap.data?.evidenceHold === true ||
+        snap.data?.legalHold === true ||
+        snap.data?.investigationHold === true) {
       throw new ImageReviewError("chat_image_approval_conflict", 409);
     }
     const association = await verifyPrivateChatImageMessage(db, snap.data, objectId);
