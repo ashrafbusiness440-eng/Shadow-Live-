@@ -194,12 +194,26 @@ export async function publicMediaRedirect(request, env) {
       filename,
     });
 
+    if (scope === "moderated_diary_image") {
+      const linked = await approvedDiaryMediaLinked(
+        firestoreClient(env), match[1], targetId, storageKey);
+      if (!linked) {
+        const headers = new Headers(corsHeaders(request, env));
+        headers.set("Cache-Control", "no-store");
+        headers.set("Content-Type", "application/json; charset=utf-8");
+        return new Response(JSON.stringify({
+          ok: false, code: "public_media_not_found",
+        }), { status: 404, headers });
+      }
+    }
+
     const requestOrigin = request.headers.get("Origin") || "";
     const cacheUrl = new URL(url.toString());
     if (requestOrigin) {
       cacheUrl.searchParams.set("__shadow_origin", requestOrigin);
     }
-    const cache = publicMediaCache();
+    const cache = scope === "moderated_diary_image"
+      ? null : publicMediaCache();
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
     if (cache) {
       try {
