@@ -1022,38 +1022,7 @@ service cloud.firestore {
               'updatedAt','unreadCounts'
             ])
           && request.resource.data.lastMessageId is string
-          && request.resource.data.lastMessageId.matches('^[A-Za-z0-9_-]{1,180}
-          && request.resource.data.type == 'image'
-          && request.resource.data.receiverId is string
-          && request.resource.data.receiverId != request.auth.uid
-          && request.resource.data.receiverId in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
-          && mutualFollow(request.resource.data.receiverId)
-          && !blockedBetween(request.auth.uid, request.resource.data.receiverId)
-          && (
-            (
-              request.resource.data.imageUrl is string
-              && request.resource.data.imageUrl.size() > 0
-              && request.resource.data.storagePath is string
-              && request.resource.data.storagePath.size() > 0
-            )
-            ||
-            (
-              request.resource.data.storageObjectId is string
-              && request.resource.data.storageObjectId.size() == 32
-              && request.resource.data.storageObjectId.matches('^[a-f0-9]+$')
-              && request.resource.data.mimeType is string
-              && request.resource.data.mimeType.matches('^image/(jpeg|png|webp)$')
-              && request.resource.data.sizeBytes is int
-              && request.resource.data.sizeBytes > 0
-              && request.resource.data.sizeBytes <= 3145728
-            )
-          );
-        allow update, delete: if false;
-      }
-    }
-  }
-}
-)
+          && request.resource.data.lastMessageId.size() <= 180
           && !exists(messagePath)
           && message.senderId == request.auth.uid
           && message.receiverId == other
