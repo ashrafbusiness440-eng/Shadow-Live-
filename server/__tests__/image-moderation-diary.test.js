@@ -128,7 +128,7 @@ test("U6-L4/A control remains owner+recent-auth; no automatic gate activation", 
     "lib/admin/image_moderation_settings_page.dart", "utf8");
   assert.match(control, /recent_auth_required/);
   assert.match(control, /approve_diary_private/);
-  assert.match(control,/export \\{ IMAGE_MODERATION_PUBLICATION_GATE_READY \\}/);
+  assert.match(control,/export \{ IMAGE_MODERATION_PUBLICATION_GATE_READY \}/);
   assert.match(ui, /الموافقة دون نشر/);
 });
 
