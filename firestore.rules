@@ -261,12 +261,21 @@ service cloud.firestore {
         && request.resource.data.get('vipExpiresAt', null) == source.get('vipExpiresAt', null)
         && request.resource.data.get('profileAvatarAnimationUrl', '') == source.get('profileAvatarAnimationUrl', '')
         && request.resource.data.get('profileAvatarAnimationObjectId', '') == source.get('profileAvatarAnimationObjectId', '')
-        // Frame decoration is a server-issued projection, never client-authored.
-        && request.resource.data.get('activeProfileFrameAssetKey', '') == source.get('activeProfileFrameAssetKey', '')
-        && request.resource.data.get('activeProfileFrameImageUrl', '') == source.get('activeProfileFrameImageUrl', '')
-        && request.resource.data.get('activeProfileFrameExpiresAtMs', 0) == source.get('activeProfileFrameExpiresAtMs', 0)
-        && request.resource.data.get('activeProfileFramePermanent', false) == source.get('activeProfileFramePermanent', false)
         && request.resource.data.badges == source.get('publicBadges', []);
+    }
+
+    // These projections are issued only by the backend. Client profile sync
+    // may preserve existing values, but must never create or change them.
+    function publicProfileServerFieldsUnchanged() {
+      let protectedFields = [
+        'activeProfileFrameRewardId','activeProfileFrameAssetKey',
+        'activeProfileFrameImageUrl','activeProfileFrameExpiresAtMs',
+        'activeProfileFramePermanent','profileFrameUpdatedAt',
+        'activeFancyId','fancyIdAssignmentId','fancyIdExpiresAt'
+      ];
+      return resource == null
+        ? !request.resource.data.keys().hasAny(protectedFields)
+        : !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
     }
 
     function conversationParticipant(conversationId) {
@@ -694,10 +703,13 @@ service cloud.firestore {
         && request.resource.data.badges is list
         && request.resource.data.badges.size() <= 20
         && publicProfileAuthoritativeFieldsMatch(userId)
+        && publicProfileServerFieldsUnchanged()
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileImageObjectId','profileAvatarAsset',
           'profileAvatarAnimationUrl','profileAvatarAnimationObjectId',
-          'activeProfileFrameAssetKey','activeProfileFrameImageUrl','activeProfileFrameExpiresAtMs','activeProfileFramePermanent',
+          'activeProfileFrameRewardId','activeProfileFrameAssetKey','activeProfileFrameImageUrl',
+          'activeProfileFrameExpiresAtMs','activeProfileFramePermanent','profileFrameUpdatedAt',
+          'activeFancyId','fancyIdAssignmentId','fancyIdExpiresAt',
           'coverImageUrl','coverImageObjectId','bio','location','moodEmoji','moodText','interests','vipLevel','effectiveVipLevel','vipExpiresAt','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;
