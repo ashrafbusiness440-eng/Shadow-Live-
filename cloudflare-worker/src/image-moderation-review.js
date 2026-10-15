@@ -174,6 +174,25 @@ export async function rejectImageReview(db, actorUid, payload) {
         reason, createdAt: now,
       }),
     ];
+    if (clean(image.data.scope) === "chat_image") {
+      const conversationId = clean(image.data.targetId);
+      if (conversationId && conversationId.length <= 180 &&
+          !conversationId.includes("/")) {
+        const messages = await db.runQuery(
+          "conversations/" + conversationId + "/messages", {
+            filters: [{ field: "storageObjectId", op: "==", value: id }],
+            limit: 2,
+          });
+        if (messages.length === 1 &&
+            clean(messages[0].data?.senderId) === ownerUid &&
+            clean(messages[0].data?.type) === "image") {
+          writes.push(db.writeUpdate(
+            "conversations/" + conversationId + "/messages/" + messages[0].id,
+            { moderationStatus: "rejected" }, ["moderationStatus"],
+          ));
+        }
+      }
+    }
     if (appealPending) {
       writes.push(db.writeUpdate("image_moderation_appeals/" + id, {
         status: "rejected", decisionReason: reason,
