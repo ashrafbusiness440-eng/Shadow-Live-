@@ -370,6 +370,98 @@ class UserStorageService {
     return UserStorageUploadResult.fromJson(confirm);
   }
 
+  /// Request one human appeal on a blocked or rejected image.
+  /// Never returns a public URL or attempts a second image upload.
+  Future<String> appealImage(String objectId, {String explanation = ''}) async {
+    final cleanId = objectId.trim();
+    if (!RegExp(r'^[a-f0-9]{32}
+    final cleanId = objectId.trim();
+    if (cleanId.isEmpty) throw StateError('invalid_object_id');
+
+    final token = await _token();
+    final prepared = await _postAction(token, {
+      'action': 'prepareRead',
+      'objectId': cleanId,
+    });
+    final readUrl = (prepared['readUrl'] ?? '').toString().trim();
+    if (readUrl.isEmpty) throw StateError('storage_read_url_missing');
+
+    final response = await _client
+        .get(Uri.parse(readUrl))
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      throw StateError('storage_direct_read_failed');
+    }
+
+    return UserStorageObject(
+      bytes: Uint8List.fromList(response.bodyBytes),
+      mimeType: (response.headers['content-type'] ??
+              (prepared['mimeType'] ?? 'application/octet-stream').toString())
+          .split(';')
+          .first
+          .trim(),
+    );
+  }
+
+  Future<void> delete(String objectId) async {
+    final cleanId = objectId.trim();
+    if (cleanId.isEmpty) throw StateError('invalid_object_id');
+
+    final token = await _token();
+    final request = http.Request(
+      'DELETE',
+      _storageUri.replace(queryParameters: {'objectId': cleanId}),
+    );
+    request.headers['authorization'] = 'Bearer $token';
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 20));
+    final response = await http.Response.fromStream(streamed);
+    final body = _decodeJson(response.bodyBytes);
+    if (response.statusCode != 200 || body['ok'] != true) {
+      throw StateError((body['code'] ?? 'storage_delete_failed').toString());
+    }
+  }
+
+  Future<bool> isReady() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('$_baseUrl/storage-health'))
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return false;
+      final body = _decodeJson(response.bodyBytes);
+      return body['ok'] == true && body['provider'] == 'cloudflare-r2';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Map<String, dynamic> _decodeJson(List<int> bytes) {
+    try {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      return decoded is Map
+          ? Map<String, dynamic>.from(decoded)
+          : <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  void close() => _client.close();
+}
+).hasMatch(cleanId) ||
+        explanation.trim().length > 800) {
+      throw StateError('invalid_image_appeal');
+    }
+    final token = await _token();
+    final result = await _postAction(token, {
+      'action': 'appealImage',
+      'objectId': cleanId,
+      'explanation': explanation.trim(),
+    });
+    return (result['status'] ?? 'under_review').toString();
+  }
+
   Future<UserStorageObject> read(String objectId) async {
     final cleanId = objectId.trim();
     if (cleanId.isEmpty) throw StateError('invalid_object_id');
