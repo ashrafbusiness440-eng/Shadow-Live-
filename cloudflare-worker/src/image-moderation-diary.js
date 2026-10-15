@@ -175,3 +175,72 @@ export async function prepareApprovedDiaryPublication(bucket, image, objectId) {
     extension, publicScope: "moderated_diary_image",
   };
 }
+
+const LINK_OPERATION = /^[A-Za-z0-9_-]{12,220}$/;
+
+// Firestore compare-and-swap claim prevents the orphan sweeper and a diary
+// author from publishing or deleting the same private R2 image concurrently.
+export async function claimApprovedDiaryImage(db, uid, objectId, operationKey,
+  now = new Date()) {
+  if (!ID.test(clean(objectId)) || !LINK_OPERATION.test(clean(operationKey))) {
+    throw new ImageReviewError("invalid_diary_link_claim", 400);
+  }
+  const tx = await db.beginTransaction();
+  try {
+    const path = "storage_objects/" + objectId;
+    const snap = await db.get(path, tx);
+    const doc = snap.data || {};
+    if (!snap.exists || clean(doc.ownerUid) !== uid ||
+        clean(doc.targetId) !== uid || clean(doc.scope) !== "diary_image") {
+      throw new ImageReviewError("diary_image_not_approvable", 409);
+    }
+    const state = clean(doc.state);
+    if (state === "diary_linking" &&
+        clean(doc.diaryLinkOperationKey) === operationKey) {
+      await db.rollback(tx);
+      return doc;
+    }
+    const expiry = doc.diaryLinkExpiresAt instanceof Date
+      ? doc.diaryLinkExpiresAt.getTime()
+      : Date.parse(clean(doc.diaryLinkExpiresAt));
+    if (state !== "approved_pending_diary_link" &&
+        !(state === "diary_linking" &&
+          Number.isFinite(expiry) && expiry <= now.getTime())) {
+      throw new ImageReviewError("diary_image_link_conflict", 409);
+    }
+    const patch = {
+      state: "diary_linking",
+      diaryLinkOperationKey: operationKey,
+      diaryLinkExpiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+    };
+    await db.commit(tx, [
+      db.writeUpdate(path, patch, Object.keys(patch)),
+    ]);
+    return { ...doc, ...patch };
+  } catch (error) {
+    await db.rollback(tx).catch(() => {});
+    throw error;
+  }
+}
+
+export async function releaseApprovedDiaryClaim(db, uid, objectId, operationKey) {
+  const tx = await db.beginTransaction();
+  try {
+    const path = "storage_objects/" + objectId;
+    const snap = await db.get(path, tx);
+    if (!snap.exists || clean(snap.data?.state) !== "diary_linking" ||
+        clean(snap.data?.ownerUid) !== uid ||
+        clean(snap.data?.diaryLinkOperationKey) !== operationKey) {
+      await db.rollback(tx);
+      return false;
+    }
+    await db.commit(tx, [db.writeUpdate(path, {
+      state: "approved_pending_diary_link",
+      diaryLinkOperationKey: null, diaryLinkExpiresAt: null,
+    }, ["state", "diaryLinkOperationKey", "diaryLinkExpiresAt"])]);
+    return true;
+  } catch (error) {
+    await db.rollback(tx).catch(() => {});
+    throw error;
+  }
+}
