@@ -91,7 +91,8 @@ test("U6-L2 quota exhaustion and unavailable provider stay pending", async () =>
   const db = new Db();
   const bytes = Buffer.from([0xff,0xd8,0xff,0xd9]);
   const bucket = { get: async () => ({
-    size: bytes.length, arrayBuffer: async () => bytes,
+    size: bytes.length, etag: "r2-reviewed-etag",
+    arrayBuffer: async () => bytes,
   }) };
   const ticket = { moderationPolicy: policy, mimeType: "image/jpeg",
     storageKey: "moderation-staging/users/one/profile/id.jpg" };
@@ -100,6 +101,7 @@ test("U6-L2 quota exhaustion and unavailable provider stay pending", async () =>
     db,bucket,env,ticket,objectId:"a".repeat(32),
   });
   assert.equal(a.status,"approved");
+  assert.equal(a.reviewedEtag,"r2-reviewed-etag");
   const b=await classifyModeratedUpload({
     db,bucket,env,ticket,objectId:"b".repeat(32),
   });
@@ -109,6 +111,19 @@ test("U6-L2 quota exhaustion and unavailable provider stay pending", async () =>
     db:new Db(),bucket,env:{},ticket,objectId:"c".repeat(32),
   });
   assert.equal(noProvider.status,"needs_review");
+});
+
+test("U6-L2 missing R2 ETag cannot create a replayable approval", async () => {
+  const bytes=Buffer.from([0xff,0xd8,0xff,0xd9]);
+  const bucket={get:async()=>({size:bytes.length,
+    arrayBuffer:async()=>bytes})};
+  const ticket={moderationPolicy:policy,mimeType:"image/jpeg",
+    storageKey:"moderation-staging/users/one/profile/id.jpg"};
+  const result=await classifyModeratedUpload({db:new Db(),bucket,
+    env:{AI:{run:async()=>({response:"SAFE"})}},ticket,
+    objectId:"d".repeat(32)});
+  assert.equal(result.status,"needs_review");
+  assert.equal(result.reviewedEtag,undefined);
 });
 
 test("U6-L2 publish copies ONLY the approved staged key; removal is post-commit", async () => {
@@ -128,11 +143,28 @@ test("U6-L2 publish copies ONLY the approved staged key; removal is post-commit"
   assert.equal(objects.get(published).metadata.httpMetadata.contentType,"image/png");
 });
 
+test("U6-L2 changed staged R2 object never publishes under old verdict", async () => {
+  const publicKey="users/u/profile/object.png";
+  const staged="moderation-staging/"+publicKey;
+  const published=[];
+  const bucket={get:async()=>({size:5,etag:"different-etag",
+    body:Buffer.from("image")}),put:async key=>{published.push(key);}};
+  await assert.rejects(()=>publishModeratedUpload(bucket,staged,publicKey,
+    "image/png","reviewed-etag"),/moderation_staged_object_unavailable/);
+  assert.deepEqual(published,[]);
+  await publishModeratedUpload(bucket,staged,publicKey,
+    "image/png","different-etag");
+  assert.deepEqual(published,[publicKey]);
+});
+
 test("U6-L2 source guard: pending is never linked or presigned for reading", () => {
   const source=fs.readFileSync("cloudflare-worker/src/user-storage.js","utf8");
   const publicMedia=fs.readFileSync("cloudflare-worker/src/public-media.js","utf8");
   assert.match(source,/moderatedStagingKey\(publicStorageKey\)/);
   assert.match(source,/moderationDecision\.status !== "approved"/);
+  assert.match(source,/moderationDecision\.reviewedEtag/);
+  assert.match(source,/reviewedEtag !== clean\(object\.etag\)/);
+  assert.match(source,/expectedMime, reviewedEtag/);
   assert.match(source,/publicationPending: true/);
   assert.match(source,/image_pending_moderation/);
   assert.match(source,/await auth\.db\.commit\(transaction, writes\);/);
