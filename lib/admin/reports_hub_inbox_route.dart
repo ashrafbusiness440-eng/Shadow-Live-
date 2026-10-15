@@ -7,7 +7,8 @@ import 'reports_hub_page.dart';
 /// Inbox navigation reuses the same reports hub; no parallel report UI.
 ReportsHubSection reportSectionForInboxType(String type) => switch (type) {
   'diary_report' => ReportsHubSection.diaries,
-  'account_report' || 'account_action_appeal' => ReportsHubSection.people,
+  'account_report' => ReportsHubSection.people,
+  'account_action_appeal' => ReportsHubSection.people,
   'system_repeat_flag' => ReportsHubSection.system,
   'user_report' || 'room_message_report' || 'room_report' =>
     ReportsHubSection.roomsAndMessages,
