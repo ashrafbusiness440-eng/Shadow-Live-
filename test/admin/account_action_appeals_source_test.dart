@@ -44,5 +44,14 @@ void main() {
     expect(model.contains("operationId: _nullable(data['operationId'])"), isTrue);
     expect(dialog.contains('Timer.periodic'), isFalse);
     expect(service.contains('snapshots('), isFalse);
+    expect(dialog.contains('openOperation('), isTrue);
+    final locked = File(
+      'lib/features/auth/widgets/account_enforcement_host.dart',
+    ).readAsStringSync();
+    expect(locked.contains('accountModerationOperationId'), isTrue);
+    expect(locked.contains('الاعتراض على القرار'), isTrue);
+    expect(locked.contains('AccountActionAppealDialog.openOperation('), isTrue);
+    expect(locked.contains('onPressed: _returnToLogin'), isTrue);
+    expect(locked.contains('accountStatus: \'active\''), isFalse);
   });
 }
