@@ -60,6 +60,15 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   int? _selfVipLevelCache;
   String? _animatedEmojiId;
   String? _openedByUid;
+  static const int _historyPageSize = 50;
+  final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>>
+      _loadedHistory = {};
+  DocumentSnapshot<Map<String, dynamic>>? _historyCursor;
+  bool _historyLoading = false;
+  bool _historyHasMore = true;
+  bool _historyFailed = false;
+  late final Stream<User?> _authChanges;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _messageChanges;
 
   bool _isActiveChatAccount(String? expectedUid) =>
       mounted &&
@@ -74,6 +83,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   @override
   void initState() {
     super.initState();
+    _authChanges = FirebaseAuth.instance.authStateChanges();
+    _messageChanges = _conversation
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .snapshots();
     _openedByUid = FirebaseAuth.instance.currentUser?.uid;
     if (FirebaseAuth.instance.currentUser?.isAnonymous ?? true) return;
     _markRead();
@@ -348,10 +363,19 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Future<bool> _storageReady() => _storage.isReady();
 
   Future<UserStorageObject> _loadChatImage(String objectId) {
-    return _chatImageLoads.putIfAbsent(
-      objectId,
-      () => _storage.read(objectId),
-    );
+    // Keep a small, LRU-like memo for the visible media window only. Manual
+    // history pagination must not retain every R2 image in memory indefinitely.
+    final cached = _chatImageLoads.remove(objectId);
+    if (cached != null) {
+      _chatImageLoads[objectId] = cached;
+      return cached;
+    }
+    final future = _storage.read(objectId);
+    _chatImageLoads[objectId] = future;
+    while (_chatImageLoads.length > 16) {
+      _chatImageLoads.remove(_chatImageLoads.keys.first);
+    }
+    return future;
   }
 
   Future<void> _deleteUploadedObjectQuietly(String objectId) async {
@@ -365,13 +389,17 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       future: _loadChatImage(objectId),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const SizedBox(
+          return SizedBox(
             width: 180,
             height: 120,
             child: Center(
-              child: Icon(
-                Icons.broken_image_outlined,
-                color: Colors.white54,
+              child: TextButton.icon(
+                onPressed: () {
+                  if (!_isActiveChatAccount(_openedByUid)) return;
+                  setState(() => _chatImageLoads.remove(objectId));
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('إعادة تحميل الصورة'),
               ),
             ),
           );
@@ -557,6 +585,76 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       }
       _snack('تعذر إرسال الصورة.');
     }
+  }
+
+  Future<void> _loadOlderMessages(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> recent,
+  ) async {
+    final ownerUid = _openedByUid;
+    if (!_isActiveChatAccount(ownerUid) || _historyLoading ||
+        recent.isEmpty || (_historyCursor != null && !_historyHasMore)) {
+      return;
+    }
+    // The first cursor comes from the bounded live window. Next pages use
+    // the last fetched document, so no offset, full collection scan or polling.
+    final cursor = _historyCursor ?? recent.last;
+    setState(() {
+      _historyLoading = true;
+      _historyFailed = false;
+    });
+    try {
+      final page = await _conversation
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .startAfterDocument(cursor)
+          .limit(_historyPageSize)
+          .get();
+      if (!_isActiveChatAccount(ownerUid)) return;
+      setState(() {
+        // Preserve the live window that preceded the first pagination; it
+        // must not disappear when >100 new messages arrive while reading.
+        for (final doc in recent) {
+          _loadedHistory[doc.id] = doc;
+        }
+        for (final doc in page.docs) {
+          _loadedHistory[doc.id] = doc;
+        }
+        _historyCursor = page.docs.isEmpty ? cursor : page.docs.last;
+        _historyHasMore = page.docs.length == _historyPageSize;
+      });
+    } catch (_) {
+      if (_isActiveChatAccount(ownerUid)) {
+        setState(() => _historyFailed = true);
+      }
+    } finally {
+      if (mounted) setState(() => _historyLoading = false);
+    }
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _combinedMessages(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> recent,
+  ) {
+    // Once history is expanded, retain the changing live window to avoid gaps
+    // when a newer message pushes an older one outside the 100-item stream.
+    if (_historyCursor != null) {
+      for (final doc in recent) {
+        _loadedHistory[doc.id] = doc;
+      }
+    }
+    final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+      for (final doc in _loadedHistory.values) doc.id: doc,
+      for (final doc in recent) doc.id: doc,
+    };
+    final result = byId.values.toList();
+    result.sort((a, b) {
+      final av = a.data()['createdAt'];
+      final bv = b.data()['createdAt'];
+      final am = av is Timestamp ? av.millisecondsSinceEpoch : 0;
+      final bm = bv is Timestamp ? bv.millisecondsSinceEpoch : 0;
+      final byTime = bm.compareTo(am);
+      return byTime != 0 ? byTime : b.id.compareTo(a.id);
+    });
+    return result;
   }
 
   Future<int> _selfVipLevel() async {
@@ -1051,7 +1149,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
   @override
   Widget build(BuildContext context) => StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: _authChanges,
       initialData: FirebaseAuth.instance.currentUser,
       builder: (context, authSnapshot) =>
           (authSnapshot.data?.isAnonymous ?? true) ||
@@ -1191,11 +1289,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                     bundledAsset: ShadowAssetKeys.chatWallpaperBundledPath,
                     scrimColor: const Color(0x4405060D),
                     child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _conversation
-                        .collection('messages')
-                        .orderBy('createdAt', descending: true)
-                        .limit(100)
-                        .snapshots(),
+                    stream: _messageChanges,
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
                         return const Center(
@@ -1208,17 +1302,60 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         );
                       }
                       WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
-                      final docs = snapshot.data!.docs;
+                      final liveDocs = snapshot.data!.docs;
+                      final docs = _combinedMessages(liveDocs);
                       if (docs.isEmpty) {
                         return const Center(
                           child: Text('ابدأ المحادثة برسالة 👋', style: TextStyle(color: Colors.white54)),
                         );
                       }
+                      final canLoadOlder = _historyCursor == null
+                          ? liveDocs.length == 100
+                          : _historyHasMore;
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.all(14),
-                        itemCount: docs.length,
-                        itemBuilder: (_, index) => _messageBubble(docs[index].data()),
+                        itemCount: docs.length + (canLoadOlder ? 1 : 0),
+                        itemBuilder: (_, index) {
+                          if (index == docs.length) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_historyFailed)
+                                      const Padding(
+                                        padding: EdgeInsets.only(bottom: 8),
+                                        child: Text(
+                                          'تعذر تحميل الرسائل الأقدم. حاول مجددًا.',
+                                          style: TextStyle(color: Colors.white70),
+                                        ),
+                                      ),
+                                    OutlinedButton.icon(
+                                      onPressed: _historyLoading
+                                          ? null
+                                          : () => _loadOlderMessages(liveDocs),
+                                      icon: _historyLoading
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons.history_rounded),
+                                      label: Text(_historyLoading
+                                          ? 'جارٍ تحميل الرسائل...'
+                                          : 'عرض رسائل أقدم'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                          return _messageBubble(docs[index].data());
+                        },
                       );
                     },
                     ),
