@@ -1498,6 +1498,9 @@ async function deleteAccountOwnedStorageObject({
         closedReason: "account_deleted",
       }, ["status", "updatedAt", "closedReason"]));
     }
+    if (state === "approved_pending_diary_link") {
+      writes.push(db.writeDelete("storage_delete_queue/" + objectId));
+    }
     await db.commit(null, writes);
     return { objectId, deleted: false, transferredToUid: archivalUid };
   }
