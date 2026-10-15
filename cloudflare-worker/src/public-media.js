@@ -1,4 +1,5 @@
 import { corsHeaders } from "./http.js";
+import { firestoreClient } from "./firestore.js";
 
 const PUBLIC_MEDIA_CACHE_SECONDS = 300;
 
@@ -7,6 +8,7 @@ const PUBLIC_SCOPES = new Set([
   "profile_avatar_animation",
   "profile_cover",
   "diary_image",
+  "moderated_diary_image",
   "room_cover",
   "agency_logo",
   "agency_background",
@@ -95,6 +97,8 @@ export function publicMediaStorageKey({ scope, targetId, filename }) {
       return `users/${encodedTarget}/covers/${canonicalFile}`;
     case "diary_image":
       return `users/${encodedTarget}/diaries/${canonicalFile}`;
+    case "moderated_diary_image":
+      return `moderated-diary/users/${encodedTarget}/diaries/${canonicalFile}`;
     case "room_cover":
       return `rooms/${encodedTarget}/covers/${canonicalFile}`;
     case "agency_logo":
