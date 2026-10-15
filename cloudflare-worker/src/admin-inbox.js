@@ -69,6 +69,7 @@ function itemAllowedForActor(actor, item) {
       return canSeeDiary(actor);
     case "user_report":
     case "account_report":
+    case "account_action_appeal":
     case "room_message_report":
     case "room_report":
     case "system_repeat_flag":
@@ -493,6 +494,9 @@ function inboxActorRoles(item) {
     case "room_report":
       candidates.push(["مقدّم البلاغ", meta.reporterUid]);
       candidates.push(["الحساب المبلّغ عليه", meta.targetUid]);
+      break;
+    case "account_action_appeal":
+      candidates.push(["صاحب الاعتراض", meta.userUid]);
       break;
     case "system_repeat_flag":
       candidates.push(["الحساب المرتبط بالتنبيهات", meta.actorUid]);
