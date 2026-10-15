@@ -96,6 +96,15 @@ export async function approvePrivateDiaryImage(db, bucket, actorUid, payload) {
         action: "approvePrivateDiaryImage", actorUid, objectId,
         ownerUid: doc.ownerUid, reason, createdAt: now,
       }),
+      // An unlinked approved image expires without holding private bytes
+      // indefinitely. The existing storage cleanup cron checks linkage.
+      db.writeCreate("storage_delete_queue/" + objectId, {
+        objectId, storageKey: clean(doc.storageKey),
+        ownerUid: doc.ownerUid, scope: "diary_image",
+        targetId: doc.targetId, sizeBytes: Number(doc.sizeBytes),
+        deleteAfter: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+        reason: "diary_approved_unlinked", createdAt: now,
+      }),
       db.writeCreate("notifications/image_diary_review_" + key, {
         userId: doc.ownerUid, type: "image_moderation",
         title: "تمت الموافقة على صورة اليومية",
