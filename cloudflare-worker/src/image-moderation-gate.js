@@ -170,13 +170,14 @@ export async function classifyModeratedUpload({
 // Never hand a pending asset a public R2 location. A failed copy leaves the
 // ticket for operator intervention; this function does not approve on failure.
 export async function publishModeratedUpload(bucket, stagingKey, publicKey,
-  mimeType) {
+  mimeType, expectedEtag = "") {
   if (stagingKey !== moderatedStagingKey(publicKey)) {
     throw Error("publication_key_mismatch");
   }
   const staged = await bucket.get(stagingKey);
   if (!staged || Number(staged.size || 0) <= 0 ||
-      Number(staged.size || 0) > 3 * 1024 * 1024) {
+      Number(staged.size || 0) > 3 * 1024 * 1024 ||
+      (expectedEtag && String(staged.etag || "") !== expectedEtag)) {
     throw Error("moderation_staged_object_unavailable");
   }
   await bucket.put(publicKey, staged.body, {
