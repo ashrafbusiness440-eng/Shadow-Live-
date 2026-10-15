@@ -461,6 +461,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           'receiverId': widget.otherUid,
           'type': 'image',
           'storageObjectId': pending.objectId,
+          'mimeType': pending.mimeType,
+          'sizeBytes': pending.sizeBytes,
           'moderationStatus': 'pending',
           'createdAt': FieldValue.serverTimestamp(),
         });
