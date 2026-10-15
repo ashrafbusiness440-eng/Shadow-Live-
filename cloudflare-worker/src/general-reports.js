@@ -16,6 +16,7 @@ import { mutateAccount } from "./manage-user-account.js";
 import {
   AccountActionAppealError, submitAccountActionAppeal,
   getOwnAccountActionAppeal, listAccountActionAppeals,
+  getAccountActionAppeal,
   reviewAccountActionAppeal,
 } from "./account-action-appeals.js";
 import { readProtectedReportEvidence } from "./report-evidence-access.js";
@@ -974,7 +975,9 @@ export async function generalReports(request, env) {
     if (action === "setEvidenceHold" && !actor.canHoldEvidence) {
       throw new GeneralReportError("forbidden", 403);
     }
-    const result = action === "listAccountActionAppeals"
+    const result = action === "getAccountActionAppeal"
+      ? await getAccountActionAppeal(db, body.operationId)
+      : action === "listAccountActionAppeals"
       ? await listAccountActionAppeals(db)
       : action === "reviewAccountActionAppeal"
       ? (actor.canReview
@@ -1059,5 +1062,6 @@ export const generalReportsTestHooks = Object.freeze({
   submitAccountActionAppeal,
   getOwnAccountActionAppeal,
   listAccountActionAppeals,
+  getAccountActionAppeal,
   reviewAccountActionAppeal,
 });
