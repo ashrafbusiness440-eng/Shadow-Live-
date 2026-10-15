@@ -363,10 +363,19 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Future<bool> _storageReady() => _storage.isReady();
 
   Future<UserStorageObject> _loadChatImage(String objectId) {
-    return _chatImageLoads.putIfAbsent(
-      objectId,
-      () => _storage.read(objectId),
-    );
+    // Keep a small, LRU-like memo for the visible media window only. Manual
+    // history pagination must not retain every R2 image in memory indefinitely.
+    final cached = _chatImageLoads.remove(objectId);
+    if (cached != null) {
+      _chatImageLoads[objectId] = cached;
+      return cached;
+    }
+    final future = _storage.read(objectId);
+    _chatImageLoads[objectId] = future;
+    while (_chatImageLoads.length > 16) {
+      _chatImageLoads.remove(_chatImageLoads.keys.first);
+    }
+    return future;
   }
 
   Future<void> _deleteUploadedObjectQuietly(String objectId) async {
@@ -380,13 +389,17 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       future: _loadChatImage(objectId),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const SizedBox(
+          return SizedBox(
             width: 180,
             height: 120,
             child: Center(
-              child: Icon(
-                Icons.broken_image_outlined,
-                color: Colors.white54,
+              child: TextButton.icon(
+                onPressed: () {
+                  if (!_isActiveChatAccount(_openedByUid)) return;
+                  setState(() => _chatImageLoads.remove(objectId));
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('إعادة تحميل الصورة'),
               ),
             ),
           );
