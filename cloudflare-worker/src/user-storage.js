@@ -1717,6 +1717,44 @@ export async function cleanupQueuedStorageObject(
     throw new StorageApiError("invalid_storage_delete_queue_item", 500);
   }
 
+  // A successful diary post retains a short-lived private staging copy when
+  // the immediate best-effort delete fails. This receipt must never delete
+  // the active image metadata or the approved protected media itself.
+  if (clean(item.data?.reason) === "diary_published_stage_cleanup") {
+    const uid = clean(item.data?.ownerUid);
+    const targetUid = clean(item.data?.targetId);
+    const extension = storageExtensionForMime(item.data?.mimeType);
+    if (!/^[a-f0-9]{32}$/.test(objectId) ||
+        clean(item.id) !== "diary_stage_" + objectId ||
+        clean(item.data.scope) !== "diary_stage_only" ||
+        !uid || uid !== targetUid || !extension) {
+      throw new StorageApiError("invalid_diary_stage_cleanup", 409);
+    }
+    const expected = buildStorageObjectKey({
+      scope: "diary_image", uid, targetId: uid, objectId, extension,
+    });
+    if (storageKey !== "moderation-staging/" + expected) {
+      throw new StorageApiError("invalid_diary_stage_cleanup", 409);
+    }
+    const current = await db.get("storage_objects/" + objectId);
+    if (current.exists &&
+        (clean(current.data.scope) !== "diary_image" ||
+         clean(current.data.publicStorageKey) !== expected ||
+         clean(current.data.ownerUid) !== uid &&
+         clean(current.data.originalOwnerUid) !== uid)) {
+      throw new StorageApiError("diary_stage_cleanup_conflict", 409);
+    }
+    await bucket.delete(storageKey);
+    await db.commit(null, [
+      db.writeDelete("storage_delete_queue/" + item.id),
+      db.writeCreate("storage_audit_logs/" + auditId(), {
+        actorUid: "system", action: "cleanupPublishedDiaryStage",
+        objectId, targetId: uid, createdAt: new Date(nowMs),
+      }),
+    ]);
+    return { status: "deleted", objectId };
+  }
+
   if (clean(item.data?.reason) === "diary_approved_unlinked") {
     const claimed = await claimDueApprovedDiaryCleanup(db, item, nowMs);
     if (!claimed) return { status: "deferred", objectId };
