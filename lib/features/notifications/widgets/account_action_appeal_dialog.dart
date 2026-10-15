@@ -37,7 +37,6 @@ class AccountActionAppealDialog {
   }) async {
     if (!RegExp(r'^[A-Za-z0-9_-]{12,180}$').hasMatch(operationId)) return;
     final service = AccountActionAppealService();
-    final service = AccountActionAppealService();
     String? status;
     String reason = '';
     try {
