@@ -1056,7 +1056,7 @@ async function confirmUpload(request, env, auth, body) {
     // This is deliberately after pointer conflict checks and before commit.
     // A failed copy leaves the private upload ticket untouched.
     await publishModeratedUpload(bucket, clean(ticket.storageKey),
-      clean(ticket.publicStorageKey), expectedMime);
+      clean(ticket.publicStorageKey), expectedMime, clean(object.etag));
   }
   await auth.db.commit(transaction, writes);
   if (moderationDecision) {
