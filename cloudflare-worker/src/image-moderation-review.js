@@ -32,13 +32,14 @@ function safeImage(doc, id) {
     createdAt: doc.createdAt || null,
     reason: clean(doc.moderation?.reason).slice(0, 100),
     reviewStatus: clean(doc.moderation?.reviewStatus),
+    appealExplanation: clean(doc.moderation?.appealExplanation).slice(0, 800),
   };
 }
 
-// No unbounded scan: three fixed-size, single-field indexed queries.
+// No unbounded scan: four fixed-size, single-field indexed queries.
 export async function listImageReviewCases(db, limit = 12) {
   const cap = Math.max(1, Math.min(12, Math.trunc(Number(limit) || 12)));
-  const [pending, blocked, publishing] = await Promise.all([
+  const [pending, blocked, publishing, appeals] = await Promise.all([
     db.runQuery("storage_objects", {
       filters: [{ field: "state", op: "==", value: "needs_review" }],
       limit: cap,
@@ -51,19 +52,24 @@ export async function listImageReviewCases(db, limit = 12) {
       filters: [{ field: "state", op: "==", value: "approved_pending_copy" }],
       limit: cap,
     }),
+    db.runQuery("storage_objects", {
+      filters: [{ field: "state", op: "==", value: "appeal_pending" }],
+      limit: cap,
+    }),
   ]);
   return [
+    ...appeals.slice(0, cap),
     ...blocked.slice(0, cap),
     ...pending.slice(0, cap),
     ...publishing.slice(0, cap),
-  ].slice(0, 36).map((row) => safeImage(row.data || {}, row.id))
+  ].slice(0, 48).map((row) => safeImage(row.data || {}, row.id))
     .filter((row) => OBJECT_ID.test(row.objectId));
 }
 
 export async function readImageReviewPreview(request, env, db, actorUid, objectId) {
   const id = objectIdOrFail(objectId);
   const snap = await db.get("storage_objects/" + id);
-  if (!snap.exists || !["needs_review", "blocked", "rejected", "approved_pending_copy"].includes(
+  if (!snap.exists || !["needs_review", "blocked", "rejected", "approved_pending_copy", "appeal_pending"].includes(
     clean(snap.data?.state))) throw new ImageReviewError("image_review_not_found", 404);
   const doc = snap.data;
   const mimeType = clean(doc.mimeType);
@@ -118,9 +124,17 @@ export async function rejectImageReview(db, actorUid, payload) {
       await db.rollback(tx);
       return { ok: true, duplicate: true, objectId: id, status: "rejected" };
     }
-    if (!image.exists || !["needs_review", "blocked"].includes(
+    if (!image.exists || !["needs_review", "blocked", "appeal_pending"].includes(
       clean(image.data?.state))) {
       throw new ImageReviewError("image_not_pending_review", 409);
+    }
+    const appealPending = clean(image.data.state) === "appeal_pending";
+    const appeal = appealPending
+      ? await db.get("image_moderation_appeals/" + id, tx) : null;
+    if (appealPending && (!appeal?.exists ||
+        clean(appeal.data.status) !== "under_review" ||
+        clean(appeal.data.ownerUid) !== clean(image.data.ownerUid))) {
+      throw new ImageReviewError("image_appeal_conflict", 409);
     }
     const now = new Date();
     const ownerUid = clean(image.data.ownerUid);
@@ -144,12 +158,19 @@ export async function rejectImageReview(db, actorUid, payload) {
         reason, createdAt: now,
       }),
     ];
+    if (appealPending) {
+      writes.push(db.writeUpdate("image_moderation_appeals/" + id, {
+        status: "rejected", decisionReason: reason,
+        decidedBy: actorUid, decidedAt: now, updatedAt: now,
+      }, ["status", "decisionReason", "decidedBy", "decidedAt", "updatedAt"]));
+    }
     if (/^[A-Za-z0-9_-]{1,180}$/.test(ownerUid)) {
       writes.push(db.writeCreate("notifications/image_review_" + key, {
         userId: ownerUid, type: "image_moderation",
         category: "social", read: false,
         title: "نتيجة مراجعة الصورة",
-        body: "تم رفض نشر الصورة بعد المراجعة. السبب: " + reason,
+        body: (appealPending ? "تم رفض الاعتراض على الصورة. السبب: "
+          : "تم رفض نشر الصورة بعد المراجعة. السبب: ") + reason,
         objectId: id, reviewStatus: "rejected",
         createdAt: now, updatedAt: now,
       }));
