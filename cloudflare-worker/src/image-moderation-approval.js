@@ -145,7 +145,7 @@ function targetWrites(db,doc,objectId,url,now,target) {
   if (scope.startsWith("profile_")) {
     const fields= scope==="profile_image"
       ? {profileImageUrl:url,profileImageObjectId:objectId,
-          photoUrl:url,avatarUrl:url,updatedAt:now}
+          photoUrl:url,avatarUrl:url,profileAvatarAsset:null,updatedAt:now}
       : scope==="profile_cover"
         ? {coverImageUrl:url,coverImageObjectId:objectId,updatedAt:now}
         : {profileAvatarAnimationUrl:url,
