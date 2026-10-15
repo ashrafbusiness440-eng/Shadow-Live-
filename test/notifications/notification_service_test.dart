@@ -28,6 +28,28 @@ void main() {
     expect(item.createdAt, isNull);
   });
 
+  test('image moderation notifications retain private reference and status', () {
+    const imageId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    final blocked = AppNotification.fromMap('image-notice', const {
+      'title': 'نتيجة مراجعة الصورة',
+      'type': 'image_moderation',
+      'objectId': imageId,
+      'reviewStatus': 'rejected',
+      'body': 'تم رفض نشر الصورة',
+      'read': false,
+    });
+    expect(blocked.type, 'image_moderation');
+    expect(blocked.objectId, imageId);
+    expect(blocked.reviewStatus, 'rejected');
+    expect(blocked.read, isFalse);
+    final legacy = AppNotification.fromMap('older-image', const {
+      'type': 'image_moderation',
+      'body': 'الصورة قيد المراجعة',
+    });
+    expect(legacy.objectId, isNull);
+    expect(legacy.reviewStatus, isNull);
+  });
+
   test('notification parser preserves diary deep-link fields', () {
     final item = AppNotification.fromMap('diary-notice', const {
       'title': 'تعليق جديد',

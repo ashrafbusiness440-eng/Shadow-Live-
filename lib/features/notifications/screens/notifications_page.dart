@@ -7,6 +7,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../services/notification_service.dart';
+import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -112,6 +113,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             requestId: item.requestId,
             diaryId: item.diaryId,
             commentId: item.commentId,
+            objectId: item.objectId,
+            reviewStatus: item.reviewStatus,
             agencyId: item.agencyId,
             requestType: item.requestType,
             applicantUid: item.applicantUid,
@@ -142,6 +145,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       return;
     }
 
+    if (item.type == 'image_moderation') {
+      await _openImageModeration(item);
+      return;
+    }
+
     if (item.relationshipRequestAction &&
         (item.requestId?.isNotEmpty ?? false)) {
       await _openRelationshipRequest(item);
@@ -156,6 +164,82 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (item.type == 'agency_membership_invite' &&
         (item.requestId?.isNotEmpty ?? false)) {
       await _openAgencyInvitation(item.requestId!);
+    }
+  }
+
+  Future<void> _openImageModeration(AppNotification item) async {
+    final objectId = item.objectId?.trim() ?? '';
+    final status = item.reviewStatus ?? '';
+    final canAppeal = RegExp(r'^[a-f0-9]{32}$').hasMatch(objectId) &&
+        (status == 'blocked' || status == 'rejected');
+    final note = TextEditingController();
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('مراجعة الصورة'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(item.title),
+                const SizedBox(height: 8),
+                Text(item.body),
+                const SizedBox(height: 12),
+                Text(status == 'approved'
+                    ? 'تم اعتماد نشر الصورة.'
+                    : status == 'appeal_pending'
+                        ? 'اعتراضك قيد المراجعة. ستصلك النتيجة في الإشعارات.'
+                        : status == 'rejected'
+                            ? 'تم رفض الصورة. يمكنك إرسال اعتراض واحد على هذا القرار.'
+                            : status == 'blocked'
+                                ? 'الصورة محجوبة حتى تتم مراجعتها.'
+                                : 'الصورة لا تُنشر إلا بعد اعتمادها.'),
+                if (canAppeal) ...[
+                  const SizedBox(height: 10),
+                  TextField(controller: note, maxLength: 800, maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'توضيح اختياري للاعتراض')),
+                ],
+              ]),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إغلاق')),
+            if (canAppeal)
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('إرسال الاعتراض')),
+          ],
+        ),
+      ),
+    );
+    final explanation = note.text.trim();
+    note.dispose();
+    if (sent != true || !mounted) return;
+    final storage = UserStorageService();
+    try {
+      final result = await storage.appealImage(
+        objectId, explanation: explanation);
+      if (!mounted) return;
+      final message = result == 'under_review'
+          ? 'تم استلام اعتراضك وهو قيد المراجعة.'
+          : result == 'approved'
+              ? 'سبق قبول الصورة.'
+              : result == 'rejected'
+                  ? 'سبق اتخاذ القرار بشأن هذا الاعتراض.'
+                  : 'تم تسجيل حالة الاعتراض الحالية.';
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(
+              'تعذر إرسال الاعتراض. تحقق من الاتصال وحاول مجددًا.')));
+      }
+    } finally {
+      storage.close();
     }
   }
 
