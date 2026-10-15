@@ -511,6 +511,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       final batch = FirebaseFirestore.instance.batch();
       batch.update(_conversation, {
         'lastMessage': '📷 صورة',
+        'lastMessageId': messageRef.id,
         'lastSenderId': senderUid,
         'updatedAt': FieldValue.serverTimestamp(),
         'unreadCounts.' + senderUid: 0,
@@ -543,6 +544,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         final batch = FirebaseFirestore.instance.batch();
         batch.update(_conversation, {
           'lastMessage': '📷 صورة قيد المراجعة',
+          'lastMessageId': messageRef.id,
           'lastSenderId': senderUid,
           'updatedAt': FieldValue.serverTimestamp(),
           'unreadCounts.' + senderUid: 0,
