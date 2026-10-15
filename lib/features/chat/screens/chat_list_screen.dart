@@ -595,6 +595,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             .pushNamed(AppRoutes.notifications),
                       ),
                     ),
+                    IconButton(onPressed: _retryRead, tooltip: 'تحديث المحادثات', icon: const Icon(Icons.refresh_rounded, color: Colors.white70)),
                     IconButton(onPressed: _newChat, tooltip: 'محادثة جديدة', icon: const Icon(Icons.add_comment_rounded, color: Color(0xFFFFD54A))),
                   ],
                 ),
