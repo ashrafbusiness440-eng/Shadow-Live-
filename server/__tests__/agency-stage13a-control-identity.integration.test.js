@@ -431,6 +431,39 @@ test("admin User Public ID change releases and reuses the previous live mapping 
   assert.equal(first.data().publicId, "6666");
 });
 
+test("admin can change an existing public ID when interrupted signup left no public profile", async () => {
+  const actorUid = "shadow_owner";
+  const targetUid = "signup_missing_public_profile";
+  const before = "71234589";
+  const after = "71234590";
+  await adminDb.collection("users").doc(actorUid).set({
+    role: "owner", adminEnabled: true, accountStatus: "active",
+  });
+  await adminDb.collection("users").doc(targetUid).set({
+    role: "user", publicId: before, displayName: "Recovered",
+    accountStatus: "active", coins: 0, diamonds: 0,
+  });
+  await adminDb.collection("public_ids").doc(before).set({ uid: targetUid });
+  const result = await executePublicIdChange(db, actorUid, {
+    currentId: before,
+    newId: after,
+    reason: "recover legacy signup",
+    idempotencyKey: "signup_profile_recovery_001",
+  });
+  assert.equal(result.code, "ok");
+  const [user, profile, registry, oldRegistry] = await Promise.all([
+    adminDb.collection("users").doc(targetUid).get(),
+    adminDb.collection("public_profiles").doc(targetUid).get(),
+    adminDb.collection("public_ids").doc(after).get(),
+    adminDb.collection("public_ids").doc(before).get(),
+  ]);
+  assert.equal(user.data()?.publicId, after);
+  assert.equal(profile.data()?.publicId, after);
+  assert.equal(profile.data()?.displayName, "Recovered");
+  assert.equal(registry.data()?.uid, targetUid);
+  assert.equal(oldRegistry.exists, false);
+});
+
 test("13-A Agency Owner edits description/contact directly with Audit", async () => {
   const agencyId = "813010";
   const ownerUid = "stage13a_profile_owner";

@@ -467,6 +467,98 @@ test("public profile accepts R2 media object ids",async()=>{
   }));
 });
 
+test("signup public profile sync has no client-owned premium frame fields",async()=>{
+  const userDb=phoneUserDb();
+  await assertSucceeds(setDoc(doc(userDb,"public_profiles",uid),{
+    uid,
+    displayName:"New Account",
+    username:"",
+    publicId:"",
+    searchTokens:["new","account"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    profileAvatarAnimationUrl:"",
+    profileAvatarAnimationObjectId:"",
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"",
+    moodText:"",
+    interests:[],
+    vipLevel:0,
+    effectiveVipLevel:0,
+    vipExpiresAt:null,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  },{merge:true}));
+});
+
+test("public profile rejects a self-assigned premium frame",async()=>{
+  const userDb=phoneUserDb();
+  await assertFails(updateDoc(doc(userDb,"public_profiles",uid),{
+    activeProfileFrameAssetKey:"premium-not-authorized",
+    activeProfileFramePermanent:true,
+  }));
+});
+
+test("profile sync preserves backend-owned reward frame and fancy ID",async()=>{
+  const targetUid="rules_profile_projection_owner";
+  await env.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),"users",targetUid),{
+      role:"user",coins:0,diamonds:0,publicId:"",displayName:"Existing",
+    });
+    await setDoc(doc(context.firestore(),"public_profiles",targetUid),{
+      uid:targetUid,
+      activeProfileFrameRewardId:"reward-1",
+      activeProfileFrameAssetKey:"server-frame",
+      activeProfileFrameImageUrl:"https://example.org/frame.webp",
+      activeProfileFrameExpiresAtMs:1234567890,
+      activeProfileFramePermanent:true,
+      profileFrameUpdatedAt:new Date(),
+      activeFancyId:"7777",
+      fancyIdAssignmentId:"assignment-1",
+      fancyIdExpiresAt:new Date("2026-12-01T00:00:00Z"),
+    });
+  });
+  const userDb=phoneDbFor(targetUid);
+  const ref=doc(userDb,"public_profiles",targetUid);
+  await assertSucceeds(setDoc(ref,{
+    uid:targetUid,
+    displayName:"Existing Updated",
+    username:"",
+    publicId:"",
+    searchTokens:["existing"],
+    profileImageUrl:"",
+    profileImageObjectId:"",
+    profileAvatarAsset:"",
+    coverImageUrl:"",
+    coverImageObjectId:"",
+    bio:"",
+    location:"",
+    moodEmoji:"",
+    moodText:"",
+    interests:[],
+    vipLevel:0,
+    effectiveVipLevel:0,
+    vipExpiresAt:null,
+    badges:[],
+    isOnline:true,
+    createdAt:new Date(),
+    updatedAt:new Date(),
+  },{merge:true}));
+  const saved=await getDoc(ref);
+  assert.equal(saved.data()?.activeProfileFrameAssetKey,"server-frame");
+  assert.equal(saved.data()?.activeFancyId,"7777");
+  await assertFails(updateDoc(ref,{
+    activeProfileFrameRewardId:"forged",
+    activeFancyId:"9999",
+  }));
+});
+
 test("public profile rejects forged effective VIP projection",async()=>{
   const userDb=phoneDbFor(vipProjectionUid);
   await assertFails(setDoc(doc(userDb,"public_profiles",vipProjectionUid),{

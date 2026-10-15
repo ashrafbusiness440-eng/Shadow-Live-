@@ -264,6 +264,20 @@ service cloud.firestore {
         && request.resource.data.badges == source.get('publicBadges', []);
     }
 
+    // These projections are issued only by the backend. Client profile sync
+    // may preserve existing values, but must never create or change them.
+    function publicProfileServerFieldsUnchanged() {
+      let protectedFields = [
+        'activeProfileFrameRewardId','activeProfileFrameAssetKey',
+        'activeProfileFrameImageUrl','activeProfileFrameExpiresAtMs',
+        'activeProfileFramePermanent','profileFrameUpdatedAt',
+        'activeFancyId','fancyIdAssignmentId','fancyIdExpiresAt'
+      ];
+      return resource == null
+        ? !request.resource.data.keys().hasAny(protectedFields)
+        : !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
+    }
+
     function conversationParticipant(conversationId) {
       return signedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
     }
@@ -689,9 +703,13 @@ service cloud.firestore {
         && request.resource.data.badges is list
         && request.resource.data.badges.size() <= 20
         && publicProfileAuthoritativeFieldsMatch(userId)
+        && publicProfileServerFieldsUnchanged()
         && request.resource.data.keys().hasOnly([
           'uid','displayName','username','publicId','searchTokens','profileImageUrl','profileImageObjectId','profileAvatarAsset',
           'profileAvatarAnimationUrl','profileAvatarAnimationObjectId',
+          'activeProfileFrameRewardId','activeProfileFrameAssetKey','activeProfileFrameImageUrl',
+          'activeProfileFrameExpiresAtMs','activeProfileFramePermanent','profileFrameUpdatedAt',
+          'activeFancyId','fancyIdAssignmentId','fancyIdExpiresAt',
           'coverImageUrl','coverImageObjectId','bio','location','moodEmoji','moodText','interests','vipLevel','effectiveVipLevel','vipExpiresAt','badges','isOnline','createdAt','updatedAt'
         ]);
       allow delete: if false;

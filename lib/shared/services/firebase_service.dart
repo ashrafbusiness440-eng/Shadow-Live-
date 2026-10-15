@@ -54,10 +54,6 @@ class FirebaseService {
    'profileImageObjectId':data['profileImageObjectId']??'',
    'profileAvatarAsset':data['profileAvatarAsset']??'',
    'profileAvatarAnimationUrl':data['profileAvatarAnimationUrl']??'',
-   'activeProfileFrameAssetKey':data['activeProfileFrameAssetKey']??'',
-   'activeProfileFrameImageUrl':data['activeProfileFrameImageUrl']??'',
-   'activeProfileFrameExpiresAtMs':data['activeProfileFrameExpiresAtMs']??0,
-   'activeProfileFramePermanent':data['activeProfileFramePermanent']==true,
    'coverImageUrl':data['coverImageUrl']??'',
    'coverImageObjectId':data['coverImageObjectId']??'',
    'bio':data['bio']??'',
@@ -81,7 +77,7 @@ class FirebaseService {
    ..._publicProfileData(userId,data),
    'createdAt':data['createdAt']??FieldValue.serverTimestamp(),
    'updatedAt':FieldValue.serverTimestamp(),
-  });
+  }, SetOptions(merge:true));
  }
 
  Future<String> ensurePublicId(String userId)async{

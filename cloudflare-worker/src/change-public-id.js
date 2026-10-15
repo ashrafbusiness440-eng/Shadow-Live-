@@ -151,11 +151,41 @@ export async function executePublicIdChange(db, actorUid, body) {
           publicIdUpdatedBy: actorUid,
           updatedAt: createdAt,
         }, ["publicId", "publicIdHistory", "publicIdUpdatedAt", "publicIdUpdatedBy", "updatedAt"]),
-        db.writeUpdate(`public_profiles/${targetUid}`, {
-          publicId: newId,
-          searchTokens,
-          updatedAt: createdAt,
-        }, ["publicId", "searchTokens", "updatedAt"]),
+        // Legacy or interrupted signup may have the real users/ID registry
+        // records but no public profile. Repair it atomically on an authorized
+        // ID change instead of failing with NOT_FOUND.
+        publicSnap.exists
+          ? db.writeUpdate(`public_profiles/${targetUid}`, {
+              publicId: newId,
+              searchTokens,
+              updatedAt: createdAt,
+            }, ["publicId", "searchTokens", "updatedAt"])
+          : db.writeCreate(`public_profiles/${targetUid}`, {
+              uid: targetUid,
+              publicId: newId,
+              displayName,
+              username,
+              searchTokens,
+              profileImageUrl: user.profileImageUrl ?? user.photoUrl ?? user.avatarUrl ?? "",
+              profileImageObjectId: user.profileImageObjectId ?? "",
+              profileAvatarAsset: user.profileAvatarAsset ?? "",
+              profileAvatarAnimationUrl: user.profileAvatarAnimationUrl ?? "",
+              profileAvatarAnimationObjectId: user.profileAvatarAnimationObjectId ?? "",
+              coverImageUrl: user.coverImageUrl ?? "",
+              coverImageObjectId: user.coverImageObjectId ?? "",
+              bio: user.bio ?? "",
+              location: user.location ?? "",
+              moodEmoji: user.moodEmoji ?? "",
+              moodText: user.moodText ?? "",
+              interests: Array.isArray(user.interests) ? user.interests : [],
+              vipLevel: user.effectiveVipLevel ?? 0,
+              effectiveVipLevel: user.effectiveVipLevel ?? 0,
+              vipExpiresAt: user.vipExpiresAt ?? null,
+              badges: Array.isArray(user.publicBadges) ? user.publicBadges : [],
+              isOnline: false,
+              createdAt: user.createdAt ?? createdAt,
+              updatedAt: createdAt,
+            }),
         newSnap.exists
           ? db.writeUpdate(
               `public_ids/${newId}`,
