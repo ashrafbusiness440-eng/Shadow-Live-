@@ -7,6 +7,7 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../services/notification_service.dart';
+import '../widgets/account_action_appeal_dialog.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 
@@ -97,6 +98,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _open(AppNotification item) async {
+    if (AccountActionAppealDialog.operationIdFrom(item).isNotEmpty) {
+      if (!item.read) {
+        await _service.markRead(item.id).catchError((_) {});
+      }
+      if (!mounted) return;
+      await AccountActionAppealDialog.open(context, item);
+      return;
+    }
     if (!item.read) {
       await _service.markRead(item.id);
       if (!mounted) return;
@@ -114,6 +123,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             diaryId: item.diaryId,
             commentId: item.commentId,
             objectId: item.objectId,
+            operationId: item.operationId,
             reviewStatus: item.reviewStatus,
             agencyId: item.agencyId,
             requestType: item.requestType,
