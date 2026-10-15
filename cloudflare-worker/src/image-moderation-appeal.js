@@ -55,13 +55,14 @@ export async function submitImageModerationAppeal(db, actorUid, payload) {
       }),
       db.writeUpdate(imagePath, {
         state: "appeal_pending",
+        evidencePurgeAt: null, evidenceRetentionDueAt: null,
         moderation: {
           ...(image.data.moderation || {}),
           reviewStatus: "appeal_pending", appealedAt: now,
           appealExplanation: explanation,
         },
         updatedAt: now,
-      }, ["state", "moderation", "updatedAt"]),
+      }, ["state", "evidencePurgeAt", "evidenceRetentionDueAt", "moderation", "updatedAt"]),
       db.writeCreate("storage_audit_logs/image_appeal_" + objectId, {
         action: "requestImageAppeal", objectId, actorUid,
         previousState: sourceState, createdAt: now,
