@@ -445,17 +445,31 @@ async function createDiary(db, uid, body, options = {}) {
       const object = objectSnaps[index];
       const link = linkSnaps[index];
       if (!object.exists) throw new DiaryApiError("diary_image_not_found", 409);
+      const state = clean(object.data?.state);
+      const privateCopy = privateCopies.get(objectId);
+      const existingPublic = state === "active" &&
+        !!clean(object.data?.publicUrl) && !privateCopy;
+      const approvedPrivate = state === "approved_pending_diary_link" &&
+        !!privateCopy &&
+        clean(object.data?.moderation?.status) === "approved" &&
+        clean(object.data?.etag) === privateCopy.reviewedEtag &&
+        clean(object.data?.storageKey) === privateCopy.sourceKey &&
+        object.data?.evidenceHold !== true &&
+        object.data?.legalHold !== true &&
+        object.data?.investigationHold !== true;
       if (
         clean(object.data?.scope) !== "diary_image" ||
         clean(object.data?.ownerUid) !== uid ||
         clean(object.data?.targetId) !== uid ||
-        clean(object.data?.state) !== "active" ||
-        !clean(object.data?.publicUrl)
+        (!existingPublic && !approvedPrivate)
       ) {
         throw new DiaryApiError("invalid_diary_image", 409);
       }
       if (link.exists) throw new DiaryApiError("diary_image_already_linked", 409);
-      images.push(publicImageSnapshot(objectId, object.data));
+      images.push(publicImageSnapshot(objectId, {
+        ...object.data,
+        ...(privateCopy ? { publicUrl: privateCopy.url } : {}),
+      }));
     }
 
     const diaryId = randomId("diary");
@@ -552,8 +566,19 @@ async function createDiary(db, uid, body, options = {}) {
             linkedDiaryId: diaryId,
             linkedAt: now,
             updatedAt: now,
+            ...(privateCopies.has(image.objectId) ? {
+              storageKey: privateCopies.get(image.objectId).protectedKey,
+              publicUrl: privateCopies.get(image.objectId).url,
+              moderation: {
+                ...(objectSnaps[imageObjectIds.indexOf(image.objectId)].data
+                  .moderation || {}),
+                reviewStatus: "approved",
+              },
+            } : {}),
           },
-          ["state", "linkedDiaryId", "linkedAt", "updatedAt"],
+          ["state", "linkedDiaryId", "linkedAt", "updatedAt",
+            ...(privateCopies.has(image.objectId)
+              ? ["storageKey", "publicUrl", "moderation"] : [])],
         ),
       );
     }
