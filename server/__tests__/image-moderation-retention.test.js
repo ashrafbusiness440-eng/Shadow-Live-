@@ -194,6 +194,22 @@ test("U6-L3/B finalized expiry does not reset when account is deleted",async()=>
   assert.equal(db.docs.get(path).evidencePurgeAt.toISOString(),
     due.toISOString());
 });
+test("U6-L4/A preserved diary approval purges its guarded orphan copy",async()=>{
+  const {db,bucket,deletions}=prepare();
+  const original="users/u1/diaries/"+id+".png";
+  db.docs.set(path,{
+    ...db.docs.get(path),scope:"diary_image",
+    ownerUid:"image_evidence_archive_"+id,
+    originalOwnerUid:"u1",
+    publicStorageKey:original,
+    storageKey:"moderation-staging/"+original,
+  });
+  assert.equal(await purgeFinalImageEvidence(db,bucket,id,due),"purged");
+  assert.deepEqual(deletions,[
+    "moderated-diary/"+original,
+    "moderation-staging/"+original,
+  ]);
+});
 test("U6-L3/B all evidence operations remain opt-in, private and owner gated",()=>{
   const review=fs.readFileSync(
     "cloudflare-worker/src/image-moderation-control.js","utf8");
