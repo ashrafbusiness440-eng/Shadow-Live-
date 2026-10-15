@@ -11,6 +11,7 @@ import { approvePrivateChatImage } from "./image-moderation-chat.js";
 import { setImageEvidenceHold } from "./image-moderation-retention.js";
 import { assessImageModerationReadiness } from "./image-moderation-readiness.js";
 import {
+  IMAGE_MODERATION_PUBLICATION_GATE_READY,
   IMAGE_MODERATION_PATH, IMAGE_MODERATION_PROVIDERS,
   defaultImageModerationPolicy, validateImageModerationPolicy,
   imageModerationProviderReady,
@@ -19,10 +20,9 @@ import {
 const clean = (v) => String(v ?? "").trim();
 const KEY = /^[A-Za-z0-9_-]{12,180}$/;
 
-// U6-L1 provisions real provider adapters and an owner configuration UI.
-// U6-L2 must install the pre-publication R2 gate FIRST. Until then it is
-// intentionally impossible to switch scanning on (no false 'protected' UI).
-export const IMAGE_MODERATION_PUBLICATION_GATE_READY = false;
+// Re-export the same constant used by the upload runtime. Owner settings
+// cannot advertise a different publication state from the R2 upload path.
+export { IMAGE_MODERATION_PUBLICATION_GATE_READY } from "./image-moderation-policy.js";
 
 class ImageModerationControlError extends Error {
   constructor(code, status = 400) {

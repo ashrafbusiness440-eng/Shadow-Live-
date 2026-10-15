@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import { IMAGE_MODERATION_PUBLICATION_GATE_READY } from
+  "../../cloudflare-worker/src/image-moderation-policy.js";
 import {
   moderatedStagingKey, uploadModerationSnapshot,
   reserveModerationAttempt, recordModerationOutcome,
@@ -35,10 +37,20 @@ test("U6-L2 mode remains opt-in and only eligible new scopes use staging", async
   const db = new Db();
   assert.equal(await uploadModerationSnapshot(db, "profile_image"), null);
   db.docs.set("system_config/image_moderation", policy);
-  const selected = await uploadModerationSnapshot(db, "profile_image");
-  assert.equal(selected.enabled, true);
-  assert.equal(selected.version, 3);
+  assert.equal(IMAGE_MODERATION_PUBLICATION_GATE_READY, false);
+  await assert.rejects(
+    uploadModerationSnapshot(db, "profile_image"),
+    /publication_gate_not_ready/,
+  );
+  // Out-of-scope uploads remain unmoderated and must not consume quota.
   assert.equal(await uploadModerationSnapshot(db, "chat_image"), null);
+  const privatePolicy = {...policy, scope:"public_and_private"};
+  db.docs.set("system_config/image_moderation", privatePolicy);
+  await assert.rejects(
+    uploadModerationSnapshot(db, "chat_image"),
+    /publication_gate_not_ready/,
+  );
+  assert.equal(await uploadModerationSnapshot(db, "unknown"), null);
   const key = "users/one/profile/1234.jpg";
   assert.equal(moderatedStagingKey(key), "moderation-staging/" + key);
   assert.throws(() => moderatedStagingKey("moderation-staging/x"));
@@ -173,5 +185,8 @@ test("U6-L2 source guard: pending is never linked or presigned for reading", () 
   assert.equal(publicMedia.includes("moderation-staging/"),false);
   const control=fs.readFileSync(
     "cloudflare-worker/src/image-moderation-control.js","utf8");
-  assert.match(control,/IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
+  assert.match(control,/export \{ IMAGE_MODERATION_PUBLICATION_GATE_READY \}/);
+  const policySource=fs.readFileSync(
+    "cloudflare-worker/src/image-moderation-policy.js","utf8");
+  assert.match(policySource,/IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
 });

@@ -12,6 +12,7 @@ import {
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { publicMediaUrl } from "./public-media.js";
+import { IMAGE_MODERATION_PUBLICATION_GATE_READY } from "./image-moderation-policy.js";
 import {
   uploadModerationSnapshot, moderatedStagingKey,
   classifyModeratedUpload, publishModeratedUpload,
@@ -504,7 +505,15 @@ async function prepareUpload(request, env, auth, body) {
     throw new StorageApiError("replace_not_supported", 409);
   }
 
-  const moderationPolicy = await uploadModerationSnapshot(auth.db, scope);
+  let moderationPolicy;
+  try {
+    moderationPolicy = await uploadModerationSnapshot(auth.db, scope);
+  } catch (error) {
+    if (error?.message === "publication_gate_not_ready") {
+      throw new StorageApiError("publication_gate_not_ready", 409);
+    }
+    throw error;
+  }
   const objectId = crypto.randomUUID().replaceAll("-", "");
   const publicStorageKey = buildStorageObjectKey({
     scope,
@@ -639,7 +648,11 @@ async function confirmUpload(request, env, auth, body) {
   let moderationDecision = null;
   if (ticket.moderationPolicy?.enabled === true) {
     try {
-      moderationDecision = ticket.moderationDecision ||
+      // Also reject a previously issued/cached SAFE ticket after the gate
+      // closes. Neither a persisted receipt nor a stale policy can bypass it.
+      moderationDecision = !IMAGE_MODERATION_PUBLICATION_GATE_READY
+        ? { status: "needs_review", reason: "publication_gate_not_ready" }
+        : ticket.moderationDecision ||
         await classifyModeratedUpload({
           db: auth.db, bucket, env, ticket, objectId,
         });

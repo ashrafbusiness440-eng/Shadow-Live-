@@ -7,6 +7,8 @@ import { imageModerationProviderReady } from
   "../../cloudflare-worker/src/image-moderation-policy.js";
 import { IMAGE_MODERATION_PUBLICATION_GATE_READY } from
   "../../cloudflare-worker/src/image-moderation-control.js";
+import { uploadModerationSnapshot } from
+  "../../cloudflare-worker/src/image-moderation-gate.js";
 
 const policy = {
   enabled: false, scope: "public", mode: "free",
@@ -89,4 +91,58 @@ test("U6-L5/A diagnostics only appear after owner read authorization", () => {
   assert.match(screen, /_readinessChecks/);
   assert.match(screen, /canEnable = _gateReady/);
   assert.ok(!screen.includes("لحين اكتمال ربط النشر الآمن"));
+});
+
+test("U6-L5/B stale enabled config cannot authorize public/private scans", async () => {
+  const calls = { get: 0, ai: 0, r2: 0, writes: 0 };
+  const db = {
+    async get(path) {
+      calls.get++;
+      assert.equal(path, "system_config/image_moderation");
+      return { exists: true, data: {
+        ...policy, enabled: true, scope: "public_and_private",
+      } };
+    },
+    async commit() { calls.writes++; },
+  };
+  const env = {
+    AI: { run: async () => { calls.ai++; return {response:"SAFE"}; } },
+    USER_STORAGE: {
+      get: async () => { calls.r2++; },
+      head: async () => { calls.r2++; },
+      put: async () => { calls.r2++; },
+    },
+  };
+  assert.equal(IMAGE_MODERATION_PUBLICATION_GATE_READY, false);
+  assert.equal(imageModerationProviderReady(env, "cloudflare_vision"), true);
+  await assert.rejects(
+    uploadModerationSnapshot(db, "profile_image"),
+    /publication_gate_not_ready/,
+  );
+  await assert.rejects(
+    uploadModerationSnapshot(db, "chat_image"),
+    /publication_gate_not_ready/,
+  );
+  // These paths are deliberately outside the configured moderation scope.
+  assert.equal(await uploadModerationSnapshot(db, "unknown_scope"), null);
+  assert.equal(calls.get, 3);
+  assert.equal(calls.ai, 0);
+  assert.equal(calls.r2, 0);
+  assert.equal(calls.writes, 0);
+});
+
+test("U6-L5/B an old cached SAFE upload receipt cannot bypass the OFF gate", () => {
+  const source = fs.readFileSync("cloudflare-worker/src/user-storage.js","utf8");
+  const policySource = fs.readFileSync(
+    "cloudflare-worker/src/image-moderation-policy.js","utf8");
+  const control = fs.readFileSync(
+    "cloudflare-worker/src/image-moderation-control.js","utf8");
+  assert.match(policySource,/IMAGE_MODERATION_PUBLICATION_GATE_READY = false/);
+  assert.match(control,/export \{ IMAGE_MODERATION_PUBLICATION_GATE_READY \}/);
+  assert.match(source,/moderationDecision = !IMAGE_MODERATION_PUBLICATION_GATE_READY/);
+  assert.match(source,/status: "needs_review", reason: "publication_gate_not_ready"/);
+  assert.match(source,/ticket\.moderationDecision \|\|/);
+  assert.match(source,/if \(moderationDecision\.status !== "approved"\)/);
+  assert.match(source,/throw new StorageApiError\("publication_gate_not_ready", 409\)/);
+  assert.match(source,/moderationStatus: status, publicationPending: true/);
 });
