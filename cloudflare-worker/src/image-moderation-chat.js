@@ -184,6 +184,11 @@ export async function approvePrivateChatImage(db, bucket, actorUid, payload) {
       db.writeUpdate(receiptPath, {
         status: "completed", completedAt: now,
       }, ["status", "completedAt"]),
+      db.writeUpdate(
+        "conversations/" + association.conversationId +
+          "/messages/" + association.messageId,
+        { moderationStatus: "approved" }, ["moderationStatus"],
+      ),
       db.writeCreate("admin_audit_logs/image_chat_review_" + key, {
         action: "approvePrivateChatImage", actorUid, objectId,
         conversationId: association.conversationId,
