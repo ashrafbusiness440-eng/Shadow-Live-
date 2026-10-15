@@ -159,9 +159,17 @@ export async function classifyModeratedUpload({
     if (animatedImageNeedsReview(bytes, ticket.mimeType)) {
       return { status: "needs_review", reason: "animation_manual_review" };
     }
-    return await runImageModerationProvider(env, policy, {
+    // Bind a clean verdict to the exact R2 object that was inspected.
+    // An overwritten signed PUT must not replay an old approval.
+    const inspectedEtag = String(object.etag || "").trim();
+    if (!inspectedEtag) {
+      return { status: "needs_review", reason: "image_unavailable" };
+    }
+    const verdict = await runImageModerationProvider(env, policy, {
       bytes, mimeType: ticket.mimeType,
     });
+    return verdict.status === "approved"
+      ? { ...verdict, reviewedEtag: inspectedEtag } : verdict;
   } catch {
     return { status: "needs_review", reason: "provider_unavailable" };
   }
