@@ -1,4 +1,5 @@
 import { corsHeaders } from "./http.js";
+import { finalImageEvidenceFields } from "./image-moderation-retention.js";
 import { moderatedStagingKey } from "./image-moderation-gate.js";
 
 const clean = (value) => String(value ?? "").trim();
@@ -141,13 +142,15 @@ export async function rejectImageReview(db, actorUid, payload) {
     const writes = [
       db.writeUpdate("storage_objects/" + id, {
         state: "rejected",
+        ...finalImageEvidenceFields(now),
         updatedAt: now,
         moderation: {
           ...(image.data.moderation || {}),
           reviewStatus: "rejected", reviewReason: reason,
           reviewedBy: actorUid, reviewedAt: now,
         },
-      }, ["state", "updatedAt", "moderation"]),
+      }, ["state", "evidenceRetentionDueAt", "evidencePurgeAt",
+        "evidenceClosedAt", "updatedAt", "moderation"]),
       db.writeCreate(path, {
         action: "reject", actorUid, objectId: id,
         ownerUid, reason, status: "completed", createdAt: now,
