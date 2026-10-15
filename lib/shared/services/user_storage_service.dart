@@ -370,11 +370,24 @@ class UserStorageService {
     return UserStorageUploadResult.fromJson(confirm);
   }
 
-  /// Request one human appeal on a blocked or rejected image.
-  /// Never returns a public URL or attempts a second image upload.
+  /// Request human review of a blocked or rejected image without publishing it.
   Future<String> appealImage(String objectId, {String explanation = ''}) async {
     final cleanId = objectId.trim();
-    if (!RegExp(r'^[a-f0-9]{32}
+    if (cleanId.length != 32 ||
+        RegExp(r'[^a-f0-9]').hasMatch(cleanId) ||
+        explanation.trim().length > 800) {
+      throw StateError('invalid_image_appeal');
+    }
+    final token = await _token();
+    final result = await _postAction(token, {
+      'action': 'appealImage',
+      'objectId': cleanId,
+      'explanation': explanation.trim(),
+    });
+    return (result['status'] ?? 'under_review').toString();
+  }
+
+  Future<UserStorageObject> read(String objectId) async {
     final cleanId = objectId.trim();
     if (cleanId.isEmpty) throw StateError('invalid_object_id');
 
