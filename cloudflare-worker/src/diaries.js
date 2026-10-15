@@ -2,6 +2,8 @@ import { json, readJson, firestoreQuotaResponse } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
+import { publicMediaUrl } from "./public-media.js";
+import { prepareApprovedDiaryPublication } from "./image-moderation-diary.js";
 import { annotatePressureRequest } from "./pressure-telemetry.js";
 import { adminInboxUpsertWrite } from "./admin-inbox-index.js";
 import { filterRepeatGroupWrites } from "./moderation-flag-groups.js";
@@ -373,7 +375,7 @@ function isAnonymousToken(decoded) {
   return clean(decoded?.firebase?.sign_in_provider) === "anonymous";
 }
 
-async function createDiary(db, uid, body) {
+async function createDiary(db, uid, body, options = {}) {
   const original = diaryText(body.text);
   const checked = await filterContent(db, "diary_post", original);
   if (checked.blocked) throw new DiaryApiError("content_blocked", 422);
@@ -384,7 +386,34 @@ async function createDiary(db, uid, body) {
   const signature = createSignature(text, imageObjectIds, commentsEnabled);
   assertNotEmpty(text, imageObjectIds);
 
-  return runTransaction(db, async (transaction) => {
+  // Private, human-approved diary bytes are copied only upon an explicit
+  // author create request. Until the Firestore link commits the separate
+  // protected public-media scope cannot serve those bytes.
+  const privateCopies = new Map();
+  for (const imageId of imageObjectIds) {
+    const snap = await db.get("storage_objects/" + imageId);
+    if (!snap.exists || clean(snap.data?.state) !== "approved_pending_diary_link") {
+      continue;
+    }
+    if (clean(snap.data?.ownerUid) !== uid ||
+        clean(snap.data?.targetId) !== uid) {
+      throw new DiaryApiError("invalid_diary_image", 409);
+    }
+    try {
+      const copy = await prepareApprovedDiaryPublication(
+        options.env?.USER_STORAGE, snap.data, imageId);
+      const url = publicMediaUrl(options.request, {
+        scope: copy.publicScope, targetId: uid,
+        objectId: imageId, extension: copy.extension,
+      });
+      if (!url) throw new Error("private_publication_url_missing");
+      privateCopies.set(imageId, { ...copy, url });
+    } catch (_) {
+      throw new DiaryApiError("diary_image_not_approved", 409);
+    }
+  }
+
+  const result = await runTransaction(db, async (transaction) => {
     const operationPath = `diary_operations/${operationKey}`;
     const operation = await db.get(operationPath, transaction);
     if (operation.exists) {
@@ -532,6 +561,12 @@ async function createDiary(db, uid, body) {
     await db.commit(transaction, writes);
     return { ok: true, ...result };
   });
+  if (result.ok && result.code !== "duplicate") {
+    for (const copy of privateCopies.values()) {
+      await options.env?.USER_STORAGE?.delete(copy.sourceKey).catch(() => {});
+    }
+  }
+  return result;
 }
 
 async function deleteDiary(db, uid, body, options = {}) {
@@ -1587,7 +1622,8 @@ export async function diaries(request, env) {
       return json(request, env, await reportComment(auth.db, auth.uid, body));
     }
     if (action === "createDiary") {
-      return json(request, env, await createDiary(auth.db, auth.uid, body));
+      return json(request, env, await createDiary(auth.db, auth.uid, body,
+        { env, request }));
     }
     if (action === "deleteDiary") {
       return json(request, env, await deleteDiary(auth.db, auth.uid, body));
