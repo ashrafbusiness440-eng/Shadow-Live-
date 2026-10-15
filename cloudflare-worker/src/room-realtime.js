@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import { resolveRoomFollowTargets } from "./room-follow-lookup.js";
 import { roomEntryRestricted } from "./room-chat-restriction.js";
 import { loadUserLevelPolicy } from "./user-level-policy.js";
 import { summarizeUserLevelData } from "./user-level-summary.js";
@@ -471,6 +472,16 @@ export async function roomRealtime(request, env) {
       });
       if (isAnonymous(payload)) {
         return json(request, env, { ok: false, code: "account_required" }, 403);
+      }
+
+      if (action === "resolveRoomFollows") {
+        const targets = await resolveRoomFollowTargets(
+          firestoreClient(env),
+          env.ROOM_REALTIME,
+          String(payload.sub || "").trim(),
+          body.targetUids,
+        );
+        return json(request, env, { ok: true, targets });
       }
 
       const roomId = normalizeRoomId(body.roomId);
