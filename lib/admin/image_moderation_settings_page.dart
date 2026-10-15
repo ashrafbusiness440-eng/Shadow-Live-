@@ -181,6 +181,45 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
     'diary_image': 'صورة يومية',
   };
 
+  Future<void> _approveDiaryPrivate(String objectId) async {
+    if (_reviewBusy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('موافقة على صورة يومية'),
+        content: const Text('سيُعتمد محتوى الصورة فقط، وتبقى خاصة وغير '
+            'منشورة حتى ينشئ صاحبها اليومية ويربطها بنفسه.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('الموافقة دون نشر')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _reviewBusy = true);
+    try {
+      await _post({
+        'action': 'approve_diary_private',
+        'objectId': objectId,
+        'reason': 'تمت مراجعة صورة اليومية والموافقة على محتواها دون نشرها',
+        'idempotencyKey': 'image_diary_private_' + objectId,
+      });
+      if (!mounted) return;
+      setState(() => _notice =
+          'تم اعتماد محتوى صورة اليومية. الصورة لم تُنشر بعد.');
+      await _loadReviewsAfterDecision();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _notice =
+            'تعذر اعتماد الصورة الخاصة. تحقق من الملف وصلاحية المراجعة.');
+      }
+    } finally {
+      if (mounted) setState(() => _reviewBusy = false);
+    }
+  }
+
   Future<void> _approve(String objectId) async {
     if (_reviewBusy) return;
     final approved = await showDialog<bool>(
@@ -456,6 +495,8 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                   if (item['state'] == 'appeal_pending')
                     Text('توضيح صاحب الصورة: ${item['appealExplanation']?.toString().isNotEmpty == true ? item['appealExplanation'] : 'لم يضف توضيحًا'}'),
                   Text('السبب: ${item['reason'] ?? 'غير محدد'}'),
+                  if (item['state'] == 'approved_pending_diary_link')
+                    const Text('محتوى الصورة مقبول، لكن الصورة خاصة ولم تُنشر.'),
                   if (item['evidenceHold'] == true)
                     const Text('الدليل محفوظ بقرار إداري؛ الحذف موقوف.'),
                   if (item['state'] == 'rejected' &&
@@ -475,6 +516,14 @@ class _ImageModerationSettingsPageState extends State<ImageModerationSettingsPag
                         onPressed: _reviewBusy ? null : () =>
                             _approve((item['objectId'] ?? '').toString()),
                         child: Text(item['state'] == 'appeal_pending' ? 'قبول الاعتراض' : 'اعتماد النشر')),
+                    if (item['scope'] == 'diary_image' &&
+                        ['needs_review', 'appeal_pending']
+                            .contains(item['state']))
+                      FilledButton(
+                        onPressed: _reviewBusy ? null : () =>
+                            _approveDiaryPrivate(
+                                (item['objectId'] ?? '').toString()),
+                        child: const Text('الموافقة دون نشر')),
                     if (['needs_review', 'blocked', 'appeal_pending']
                         .contains(item['state']))
                       OutlinedButton(
