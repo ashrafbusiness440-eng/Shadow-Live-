@@ -163,6 +163,126 @@ async function runTransaction(db, body) {
   throw new ApiError("transaction_failed", 500);
 }
 
+export const PRIVATE_MESSAGE_DELETE_WINDOW_MS = 5 * 60 * 1000;
+
+// This policy must run in the Worker against the message's server timestamp.
+// Hiding a message locally is separate from deleting it for both participants.
+export function mayDeletePrivateMessageForEveryone(message = {}, actorUid, nowMs = Date.now()) {
+  const sentAtMs = timestampMs(message.createdAt);
+  const elapsedMs = Number(nowMs) - sentAtMs;
+  return clean(message.senderId) === clean(actorUid) &&
+    clean(actorUid).length > 0 &&
+    sentAtMs > 0 &&
+    elapsedMs >= 0 &&
+    elapsedMs <= PRIVATE_MESSAGE_DELETE_WINDOW_MS;
+}
+
+// No client-side Firestore message update/delete is permitted. Keep the
+// original message ID for both devices, replacing the content with a tombstone.
+// The gift ledger and any protected report evidence are never modified.
+export async function changePrivateMessageVisibility(db, actorUid, body) {
+  const action = clean(body.action);
+  const conversationId = clean(body.conversationId);
+  const messageId = clean(body.messageId);
+  const validId = /^[A-Za-z0-9_-]{1,180}$/;
+  if (!["hideMessageForMe", "deleteMessageForEveryone"].includes(action) ||
+      !validId.test(conversationId) || !validId.test(messageId)) {
+    throw new ApiError("invalid_request", 400);
+  }
+
+  return runTransaction(db, async (transaction) => {
+    const conversationPath = `conversations/${conversationId}`;
+    const messagePath = `${conversationPath}/messages/${messageId}`;
+    const [conversation, message] = await Promise.all([
+      db.get(conversationPath, transaction),
+      db.get(messagePath, transaction),
+    ]);
+    if (!conversation.exists || !message.exists) {
+      throw new ApiError("message_not_found", 404);
+    }
+    const participants = Array.isArray(conversation.data?.participants)
+      ? conversation.data.participants.map(clean)
+      : [];
+    const senderId = clean(message.data?.senderId);
+    const receiverId = clean(message.data?.receiverId);
+    if (participants.length !== 2 || !participants.includes(actorUid) ||
+        !participants.includes(senderId) || !participants.includes(receiverId) ||
+        senderId === receiverId) {
+      throw new ApiError("forbidden", 403);
+    }
+
+    const hidden = Array.isArray(message.data?.hiddenForUids)
+      ? [...new Set(message.data.hiddenForUids.map(clean).filter(
+        (id) => participants.includes(id),
+      ))]
+      : [];
+    if (action === "hideMessageForMe") {
+      if (hidden.includes(actorUid)) {
+        await db.rollback(transaction);
+        return { ok: true, code: "duplicate", messageId };
+      }
+      await db.commit(transaction, [
+        db.writeUpdate(messagePath, {
+          hiddenForUids: [...hidden, actorUid],
+        }, ["hiddenForUids"]),
+      ]);
+      return { ok: true, code: "ok", messageId };
+    }
+
+    if (message.data?.deletedForEveryone === true) {
+      await db.rollback(transaction);
+      return { ok: true, code: "duplicate", messageId };
+    }
+    if (senderId !== actorUid) throw new ApiError("forbidden", 403);
+    if (!mayDeletePrivateMessageForEveryone(
+      message.data, actorUid, Date.now(),
+    )) {
+      throw new ApiError("delete_window_expired", 403);
+    }
+    // One ordered document only; never scan the full conversation to update
+    // the list preview. A concurrent new send conflicts on conversation write.
+    const latest = await db.runQuery(`${conversationPath}/messages`, {
+      orderBy: [{ field: "createdAt", direction: "desc" }],
+      limit: 1,
+      transaction,
+    });
+    const now = new Date();
+    const tombstone = {
+      senderId,
+      receiverId,
+      createdAt: message.data.createdAt,
+      type: "deleted",
+      deletedForEveryone: true,
+      deletedAt: now,
+      deletedByUid: actorUid,
+      hiddenForUids: hidden,
+    };
+    // Including previous keys in the field mask removes original text,
+    // image/audio object IDs, gift visuals and other private media references.
+    const updateMask = [...new Set([
+      ...Object.keys(message.data || {}),
+      ...Object.keys(tombstone),
+    ])];
+    const writes = [db.writeUpdate(messagePath, tombstone, updateMask)];
+    if (latest[0]?.id === messageId) {
+      writes.push(db.writeUpdate(conversationPath, {
+        lastMessage: "تم حذف رسالة",
+        lastSenderId: actorUid,
+      }, ["lastMessage", "lastSenderId"]));
+    }
+    writes.push(db.writeCreate(
+      `message_deletion_audit/${randomDocId("mda")}`, {
+        actorUid, conversationId, messageId,
+        originalType: clean(message.data?.type).slice(0, 40),
+        action: "deleteMessageForEveryone",
+        createdAt: now,
+      },
+    ));
+    await db.commit(transaction, writes);
+    return { ok: true, code: "ok", messageId };
+  });
+}
+
 export async function sendMessage(db, uid, body) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
@@ -2184,6 +2304,10 @@ export async function chatSafetyActions(request, env, ctx) {
     switch (action) {
       case "sendMessage":
         result = await sendMessage(db, decoded.sub, body);
+        break;
+      case "hideMessageForMe":
+      case "deleteMessageForEveryone":
+        result = await changePrivateMessageVisibility(db, decoded.sub, body);
         break;
       case "sendRoomInvite":
         result = await sendRoomInvite(
