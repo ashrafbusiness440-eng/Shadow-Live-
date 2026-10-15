@@ -29,6 +29,7 @@ function validateSource(doc, objectId) {
   });
   if (publicKey !== expected ||
       clean(doc.storageKey) !== moderatedStagingKey(expected) ||
+      !clean(doc.etag) ||
       Number(doc.sizeBytes) < 1 || Number(doc.sizeBytes) > 3 * 1024 * 1024) {
     throw new ImageReviewError("image_integrity_conflict", 409);
   }
