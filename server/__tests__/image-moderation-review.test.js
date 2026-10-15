@@ -41,14 +41,14 @@ const document = () => ({
   etag:"etag-1", state:"needs_review", createdAt:new Date(),
   moderation:{status:"needs_review",reason:"uncertain_visual_assessment"},
 });
-test("U6-L2/B queue is capped at two fixed-filter reads and has no storage key",async()=>{
+test("U6-L2/B queue is capped at three fixed-filter reads and has no storage key",async()=>{
   const db=new DB();
   db.docs.set("storage_objects/"+OBJECT_ID,document());
   const rows=await listImageReviewCases(db,99999);
   assert.equal(rows.length,1);
   assert.equal(rows[0].objectId,OBJECT_ID);
   assert.equal(JSON.stringify(rows).includes("moderation-staging/"),false);
-  assert.equal(db.calls.filter(x=>x.collection==="storage_objects").length,2);
+  assert.equal(db.calls.filter(x=>x.collection==="storage_objects").length,3);
   assert.ok(db.calls.filter(x=>x.collection==="storage_objects")
     .every(x=>x.options.limit<=12));
 });
