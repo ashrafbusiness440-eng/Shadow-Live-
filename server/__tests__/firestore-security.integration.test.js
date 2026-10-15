@@ -1146,6 +1146,19 @@ test("agency rejection notification is private to its applicant",async()=>{
       {read:true},
     ),
   );
+  // Clients cannot forge unread alerts or tamper with notification details.
+  await assertFails(
+    updateDoc(
+      doc(applicantDb,"notifications","rules_agency_rejected"),
+      {read:false},
+    ),
+  );
+  await assertFails(
+    updateDoc(
+      doc(otherDb,"notifications","rules_agency_rejected"),
+      {read:true},
+    ),
+  );
   await assertFails(
     updateDoc(
       doc(applicantDb,"notifications","rules_agency_rejected"),
