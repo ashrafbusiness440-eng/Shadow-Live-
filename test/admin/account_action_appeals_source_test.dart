@@ -16,8 +16,14 @@ void main() {
     expect(page.contains("'listAccountActionAppeals'"), isTrue);
     expect(page.contains("'getAccountActionAppeal'"), isTrue);
     expect(page.contains("'reviewAccountActionAppeal'"), isTrue);
-    expect(page.contains('reversalOperationId'), isTrue);
-    expect(page.contains("'getAccountActionHistory'"), isTrue);
+    // The UI neither sends manually guessed receipt IDs nor reads only the
+    // first 20 history entries. The server validates source lifecycle directly.
+    expect(page.contains('reversalOperationId'), isFalse);
+    expect(page.contains("'getAccountActionHistory'"), isFalse);
+    final server = File('cloudflare-worker/src/account-action-appeals.js')
+        .readAsStringSync();
+    expect(server.contains('source.data?.lifecycle?.operationId'), isTrue);
+    expect(server.contains('reversal_not_verified'), isTrue);
     expect(page.contains('reversalController'), isFalse);
     expect(page.contains('لم يتم إثبات رفع هذه العقوبة'), isTrue);
     expect(page.contains('setInterval'), isFalse);
