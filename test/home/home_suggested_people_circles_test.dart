@@ -75,7 +75,11 @@ void main() {
     expect(src.contains('snapshotOnly: true,'), isTrue);
     expect(src.contains('_followService.eligibleDiscoveryPeopleAmong('), isTrue);
     expect(src.contains('_followService.isFollowing('), isFalse);
-    expect(src.contains('RoomRealtimeQueryService('), isFalse);
+    // A single shared batch lookup in the Home state is allowed; no per-card
+    // room listeners or discovery-count heuristics.
+    expect(src.contains('final RoomRealtimeQueryService _roomFollowQuery'), isTrue);
+    expect(src.contains('offset += 8'), isTrue);
+    expect(src.contains('Timer.periodic'), isFalse);
     expect(src.contains('Timer.periodic'), isFalse);
   });
 }

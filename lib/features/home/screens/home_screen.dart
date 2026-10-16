@@ -11,6 +11,8 @@ import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../room/services/room_image_source.dart';
+import '../../room/services/room_realtime_query_service.dart';
+import '../../room/services/room_follow_navigation.dart';
 import '../../room/widgets/discovery_room_password_dialog.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
@@ -36,6 +38,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final DiscoveryService _discoveryService = DiscoveryService();
   final FollowService _followService = FollowService();
+  final RoomRealtimeQueryService _roomFollowQuery = RoomRealtimeQueryService();
+  Map<String, RoomFollowLocation> _roomFollowLocations = {};
+  int _roomFollowRevision = 0;
+  Timer? _roomFollowExpiry;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _eventsKey = GlobalKey();
   final GlobalKey _rankingKey = GlobalKey();
@@ -73,6 +79,9 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _data = null;
         _eligibleSuggestionIds = null;
+        _roomFollowLocations = {};
+        _roomFollowExpiry?.cancel();
+        _roomFollowRevision++;
         _suggestionRevision++;
         _changingFollows.clear();
       });
@@ -85,6 +94,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _authSub?.cancel();
     _discoveryService.close();
+    _roomFollowQuery.close();
+    _roomFollowExpiry?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -138,9 +149,17 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _data = data;
         _eligibleSuggestionIds = null;
+        _roomFollowLocations = {};
+        _roomFollowExpiry?.cancel();
+        _roomFollowRevision++;
       });
       unawaited(_refreshSuggestionFollows(
         data.suggestedPeople,
+        requestUid,
+        revision: revision,
+      ));
+      unawaited(_refreshRoomFollowLocations(
+        data.suggestedPeople.take(10).toList(growable: false),
         requestUid,
         revision: revision,
       ));
@@ -190,6 +209,73 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!_isCurrentLoad(expectedUid, revision) ||
           token != _suggestionRevision) return;
       setState(() => _eligibleSuggestionIds = null);
+    }
+  }
+
+  /// A maximum of two bounded API calls for ten Home circles, never
+  /// one live listener or request per avatar. Fail closed on stale data.
+  Future<void> _refreshRoomFollowLocations(
+    List<DiscoveryPerson> people,
+    String? expectedUid, {
+    required int revision,
+  }) async {
+    final generation = ++_roomFollowRevision;
+    if (expectedUid == null || expectedUid.isEmpty ||
+        FirebaseAuth.instance.currentUser?.isAnonymous == true) return;
+    final ids = people.map((p) => p.id).toSet().toList(growable: false);
+    final found = <String, RoomFollowLocation>{};
+    try {
+      for (var offset = 0; offset < ids.length; offset += 8) {
+        final end = offset + 8 < ids.length ? offset + 8 : ids.length;
+        found.addAll(await _roomFollowQuery.resolveRoomFollows(
+          ids.sublist(offset, end),
+        ));
+        if (!_isCurrentLoad(expectedUid, revision) ||
+            generation != _roomFollowRevision) return;
+      }
+      if (!_isCurrentLoad(expectedUid, revision) ||
+          generation != _roomFollowRevision) return;
+      _roomFollowExpiry?.cancel();
+      setState(() => _roomFollowLocations = found);
+      if (found.isNotEmpty) {
+        // Local TTL: expire all room badges together without background IO.
+        _roomFollowExpiry = Timer(const Duration(seconds: 35), () {
+          if (_isCurrentLoad(expectedUid, revision) &&
+              generation == _roomFollowRevision) {
+            setState(() => _roomFollowLocations = {});
+          }
+        });
+      }
+    } catch (_) {
+      if (_isCurrentLoad(expectedUid, revision) &&
+          generation == _roomFollowRevision) {
+        setState(() => _roomFollowLocations = {});
+      }
+    }
+  }
+
+  Future<void> _navigateToSuggestedRoom(String targetUid) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !_roomFollowLocations.containsKey(targetUid)) return;
+    try {
+      final message = await RoomFollowNavigation.open(
+        context: context,
+        targetUid: targetUid,
+        query: _roomFollowQuery,
+      );
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
+      if (message != null) {
+        setState(() => _roomFollowLocations.remove(targetUid));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (_) {
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == uid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر التتبّع حالياً. حاول مجدداً.')),
+        );
+      }
     }
   }
 
@@ -325,9 +411,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   unawaited(_changeSuggestionFollow(person));
                 }
               : null,
-          // The public room discovery snapshot only confirms aggregate
-          // counts, not that THIS person currently occupies a joinable
-          // room. Never expose a room action from those counts.
+          onRoomFollow: _roomFollowLocations.containsKey(person.id)
+              ? () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_navigateToSuggestedRoom(person.id));
+                }
+              : null,
         ),
       ),
     );
@@ -612,6 +701,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 followBusy: _changingFollows.contains(person.id),
                 onFollow: _canFollowSuggestion(person)
                     ? () => _changeSuggestionFollow(person)
+                    : null,
+                onRoomFollow: _roomFollowLocations.containsKey(person.id)
+                    ? () => _navigateToSuggestedRoom(person.id)
                     : null,
               ),
             )
@@ -1832,6 +1924,7 @@ class HomeCompactPersonCard extends StatelessWidget {
     this.isFollowing,
     this.followBusy = false,
     this.onFollow,
+    this.onRoomFollow,
   });
 
   final DiscoveryPerson person;
@@ -1839,6 +1932,7 @@ class HomeCompactPersonCard extends StatelessWidget {
   final bool? isFollowing;
   final bool followBusy;
   final VoidCallback? onFollow;
+  final VoidCallback? onRoomFollow;
 
   @override
   Widget build(BuildContext context) {
@@ -1907,6 +2001,37 @@ class HomeCompactPersonCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (onRoomFollow != null)
+                      PositionedDirectional(
+                        bottom: 0,
+                        start: 0,
+                        child: SizedBox(
+                          width: 38,
+                          height: 38,
+                          child: IconButton(
+                            key: Key('home-room-follow-${person.id}'),
+                            tooltip: 'في غرفة — تتبّع',
+                            onPressed: onRoomFollow,
+                            padding: EdgeInsets.zero,
+                            icon: Container(
+                              width: 27,
+                              height: 27,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF20152D),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFFFD54A),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 16,
+                                color: Color(0xFFFFD54A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1954,12 +2079,14 @@ class HomePersonActionsSheet extends StatelessWidget {
     required this.onOpenProfile,
     this.isFollowing,
     this.onFollow,
+    this.onRoomFollow,
   });
 
   final DiscoveryPerson person;
   final VoidCallback onOpenProfile;
   final bool? isFollowing;
   final VoidCallback? onFollow;
+  final VoidCallback? onRoomFollow;
 
   @override
   Widget build(BuildContext context) {
@@ -1992,6 +2119,19 @@ class HomePersonActionsSheet extends StatelessWidget {
               ),
               onTap: onOpenProfile,
             ),
+            if (onRoomFollow != null)
+              ListTile(
+                key: const Key('home-person-room-follow'),
+                leading: const Icon(
+                  Icons.graphic_eq_rounded,
+                  color: Color(0xFFFFD54A),
+                ),
+                title: const Text(
+                  'التتبّع إلى الغرفة',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: onRoomFollow,
+              ),
             if (onFollow != null)
               ListTile(
                 key: const Key('home-person-follow'),

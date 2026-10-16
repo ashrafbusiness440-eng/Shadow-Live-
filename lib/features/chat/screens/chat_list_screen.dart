@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'private_chat_screen.dart';
+import '../widgets/verified_room_people_strip.dart';
 import '../../notifications/services/notification_service.dart';
 import '../../../services/navigation_service.dart';
 import '../../profile/widgets/quick_profile_sheet.dart';
@@ -599,6 +600,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     IconButton(onPressed: _newChat, tooltip: 'محادثة جديدة', icon: const Icon(Icons.add_comment_rounded, color: Color(0xFFFFD54A))),
                   ],
                 ),
+              ),
+              VerifiedRoomPeopleStrip(
+                key: ValueKey('messages-room-people-$me'),
+                ownerUid: me,
               ),
               Expanded(
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(

@@ -144,7 +144,12 @@ void main() {
     expect(home.contains('snapshotOnly: true,'), isTrue);
     expect(home.contains('if (person.isOnline)'), isFalse);
     expect(home.contains('Timer.periodic'), isFalse);
-    expect(home.contains('RoomRealtimeQueryService('), isFalse);
+    // Home uses one shared batch presence lookup for suggested people.
+    // It never fetches presence independently for each card.
+    expect(home.contains('final RoomRealtimeQueryService _roomFollowQuery'), isTrue);
+    expect(home.contains('ids.sublist(offset, end)'), isTrue);
+    expect(home.contains('offset += 8'), isTrue);
+    expect(home.contains('Timer.periodic'), isFalse);
 
     const discovery = HomeDiscoveryData(
       userData: null,

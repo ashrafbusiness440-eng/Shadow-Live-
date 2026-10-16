@@ -608,7 +608,9 @@ test("U5 Firestore image write and DM previews enforce active server restriction
   assert.match(rules, /function privateMessagesAllowed\(\)/);
   assert.match(rules, /request\.time >= userDoc\(\)\.data\.privateMessagesRestrictedUntil/);
   assert.match(rules, /allow create: if conversationParticipant\(conversationId\)\s*&& privateMessagesAllowed\(\)/);
-  assert.match(rules, /&& \(privateMessagesAllowed\(\)\s*\|\| request\.resource\.data\.diff/);
+  assert.match(rules, /function isAtomicImagePreview\(conversationId\)/);
+  assert.match(rules, /return privateMessagesAllowed\(\)/);
+  assert.match(rules, /isOwnUnreadClear\(\) \|\| isAtomicImagePreview\(conversationId\)/);
   assert.match(worker, /throw new ApiError\("private_messages_restricted", 403\)/);
   assert.match(ui, /'restrictPrivateMessages'/);
   assert.match(client, /case 'private_messages_restricted':/);
