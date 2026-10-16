@@ -1,5 +1,5 @@
 import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqual} from "node:crypto";
-import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv} from "./legacy-firebase-admin-shim.js";
+import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv,configureLegacyEnv} from "./legacy-firebase-admin-shim.js";
 import {activeMicSegments} from "./mic-activity.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
@@ -335,7 +335,7 @@ function zegoUserId(firebaseUid){
   return "u_"+digest.slice(0,40);
 }
 
-function generateToken04(appId,userId,secret,effectiveSeconds){
+function generateToken04(appId,userId,secret,effectiveSeconds,payload=""){
   if(!Number.isInteger(appId)||appId<=0)throw new ApiError("zego_app_id_invalid",500);
   if(typeof secret!=="string"||Buffer.byteLength(secret,"utf8")!==32){
     throw new ApiError("zego_server_secret_invalid",500);
@@ -348,7 +348,7 @@ function generateToken04(appId,userId,secret,effectiveSeconds){
     nonce:randomInt(-2147483648,2147483647),
     ctime:now,
     expire:expires,
-    payload:"",
+    payload,
   });
   const iv=randomBytes(16);
   const cipher=createCipheriv("aes-256-cbc",Buffer.from(secret,"utf8"),iv);
@@ -370,6 +370,37 @@ function config(){
     appId:Number.isInteger(appId)&&appId>0?appId:null,
     secretValid:Buffer.byteLength(secret,"utf8")===32,
     secret,
+  };
+}
+
+// Reuse the SAME proven Token04 generator as ordinary rooms. For private
+// calls, bind login and publishing permissions to just the selected active
+// call room/stream rather than issuing another unrestricted user token.
+// This is only reachable after server-side call eligibility + active slots.
+export function issueScopedPrivateCallVoiceToken(env,firebaseUid,callRoomId){
+  configureLegacyEnv(env);
+  const cfg=config();
+  if(!cfg.appId||!cfg.secretValid)throw new ApiError("zego_not_configured",503);
+  const uid=clean(firebaseUid);
+  const roomId=clean(callRoomId);
+  if(!uid||!/^private_call_[a-f0-9]{32}$/.test(roomId)){
+    throw new ApiError("invalid_private_call_room",400);
+  }
+  const userId=zegoUserId(uid);
+  const streamId=roomId+"_"+userId;
+  const payload=JSON.stringify({
+    room_id:roomId,
+    privilege:{"1":1,"2":1},
+    stream_id_list:[streamId],
+  });
+  const result=generateToken04(cfg.appId,userId,cfg.secret,300,payload);
+  return {
+    appId:cfg.appId,
+    userId,
+    roomId,
+    streamId,
+    token:result.token,
+    expiresAt:result.expiresAt,
   };
 }
 

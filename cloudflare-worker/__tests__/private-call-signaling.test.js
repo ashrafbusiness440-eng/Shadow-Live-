@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createDecipheriv } from "node:crypto";
+import { issueScopedPrivateCallVoiceToken } from "../src/voice-session-legacy.js";
 import {
   startPrivateCall, respondPrivateCall, finishPrivateCall,
-  renewPrivateCall, readPrivateCall, PrivateCallError,
+  renewPrivateCall, readPrivateCall, privateCallMediaSession, PrivateCallError,
 } from "../src/private-call-signaling.js";
 
 const origin = 1_790_000_000_000;
@@ -170,4 +172,91 @@ test("rate limit applies even when calls are repeatedly cancelled", async () => 
     start(db, "operation_fifth_call", origin + 5000),
     (error) => error instanceof PrivateCallError && error.code === "call_rate_limited",
   );
+});
+
+
+test("call media tokens deny ringing, third-party, ended and revoked calls", async () => {
+  const { db, docs } = fixture();
+  const ring = await start(db, "operation_media_guard");
+  const body = { callId: ring.callId };
+  const mint = (uid, roomId) => ({
+    token: "safe-test-token", appId: 1234, roomId,
+    userId: uid, streamId: roomId + "_" + uid,
+  });
+  await assert.rejects(
+    privateCallMediaSession(db, "alice", body, mint, origin + 100),
+    (error) => error.code === "call_not_active",
+  );
+  await respondPrivateCall(db, "bob", { ...body, decision: "accept" }, origin + 1000);
+  await assert.rejects(
+    privateCallMediaSession(db, "eve", body, mint, origin + 2000),
+    (error) => error.code === "not_a_call_participant",
+  );
+  const caller = await privateCallMediaSession(db, "alice", body, mint, origin + 2000);
+  const callee = await privateCallMediaSession(db, "bob", body, mint, origin + 2000);
+  assert.equal(caller.roomId, "private_call_" + ring.callId);
+  assert.equal(caller.roomId, callee.roomId);
+  assert.notEqual(caller.userId, callee.userId);
+  docs.delete("follows/alice__bob");
+  await assert.rejects(
+    privateCallMediaSession(db, "bob", body, mint, origin + 3000),
+    (error) => error.code === "mutual_follow_required",
+  );
+  await finishPrivateCall(db, "bob", body, origin + 4000);
+  await assert.rejects(
+    privateCallMediaSession(db, "alice", body, mint, origin + 5000),
+    (error) => error.code === "call_not_active",
+  );
+});
+
+test("call media issuance refuses expired or replaced live account leases", async () => {
+  const { db, docs } = fixture();
+  const started = await start(db, "operation_expired_slots");
+  await respondPrivateCall(db, "bob", {
+    callId: started.callId, decision: "accept",
+  }, origin + 1000);
+  docs.set("private_call_slots/bob", {
+    callId: "replaced", expiresAtMs: origin + 100_000,
+  });
+  await assert.rejects(
+    privateCallMediaSession(
+      db, "alice", { callId: started.callId },
+      () => ({ token: "wrong" }), origin + 2000,
+    ),
+    (error) => error.code === "call_no_longer_available",
+  );
+});
+
+test("ZEGO Token04 is bound to call room and only the authenticated stream", () => {
+  const secret = "0123456789abcdef0123456789abcdef";
+  const roomId = "private_call_abcdef0123456789abcdef0123456789";
+  const token = issueScopedPrivateCallVoiceToken({
+    ZEGO_APP_ID: "123456",
+    ZEGO_SERVER_SECRET: secret,
+  }, "alice", roomId);
+  assert.equal(token.appId, 123456);
+  assert.equal(token.roomId, roomId);
+  assert.equal(token.streamId, roomId + "_" + token.userId);
+  assert.ok(token.token.startsWith("04"));
+  const packed = Buffer.from(token.token.slice(2), "base64");
+  const expire = Number(packed.readBigInt64BE(0));
+  const ivLength = packed.readUInt16BE(8);
+  assert.equal(ivLength, 16);
+  const iv = packed.subarray(10, 10 + ivLength);
+  const len = packed.readUInt16BE(10 + ivLength);
+  const encrypted = packed.subarray(12 + ivLength, 12 + ivLength + len);
+  const decipher = createDecipheriv("aes-256-cbc", Buffer.from(secret), iv);
+  const payload = JSON.parse(Buffer.concat([
+    decipher.update(encrypted), decipher.final(),
+  ]).toString("utf8"));
+  assert.equal(payload.app_id, 123456);
+  assert.equal(payload.user_id, token.userId);
+  assert.equal(payload.expire, expire);
+  const rights = JSON.parse(payload.payload);
+  assert.deepEqual(rights, {
+    room_id: roomId, privilege: { "1": 1, "2": 1 },
+    stream_id_list: [token.streamId],
+  });
+  assert.ok(expire > Date.now() / 1000);
+  assert.ok(expire <= Date.now() / 1000 + 301);
 });
