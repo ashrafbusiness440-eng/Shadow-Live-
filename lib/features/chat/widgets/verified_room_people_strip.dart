@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -78,7 +79,7 @@ class _VerifiedRoomPeopleStripState extends State<VerifiedRoomPeopleStrip> {
       // membership, bidirectional blocks and room privacy.
       final candidates = <DiscoveryPerson>[];
       final seen = <String>{};
-      var cursor = null as dynamic;
+      DocumentSnapshot<Map<String, dynamic>>? cursor;
       for (var page = 0; page < 3; page++) {
         final result = await _discovery.loadPeoplePage(
           after: cursor,
