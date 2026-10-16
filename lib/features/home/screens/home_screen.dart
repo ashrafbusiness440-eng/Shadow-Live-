@@ -41,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final RoomRealtimeQueryService _roomFollowQuery = RoomRealtimeQueryService();
   Map<String, RoomFollowLocation> _roomFollowLocations = {};
   int _roomFollowRevision = 0;
+  Timer? _roomFollowExpiry;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _eventsKey = GlobalKey();
   final GlobalKey _rankingKey = GlobalKey();
@@ -79,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _data = null;
         _eligibleSuggestionIds = null;
         _roomFollowLocations = {};
+        _roomFollowExpiry?.cancel();
         _roomFollowRevision++;
         _suggestionRevision++;
         _changingFollows.clear();
@@ -93,6 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _authSub?.cancel();
     _discoveryService.close();
     _roomFollowQuery.close();
+    _roomFollowExpiry?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -147,6 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _data = data;
         _eligibleSuggestionIds = null;
         _roomFollowLocations = {};
+        _roomFollowExpiry?.cancel();
         _roomFollowRevision++;
       });
       unawaited(_refreshSuggestionFollows(
@@ -231,7 +235,17 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (!_isCurrentLoad(expectedUid, revision) ||
           generation != _roomFollowRevision) return;
+      _roomFollowExpiry?.cancel();
       setState(() => _roomFollowLocations = found);
+      if (found.isNotEmpty) {
+        // Local TTL: expire all room badges together without background IO.
+        _roomFollowExpiry = Timer(const Duration(seconds: 35), () {
+          if (_isCurrentLoad(expectedUid, revision) &&
+              generation == _roomFollowRevision) {
+            setState(() => _roomFollowLocations = {});
+          }
+        });
+      }
     } catch (_) {
       if (_isCurrentLoad(expectedUid, revision) &&
           generation == _roomFollowRevision) {
