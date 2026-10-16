@@ -334,15 +334,17 @@ export default {
       console.error("Private voice cleanup failed", String(error?.message || error));
     }
 
-    // Stage 4A: no per-call polling; resolve at most 10 overdue rings on the
-    // existing scheduled Worker event. Does not start a ZEGO media session.
-    try {
-      const calls = await runPrivateCallTimeoutCleanup(env, Date.now());
-      if (calls.checked || calls.failed) {
-        console.log("Private call ring cleanup", JSON.stringify(calls));
+    // Call routing remains disabled by default. Skip even the one bounded
+    // Firestore cron query until the private media rollout is ready.
+    if (env.PRIVATE_CALL_MEDIA_READY === "true") {
+      try {
+        const calls = await runPrivateCallTimeoutCleanup(env, Date.now());
+        if (calls.checked || calls.failed) {
+          console.log("Private call ring cleanup", JSON.stringify(calls));
+        }
+      } catch (error) {
+        console.error("Private call ring cleanup failed", String(error?.message || error));
       }
-    } catch (error) {
-      console.error("Private call ring cleanup failed", String(error?.message || error));
     }
 
     // U6: reuse existing 5-minute cron only at the hourly boundary.
