@@ -79,14 +79,32 @@ export async function voicePrepare(db, env, uid, body) {
     key,mimeType:input.mimeType,expiresSeconds:300,
   });
   const now=Date.now();
-  await db.commit(null,[db.writeCreate(objectPath(objectId),{
-    objectId,ownerUid:uid,otherUid:input.otherUid,
-    conversationId:input.conversationId,storageKey:key,
-    mimeType:input.mimeType,expectedSizeBytes:input.byteLength,
-    durationSeconds:input.durationSeconds,
-    state:"pending_upload",createdAt:new Date(now),
-    uploadExpiresAt:new Date(now+UPLOAD_TTL_MS),
-  })]);
+  // Bounded, persistent per-user admission rate: never sign unlimited uploads.
+  await transactionRun(db,async tx=>{
+    const ratePath="private_voice_upload_rate/"+uid;
+    const prior=await db.get(ratePath,tx);
+    const started=new Date(prior.data?.windowStartedAt||0).getTime();
+    const active=Number.isFinite(started)&&started>0&&now-started<60_000;
+    const count=active?Math.max(0,Number(prior.data?.count||0)):0;
+    if(count>=6)throw new VoiceMediaError("voice_upload_rate_limited",429);
+    await db.commit(tx,[
+      db.writeUpdate(ratePath,{
+        windowStartedAt:new Date(active?started:now),count:count+1,updatedAt:new Date(now),
+      },["windowStartedAt","count","updatedAt"]),
+      db.writeCreate(objectPath(objectId),{
+        objectId,ownerUid:uid,otherUid:input.otherUid,
+        conversationId:input.conversationId,storageKey:key,
+        mimeType:input.mimeType,expectedSizeBytes:input.byteLength,
+        durationSeconds:input.durationSeconds,
+        state:"pending_upload",createdAt:new Date(now),
+        uploadExpiresAt:new Date(now+UPLOAD_TTL_MS),
+      }),
+      db.writeCreate("private_voice_drafts/"+objectId,{
+        objectId,ownerUid:uid,storageKey:key,
+        expiresAt:new Date(now+24*60*60*1000),createdAt:new Date(now),
+      }),
+    ]);
+  });
   return {ok:true,objectId,uploadUrl,requiredHeaders:{"content-type":input.mimeType},
     expiresAtMs:now+UPLOAD_TTL_MS};
 }
@@ -175,6 +193,7 @@ export async function voiceSend(db,uid,body) {
       db.writeUpdate(objectPath(objectId),{
         state:"sent",messageId,sentAt:now,
       },["state","messageId","sentAt"]),
+      db.writeDelete("private_voice_drafts/"+objectId),
       db.writeUpdate(ratePath,{
         windowStartedAt:new Date(same?started:nowMs),count:count+1,updatedAt:now,
       },["windowStartedAt","count","updatedAt"]),
@@ -210,6 +229,57 @@ export async function voiceRead(db,env,uid,body) {
   return {ok:true,objectId,readUrl,expiresAtMs:Date.now()+DOWNLOAD_TTL_SECONDS*1000,
     mimeType:raw.mimeType,durationSeconds:raw.durationSeconds};
 }
+// Process only expired, unlinked drafts using the existing bounded Worker cron.
+// A sent voice message has no draft queue entry, so it is never cleaned here.
+export async function runPrivateVoiceDraftCleanup(env,{nowMs=Date.now(),limit=10}={}) {
+  const db=firestoreClient(env);
+  const max=Math.max(1,Math.min(10,Number(limit)||10));
+  const drafts=await db.runQuery("private_voice_drafts",{
+    filters:[{field:"expiresAt",op:"<=",value:new Date(nowMs)}],
+    orderBy:[{field:"expiresAt",direction:"asc"}],
+    limit:max,
+  });
+  let cleaned=0,failed=0;
+  for(const draft of drafts) {
+    const id=clean(draft.data?.objectId||draft.id);
+    if(!objectIdPattern.test(id)) {failed++;continue;}
+    try {
+      const storageKey=clean(draft.data?.storageKey);
+      const ready=await transactionRun(db,async tx=>{
+        const [queue,meta]=await Promise.all([
+          db.get("private_voice_drafts/"+id,tx),db.get(objectPath(id),tx),
+        ]);
+        if(!queue.exists){await db.rollback(tx);return false;}
+        if(!meta.exists||meta.data?.state==="sent") {
+          await db.commit(tx,[db.writeDelete("private_voice_drafts/"+id)]);
+          return false;
+        }
+        if(meta.data?.storageKey!==storageKey ||
+           !["pending_upload","uploaded","deleting"].includes(meta.data?.state)) {
+          throw new VoiceMediaError("voice_cleanup_conflict",409);
+        }
+        if(meta.data.state!=="deleting"){
+          await db.commit(tx,[db.writeUpdate(objectPath(id),{
+            state:"deleting",deletingAt:new Date(nowMs),
+          },["state","deletingAt"])]);
+        }else{await db.rollback(tx);}
+        return true;
+      });
+      if(!ready)continue;
+      if(typeof env.USER_STORAGE?.delete!=="function"){
+        throw new VoiceMediaError("r2_not_ready",503);
+      }
+      await env.USER_STORAGE.delete(storageKey);
+      await db.commit(null,[
+        db.writeDelete(objectPath(id)),
+        db.writeDelete("private_voice_drafts/"+id),
+      ]);
+      cleaned++;
+    }catch(e){failed++;}
+  }
+  return {checked:drafts.length,cleaned,failed};
+}
+
 export async function privateVoiceMedia(request,env) {
   if(request.method!=="POST")return json(request,env,{ok:false,code:"method_not_allowed"},405);
   try{
