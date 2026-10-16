@@ -24,6 +24,7 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
   final Set<String> _checkedFollowUids = {};
   final Set<bool> _primedTabs = {};
   StreamSubscription<User?>? _authSubscription;
+  Timer? _followBadgeExpiry;
   String? _ownerUid;
   int _followGeneration = 0;
   bool _followLoading = false;
@@ -36,6 +37,7 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
       FirebaseAuth.instance.currentUser?.uid == uid;
 
   void _clearFollowState() {
+    _followBadgeExpiry?.cancel();
     _followGeneration++;
     _followLocations.clear();
     _checkedFollowUids.clear();
@@ -72,6 +74,16 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
       setState(() {
         _followLocations.addAll(found);
         _checkedFollowUids.addAll(ids);
+      });
+      _followBadgeExpiry?.cancel();
+      // Expire location indicators locally, without automatic refresh or IO.
+      _followBadgeExpiry = Timer(const Duration(seconds: 35), () {
+        if (_currentAccount(uid, generation)) {
+          setState(() {
+            _followLocations.clear();
+            _checkedFollowUids.clear();
+          });
+        }
       });
     } catch (_) {
       if (_currentAccount(uid, generation)) {
@@ -144,6 +156,7 @@ class _ProfileVisitHistoryScreenState extends State<ProfileVisitHistoryScreen>
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _followBadgeExpiry?.cancel();
     _roomFollowQuery.close();
     _service.close();
     _tabs.dispose();
