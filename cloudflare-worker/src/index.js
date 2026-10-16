@@ -21,6 +21,7 @@ import { profileVisits } from "./profile-visits.js";
 import { mysteriousPerson } from "./mysterious-person.js";
 import { manageMysteriousPerson } from "./manage-mysterious-person.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
+import { privateVoiceMedia } from "./private-voice-media.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
 import { publicMediaRedirect } from "./public-media.js";
@@ -150,6 +151,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/chat-actions") {
     return chatSafetyActions(request, env, ctx);
+  }
+  if (url.pathname === "/api/private-voice-media") {
+    return privateVoiceMedia(request, env);
   }
   if (url.pathname === "/api/storage-health") {
     annotatePressureRequest(request, { action: "storageHealth" });
