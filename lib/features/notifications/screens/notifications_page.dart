@@ -30,6 +30,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool _loading = true;
   Object? _error;
   bool _loadMoreFailed = false;
+  bool _markingAllRead = false;
   StreamSubscription<User?>? _authSubscription;
   String? _pageOwnerUid;
   int _requestEpoch = 0;
@@ -47,6 +48,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       _page = null;
       _error = null;
       _loadMoreFailed = false;
+      _markingAllRead = false;
       _reload();
     });
     _reload();
@@ -129,6 +131,44 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _loadMoreFailed = true;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    if (_markingAllRead || _loading) return;
+    final uid = _pageOwnerUid;
+    if (uid == null || FirebaseAuth.instance.currentUser?.uid != uid) return;
+    final epoch = _requestEpoch;
+    setState(() => _markingAllRead = true);
+    try {
+      final result = await _service.markAllRead();
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid ||
+          epoch != _requestEpoch) return;
+      // Read badges and loaded cards must follow Firestore confirmation, not
+      // optimistic UI state. This refresh also repairs partial server writes.
+      await _reload();
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result.complete
+            ? 'تم تعليم الإشعارات السابقة كمقروءة.'
+            : 'تم تعليم ${result.marked} إشعار كمقروء. بعض الإشعارات ما زالت بحاجة لإعادة المحاولة.'),
+      ));
+    } catch (_) {
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid) return;
+      await _reload();
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('تعذر إكمال تعليم الكل كمقروء. تحقق من الاتصال وحاول مجددًا.'),
+      ));
+    } finally {
+      if (mounted && _pageOwnerUid == uid &&
+          FirebaseAuth.instance.currentUser?.uid == uid) {
+        setState(() => _markingAllRead = false);
+      }
     }
   }
 
@@ -841,6 +881,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
           appBar: AppBar(
             backgroundColor: const Color(0xFF11182A),
             title: const Text('الإشعارات'),
+            actions: [
+              TextButton.icon(
+                onPressed: _loading || _markingAllRead || _items.isEmpty
+                    ? null
+                    : _markAllRead,
+                icon: _markingAllRead
+                    ? const SizedBox.square(
+                        dimension: 15,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.done_all_rounded),
+                label: const Text('تعليم الكل كمقروء'),
+              ),
+            ],
           ),
           body: Builder(
             builder: (context) {
