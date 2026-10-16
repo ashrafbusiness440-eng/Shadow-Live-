@@ -29,6 +29,7 @@ class _VerifiedRoomPeopleStripState extends State<VerifiedRoomPeopleStrip> {
   final List<DiscoveryPerson> _people = <DiscoveryPerson>[];
   final Map<String, RoomFollowLocation> _verified = {};
   Timer? _expiry;
+  StreamSubscription<User?>? _authSubscription;
   int _generation = 0;
   bool _loading = false;
   bool _failed = false;
@@ -42,6 +43,16 @@ class _VerifiedRoomPeopleStripState extends State<VerifiedRoomPeopleStrip> {
   @override
   void initState() {
     super.initState();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted || user?.uid == widget.ownerUid) return;
+      ++_generation;
+      _expiry?.cancel();
+      setState(() {
+        _people.clear();
+        _verified.clear();
+        _loading = false;
+      });
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -161,7 +172,8 @@ class _VerifiedRoomPeopleStripState extends State<VerifiedRoomPeopleStrip> {
   }
 
   void _showActions(DiscoveryPerson person) {
-    if (!_verified.containsKey(person.id)) return;
+    if (FirebaseAuth.instance.currentUser?.uid != widget.ownerUid ||
+        !_verified.containsKey(person.id)) return;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF17162B),
@@ -199,6 +211,7 @@ class _VerifiedRoomPeopleStripState extends State<VerifiedRoomPeopleStrip> {
   void dispose() {
     ++_generation;
     _expiry?.cancel();
+    _authSubscription?.cancel();
     _roomQuery.close();
     _discovery.close();
     super.dispose();
@@ -206,6 +219,9 @@ class _VerifiedRoomPeopleStripState extends State<VerifiedRoomPeopleStrip> {
 
   @override
   Widget build(BuildContext context) {
+    if (FirebaseAuth.instance.currentUser?.uid != widget.ownerUid) {
+      return const SizedBox.shrink();
+    }
     final entries = _people.where((p) => _verified.containsKey(p.id)).toList();
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 8),
