@@ -81,6 +81,15 @@ async function finishInTransaction(db, tx, call, status, nowMs) {
   }[status] || "مكالمة خاصة";
   const releases = await releaseSlots(db, tx, call);
   const messageId = "call_" + call.callId;
+  const missedNotification = status === "missed" ? [
+    db.writeCreate("notifications/private_call_missed_" + call.callId, {
+      userId: call.calleeUid, type: "private_call_missed",
+      callId: call.callId, conversationId: call.conversationId,
+      senderId: call.callerUid, title: "مكالمة فائتة",
+      body: "لم يتم الرد على المكالمة الصوتية.",
+      read: false, createdAt: endedAt,
+    }),
+  ] : [];
   await db.commit(tx, [
     db.writeUpdate(callPath(call.callId), {
       status, endedAt, endedAtMs: nowMs, durationSeconds,
@@ -95,6 +104,7 @@ async function finishInTransaction(db, tx, call, status, nowMs) {
       lastSenderId: call.callerUid, updatedAt: endedAt,
     }, ["lastMessage", "lastMessageId", "lastSenderId", "updatedAt"]),
     db.writeDelete("private_call_ringing_queue/" + call.callId),
+    ...missedNotification,
     ...releases,
   ]);
   return { ok: true, callId: call.callId, status, durationSeconds };
@@ -123,12 +133,19 @@ export async function startPrivateCall(db, actorUid, body, nowMs = Date.now()) {
     await requireMutualPrivateVoice(db, {
       actorUid, otherUid, conversationId, kind: "call", transaction: tx,
     });
-    const [callerSlot, calleeSlot] = await Promise.all([
+    const ratePath = "private_call_rates/" + actorUid;
+    const [callerSlot, calleeSlot, previousRate] = await Promise.all([
       db.get(slotPath(actorUid), tx), db.get(slotPath(otherUid), tx),
+      db.get(ratePath, tx),
     ]);
     if (currentSlot(callerSlot, nowMs) || currentSlot(calleeSlot, nowMs)) {
       throw new PrivateCallError("call_busy", 409);
     }
+    const windowStartedAtMs = Number(previousRate.data?.windowStartedAtMs || 0);
+    const inWindow = windowStartedAtMs > 0 &&
+      nowMs >= windowStartedAtMs && nowMs - windowStartedAtMs < 60_000;
+    const count = inWindow ? Math.max(0, Number(previousRate.data?.count || 0)) : 0;
+    if (count >= 4) throw new PrivateCallError("call_rate_limited", 429);
     const callId = crypto.randomUUID().replaceAll("-", "");
     const deadlineMs = nowMs + PRIVATE_VOICE_RING_MS;
     const call = {
@@ -137,6 +154,10 @@ export async function startPrivateCall(db, actorUid, body, nowMs = Date.now()) {
       ringDeadlineMs: deadlineMs,
     };
     await db.commit(tx, [
+      db.writeUpdate(ratePath, {
+        windowStartedAtMs: inWindow ? windowStartedAtMs : nowMs,
+        count: count + 1, updatedAt: new Date(nowMs),
+      }),
       db.writeCreate(callPath(callId), call),
       db.writeCreate("private_call_ringing_queue/" + callId, {
         callId, callerUid: actorUid, expiresAt: new Date(deadlineMs),
@@ -324,6 +345,11 @@ export async function readPrivateCall(db, actorUid, body, nowMs = Date.now()) {
 }
 
 export async function privateCallSignaling(request, env) {
+  // Deployment-readiness gate stays OFF until ZEGO token transport, room
+  // handoff and Android acceptance work have been released together.
+  if (env?.PRIVATE_CALL_MEDIA_READY !== "true") {
+    return json(request, env, { ok: false, code: "private_calls_not_ready" }, 503);
+  }
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
