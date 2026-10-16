@@ -188,6 +188,80 @@ class NotificationService {
       'read': true,
     });
   }
+
+  /// A single explicit tap marks unread notifications for this account,
+  /// including ones not yet displayed by the paginated screen. No listeners,
+  /// collection scans, or background polling. Each committed batch contains
+  /// at most 100 writes, with a strict cap of 30 batches per tap.
+  ///
+  /// New notifications created after the tap are kept unread. The time
+  /// boundary uses the local Firestore timestamp; unusual device clock skew
+  /// must be verified during Android acceptance tests.
+  Future<MarkAllNotificationsResult> markAllRead() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) throw StateError('auth_required');
+    final cutoff = Timestamp.now();
+    var marked = 0;
+    const batchSize = 100;
+    const maxBatches = 30;
+    for (var i = 0; i < maxBatches; i++) {
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      // The existing (userId, read=false) query already supports the chat
+      // unread badge. Do not require a new composite/order index.
+      final snapshot = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .where('read', isEqualTo: false)
+          .limit(batchSize)
+          .get();
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      if (snapshot.docs.isEmpty) {
+        return MarkAllNotificationsResult(marked: marked, complete: true);
+      }
+      final eligible = snapshot.docs.where((doc) =>
+          notificationEligibleForBulkRead(doc.data(), cutoff)).toList();
+      if (eligible.isEmpty) {
+        // Only new notifications were visible in this bounded snapshot.
+        // Do not pretend older, unobserved documents were acknowledged.
+        return MarkAllNotificationsResult(marked: marked, complete: false);
+      }
+      final batch = _firestore.batch();
+      for (final doc in eligible) {
+        batch.update(doc.reference, {'read': true});
+      }
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      await batch.commit();
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      marked += eligible.length;
+      if (snapshot.docs.length < batchSize) {
+        return MarkAllNotificationsResult(
+          marked: marked,
+          complete: eligible.length == snapshot.docs.length,
+        );
+      }
+    }
+    return MarkAllNotificationsResult(marked: marked, complete: false);
+  }
+}
+
+class MarkAllNotificationsResult {
+  const MarkAllNotificationsResult({required this.marked, required this.complete});
+  final int marked;
+  final bool complete;
+}
+
+/// Preserve new items arriving after mark-all begins, even if the user
+/// receives them while older notification pages are still being updated.
+bool notificationEligibleForBulkRead(
+    Map<String, dynamic> data, Timestamp cutoff) {
+  if (data['read'] == true) return false;
+  final raw = data['createdAt'];
+  if (raw is Timestamp) return raw.compareTo(cutoff) <= 0;
+  if (raw is DateTime) {
+    return raw.millisecondsSinceEpoch <= cutoff.millisecondsSinceEpoch;
+  }
+  // Historical notification documents may lack createdAt entirely.
+  return true;
 }
 
 class NotificationPage {
