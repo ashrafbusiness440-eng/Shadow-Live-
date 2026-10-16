@@ -25,6 +25,8 @@ void main() {
     expect(source.contains("'عرض حالة الغرف لباقي الزوار'"), isTrue);
     expect(source.contains("'تعذر التحقق — إعادة المحاولة'"), isTrue);
     expect(source.contains('Timer.periodic('), isFalse);
+    expect(source.contains('Timer(const Duration(seconds: 35)'), isTrue);
+    expect(source.contains('_followBadgeExpiry?.cancel()'), isTrue);
     expect(source.contains('watch('), isFalse);
     expect(source.contains('.snapshots()'), isFalse);
   });
