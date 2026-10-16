@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +14,8 @@ import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/services/report_screenshot_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
+import '../../room/services/room_realtime_query_service.dart';
+import '../../room/widgets/discovery_room_password_dialog.dart';
 import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
@@ -49,6 +52,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final _storage = UserStorageService();
   final Map<String, Future<UserStorageObject>> _chatImageLoads = {};
   final _safety = ChatSafetyService();
+  final RoomRealtimeQueryService _followQuery = RoomRealtimeQueryService();
+  RoomFollowLocation? _followLocation;
+  Timer? _followBadgeExpiry;
+  bool _followNavigationBusy = false;
   bool _sending = false;
   bool _changingBlock = false;
   bool _loadingSafety = true;
@@ -98,6 +105,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     if (FirebaseAuth.instance.currentUser?.isAnonymous ?? true) return;
     _markRead();
     _loadSafetyStatus();
+    _refreshFollowIndicator();
   }
 
   Future<void> _loadSafetyStatus() async {
@@ -1200,8 +1208,116 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     );
   }
 
-  @override void dispose(){_storage.close();_chatImageLoads.clear();_controller.dispose();super.dispose();}
+  @override
+  void dispose() {
+    _followBadgeExpiry?.cancel();
+    _followQuery.close();
+    _storage.close();
+    _chatImageLoads.clear();
+    _controller.dispose();
+    super.dispose();
+  }
   String _time(dynamic value){if(value is! Timestamp)return '';final d=value.toDate();final hour=d.hour%12==0?12:d.hour%12;final minute=d.minute.toString().padLeft(2,'0');return '$hour:$minute ${d.hour>=12?'م':'ص'}';}
+
+  // One bounded server lookup on opening the chat. Never infer room presence
+  // from public_profiles.isOnline or from a user's personal room.
+  Future<void> _refreshFollowIndicator() async {
+    final ownerUid = _openedByUid;
+    if (!_isActiveChatAccount(ownerUid)) return;
+    try {
+      final results = await _followQuery.resolveRoomFollows(
+        <String>[widget.otherUid],
+      );
+      if (!_isActiveChatAccount(ownerUid)) return;
+      final found = results[widget.otherUid];
+      _followBadgeExpiry?.cancel();
+      if (mounted) setState(() => _followLocation = found);
+      if (found != null) {
+        // A one-shot local expiry prevents a stale "in a room" indicator.
+        // No timer-driven network queries or extra listeners are started.
+        _followBadgeExpiry = Timer(const Duration(seconds: 35), () {
+          if (_isActiveChatAccount(ownerUid)) {
+            setState(() => _followLocation = null);
+          }
+        });
+      }
+    } catch (_) {
+      if (_isActiveChatAccount(ownerUid)) {
+        setState(() => _followLocation = null);
+      }
+    }
+  }
+
+  Future<void> _followToRoom() async {
+    final ownerUid = _openedByUid;
+    if (_followNavigationBusy || !_isActiveChatAccount(ownerUid)) return;
+    setState(() => _followNavigationBusy = true);
+    try {
+      final current = await _followQuery.resolveRoomFollows(
+        <String>[widget.otherUid],
+      );
+      if (!_isActiveChatAccount(ownerUid)) return;
+      final target = current[widget.otherUid];
+      if (target == null) {
+        _followBadgeExpiry?.cancel();
+        setState(() => _followLocation = null);
+        _snack('الشخص لم يعد في غرفة يمكن التتبّع إليها.');
+        return;
+      }
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('rooms')
+          .doc(target.roomId)
+          .get();
+      if (!_isActiveChatAccount(ownerUid)) return;
+      final roomData = snapshot.data();
+      if (!snapshot.exists || roomData == null ||
+          roomData['isActive'] == false ||
+          roomData['isHidden'] == true ||
+          roomData['visibility'] == 'hidden') {
+        _snack('هذه الغرفة لم تعد متاحة.');
+        return;
+      }
+
+      final roomArgs = <String, dynamic>{
+        ...roomData,
+        'roomId': target.roomId,
+      };
+      final roomOwner = (roomData['ownerUid'] ??
+          roomData['ownerId'] ?? roomData['hostId'] ?? '').toString();
+      if (target.requiresPassword && roomOwner != ownerUid) {
+        final password = await showDiscoveryRoomPasswordPrompt(
+          context,
+          target.roomName,
+        );
+        if (!_isActiveChatAccount(ownerUid) || password == null) return;
+        roomArgs['roomPassword'] = password;
+      }
+      // Revalidate after the Firestore read/password dialog. The locator
+      // cannot be trusted once the person leaves or changes room.
+      final checked = await _followQuery.resolveRoomFollows(
+        <String>[widget.otherUid],
+      );
+      if (!_isActiveChatAccount(ownerUid)) return;
+      if (checked[widget.otherUid]?.roomId != target.roomId) {
+        _followBadgeExpiry?.cancel();
+        setState(() => _followLocation = null);
+        _snack('الشخص غادر الغرفة. حاول مرة ثانية.');
+        return;
+      }
+      Navigator.of(context).pushNamed(
+        AppRoutes.voiceChatRoom,
+        arguments: roomArgs,
+      );
+    } catch (_) {
+      if (_isActiveChatAccount(ownerUid)) {
+        _snack('تعذر التتبّع إلى الغرفة حالياً. حاول مجدداً.');
+      }
+    } finally {
+      if (mounted) setState(() => _followNavigationBusy = false);
+    }
+  }
+
   void _openProfile()=>showQuickProfileSheet(context,userId:widget.otherUid);
 
   Widget _composer() => SafeArea(
@@ -1376,18 +1492,45 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: VipCosmeticPolicy.nameColor(
-                                  currentVip,
-                                  mine: false,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: VipCosmeticPolicy.nameColor(
+                                      currentVip,
+                                      mine: false,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                if (_followLocation != null)
+                                  InkWell(
+                                    key: const Key('chat-follow-to-room'),
+                                    onTap: _followNavigationBusy
+                                        ? null : _followToRoom,
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.graphic_eq_rounded,
+                                          size: 13,
+                                          color: Color(0xFFFFD54A)),
+                                        SizedBox(width: 4),
+                                        Text('في غرفة',
+                                          style: TextStyle(
+                                            color: Color(0xFFFFD54A),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          )),
+                                      ],
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ],
