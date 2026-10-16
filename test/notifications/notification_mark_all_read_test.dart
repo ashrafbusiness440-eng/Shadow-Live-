@@ -51,6 +51,6 @@ void main() {
     expect(source, contains('final result = await _service.markAllRead();'));
     expect(source, contains('await _reload();'));
     expect(source, contains('_markingAllRead = false;'));
-    expect(source, contains('some nonexistent per-item listener'), isFalse);
+    expect(source.contains('some nonexistent per-item listener'), isFalse);
   });
 }
