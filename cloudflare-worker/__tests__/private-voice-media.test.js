@@ -23,9 +23,11 @@ function fixture(objectData, settings={voiceNotesEnabled:true}) {
     async get(path){return {exists:docs.has(path),data:docs.get(path)||{}};},
     writeCreate(path,data){return {op:"create",path,data};},
     writeUpdate(path,data){return {op:"update",path,data};},
+    writeDelete(path){return {op:"delete",path};},
     async commit(tx,changes){for(const w of changes){
       if(w.op==="create")docs.set(w.path,w.data);
       else if(w.op==="update")docs.set(w.path,{...(docs.get(w.path)||{}),...w.data});
+      else if(w.op==="delete")docs.delete(w.path);
       writes.push(w);
     }},
   };
