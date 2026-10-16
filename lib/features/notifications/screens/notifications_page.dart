@@ -101,7 +101,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _loadMore() async {
     final page = _page;
     final requestUid = _pageOwnerUid;
-    if (_loading || page?.cursor == null || page?.hasMore != true ||
+    if (_loading || page?.hasMore != true ||
         requestUid != FirebaseAuth.instance.currentUser?.uid) return;
     final epoch = ++_requestEpoch;
     setState(() {
@@ -110,13 +110,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
       _loadMoreFailed = false;
     });
     try {
-      final next = await _service.load(after: page!.cursor);
+      final next = await _service.load(after: page);
       if (!mounted || epoch != _requestEpoch ||
           requestUid != FirebaseAuth.instance.currentUser?.uid) return;
       setState(() {
-        _items.addAll(next.items);
-        _items.sort((a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0)
-            .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
+        // Preserve Firestore's stable newest-first order. Old undated
+        // notifications are added only after the dated feed is exhausted.
+        final known = _items.map((item) => item.id).toSet();
+        _items.addAll(next.items.where((item) => known.add(item.id)));
         _page = next;
         _loading = false;
       });
@@ -864,8 +865,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       SizedBox(height: 120),
                       ShadowReadState(
                         icon: Icons.notifications_none_rounded,
-                        message: 'لا توجد إشعارات حاليًا',
+                        message: _page?.hasMore == true
+                            ? 'قد توجد إشعارات أقدم بدون تاريخ محفوظ.'
+                            : 'لا توجد إشعارات حاليًا',
                       ),
+                      if (_page?.hasMore == true)
+                        Center(
+                          child: OutlinedButton.icon(
+                            onPressed: _loading ? null : _loadMore,
+                            icon: const Icon(Icons.expand_more_rounded),
+                            label: const Text('تحميل الإشعارات الأقدم'),
+                          ),
+                        ),
                     ],
                   ),
                 );
