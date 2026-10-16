@@ -56,7 +56,7 @@ void main() {
     ).readAsStringSync();
     // Initial stream callbacks are allowed to arrive before loginRoom ends.
     // Playback must queue there rather than attempt a premature SDK call.
-    expect(source, contains('if (_joined) {\\n            unawaited(_startRemoteAudio'));
+    expect(source, contains('unawaited(_startRemoteAudio(roomID, stream.streamID));'));
     expect(source, contains('unawaited(_resumeRemoteAudio(roomId));'));
     expect(source, contains('await _resumeRemoteAudio(_roomId!);'));
     final loginSuccess = source.indexOf('_joined = true;');
