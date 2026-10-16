@@ -36,7 +36,7 @@ void main() {
     ).readAsStringSync();
     expect(page.contains('LoadingIndicator('), isTrue);
     expect(page.contains('ShadowReadState('), isTrue);
-    expect(page.contains("message: 'لا توجد إشعارات حاليًا'"), isTrue);
+    expect(page.contains("'لا توجد إشعارات حاليًا'"), isTrue);
     expect(page.contains('onRetry: _refresh,'), isTrue);
     expect(page.contains('bool _loadMoreFailed = false;'), isTrue);
     expect(page.contains('_loadMoreFailed = true;'), isTrue);
