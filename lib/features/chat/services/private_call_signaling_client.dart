@@ -71,7 +71,10 @@ class PrivateCallSignalingClient {
     String? baseUrl,
   }) : _client = client ?? http.Client(),
        _idTokenProvider = idTokenProvider ??
-           (() async => FirebaseAuth.instance.currentUser?.getIdToken()),
+           (() async {
+             final user = FirebaseAuth.instance.currentUser;
+             return user == null ? null : await user.getIdToken();
+           }),
        _currentUid =
            currentUid ?? (() => FirebaseAuth.instance.currentUser?.uid),
        _isAnonymous =
