@@ -23,6 +23,7 @@ import '../../profile/widgets/quick_profile_sheet.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/chat_safety_service.dart';
 import '../services/animated_emoji_catalog.dart';
+import '../widgets/private_voice_note_controls.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
 import '../../vip/widgets/vip_cosmetic_asset.dart';
 import '../../vip/utils/vip_public_state.dart';
@@ -66,6 +67,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   );
   bool _markingRead = false;
   bool _sendingImage = false;
+  bool _voiceNotesEnabled = false;
   bool _messageActionBusy = false;
   final Set<String> _locallyHiddenMessageIds = <String>{};
   final Set<String> _locallyDeletedMessageIds = <String>{};
@@ -106,6 +108,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     _markRead();
     _loadSafetyStatus();
     _refreshFollowIndicator();
+    _loadVoiceNotesFlag();
   }
 
   Future<void> _loadSafetyStatus() async {
@@ -446,6 +449,24 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         );
       },
     );
+  }
+
+  Future<void> _loadVoiceNotesFlag() async {
+    final ownerUid = _openedByUid;
+    if (!_isActiveChatAccount(ownerUid)) return;
+    try {
+      final setting = await FirebaseFirestore.instance
+          .collection('system_config').doc('messaging').get();
+      if (_isActiveChatAccount(ownerUid)) {
+        setState(() => _voiceNotesEnabled =
+            setting.data()?['voiceNotesEnabled'] == true);
+      }
+    } catch (_) {
+      // Fail closed. The server must explicitly enable private voice notes.
+      if (_isActiveChatAccount(ownerUid)) {
+        setState(() => _voiceNotesEnabled = false);
+      }
+    }
   }
 
   Future<void> _sendImage() async {
@@ -946,6 +967,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               style: TextStyle(color: Colors.white70)),
         ],
       );
+    } else if (type == 'voice_note') {
+      final objectId = (data['storageObjectId'] ?? '').toString().trim();
+      final duration = ((data['durationSeconds'] as num?)?.toInt() ?? 0);
+      content = objectId.isEmpty
+          ? const Text('الرسالة الصوتية غير متاحة',
+              style: TextStyle(color: Colors.white70))
+          : PrivateVoicePlaybackTile(
+              key: ValueKey('voice-note-${doc.id}'),
+              objectId: objectId,
+              accountUid: _openedByUid ?? '',
+              durationSeconds: duration,
+            );
     } else if (type == 'image') {
       final objectId = (data['storageObjectId'] ?? '').toString().trim();
       final reviewStatus = (data['moderationStatus'] ?? '').toString().trim();
@@ -1644,7 +1677,24 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 else if (_safetyStatus.blocked)
                   _blockedComposer()
                 else
-                  _composer(),
+                  Column(mainAxisSize: MainAxisSize.min, children: [
+                    if (_voiceNotesEnabled)
+                      Container(
+                        width: double.infinity,
+                        color: const Color(0xFF0B0D16),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: PrivateVoiceNoteControls(
+                            key: ValueKey('voice-controls-${widget.conversationId}-${_openedByUid ?? ''}'),
+                            conversationId: widget.conversationId,
+                            otherUid: widget.otherUid,
+                            accountUid: _openedByUid ?? '',
+                            onFeedback: _snack,
+                          ),
+                        ),
+                      ),
+                    _composer(),
+                  ]),
               ],
             ),
           ),
