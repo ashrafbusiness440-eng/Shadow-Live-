@@ -50,6 +50,8 @@ jobs:
         run: node --test server/__tests__/report-duplicate-window.test.js
       - name: Test private-chat message visibility and five-minute deletion policy
         run: node --test server/__tests__/chat-message-visibility.test.js
+      - name: Test production R2 chat verification matches atomic image rules
+        run: node --test server/__tests__/production-r2-chat-smoke-source.test.js
       - name: Test shared room-follow lookup and no-presence leakage
         run: node --test server/__tests__/room-follow-lookup.test.js
       - name: Set up Java for Firestore emulator

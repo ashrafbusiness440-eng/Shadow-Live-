@@ -665,29 +665,75 @@ jobs:
             }
 
             chatMessageId = "r2_" + stamp;
+            // The real Flutter client commits a new image message AND its
+            // conversation preview in one atomic batch. A standalone PATCH
+            // must be rejected by the hardened Firestore rules.
+            const projectDocuments =
+              "projects/" + serviceAccount.project_id +
+              "/databases/(default)/documents";
             const messageResponse = await fetch(
-              "https://firestore.googleapis.com/v1/projects/" +
-                encodeURIComponent(serviceAccount.project_id) +
-                "/databases/(default)/documents/conversations/" +
-                encodeURIComponent(conversationId) +
-                "/messages/" +
-                encodeURIComponent(chatMessageId),
+              "https://firestore.googleapis.com/v1/" +
+                projectDocuments + ":commit",
               {
-                method: "PATCH",
+                method: "POST",
                 headers: {
                   authorization: "Bearer " + tokenA,
                   "content-type": "application/json",
                 },
                 body: JSON.stringify({
-                  fields: {
-                    senderId: { stringValue: uidA },
-                    receiverId: { stringValue: uidB },
-                    type: { stringValue: "image" },
-                    storageObjectId: { stringValue: chatObjectId },
-                    mimeType: { stringValue: "image/png" },
-                    sizeBytes: { integerValue: String(payload.length) },
-                    createdAt: { timestampValue: new Date().toISOString() },
-                  },
+                  writes: [
+                    {
+                      update: {
+                        name: projectDocuments +
+                          "/conversations/" + conversationId,
+                        fields: {
+                          lastMessage: { stringValue: "📷 صورة" },
+                          lastSenderId: { stringValue: uidA },
+                          lastMessageId: { stringValue: chatMessageId },
+                          unreadCounts: {
+                            mapValue: {
+                              fields: {
+                                [uidA]: { integerValue: "0" },
+                                [uidB]: { integerValue: "1" },
+                              },
+                            },
+                          },
+                        },
+                      },
+                      updateMask: {
+                        fieldPaths: [
+                          "lastMessage",
+                          "lastSenderId",
+                          "lastMessageId",
+                          "unreadCounts",
+                        ],
+                      },
+                      updateTransforms: [{
+                        fieldPath: "updatedAt",
+                        setToServerValue: "REQUEST_TIME",
+                      }],
+                    },
+                    {
+                      update: {
+                        name: projectDocuments +
+                          "/conversations/" + conversationId +
+                          "/messages/" + chatMessageId,
+                        fields: {
+                          senderId: { stringValue: uidA },
+                          receiverId: { stringValue: uidB },
+                          type: { stringValue: "image" },
+                          storageObjectId: { stringValue: chatObjectId },
+                          mimeType: { stringValue: "image/png" },
+                          sizeBytes: { integerValue: String(payload.length) },
+                        },
+                      },
+                      currentDocument: { exists: false },
+                      updateTransforms: [{
+                        fieldPath: "createdAt",
+                        setToServerValue: "REQUEST_TIME",
+                      }],
+                    },
+                  ],
                 }),
               },
             );
