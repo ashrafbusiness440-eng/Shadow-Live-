@@ -130,8 +130,8 @@ void main() {
         return http.Response('{}', 200);
       }),
     );
-    await expectLater(
-      client.start(actorUid: 'alice', otherUid: 'bob',
+    expect(
+      () => client.start(actorUid: 'alice', otherUid: 'bob',
           conversationId: 'conv1', idempotencyKey: 'short'),
       throwsA(isA<PrivateCallSignalingException>()),
     );
