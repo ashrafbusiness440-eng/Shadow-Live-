@@ -883,7 +883,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             title: const Text('الإشعارات'),
             actions: [
               TextButton.icon(
-                onPressed: _loading || _markingAllRead || _items.isEmpty
+                onPressed: _loading || _markingAllRead
                     ? null
                     : _markAllRead,
                 icon: _markingAllRead
