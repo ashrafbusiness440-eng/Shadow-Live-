@@ -16,6 +16,15 @@ class PrivateVoiceUploadError implements Exception {
 class PrivateVoiceMediaClient {
   PrivateVoiceMediaClient({http.Client? client}) : _client = client ?? http.Client();
   final http.Client _client;
+  // Preserve the same uploaded object and operation key across network retries.
+  // If the send was committed but its reply was lost, retrying must never
+  // create a second message or another billable upload.
+  String? _pendingKey;
+  String? _pendingObjectId;
+  Uri? _pendingUploadUrl;
+  Map<String, String>? _pendingHeaders;
+  int _pendingExpiryMs = 0;
+  bool _pendingConfirmed = false;
   static const String _base = String.fromEnvironment(
     'SHADOW_CLOUDFLARE_API_BASE_URL',
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
@@ -54,37 +63,82 @@ class PrivateVoiceMediaClient {
         !RegExp(r'^[A-Za-z0-9_-]{12,220}$').hasMatch(idempotencyKey)) {
       throw const PrivateVoiceUploadError('invalid_voice_request');
     }
-    final prepare = await _post(senderUid, {
-      'action':'prepareUpload', 'otherUid':otherUid,
-      'conversationId':conversationId, 'mimeType':'audio/wav',
-      'byteLength':draft.bytes.length,
-      'durationSeconds':draft.durationSeconds,
-    });
-    final objectId = (prepare['objectId'] ?? '').toString();
-    final uri = Uri.tryParse((prepare['uploadUrl'] ?? '').toString());
-    if (objectId.isEmpty || uri == null || uri.scheme != 'https') {
-      throw const PrivateVoiceUploadError('invalid_upload_ticket');
-    }
     if (FirebaseAuth.instance.currentUser?.uid != senderUid) {
       throw const PrivateVoiceUploadError('account_changed');
     }
-    final headers = Map<String,String>.from(
-      (prepare['requiredHeaders'] as Map?)?.map((k,v)=>MapEntry('$k','$v')) ?? {},
-    );
-    final upload = await _client.put(uri, headers:headers, body:draft.bytes)
-        .timeout(const Duration(seconds: 30));
-    if (upload.statusCode < 200 || upload.statusCode >= 300) {
-      throw const PrivateVoiceUploadError('voice_upload_failed');
+    if (_pendingKey != idempotencyKey) {
+      _pendingKey = idempotencyKey;
+      _pendingObjectId = null;
+      _pendingUploadUrl = null;
+      _pendingHeaders = null;
+      _pendingExpiryMs = 0;
+      _pendingConfirmed = false;
     }
-    await _post(senderUid, {'action':'confirmUpload','objectId':objectId});
+    // An expired *unconfirmed* upload may be prepared again. Once confirmed,
+    // the same object must be reused for every send retry.
+    if (!_pendingConfirmed &&
+        _pendingObjectId != null &&
+        DateTime.now().millisecondsSinceEpoch + 5000 >= _pendingExpiryMs) {
+      _pendingObjectId = null;
+      _pendingUploadUrl = null;
+      _pendingHeaders = null;
+    }
+    if (_pendingObjectId == null) {
+      final prepare = await _post(senderUid, {
+        'action': 'prepareUpload', 'otherUid': otherUid,
+        'conversationId': conversationId, 'mimeType': 'audio/wav',
+        'byteLength': draft.bytes.length,
+        'durationSeconds': draft.durationSeconds,
+      });
+      final objectId = (prepare['objectId'] ?? '').toString();
+      final uri = Uri.tryParse((prepare['uploadUrl'] ?? '').toString());
+      final expires = (prepare['expiresAtMs'] as num?)?.toInt() ?? 0;
+      if (objectId.isEmpty || uri == null || uri.scheme != 'https' ||
+          expires <= DateTime.now().millisecondsSinceEpoch + 5000) {
+        throw const PrivateVoiceUploadError('invalid_upload_ticket');
+      }
+      _pendingObjectId = objectId;
+      _pendingUploadUrl = uri;
+      _pendingExpiryMs = expires;
+      _pendingHeaders = Map<String, String>.from(
+        (prepare['requiredHeaders'] as Map?)?.map(
+          (k, v) => MapEntry('$k', '$v'),
+        ) ?? {},
+      );
+    }
+    final objectId = _pendingObjectId!;
+    if (!_pendingConfirmed) {
+      if (FirebaseAuth.instance.currentUser?.uid != senderUid) {
+        throw const PrivateVoiceUploadError('account_changed');
+      }
+      final upload = await _client.put(
+        _pendingUploadUrl!, headers: _pendingHeaders!, body: draft.bytes,
+      ).timeout(const Duration(seconds: 30));
+      if (upload.statusCode < 200 || upload.statusCode >= 300) {
+        throw const PrivateVoiceUploadError('voice_upload_failed');
+      }
+      await _post(senderUid, {'action': 'confirmUpload', 'objectId': objectId});
+      _pendingConfirmed = true;
+    }
     if (FirebaseAuth.instance.currentUser?.uid != senderUid) {
       throw const PrivateVoiceUploadError('account_changed');
     }
     final sent = await _post(senderUid, {
-      'action':'send','conversationId':conversationId,'otherUid':otherUid,
-      'objectId':objectId,'idempotencyKey':idempotencyKey,
+      'action': 'send', 'conversationId': conversationId,
+      'otherUid': otherUid, 'objectId': objectId,
+      'idempotencyKey': idempotencyKey,
     });
-    return (sent['messageId'] ?? '').toString();
+    final messageId = (sent['messageId'] ?? '').toString();
+    if (messageId.isEmpty) {
+      throw const PrivateVoiceUploadError('missing_voice_message_id');
+    }
+    _pendingKey = null;
+    _pendingObjectId = null;
+    _pendingUploadUrl = null;
+    _pendingHeaders = null;
+    _pendingConfirmed = false;
+    _pendingExpiryMs = 0;
+    return messageId;
   }
 
   Future<Uint8List> read({
