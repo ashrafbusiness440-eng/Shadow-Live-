@@ -22,6 +22,7 @@ import { mysteriousPerson } from "./mysterious-person.js";
 import { manageMysteriousPerson } from "./manage-mysterious-person.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { privateVoiceMedia, runPrivateVoiceDraftCleanup } from "./private-voice-media.js";
+import { privateCallSignaling, runPrivateCallTimeoutCleanup } from "./private-call-signaling.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
 import { publicMediaRedirect } from "./public-media.js";
@@ -154,6 +155,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/private-voice-media") {
     return privateVoiceMedia(request, env);
+  }
+  if (url.pathname === "/api/private-call-signaling") {
+    return privateCallSignaling(request, env);
   }
   if (url.pathname === "/api/storage-health") {
     annotatePressureRequest(request, { action: "storageHealth" });
@@ -328,6 +332,19 @@ export default {
       }
     } catch (error) {
       console.error("Private voice cleanup failed", String(error?.message || error));
+    }
+
+    // Call routing remains disabled by default. Skip even the one bounded
+    // Firestore cron query until the private media rollout is ready.
+    if (env.PRIVATE_CALL_MEDIA_READY === "true") {
+      try {
+        const calls = await runPrivateCallTimeoutCleanup(env, Date.now());
+        if (calls.checked || calls.failed) {
+          console.log("Private call ring cleanup", JSON.stringify(calls));
+        }
+      } catch (error) {
+        console.error("Private call ring cleanup failed", String(error?.message || error));
+      }
     }
 
     // U6: reuse existing 5-minute cron only at the hourly boundary.
