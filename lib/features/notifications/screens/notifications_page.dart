@@ -861,8 +861,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 return RefreshIndicator(
                   onRefresh: _refresh,
                   child: ListView(
-                    children: const [
-                      SizedBox(height: 120),
+                    children: [
+                      const SizedBox(height: 120),
                       ShadowReadState(
                         icon: Icons.notifications_none_rounded,
                         message: _page?.hasMore == true
