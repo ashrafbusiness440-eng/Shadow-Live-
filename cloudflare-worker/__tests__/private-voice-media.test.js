@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateVoiceUpload, VoiceMediaError, voiceSend, voiceRead } from "../src/private-voice-media.js";
+import { validateVoiceUpload, validateVoiceWavHeader, VoiceMediaError, voiceSend, voiceRead } from "../src/private-voice-media.js";
 test("voice upload rejects overlong or oversized audio and nonaudio files",()=>{
-  const base={conversationId:"c1",otherUid:"u2",mimeType:"audio/webm",byteLength:35000,durationSeconds:60};
-  assert.equal(validateVoiceUpload(base).extension,"webm");
-  assert.equal(validateVoiceUpload({...base,mimeType:"audio/mp4"}).extension,"m4a");
+  const base={conversationId:"c1",otherUid:"u2",mimeType:"audio/wav",byteLength:35000,durationSeconds:60};
+  assert.equal(validateVoiceUpload(base).extension,"wav");
+  assert.throws(()=>validateVoiceUpload({...base,mimeType:"audio/mp4"}),VoiceMediaError);
+  assert.throws(()=>validateVoiceUpload({...base,mimeType:"audio/webm"}),VoiceMediaError);
   for(const body of [{...base,durationSeconds:61},{...base,byteLength:4*1024*1024},
     {...base,mimeType:"image/png"},{...base,durationSeconds:0}]){
     assert.throws(()=>validateVoiceUpload(body),VoiceMediaError);
@@ -52,4 +53,21 @@ test("mutual follow revoked before send blocks transaction",async()=>{
 test("recipient cannot read unpublished R2 objects",async()=>{
   const {db}=fixture(data);
   await assert.rejects(voiceRead(db,{},"u2",{objectId:id}),e=>e.code==="voice_message_unavailable");
+});
+
+test("WAV header binds claimed duration to actual 16-kHz mono PCM payload",()=>{
+  const bytes=32044;
+  const h=new Uint8Array(44);
+  const data=new DataView(h.buffer);
+  function label(offset,s){for(let i=0;i<s.length;i++)h[offset+i]=s.charCodeAt(i);}
+  label(0,"RIFF"); data.setUint32(4,bytes-8,true);
+  label(8,"WAVE"); label(12,"fmt "); data.setUint32(16,16,true);
+  data.setUint16(20,1,true); data.setUint16(22,1,true);
+  data.setUint32(24,16000,true); data.setUint32(28,32000,true);
+  data.setUint16(32,2,true); data.setUint16(34,16,true);
+  label(36,"data"); data.setUint32(40,bytes-44,true);
+  assert.equal(validateVoiceWavHeader(h,bytes,1),true);
+  assert.throws(()=>validateVoiceWavHeader(h,bytes,2),VoiceMediaError);
+  data.setUint32(24,8000,true);
+  assert.throws(()=>validateVoiceWavHeader(h,bytes,1),VoiceMediaError);
 });
