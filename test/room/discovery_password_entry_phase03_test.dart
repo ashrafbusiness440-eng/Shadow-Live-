@@ -75,6 +75,11 @@ void main() {
     expect(home.contains('room.isPasswordProtected && !isOwner'), isTrue);
     expect(home.contains('final currentUid = FirebaseAuth.instance.currentUser?.uid;'), isTrue);
     expect(home.contains('NavigationService.navigateTo('), isTrue);
-    expect(home.contains('RoomRealtimeQueryService('), isFalse);
+    // Home uses one shared batch presence lookup for suggested people.
+    // It never fetches presence independently for each card.
+    expect(home.contains('final RoomRealtimeQueryService _roomFollowQuery'), isTrue);
+    expect(home.contains('ids.sublist(offset, end)'), isTrue);
+    expect(home.contains('offset += 8'), isTrue);
+    expect(home.contains('Timer.periodic'), isFalse);
   });
 }
