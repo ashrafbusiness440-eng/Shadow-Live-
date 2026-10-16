@@ -205,9 +205,9 @@ class PrivateCallSignalingClient {
   }) => _forCall(actorUid, callId, 'renew');
 
   Future<PrivateCallState> _forCall(
-    String actorUid, String callId, String action,
-    [Map<String, dynamic> extra = const {}],
-  ) {
+    String actorUid, String callId, String action, [
+    Map<String, dynamic> extra = const {},
+  ]) {
     if (!_callIdPattern.hasMatch(callId)) {
       throw const PrivateCallSignalingException('invalid_call_id');
     }
