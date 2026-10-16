@@ -1,6 +1,7 @@
 import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { issueScopedPrivateCallVoiceToken } from "./voice-session-legacy.js";
 import {
   PRIVATE_VOICE_RING_MS, requireMutualPrivateVoice, validPrivateVoiceParties,
   PrivateVoicePolicyError,
@@ -344,6 +345,44 @@ export async function readPrivateCall(db, actorUid, body, nowMs = Date.now()) {
   };
 }
 
+/// MEDIA TODO (Flutter Stage 4C): Only the live call may request a
+/// short-lived room-scoped ZEGO credential. A ringing or terminal invitation
+/// never grants microphone or speaker access.
+export async function privateCallMediaSession(
+  db, actorUid, body, mint, nowMs = Date.now()
+) {
+  const callId = callIdFrom(body);
+  const record = await db.get(callPath(callId));
+  if (!record.exists) throw new PrivateCallError("call_not_found", 404);
+  const call = record.data;
+  belongsToCall(call, actorUid);
+  if (call.status !== "active") {
+    throw new PrivateCallError("call_not_active", 409);
+  }
+  const [callerSlot, calleeSlot] = await Promise.all([
+    db.get(slotPath(call.callerUid)),
+    db.get(slotPath(call.calleeUid)),
+  ]);
+  if (!currentSlot(callerSlot, nowMs) || !currentSlot(calleeSlot, nowMs) ||
+      callerSlot.data?.callId !== callId ||
+      calleeSlot.data?.callId !== callId) {
+    throw new PrivateCallError("call_no_longer_available", 409);
+  }
+  await requireMutualPrivateVoice(db, {
+    actorUid,
+    otherUid: actorUid === call.callerUid ? call.calleeUid : call.callerUid,
+    conversationId: call.conversationId,
+    kind: "call",
+  });
+  const roomId = "private_call_" + callId;
+  const credentials = await mint(actorUid, roomId);
+  if (!credentials?.token || credentials.roomId !== roomId ||
+      !credentials.userId || !credentials.streamId || !credentials.appId) {
+    throw new PrivateCallError("call_media_unavailable", 503);
+  }
+  return { ok: true, callId, status: "active", ...credentials };
+}
+
 export async function privateCallSignaling(request, env) {
   // Deployment-readiness gate stays OFF until ZEGO token transport, room
   // handoff and Android acceptance work have been released together.
@@ -368,12 +407,19 @@ export async function privateCallSignaling(request, env) {
       : action === "finish" ? await finishPrivateCall(db, uid, body)
       : action === "get" ? await readPrivateCall(db, uid, body)
       : action === "renew" ? await renewPrivateCall(db, uid, body)
+      : action === "mediaSession" ? await privateCallMediaSession(
+          db, uid, body,
+          (actorUid, callRoomId) => issueScopedPrivateCallVoiceToken(
+            env, actorUid, callRoomId,
+          ),
+        )
       : null;
     if (!result) throw new PrivateCallError("invalid_call_action");
     return json(request, env, result, 200);
   } catch (error) {
     const expected = error instanceof PrivateCallError ||
-      error instanceof PrivateVoicePolicyError;
+      error instanceof PrivateVoicePolicyError ||
+      error?.code === "zego_not_configured";
     return json(request, env, {
       ok: false, code: expected ? error.code : "private_call_unavailable",
     }, expected ? error.status : 500);
