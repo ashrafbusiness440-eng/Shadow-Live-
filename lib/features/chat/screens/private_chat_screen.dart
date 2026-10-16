@@ -15,7 +15,7 @@ import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/services/report_screenshot_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../room/services/room_realtime_query_service.dart';
-import '../../room/widgets/discovery_room_password_dialog.dart';
+import '../../room/services/room_follow_navigation.dart';
 import '../../../services/navigation_service.dart';
 import '../../main/screens/main_shell_screen.dart';
 import '../../profile/services/follow_service.dart';
@@ -1253,62 +1253,17 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     if (_followNavigationBusy || !_isActiveChatAccount(ownerUid)) return;
     setState(() => _followNavigationBusy = true);
     try {
-      final current = await _followQuery.resolveRoomFollows(
-        <String>[widget.otherUid],
+      final message = await RoomFollowNavigation.open(
+        context: context,
+        targetUid: widget.otherUid,
+        query: _followQuery,
       );
       if (!_isActiveChatAccount(ownerUid)) return;
-      final target = current[widget.otherUid];
-      if (target == null) {
+      if (message != null) {
         _followBadgeExpiry?.cancel();
         setState(() => _followLocation = null);
-        _snack('الشخص لم يعد في غرفة يمكن التتبّع إليها.');
-        return;
+        _snack(message);
       }
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('rooms')
-          .doc(target.roomId)
-          .get();
-      if (!_isActiveChatAccount(ownerUid)) return;
-      final roomData = snapshot.data();
-      if (!snapshot.exists || roomData == null ||
-          roomData['isActive'] == false ||
-          roomData['isHidden'] == true ||
-          roomData['visibility'] == 'hidden') {
-        _snack('هذه الغرفة لم تعد متاحة.');
-        return;
-      }
-
-      final roomArgs = <String, dynamic>{
-        ...roomData,
-        'roomId': target.roomId,
-      };
-      final roomOwner = (roomData['ownerUid'] ??
-          roomData['ownerId'] ?? roomData['hostId'] ?? '').toString();
-      if (target.requiresPassword && roomOwner != ownerUid) {
-        final password = await showDiscoveryRoomPasswordPrompt(
-          context,
-          target.roomName,
-        );
-        if (!_isActiveChatAccount(ownerUid) || password == null) return;
-        roomArgs['roomPassword'] = password;
-      }
-      // Revalidate after the Firestore read/password dialog. The locator
-      // cannot be trusted once the person leaves or changes room.
-      final checked = await _followQuery.resolveRoomFollows(
-        <String>[widget.otherUid],
-      );
-      if (!_isActiveChatAccount(ownerUid)) return;
-      if (checked[widget.otherUid]?.roomId != target.roomId) {
-        _followBadgeExpiry?.cancel();
-        setState(() => _followLocation = null);
-        _snack('الشخص غادر الغرفة. حاول مرة ثانية.');
-        return;
-      }
-      Navigator.of(context).pushNamed(
-        AppRoutes.voiceChatRoom,
-        arguments: roomArgs,
-      );
     } catch (_) {
       if (_isActiveChatAccount(ownerUid)) {
         _snack('تعذر التتبّع إلى الغرفة حالياً. حاول مجدداً.');
