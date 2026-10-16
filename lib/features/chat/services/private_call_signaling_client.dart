@@ -140,6 +140,20 @@ class PrivateCallSignalingClient {
         (decoded['code'] ?? 'private_call_unavailable').toString(),
       );
     }
+    // A lost start reply returns the same authoritative operation/call ID,
+    // but its current state may now be active or terminal. Read it once,
+    // never fabricate a ringing status or send a second start operation.
+    if (action == 'start' && decoded['code'] == 'duplicate') {
+      final callId = (decoded['callId'] ?? '').toString();
+      if (!_callIdPattern.hasMatch(callId)) {
+        throw const PrivateCallSignalingException('invalid_call_response');
+      }
+      return _send(
+        actorUid: actorUid,
+        action: 'get',
+        body: {'callId': callId},
+      );
+    }
     return PrivateCallState.fromJson(decoded);
   }
 
