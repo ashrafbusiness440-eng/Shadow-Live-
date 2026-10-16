@@ -8,7 +8,7 @@ test("production R2 smoke uses atomic Firestore image message + preview", () => 
   const stageEnd = src.indexOf('const peerRead = await storageCall(', stageStart);
   assert.ok(stageStart > 0 && stageEnd > stageStart);
   const stage = src.slice(stageStart, stageEnd);
-  assert.match(stage, /documents:commit/);
+  assert.match(stage, /projectDocuments\s*\+\s*":commit"/);
   assert.match(stage, /method: "POST"/);
   assert.match(stage, /writes: \[/);
   assert.match(stage, /lastMessageId: \{ stringValue: chatMessageId \}/);
