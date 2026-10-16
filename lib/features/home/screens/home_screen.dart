@@ -1910,6 +1910,7 @@ class HomeCompactPersonCard extends StatelessWidget {
     this.isFollowing,
     this.followBusy = false,
     this.onFollow,
+    this.onRoomFollow,
   });
 
   final DiscoveryPerson person;
@@ -1917,6 +1918,7 @@ class HomeCompactPersonCard extends StatelessWidget {
   final bool? isFollowing;
   final bool followBusy;
   final VoidCallback? onFollow;
+  final VoidCallback? onRoomFollow;
 
   @override
   Widget build(BuildContext context) {
@@ -1985,6 +1987,37 @@ class HomeCompactPersonCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (onRoomFollow != null)
+                      PositionedDirectional(
+                        bottom: 0,
+                        start: 0,
+                        child: SizedBox(
+                          width: 38,
+                          height: 38,
+                          child: IconButton(
+                            key: Key('home-room-follow-${person.id}'),
+                            tooltip: 'في غرفة — تتبّع',
+                            onPressed: onRoomFollow,
+                            padding: EdgeInsets.zero,
+                            icon: Container(
+                              width: 27,
+                              height: 27,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF20152D),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFFFD54A),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 16,
+                                color: Color(0xFFFFD54A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -2032,12 +2065,14 @@ class HomePersonActionsSheet extends StatelessWidget {
     required this.onOpenProfile,
     this.isFollowing,
     this.onFollow,
+    this.onRoomFollow,
   });
 
   final DiscoveryPerson person;
   final VoidCallback onOpenProfile;
   final bool? isFollowing;
   final VoidCallback? onFollow;
+  final VoidCallback? onRoomFollow;
 
   @override
   Widget build(BuildContext context) {
@@ -2070,6 +2105,19 @@ class HomePersonActionsSheet extends StatelessWidget {
               ),
               onTap: onOpenProfile,
             ),
+            if (onRoomFollow != null)
+              ListTile(
+                key: const Key('home-person-room-follow'),
+                leading: const Icon(
+                  Icons.graphic_eq_rounded,
+                  color: Color(0xFFFFD54A),
+                ),
+                title: const Text(
+                  'التتبّع إلى الغرفة',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: onRoomFollow,
+              ),
             if (onFollow != null)
               ListTile(
                 key: const Key('home-person-follow'),
