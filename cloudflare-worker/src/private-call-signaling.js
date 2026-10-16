@@ -94,6 +94,7 @@ async function finishInTransaction(db, tx, call, status, nowMs) {
       lastMessage: label, lastMessageId: messageId,
       lastSenderId: call.callerUid, updatedAt: endedAt,
     }, ["lastMessage", "lastMessageId", "lastSenderId", "updatedAt"]),
+    db.writeDelete("private_call_ringing_queue/" + call.callId),
     ...releases,
   ]);
   return { ok: true, callId: call.callId, status, durationSeconds };
@@ -137,6 +138,9 @@ export async function startPrivateCall(db, actorUid, body, nowMs = Date.now()) {
     };
     await db.commit(tx, [
       db.writeCreate(callPath(callId), call),
+      db.writeCreate("private_call_ringing_queue/" + callId, {
+        callId, callerUid: actorUid, expiresAt: new Date(deadlineMs),
+      }),
       db.writeUpdate(slotPath(actorUid), {
         callId, status: "ringing", expiresAtMs: deadlineMs + ringGraceMs,
       }),
@@ -200,6 +204,7 @@ export async function respondPrivateCall(db, actorUid, body, nowMs = Date.now())
       db.writeUpdate(callPath(callId), {
         status: "active", startedAtMs: nowMs, startedAt: new Date(nowMs),
       }, ["status", "startedAtMs", "startedAt"]),
+      db.writeDelete("private_call_ringing_queue/" + callId),
       db.writeUpdate(slotPath(call.callerUid), {
         callId, status: "active", expiresAtMs: lease,
       }),
@@ -229,6 +234,76 @@ export async function finishPrivateCall(db, actorUid, body, nowMs = Date.now()) 
           ? "cancelled" : "rejected";
     return finishInTransaction(db, tx, call, status, nowMs);
   });
+}
+
+export async function renewPrivateCall(db, actorUid, body, nowMs = Date.now()) {
+  const callId = callIdFrom(body);
+  return runTransaction(db, async (tx) => {
+    const record = await db.get(callPath(callId), tx);
+    if (!record.exists) throw new PrivateCallError("call_not_found", 404);
+    const call = record.data;
+    belongsToCall(call, actorUid);
+    if (call.status !== "active") {
+      throw new PrivateCallError("call_not_active", 409);
+    }
+    try {
+      await requireMutualPrivateVoice(db, {
+        actorUid, otherUid: actorUid === call.callerUid
+          ? call.calleeUid : call.callerUid,
+        conversationId: call.conversationId, kind: "call", transaction: tx,
+      });
+    } catch (error) {
+      // A block, unfollow or disabled call permission terminates eligibility.
+      if (error instanceof PrivateVoicePolicyError) {
+        return finishInTransaction(db, tx, call, "interrupted", nowMs);
+      }
+      throw error;
+    }
+    const [first, second] = await Promise.all([
+      db.get(slotPath(call.callerUid), tx),
+      db.get(slotPath(call.calleeUid), tx),
+    ]);
+    if (first.data?.callId !== callId || second.data?.callId !== callId) {
+      return finishInTransaction(db, tx, call, "interrupted", nowMs);
+    }
+    const expiresAtMs = nowMs + activeLeaseMs;
+    await db.commit(tx, [
+      db.writeUpdate(slotPath(call.callerUid), {
+        callId, status: "active", expiresAtMs,
+      }),
+      db.writeUpdate(slotPath(call.calleeUid), {
+        callId, status: "active", expiresAtMs,
+      }),
+    ]);
+    return { ok: true, callId, status: "active", expiresAtMs };
+  });
+}
+
+// Existing Worker cron, 10 expired invitations max per invocation. Never
+// scan the full calls collection and never leave missed calls only in memory.
+export async function runPrivateCallTimeoutCleanup(env, nowMs = Date.now()) {
+  const db = firestoreClient(env);
+  const due = await db.runQuery("private_call_ringing_queue", {
+    filters: [{ field: "expiresAt", op: "<=", value: new Date(nowMs) }],
+    orderBy: [{ field: "expiresAt", direction: "asc" }],
+    limit: 10,
+  });
+  let completed = 0, failed = 0;
+  for (const item of due) {
+    const callId = clean(item.data?.callId || item.id);
+    const callerUid = clean(item.data?.callerUid);
+    if (!callIdPattern.test(callId) || !callerUid) { failed++; continue; }
+    try {
+      const record = await db.get(callPath(callId));
+      if (!record.exists || record.data?.status !== "ringing") {
+        await db.commit(null, [db.writeDelete("private_call_ringing_queue/" + callId)]);
+      } else {
+        await finishPrivateCall(db, callerUid, { callId }, nowMs);
+      }
+      completed++;
+    } catch (_) { failed++; }
+  }
+  return { checked: due.length, completed, failed };
 }
 
 export async function readPrivateCall(db, actorUid, body, nowMs = Date.now()) {
@@ -266,6 +341,7 @@ export async function privateCallSignaling(request, env) {
       : action === "respond" ? await respondPrivateCall(db, uid, body)
       : action === "finish" ? await finishPrivateCall(db, uid, body)
       : action === "get" ? await readPrivateCall(db, uid, body)
+      : action === "renew" ? await renewPrivateCall(db, uid, body)
       : null;
     if (!result) throw new PrivateCallError("invalid_call_action");
     return json(request, env, result, 200);
