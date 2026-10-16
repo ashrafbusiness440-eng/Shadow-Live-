@@ -48,6 +48,36 @@ class ZegoVoiceService implements VoiceService {
     _micController.add(VoiceMicState.muted);
   }
 
+  // ZEGO may announce streams already in a room while loginRoom is still
+  // resolving. startPlayingStream is only legal AFTER the login result. Keep
+  // announced IDs and play them when our own login has completed.
+  Future<void> _startRemoteAudio(String roomId, String streamId) async {
+    if (!_joined || _roomId != roomId ||
+        !_playingStreams.contains(streamId)) return;
+    try {
+      await ZegoExpressEngine.instance.startPlayingStream(streamId);
+    } catch (_) {
+      // Keep the advertised stream for an explicit user-triggered retry
+      // through the existing Room Sound switch; do not crash the room.
+    }
+  }
+
+  Future<void> _resumeRemoteAudio(String roomId) async {
+    if (!_joined || _roomId != roomId) return;
+    // Audio-only ZEGO player capacity is bounded. No scans or retry timers.
+    for (final streamId in _playingStreams.take(20).toList(growable: false)) {
+      if (!_joined || _roomId != roomId) return;
+      await _startRemoteAudio(roomId, streamId);
+    }
+  }
+
+  Future<void> _stopRemoteAudio(String roomId, String streamId) async {
+    if (!_joined || _roomId != roomId) return;
+    try {
+      await ZegoExpressEngine.instance.stopPlayingStream(streamId);
+    } catch (_) {}
+  }
+
   Future<void> _ensureEngine(int appId) async {
     if (_engineCreated) {
       if (_appId != appId) {
@@ -79,16 +109,14 @@ class ZegoVoiceService implements VoiceService {
       if (updateType == ZegoUpdateType.Add) {
         for (final stream in streamList) {
           _playingStreams.add(stream.streamID);
-          unawaited(
-            ZegoExpressEngine.instance.startPlayingStream(stream.streamID),
-          );
+          if (_joined) {
+            unawaited(_startRemoteAudio(roomID, stream.streamID));
+          }
         }
       } else {
         for (final stream in streamList) {
           _playingStreams.remove(stream.streamID);
-          unawaited(
-            ZegoExpressEngine.instance.stopPlayingStream(stream.streamID),
-          );
+          unawaited(_stopRemoteAudio(roomID, stream.streamID));
         }
       }
     };
@@ -117,6 +145,7 @@ class ZegoVoiceService implements VoiceService {
         case ZegoRoomStateChangedReason.Reconnected:
           _connectionController.add(VoiceConnectionState.connected);
           unawaited(_renewRoomToken(roomID));
+          unawaited(_resumeRemoteAudio(roomID));
           break;
         case ZegoRoomStateChangedReason.ReconnectFailed:
           _connectionController.add(VoiceConnectionState.failed);
@@ -198,6 +227,7 @@ class ZegoVoiceService implements VoiceService {
     _connectionController.add(VoiceConnectionState.connecting);
     try {
       _accessCode = accessCode?.trim();
+      _playingStreams.clear();
       final session = await _tokenClient.createSession(
         roomId,
         roomPassword: _accessCode,
@@ -226,9 +256,17 @@ class ZegoVoiceService implements VoiceService {
       _seatIndex = null;
       _connectionController.add(VoiceConnectionState.connected);
       _micController.add(VoiceMicState.muted);
+      // Initial onRoomStreamUpdate can precede this loginRoom result.
+      // Resume the queued existing speakers without blocking room display.
+      unawaited(_resumeRemoteAudio(roomId));
     } catch (error) {
-      if (error is VoiceException) rethrow;
+      _playingStreams.clear();
+      _roomId = null;
+      _zegoUserId = null;
+      _streamId = null;
+      _accessCode = null;
       _connectionController.add(VoiceConnectionState.failed);
+      if (error is VoiceException) rethrow;
       throw VoiceException('join_failed', error.toString());
     }
   }
@@ -303,6 +341,11 @@ class ZegoVoiceService implements VoiceService {
   Future<void> setPlaybackEnabled(bool enabled) async {
     _requireJoined();
     await ZegoExpressEngine.instance.muteAllPlayStreamAudio(!enabled);
+    if (enabled && _roomId != null) {
+      // A deliberate tap re-attempts audio that the browser may have blocked
+      // during autoplay, without joining a second ZEGO session.
+      await _resumeRemoteAudio(_roomId!);
+    }
   }
 
   @override
