@@ -33,12 +33,26 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
   final _follow = FollowService();
   AudioPlayer? _player;
   StreamSubscription<Map<String, dynamic>>? _roomSubscription;
+  StreamSubscription<User?>? _authSubscription;
   PrivateVoiceDraft? _draft;
+  String? _pendingSendKey;
   bool _held = false;
   bool _locked = false;
   bool _recording = false;
   bool _busy = false;
   bool _disposed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Exactly one auth subscription for this chat composer; stop the mic
+    // immediately when its owning account signs out or changes.
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user?.uid != widget.accountUid && !_disposed) {
+        unawaited(_cancel());
+      }
+    });
+  }
 
   bool get _sameAccount => !_disposed &&
     FirebaseAuth.instance.currentUser?.uid == widget.accountUid;
@@ -87,6 +101,7 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
   Future<void> _start() async {
     if (_busy || _recording || _draft != null || !_sameAccount) return;
     _held = true;
+    _pendingSendKey = null;
     setState(() => _busy = true);
     try {
       if (!await _eligibleToRecord() || !_sameAccount || !_held) return;
@@ -136,6 +151,7 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
     if (mounted) {
       setState(() {
         _recording = false; _locked = false; _draft = null; _busy = false;
+        _pendingSendKey = null;
       });
       if (reason != null) widget.onFeedback(reason);
     }
@@ -160,7 +176,8 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
     try {
       if (!await _eligibleToRecord() || !_sameAccount) return;
       await _player?.stop();
-      final idempotencyKey = 'voice_${widget.accountUid}_${DateTime.now().microsecondsSinceEpoch}';
+      final idempotencyKey = _pendingSendKey ??=
+          'voice_${widget.accountUid}_${DateTime.now().microsecondsSinceEpoch}';
       await _client.uploadAndSend(
         senderUid: widget.accountUid,
         otherUid: widget.otherUid,
@@ -169,7 +186,10 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
         idempotencyKey: idempotencyKey,
       );
       if (!_sameAccount) return;
-      setState(() => _draft = null);
+      setState(() {
+        _draft = null;
+        _pendingSendKey = null;
+      });
       widget.onFeedback('تم إرسال التسجيل الصوتي.');
     } catch (_) {
       if (_sameAccount) widget.onFeedback('تعذر إرسال التسجيل. احتفظنا به للمحاولة مرة أخرى.');
@@ -181,6 +201,7 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_authSubscription?.cancel() ?? Future<void>.value());
     unawaited(_roomSubscription?.cancel() ?? Future<void>.value());
     unawaited(_recorder.dispose());
     if (_player != null) unawaited(_player!.dispose());
