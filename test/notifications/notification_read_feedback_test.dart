@@ -36,14 +36,15 @@ void main() {
     ).readAsStringSync();
     expect(page.contains('LoadingIndicator('), isTrue);
     expect(page.contains('ShadowReadState('), isTrue);
-    expect(page.contains("message: 'لا توجد إشعارات حاليًا'"), isTrue);
+    expect(page.contains("'لا توجد إشعارات حاليًا'"), isTrue);
     expect(page.contains('onRetry: _refresh,'), isTrue);
     expect(page.contains('bool _loadMoreFailed = false;'), isTrue);
     expect(page.contains('_loadMoreFailed = true;'), isTrue);
     expect(page.contains('onPressed: _loading ? null : _loadMore'), isTrue);
     expect(page.contains("'تعذر تحميل المزيد — إعادة المحاولة'"), isTrue);
     expect(page.contains('..addAll(page.items)'), isTrue);
-    expect(page.contains('_items.addAll(next.items)'), isTrue);
+    expect(page.contains('_items.addAll(next.items.where((item) => known.add(item.id)))'), isTrue);
+    expect(page.contains('final known = _items.map((item) => item.id).toSet();'), isTrue);
     expect(page.contains('Future<void> _loadMore() async'), isTrue);
     expect(page.contains('for (final'), isFalse, reason: 'No per-item read loops in notifications UI');
   });

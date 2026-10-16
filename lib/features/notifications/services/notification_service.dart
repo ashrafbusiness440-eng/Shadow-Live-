@@ -126,28 +126,59 @@ class NotificationService {
         .map((snapshot) => snapshot.docs.isNotEmpty);
   }
 
-  Future<NotificationPage> load({DocumentSnapshot<Map<String, dynamic>>? after}) async {
+  /// Server-ordered recent notifications first. Once those pages end, read
+  /// the legacy documents which never received a createdAt field through a
+  /// separately paginated document-ID query. Firestore orderBy(createdAt)
+  /// excludes such documents, so replacing the old query without this phase
+  /// would permanently hide historical notifications.
+  /// Both phases fetch at most 50 documents per explicit page request.
+  Future<NotificationPage> load({NotificationPage? after}) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('auth_required');
+
+    if (after?.legacyPhase == true) {
+      Query<Map<String, dynamic>> legacyQuery = _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .orderBy(FieldPath.documentId)
+          .limit(pageLimit);
+      if (after?.legacyCursor != null) {
+        legacyQuery = legacyQuery.startAfterDocument(after!.legacyCursor!);
+      }
+      final snapshot = await legacyQuery.get();
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      final oldItems = snapshot.docs
+          .where((doc) => notificationHasMissingCreatedAt(doc.data()))
+          .map((doc) => AppNotification.fromMap(doc.id, doc.data()))
+          .toList();
+      return NotificationPage(
+        items: oldItems,
+        cursor: after?.cursor,
+        legacyCursor: snapshot.docs.isEmpty ? after?.legacyCursor : snapshot.docs.last,
+        legacyPhase: true,
+        hasMore: snapshot.docs.length == pageLimit,
+      );
+    }
+
     Query<Map<String, dynamic>> query = _firestore
         .collection('notifications')
         .where('userId', isEqualTo: uid)
-        .orderBy(FieldPath.documentId)
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true)
         .limit(pageLimit);
-    if (after != null) query = query.startAfterDocument(after);
+    if (after?.cursor != null) {
+      query = query.startAfterDocument(after!.cursor!);
+    }
     final snapshot = await query.get();
-    final items = snapshot.docs
-        .map((doc) => AppNotification.fromMap(doc.id, doc.data()))
-        .toList();
-    items.sort((a, b) {
-      final left = a.createdAt?.millisecondsSinceEpoch ?? 0;
-      final right = b.createdAt?.millisecondsSinceEpoch ?? 0;
-      return right.compareTo(left);
-    });
+    if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
     return NotificationPage(
-      items: items,
-      cursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
-      hasMore: snapshot.docs.length == pageLimit,
+      items: snapshot.docs
+          .map((doc) => AppNotification.fromMap(doc.id, doc.data()))
+          .toList(),
+      cursor: snapshot.docs.isEmpty ? after?.cursor : snapshot.docs.last,
+      legacyPhase: snapshot.docs.length < pageLimit,
+      // Continue to the bounded legacy pass even after the modern feed ends.
+      hasMore: true,
     );
   }
 
@@ -157,6 +188,80 @@ class NotificationService {
       'read': true,
     });
   }
+
+  /// A single explicit tap marks unread notifications for this account,
+  /// including ones not yet displayed by the paginated screen. No listeners,
+  /// collection scans, or background polling. Each committed batch contains
+  /// at most 100 writes, with a strict cap of 30 batches per tap.
+  ///
+  /// New notifications created after the tap are kept unread. The time
+  /// boundary uses the local Firestore timestamp; unusual device clock skew
+  /// must be verified during Android acceptance tests.
+  Future<MarkAllNotificationsResult> markAllRead() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) throw StateError('auth_required');
+    final cutoff = Timestamp.now();
+    var marked = 0;
+    const batchSize = 100;
+    const maxBatches = 30;
+    for (var i = 0; i < maxBatches; i++) {
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      // The existing (userId, read=false) query already supports the chat
+      // unread badge. Do not require a new composite/order index.
+      final snapshot = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .where('read', isEqualTo: false)
+          .limit(batchSize)
+          .get();
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      if (snapshot.docs.isEmpty) {
+        return MarkAllNotificationsResult(marked: marked, complete: true);
+      }
+      final eligible = snapshot.docs.where((doc) =>
+          notificationEligibleForBulkRead(doc.data(), cutoff)).toList();
+      if (eligible.isEmpty) {
+        // Only new notifications were visible in this bounded snapshot.
+        // Do not pretend older, unobserved documents were acknowledged.
+        return MarkAllNotificationsResult(marked: marked, complete: false);
+      }
+      final batch = _firestore.batch();
+      for (final doc in eligible) {
+        batch.update(doc.reference, {'read': true});
+      }
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      await batch.commit();
+      if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
+      marked += eligible.length;
+      if (snapshot.docs.length < batchSize) {
+        return MarkAllNotificationsResult(
+          marked: marked,
+          complete: eligible.length == snapshot.docs.length,
+        );
+      }
+    }
+    return MarkAllNotificationsResult(marked: marked, complete: false);
+  }
+}
+
+class MarkAllNotificationsResult {
+  const MarkAllNotificationsResult({required this.marked, required this.complete});
+  final int marked;
+  final bool complete;
+}
+
+/// Preserve new items arriving after mark-all begins, even if the user
+/// receives them while older notification pages are still being updated.
+bool notificationEligibleForBulkRead(
+    Map<String, dynamic> data, Timestamp cutoff) {
+  if (data['read'] == true) return false;
+  final raw = data['createdAt'];
+  if (raw is Timestamp) return raw.compareTo(cutoff) <= 0;
+  if (raw is DateTime) {
+    return raw.millisecondsSinceEpoch <= cutoff.millisecondsSinceEpoch;
+  }
+  // Historical notification documents may lack createdAt entirely.
+  return true;
 }
 
 class NotificationPage {
@@ -164,12 +269,22 @@ class NotificationPage {
     required this.items,
     required this.cursor,
     required this.hasMore,
+    this.legacyCursor,
+    this.legacyPhase = false,
   });
 
   final List<AppNotification> items;
+  // Cursor for ordered notifications; legacy queries maintain a second cursor.
   final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final DocumentSnapshot<Map<String, dynamic>>? legacyCursor;
+  final bool legacyPhase;
   final bool hasMore;
 }
+
+/// A missing timestamp is not indexed by orderBy('createdAt'). A present
+/// null timestamp is indexed and must not be repeated in the legacy pass.
+bool notificationHasMissingCreatedAt(Map<String, dynamic> data) =>
+    !data.containsKey('createdAt');
 
 
 String? _nullable(dynamic value) {

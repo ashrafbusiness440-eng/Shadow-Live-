@@ -30,6 +30,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool _loading = true;
   Object? _error;
   bool _loadMoreFailed = false;
+  bool _markingAllRead = false;
   StreamSubscription<User?>? _authSubscription;
   String? _pageOwnerUid;
   int _requestEpoch = 0;
@@ -47,6 +48,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       _page = null;
       _error = null;
       _loadMoreFailed = false;
+      _markingAllRead = false;
       _reload();
     });
     _reload();
@@ -101,7 +103,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _loadMore() async {
     final page = _page;
     final requestUid = _pageOwnerUid;
-    if (_loading || page?.cursor == null || page?.hasMore != true ||
+    if (_loading || page?.hasMore != true ||
         requestUid != FirebaseAuth.instance.currentUser?.uid) return;
     final epoch = ++_requestEpoch;
     setState(() {
@@ -110,13 +112,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
       _loadMoreFailed = false;
     });
     try {
-      final next = await _service.load(after: page!.cursor);
+      final next = await _service.load(after: page);
       if (!mounted || epoch != _requestEpoch ||
           requestUid != FirebaseAuth.instance.currentUser?.uid) return;
       setState(() {
-        _items.addAll(next.items);
-        _items.sort((a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0)
-            .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
+        // Preserve Firestore's stable newest-first order. Old undated
+        // notifications are added only after the dated feed is exhausted.
+        final known = _items.map((item) => item.id).toSet();
+        _items.addAll(next.items.where((item) => known.add(item.id)));
         _page = next;
         _loading = false;
       });
@@ -128,6 +131,44 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _loadMoreFailed = true;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    if (_markingAllRead || _loading) return;
+    final uid = _pageOwnerUid;
+    if (uid == null || FirebaseAuth.instance.currentUser?.uid != uid) return;
+    final epoch = _requestEpoch;
+    setState(() => _markingAllRead = true);
+    try {
+      final result = await _service.markAllRead();
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid ||
+          epoch != _requestEpoch) return;
+      // Read badges and loaded cards must follow Firestore confirmation, not
+      // optimistic UI state. This refresh also repairs partial server writes.
+      await _reload();
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result.complete
+            ? 'تم تعليم الإشعارات السابقة كمقروءة.'
+            : 'تم تعليم ${result.marked} إشعار كمقروء. بعض الإشعارات ما زالت بحاجة لإعادة المحاولة.'),
+      ));
+    } catch (_) {
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid) return;
+      await _reload();
+      if (!mounted || _pageOwnerUid != uid ||
+          FirebaseAuth.instance.currentUser?.uid != uid) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('تعذر إكمال تعليم الكل كمقروء. تحقق من الاتصال وحاول مجددًا.'),
+      ));
+    } finally {
+      if (mounted && _pageOwnerUid == uid &&
+          FirebaseAuth.instance.currentUser?.uid == uid) {
+        setState(() => _markingAllRead = false);
+      }
     }
   }
 
@@ -840,6 +881,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
           appBar: AppBar(
             backgroundColor: const Color(0xFF11182A),
             title: const Text('الإشعارات'),
+            actions: [
+              TextButton.icon(
+                onPressed: _loading || _markingAllRead
+                    ? null
+                    : _markAllRead,
+                icon: _markingAllRead
+                    ? const SizedBox.square(
+                        dimension: 15,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.done_all_rounded),
+                label: const Text('تعليم الكل كمقروء'),
+              ),
+            ],
           ),
           body: Builder(
             builder: (context) {
@@ -860,12 +915,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 return RefreshIndicator(
                   onRefresh: _refresh,
                   child: ListView(
-                    children: const [
-                      SizedBox(height: 120),
+                    children: [
+                      const SizedBox(height: 120),
                       ShadowReadState(
                         icon: Icons.notifications_none_rounded,
-                        message: 'لا توجد إشعارات حاليًا',
+                        message: _page?.hasMore == true
+                            ? 'قد توجد إشعارات أقدم بدون تاريخ محفوظ.'
+                            : 'لا توجد إشعارات حاليًا',
                       ),
+                      if (_page?.hasMore == true)
+                        Center(
+                          child: OutlinedButton.icon(
+                            onPressed: _loading ? null : _loadMore,
+                            icon: const Icon(Icons.expand_more_rounded),
+                            label: const Text('تحميل الإشعارات الأقدم'),
+                          ),
+                        ),
                     ],
                   ),
                 );
