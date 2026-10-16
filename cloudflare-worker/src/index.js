@@ -21,7 +21,7 @@ import { profileVisits } from "./profile-visits.js";
 import { mysteriousPerson } from "./mysterious-person.js";
 import { manageMysteriousPerson } from "./manage-mysterious-person.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
-import { privateVoiceMedia } from "./private-voice-media.js";
+import { privateVoiceMedia, runPrivateVoiceDraftCleanup } from "./private-voice-media.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
 import { publicMediaRedirect } from "./public-media.js";
@@ -315,6 +315,19 @@ export default {
         "Cloudflare R2 delayed cleanup failed",
         String(error?.message || error),
       );
+    }
+
+    // Bounded orphan prevention for never-sent private R2 voice drafts.
+    // Sent messages remove the queue item transactionally.
+    try {
+      const drafts = await runPrivateVoiceDraftCleanup(env, {
+        nowMs: Date.now(), limit: 10,
+      });
+      if (drafts.checked || drafts.failed) {
+        console.log("Private voice orphan cleanup", JSON.stringify(drafts));
+      }
+    } catch (error) {
+      console.error("Private voice cleanup failed", String(error?.message || error));
     }
 
     // U6: reuse existing 5-minute cron only at the hourly boundary.
