@@ -10,10 +10,39 @@ const clean = (v) => String(v ?? "").trim();
 const MAX_BYTES = 3 * 1024 * 1024;
 const UPLOAD_TTL_MS = 5 * 60_000;
 const DOWNLOAD_TTL_SECONDS = 120;
-const AUDIO = Object.freeze({
-  "audio/mp4": "m4a",
-  "audio/webm": "webm",
-});
+// Until codecs can be probed authoritatively, only strict PCM16 WAV is
+// accepted. The client creates mono 16 kHz WAV for Android and browser.
+const AUDIO = Object.freeze({ "audio/wav": "wav" });
+
+export function validateVoiceWavHeader(bytes, expectedSize, durationSeconds) {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 44 ||
+      !Number.isSafeInteger(expectedSize) || expectedSize < 46 ||
+      expectedSize > MAX_BYTES) {
+    throw new VoiceMediaError("invalid_voice_wav_header", 400);
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const label = (offset, value) => [...value].every(
+    (char, n) => bytes[offset + n] === char.charCodeAt(0),
+  );
+  const pcm = expectedSize - 44;
+  const seconds = pcm / (16000 * 2);
+  if (!label(0, "RIFF") || !label(8, "WAVE") ||
+      !label(12, "fmt ") || !label(36, "data") ||
+      view.getUint32(4, true) !== expectedSize - 8 ||
+      view.getUint32(16, true) !== 16 ||
+      view.getUint16(20, true) !== 1 ||
+      view.getUint16(22, true) !== 1 ||
+      view.getUint32(24, true) !== 16000 ||
+      view.getUint32(28, true) !== 32000 ||
+      view.getUint16(32, true) !== 2 ||
+      view.getUint16(34, true) !== 16 ||
+      view.getUint32(40, true) !== pcm ||
+      pcm % 2 !== 0 || seconds <= 0 || seconds > 60 ||
+      Math.ceil(seconds) !== durationSeconds) {
+    throw new VoiceMediaError("invalid_voice_wav_header", 400);
+  }
+  return true;
+}
 const identifier = /^[A-Za-z0-9_-]{1,180}$/;
 const objectIdPattern = /^[a-f0-9]{32}$/;
 export class VoiceMediaError extends Error {
@@ -125,6 +154,19 @@ export async function voiceConfirm(db, env, uid, body) {
        clean(object.httpMetadata.contentType).toLowerCase()!==raw.mimeType)) {
     throw new VoiceMediaError("voice_upload_integrity_failed",409);
   }
+  // Authoritatively parse 44 bytes from the private R2 object. Clients
+  // cannot forge a 60-second duration by altering JSON metadata.
+  if (typeof env.USER_STORAGE?.get !== "function") {
+    throw new VoiceMediaError("r2_not_ready",503);
+  }
+  const head = await env.USER_STORAGE.get(raw.storageKey,{
+    range:{offset:0,length:44},
+  });
+  if (!head || typeof head.arrayBuffer !== "function") {
+    throw new VoiceMediaError("voice_upload_integrity_failed",409);
+  }
+  const header = new Uint8Array(await head.arrayBuffer());
+  validateVoiceWavHeader(header,raw.expectedSizeBytes,raw.durationSeconds);
   return transactionRun(db,async tx=>{
     const current=await objectRecord(db,objectId,tx);
     if(current.ownerUid!==uid)throw new VoiceMediaError("forbidden",403);
