@@ -98,8 +98,12 @@ void main() {
         File('lib/features/chat/screens/chat_list_screen.dart').readAsStringSync();
     expect(chat.contains("key: ValueKey('conversations-\$_readRetry')"), isTrue);
     expect(chat.contains('onRetry: _retryRead'), isTrue);
-    expect(chat.contains('if (hiddenSnapshot.hasError)'), isTrue);
-    expect(chat.contains('if (!hiddenSnapshot.hasData)'), isTrue);
+    // Paged inbox now reads only relevant hide markers by document ID;
+    // unchecked or failed hide reads must never reveal a private row.
+    expect(chat.contains('if (_hideReadFailed) {'), isTrue);
+    expect(chat.contains('if (unchecked) {'), isTrue);
+    expect(chat.contains('onRetry: _retryRead'), isTrue);
+    expect(chat.contains('where(FieldPath.documentId, whereIn: chunk)'), isTrue);
     expect(chat.contains('static Widget _state('), isFalse);
     final state = File('lib/shared/widgets/loading_indicator.dart')
         .readAsStringSync();
