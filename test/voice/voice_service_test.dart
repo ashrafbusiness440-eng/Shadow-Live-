@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -47,5 +48,26 @@ void main() {
     expect(session.roomId, 'room_123');
     expect(session.token, '04token');
     client.close();
+  });
+
+  test('existing ZEGO streams wait for completed room login', () {
+    final source = File(
+      'lib/features/voice/services/zego_voice_service.dart',
+    ).readAsStringSync();
+    // Initial stream callbacks are allowed to arrive before loginRoom ends.
+    // Playback must queue there rather than attempt a premature SDK call.
+    expect(source, contains('unawaited(_startRemoteAudio(roomID, stream.streamID));'));
+    expect(source, contains('unawaited(_resumeRemoteAudio(roomId));'));
+    expect(source, contains('await _resumeRemoteAudio(_roomId!);'));
+    final loginSuccess = source.indexOf('_joined = true;');
+    final initialResume = source.indexOf('unawaited(_resumeRemoteAudio(roomId));');
+    expect(initialResume, greaterThan(loginSuccess));
+  });
+
+  test('web startup does not delete all application caches per reload', () {
+    final html = File('web/index.html').readAsStringSync();
+    expect(html, contains('flutter_bootstrap.js'));
+    expect(html, isNot(contains('caches.delete(')));
+    expect(html, isNot(contains('serviceWorker.getRegistrations()')));
   });
 }
