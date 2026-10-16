@@ -87,6 +87,11 @@ void main() {
     expect(home.contains('CachedNetworkImage('), isTrue);
     expect(rooms.contains('compareRoomsByDiscoveryPriority(a, b)'), isTrue);
     expect(discovery.contains('..sort(compareRoomsByDiscoveryPriority)'), isTrue);
-    expect(home.contains('RoomRealtimeQueryService('), isFalse);
+    // Home uses one shared batch presence lookup for suggested people.
+    // It never fetches presence independently for each card.
+    expect(home.contains('final RoomRealtimeQueryService _roomFollowQuery'), isTrue);
+    expect(home.contains('ids.sublist(offset, end)'), isTrue);
+    expect(home.contains('offset += 8'), isTrue);
+    expect(home.contains('Timer.periodic'), isFalse);
   });
 }
