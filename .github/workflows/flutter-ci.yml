@@ -52,6 +52,8 @@ jobs:
         run: node --test server/__tests__/chat-message-visibility.test.js
       - name: Test private voice mutual-follow eligibility and limits
         run: node --test cloudflare-worker/__tests__/private-voice-eligibility.test.js
+      - name: Test private R2 voice-note authorization, transactions and limits
+        run: node --test cloudflare-worker/__tests__/private-voice-media.test.js
       - name: Test Firestore index deploy group scoping
         run: node --test server/__tests__/firestore-index-sync-scope.test.js
       - name: Test production R2 chat verification matches atomic image rules

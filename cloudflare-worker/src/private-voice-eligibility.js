@@ -22,6 +22,7 @@ export function validPrivateVoiceParties(actorUid, otherUid, conversationId) {
   return { actorUid:a, otherUid:b, conversationId:c };
 }
 export async function requireMutualPrivateVoice(db, params) {
+  const transaction = params.transaction || null;
   const {actorUid, otherUid, conversationId} = validPrivateVoiceParties(
     params.actorUid, params.otherUid, params.conversationId,
   );
@@ -34,14 +35,14 @@ export async function requireMutualPrivateVoice(db, params) {
     conversation, forward, backward, sentBlock, receivedBlock,
     actor, other, settings,
   ] = await Promise.all([
-    db.get(`conversations/${conversationId}`),
-    db.get(`follows/${actorUid}__${otherUid}`),
-    db.get(`follows/${otherUid}__${actorUid}`),
-    db.get(`user_blocks/${actorUid}/items/${otherUid}`),
-    db.get(`user_blocks/${otherUid}/items/${actorUid}`),
-    db.get(`users/${actorUid}`),
-    db.get(`users/${otherUid}`),
-    db.get("system_config/messaging"),
+    db.get(`conversations/${conversationId}`, transaction),
+    db.get(`follows/${actorUid}__${otherUid}`, transaction),
+    db.get(`follows/${otherUid}__${actorUid}`, transaction),
+    db.get(`user_blocks/${actorUid}/items/${otherUid}`, transaction),
+    db.get(`user_blocks/${otherUid}/items/${actorUid}`, transaction),
+    db.get(`users/${actorUid}`, transaction),
+    db.get(`users/${otherUid}`, transaction),
+    db.get("system_config/messaging", transaction),
   ]);
   const members = conversation.data?.participants;
   if (!conversation.exists || !Array.isArray(members) ||
