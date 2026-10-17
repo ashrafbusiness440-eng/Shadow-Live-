@@ -36,6 +36,7 @@ export function validateVoiceChange(input, current, env) {
   // Even an authorized owner cannot enable calls before the backend
   // media readiness gate is explicitly set in the deployment environment.
   if (input.privateCallsEnabled === true &&
+      current.privateCallsEnabled !== true &&
       env.PRIVATE_CALL_MEDIA_READY !== "true") {
     throw new ControlError("private_calls_not_ready", 409);
   }
