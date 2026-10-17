@@ -68,10 +68,28 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
       } else if (!_terminal) {
         _watch(const Duration(seconds: 3));
       }
+    } on PrivateCallSignalingException catch (error) {
+      if (_sameAccount) setState(() {
+        _status = 'error';
+        _message = switch (error.code) {
+          'private_calls_not_ready' || 'private_calls_disabled' =>
+            'المكالمات الخاصة غير متاحة حاليًا.',
+          'call_busy' => 'المستخدم مشغول بمكالمة أخرى.',
+          'mutual_follow_required' =>
+            'المكالمة تتطلب متابعة متبادلة بين الطرفين.',
+          'blocked' || 'calls_not_allowed' =>
+            'إعدادات الخصوصية لا تسمح بالمكالمة.',
+          'call_rate_limited' =>
+            'انتظر قليلًا قبل الاتصال مرة أخرى.',
+          'registered_account_required' =>
+            'يرجى تسجيل الدخول بحسابك قبل الاتصال.',
+          _ => 'تعذر إجراء المكالمة. تحقق من الشبكة وحاول مجددًا.',
+        };
+      });
     } catch (_) {
       if (_sameAccount) setState(() {
         _status = 'error';
-        _message = 'تعذر إجراء المكالمة. تحقق من المتابعة والخصوصية والاتصال.';
+        _message = 'تعذر إجراء المكالمة. تحقق من الشبكة وحاول مجددًا.';
       });
     } finally {
       if (_sameAccount) setState(() => _busy = false);
