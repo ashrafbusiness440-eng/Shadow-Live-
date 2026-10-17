@@ -53,7 +53,7 @@ void main() {
     expect(page, contains('PrivateCallPushService.instance.supported'));
     expect(page, contains('enableForCurrentUser()'));
     expect(page, contains('disableForCurrentUser()'));
-    expect(page, contains('تنبيهات الويب وPWA تحتاج إعدادًا إضافيًا'));
+    expect(page, contains('تنبيهات الويب وPWA تحتاج إعداد VAPID'));
   });
 
   test('server never sends on stale tokens after explicit opt-out', () {
