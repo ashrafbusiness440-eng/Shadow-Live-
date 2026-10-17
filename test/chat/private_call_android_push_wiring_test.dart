@@ -16,7 +16,8 @@ void main() {
     expect(source, contains('Future<void> disableForCurrentUser() async'));
     expect(source, contains("'privateCallPushOptIn': false"));
     expect(source, contains("'privateCallPushOptIn': true"));
-    expect(source, contains("'action': action, 'token': token, 'platform': 'android'"));
+    expect(source, contains("'action': action, 'token': token,"));
+    expect(source, contains("'platform': kIsWeb ? 'web' : 'android'"));
     expect(source, contains('_accountQueue = _accountQueue.then('));
     expect(source, contains('_messaging.deleteToken()'));
     expect(source, contains('onTokenRefresh.listen('));
