@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { createDecipheriv } from "node:crypto";
 import { issueScopedPrivateCallVoiceToken } from "../src/voice-session-legacy.js";
 import {
@@ -259,4 +260,10 @@ test("ZEGO Token04 is bound to call room and only the authenticated stream", () 
   });
   assert.ok(expire > Date.now() / 1000);
   assert.ok(expire <= Date.now() / 1000 + 301);
+});
+
+
+test("HTTP call route requires BOTH launch gates before signaling", () => {
+  const source = readFileSync("cloudflare-worker/src/private-call-signaling.js", "utf8");
+  assert.match(source, /env\?\.PRIVATE_CALL_MEDIA_READY !== "true" \|\|\s*env\?\.PRIVATE_CALL_PUSH_READY !== "true"/);
 });

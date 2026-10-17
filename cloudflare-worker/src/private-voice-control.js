@@ -23,7 +23,8 @@ export function voiceConfigState(source = {}, env = {}) {
     version: Number.isSafeInteger(Number(source.voiceControlVersion)) &&
       Number(source.voiceControlVersion) >= 0
       ? Number(source.voiceControlVersion) : 0,
-    callsLaunchReady: env.PRIVATE_CALL_MEDIA_READY === "true",
+    callsLaunchReady: env.PRIVATE_CALL_MEDIA_READY === "true" &&
+      env.PRIVATE_CALL_PUSH_READY === "true",
   };
 }
 
@@ -33,11 +34,12 @@ export function validateVoiceChange(input, current, env) {
       typeof input.privateCallsEnabled !== "boolean") {
     throw new ControlError("invalid_voice_config");
   }
-  // Even an authorized owner cannot enable calls before the backend
-  // media readiness gate is explicitly set in the deployment environment.
+  // Both media and incoming-call push gates must be ready before enabling.
+  // The owner can always emergency-disable calls regardless of readiness.
   if (input.privateCallsEnabled === true &&
       current.privateCallsEnabled !== true &&
-      env.PRIVATE_CALL_MEDIA_READY !== "true") {
+      (env.PRIVATE_CALL_MEDIA_READY !== "true" ||
+       env.PRIVATE_CALL_PUSH_READY !== "true")) {
     throw new ControlError("private_calls_not_ready", 409);
   }
   return {

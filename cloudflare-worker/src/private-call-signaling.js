@@ -385,9 +385,10 @@ export async function privateCallMediaSession(
 }
 
 export async function privateCallSignaling(request, env, ctx = null) {
-  // Deployment-readiness gate stays OFF until ZEGO token transport, room
-  // handoff and Android acceptance work have been released together.
-  if (env?.PRIVATE_CALL_MEDIA_READY !== "true") {
+  // Require both media and background ringing readiness. A partial
+  // rollout cannot expose calls even if Control was previously enabled.
+  if (env?.PRIVATE_CALL_MEDIA_READY !== "true" ||
+      env?.PRIVATE_CALL_PUSH_READY !== "true") {
     return json(request, env, { ok: false, code: "private_calls_not_ready" }, 503);
   }
   if (request.method !== "POST") {

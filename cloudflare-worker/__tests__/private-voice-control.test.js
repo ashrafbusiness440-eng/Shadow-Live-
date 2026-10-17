@@ -60,15 +60,24 @@ test("both voice features stay OFF by default and production readiness is server
     voiceNotesEnabled: true, privateCallsEnabled: true,
     voiceControlVersion: 12,
   }).callsLaunchReady, false);
+  assert.equal(voiceConfigState({}, { PRIVATE_CALL_MEDIA_READY: "true" }).callsLaunchReady, false);
+  assert.equal(voiceConfigState({}, { PRIVATE_CALL_PUSH_READY: "true" }).callsLaunchReady, false);
+  assert.equal(voiceConfigState({}, {
+    PRIVATE_CALL_MEDIA_READY: "true", PRIVATE_CALL_PUSH_READY: "true",
+  }).callsLaunchReady, true);
   assert.throws(
     () => validateVoiceChange({
       voiceNotesEnabled: false, privateCallsEnabled: true,
     }, {}, {}),
     e => e.code === "private_calls_not_ready",
   );
+  assert.throws(() => validateVoiceChange({
+    voiceNotesEnabled: true, privateCallsEnabled: true,
+  }, {}, { PRIVATE_CALL_MEDIA_READY: "true" }),
+  e => e.code === "private_calls_not_ready");
   assert.deepEqual(validateVoiceChange({
     voiceNotesEnabled: true, privateCallsEnabled: true,
-  }, {}, { PRIVATE_CALL_MEDIA_READY: "true" }), {
+  }, {}, { PRIVATE_CALL_MEDIA_READY: "true", PRIVATE_CALL_PUSH_READY: "true" }), {
     voiceNotesEnabled: true, privateCallsEnabled: true,
   });
   // Disabling a previously activated feature must ALWAYS work, even when
