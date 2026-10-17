@@ -92,6 +92,13 @@ export async function updatePrivateCallPushDevice(
 }
 
 export async function privateCallPushDevices(request, env) {
+  // The token registry must not accept writes ahead of product/FCM launch.
+  // Both independent release flags are OFF in production by default.
+  if (!isReady(env)) {
+    return json(request, env, {
+      ok: false, code: "private_call_push_not_ready",
+    }, 503);
+  }
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
