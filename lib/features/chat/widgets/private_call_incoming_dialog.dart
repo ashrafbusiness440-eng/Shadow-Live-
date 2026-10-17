@@ -170,7 +170,8 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
     // A second device may see a call already answered on the first.
     // Dismissing this notification must not terminate that live device.
     if (_sameUser && !_terminal &&
-        !(_status == 'active' && !_active)) {
+        !(_status == 'active' && !_active) &&
+        !(_status == 'error' && !_active)) {
       try {
         await _client.finish(
           actorUid: widget.accountUid, callId: widget.callId,
