@@ -817,6 +817,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
 
   bool _canDeleteMessageForEveryone(Map<String, dynamic> data) {
+    // System call events are authoritative records, not user text messages.
+    if (data['type'] == 'call_event') return false;
     if (data['senderId'] != _openedByUid ||
         data['deletedForEveryone'] == true) return false;
     final createdAt = data['createdAt'];
@@ -972,6 +974,40 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           SizedBox(width: 7),
           Text('تم حذف هذه الرسالة',
               style: TextStyle(color: Colors.white70)),
+        ],
+      );
+    } else if (type == 'call_event') {
+      final status = (data['status'] ?? '').toString();
+      final seconds = ((data['durationSeconds'] as num?)?.toInt() ?? 0)
+          .clamp(0, 86400);
+      final summary = switch (status) {
+        'missed' => 'مكالمة فائتة',
+        'rejected' => 'مكالمة مرفوضة',
+        'cancelled' => 'مكالمة ملغاة',
+        'completed' => 'مكالمة صوتية مكتملة',
+        'interrupted' => 'مكالمة منقطعة',
+        _ => 'مكالمة صوتية',
+      };
+      final durationText = seconds >= 60
+          ? '${seconds ~/ 60} د ${seconds % 60} ث'
+          : '$seconds ث';
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(status == 'missed' ? Icons.call_missed : Icons.call_end,
+            size: 20, color: const Color(0xFFFFD54A)),
+          const SizedBox(width: 9),
+          Flexible(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(summary, style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+              if (status == 'completed' && seconds > 0)
+                Text(durationText, style: const TextStyle(
+                  fontSize: 12, color: Colors.white70)),
+            ],
+          )),
         ],
       );
     } else if (type == 'voice_note') {
@@ -1170,7 +1206,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
-        onLongPress: () => _showMessageActions(doc),
+        onLongPress: type == 'call_event' ? null : () => _showMessageActions(doc),
         child: Container(
         constraints: const BoxConstraints(maxWidth: 300),
         margin: const EdgeInsets.only(bottom: 8),
