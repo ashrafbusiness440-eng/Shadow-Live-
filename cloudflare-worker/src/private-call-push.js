@@ -182,9 +182,7 @@ export async function dispatchPrivateCallPush(env, calleeUid, callId, {
   // Never send unless the current account explicitly opted in at the server.
   const account = await db.get("users/" + calleeUid);
   if (!account.exists || account.data?.privateCallPushOptIn !== true ||
-      account.data?.accountStatus === "banned" ||
-      account.data?.accountStatus === "suspended" ||
-      account.data?.accountStatus === "disabled") {
+      !["", "active"].includes(clean(account.data?.accountStatus))) {
     return { code: "push_opt_in_required", sent: 0 };
   }
   const devices = await db.runQuery(
