@@ -24,6 +24,7 @@ import { manageMysteriousPerson } from "./manage-mysterious-person.js";
 import { chatSafetyActions } from "./chat-safety-actions.js";
 import { privateVoiceMedia, runPrivateVoiceDraftCleanup } from "./private-voice-media.js";
 import { privateCallSignaling, runPrivateCallTimeoutCleanup } from "./private-call-signaling.js";
+import { privateCallPushDevices } from "./private-call-push.js";
 import { storageHealth } from "./storage-health.js";
 import { systemHealth } from "./system-health.js";
 import { publicMediaRedirect } from "./public-media.js";
@@ -161,7 +162,10 @@ async function dispatchRequest(request, env, ctx) {
     return privateVoiceMedia(request, env);
   }
   if (url.pathname === "/api/private-call-signaling") {
-    return privateCallSignaling(request, env);
+    return privateCallSignaling(request, env, ctx);
+  }
+  if (url.pathname === "/api/private-call-push-devices") {
+    return privateCallPushDevices(request, env);
   }
   if (url.pathname === "/api/storage-health") {
     annotatePressureRequest(request, { action: "storageHealth" });

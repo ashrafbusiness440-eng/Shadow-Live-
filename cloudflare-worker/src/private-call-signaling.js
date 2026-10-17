@@ -2,6 +2,7 @@ import { json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { issueScopedPrivateCallVoiceToken } from "./voice-session-legacy.js";
+import { dispatchPrivateCallPush } from "./private-call-push.js";
 import {
   PRIVATE_VOICE_RING_MS, requireMutualPrivateVoice, validPrivateVoiceParties,
   PrivateVoicePolicyError,
@@ -383,7 +384,7 @@ export async function privateCallMediaSession(
   return { ok: true, callId, status: "active", ...credentials };
 }
 
-export async function privateCallSignaling(request, env) {
+export async function privateCallSignaling(request, env, ctx = null) {
   // Deployment-readiness gate stays OFF until ZEGO token transport, room
   // handoff and Android acceptance work have been released together.
   if (env?.PRIVATE_CALL_MEDIA_READY !== "true") {
@@ -415,6 +416,14 @@ export async function privateCallSignaling(request, env) {
         )
       : null;
     if (!result) throw new PrivateCallError("invalid_call_action");
+    if (action === "start" && result.status === "ringing" &&
+        result.code !== "duplicate" && ctx?.waitUntil) {
+      // Only a new, committed call may trigger background delivery.
+      // Push failures must not delay or duplicate the invitation.
+      ctx.waitUntil(dispatchPrivateCallPush(
+        env, clean(body.otherUid), result.callId,
+      ).catch(() => {}));
+    }
     return json(request, env, result, 200);
   } catch (error) {
     const expected = error instanceof PrivateCallError ||

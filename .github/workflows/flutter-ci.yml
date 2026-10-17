@@ -56,6 +56,8 @@ jobs:
         run: node --test cloudflare-worker/__tests__/private-voice-media.test.js
       - name: Test private call signaling safety and lifecycle
         run: node --test cloudflare-worker/__tests__/private-call-signaling.test.js
+      - name: Test gated incoming call FCM sender and account-scoped devices
+        run: node --test cloudflare-worker/__tests__/private-call-push.test.js
       - name: Test voice controls, audited updates and production readiness gating
         run: node --test cloudflare-worker/__tests__/private-voice-control.test.js
       - name: Test Firestore index deploy group scoping
