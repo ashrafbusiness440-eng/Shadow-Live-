@@ -232,8 +232,8 @@ class _PrivateCallPrivacySettingsScreenState
                     PrivateCallPushService.instance.supported
                         ? 'السماح بإشعار المكالمة الواردة عند إغلاق التطبيق '
                           'أو وجوده بالخلفية، بعد منح إذن الهاتف.'
-                        : 'تنبيهات الويب وPWA تحتاج إعدادًا إضافيًا '
-                          'ولم يتم تشغيلها بعد.',
+                        : 'تنبيهات Android تحتاج تهيئة Firebase صحيحة، '
+                          'وتنبيهات الويب وPWA تحتاج إعداد VAPID.',
                   ),
                   value: _pushEnabled,
                   onChanged: _loading || _saving || _pushSaving ||
