@@ -174,21 +174,37 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _open(AppNotification item) async {
-    if (_pageOwnerUid == null ||
-        _pageOwnerUid != FirebaseAuth.instance.currentUser?.uid) return;
+    final ownerUid = _pageOwnerUid;
+    final accountEpoch = _requestEpoch;
+    bool activeOwner() => mounted &&
+        ownerUid != null &&
+        ownerUid == _pageOwnerUid &&
+        FirebaseAuth.instance.currentUser?.uid == ownerUid &&
+        accountEpoch == _requestEpoch;
+    if (!activeOwner()) return;
     if (AccountActionAppealDialog.operationIdFrom(item).isNotEmpty) {
       if (!item.read) {
-        await _service.markRead(item.id).catchError((_) {});
+        try {
+          await _service.markRead(item.id);
+        } catch (_) {
+          // A read-receipt failure must not hide an actionable appeal.
+        }
       }
-      if (!mounted) return;
+      if (!activeOwner()) return;
       await AccountActionAppealDialog.open(context, item);
       return;
     }
     if (!item.read) {
-      await _service.markRead(item.id);
-      if (!mounted) return;
+      var acknowledged = false;
+      try {
+        await _service.markRead(item.id);
+        acknowledged = true;
+      } catch (_) {
+        // Leave the badge unread, but opening the notification still works.
+      }
+      if (!activeOwner()) return;
       final index = _items.indexWhere((entry) => entry.id == item.id);
-      if (index >= 0) {
+      if (acknowledged && index >= 0) {
         setState(() {
           _items[index] = AppNotification(
             id: item.id,
@@ -219,6 +235,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
         });
       }
     }
+
+    // A stale response cannot route another account to this notification.
+    if (!activeOwner()) return;
 
     // The existing notifications inbox is the incoming call entrypoint.
     // Clicking an old incoming/missed event reads the authoritative call
