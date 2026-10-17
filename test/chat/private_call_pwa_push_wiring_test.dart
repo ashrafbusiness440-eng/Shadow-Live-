@@ -22,6 +22,8 @@ void main() {
     expect(service, contains("'platform': kIsWeb ? 'web' : 'android'"));
     expect(service, contains('await signaling.get(actorUid: uid, callId: callId)'));
     expect(service, contains('state.status != \'ringing\''));
+    expect(service, contains('_pendingNavigationRetries++ < 2'));
+    expect(service, contains('WidgetsBinding.instance.addPostFrameCallback'));
     expect(bridge, contains("dart:js_interop"));
     expect(bridge, contains("shadowPrivateCallWebPush.getToken"));
     expect(page, contains('src="private_call_web_push.js"'));
