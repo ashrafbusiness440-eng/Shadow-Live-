@@ -3,6 +3,7 @@ import { corsHeaders, json } from "./http.js";
 import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
 import { authConfig } from "./auth-config.js";
+import { privateVoiceControl } from "./private-voice-control.js";
 import { contentFilterControl } from "./content-filter-control.js";
 import { imageModerationControl } from "./image-moderation-control.js";
 import { CONTENT_FILTER_COORDINATOR_ID } from "./content-filter.js";
@@ -91,6 +92,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/auth-config") {
     return authConfig(request, env);
+  }
+  if (url.pathname === "/api/private-voice-control") {
+    return privateVoiceControl(request, env);
   }
   if (url.pathname === "/api/content-filter-control") {
     return contentFilterControl(request, env);
