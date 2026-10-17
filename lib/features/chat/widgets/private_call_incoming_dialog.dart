@@ -59,7 +59,7 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
         final delay = state.ringDeadlineMs -
             DateTime.now().millisecondsSinceEpoch + 300;
         _timer?.cancel();
-        _timer = Timer(Duration(milliseconds: delay.clamp(100, 30000)),
+        _timer = Timer(Duration(milliseconds: delay.clamp(100, 30000).toInt()),
             () { if (_sameUser) unawaited(_load()); });
       }
     } catch (_) {
@@ -167,7 +167,10 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
     _closing = true;
     _timer?.cancel();
     await _voice.exitPrivateCallMedia();
-    if (_sameUser && !_terminal) {
+    // A second device may see a call already answered on the first.
+    // Dismissing this notification must not terminate that live device.
+    if (_sameUser && !_terminal &&
+        !(_status == 'active' && !_active)) {
       try {
         await _client.finish(
           actorUid: widget.accountUid, callId: widget.callId,
