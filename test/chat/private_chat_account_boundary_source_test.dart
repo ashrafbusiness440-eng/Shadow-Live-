@@ -32,7 +32,10 @@ void main() {
       '_isActiveChatAccount(senderUid)'.allMatches(text).length,
       greaterThanOrEqualTo(4),
     );
-    expect(text.contains("final key = [senderUid!,"), isTrue);
+    // A fresh operation is scoped to the original authenticated sender,
+    // but retries of the identical draft reuse the original operation key.
+    expect(text.contains('final key = _pendingTextKey != null'), isTrue);
+    expect(text.contains(': [senderUid!, DateTime.now().microsecondsSinceEpoch'), isTrue);
 
     final image = source.substring(
       source.indexOf('Future<void> _sendImage() async {'),
