@@ -14,10 +14,13 @@ import '../../../firebase_options.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../widgets/private_call_incoming_dialog.dart';
 import 'private_call_signaling_client.dart';
+import 'private_call_web_push_stub.dart'
+    if (dart.library.js_interop) 'private_call_web_push_web.dart'
+    as web_push;
 
-/// One app-lifetime Android FCM coordinator; no per-message, per-chat or
-/// per-avatar listeners. Not activated for browser/PWA without its VAPID and
-/// service-worker setup. Server call + push rollout gates stay OFF.
+/// One app-lifetime call push coordinator (Android and opt-in PWA).
+/// No per-chat listeners, implicit permission prompts, or second call engine.
+/// Server media/push rollout gates remain OFF until device acceptance.
 class PrivateCallPushService {
   PrivateCallPushService._();
   static final instance = PrivateCallPushService._();
@@ -27,10 +30,15 @@ class PrivateCallPushService {
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
   static final _callIdPattern = RegExp(r'^[a-f0-9]{32}$');
+  static const _webVapidKey = String.fromEnvironment(
+    'SHADOW_FIREBASE_WEB_VAPID_KEY',
+  );
 
   bool _started = false;
   String? _currentUid;
   String? _enabledUid;
+  String? _registeredToken;
+  String? _registeredUid;
   String? _displayedCallId;
   String? _pendingTapCallId;
   Future<void> _accountQueue = Future<void>.value();
@@ -39,13 +47,10 @@ class PrivateCallPushService {
   StreamSubscription<RemoteMessage>? _foregroundSub;
   StreamSubscription<RemoteMessage>? _tapSub;
 
-  bool get supported =>
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.android &&
-      // Fail closed unless the Android binary was built against this
-      // Firebase project's registered Android app ID. A web App ID must
-      // never enable FCM device registration.
-      DefaultFirebaseOptions.androidMessagingConfigured;
+  bool get supported => kIsWeb
+      ? _webVapidKey.isNotEmpty && web_push.supported
+      : defaultTargetPlatform == TargetPlatform.android &&
+          DefaultFirebaseOptions.androidMessagingConfigured;
   bool get enabledForCurrentUser =>
       _enabledUid != null &&
       FirebaseAuth.instance.currentUser?.uid == _enabledUid;
@@ -55,6 +60,16 @@ class PrivateCallPushService {
   Future<void> start() async {
     if (_started || !supported) return;
     _started = true;
+    if (kIsWeb) {
+      // No Firebase SDK or service worker is loaded until a user who opted
+      // in explicitly enables notifications, or resumes granted permission.
+      _pendingTapCallId = web_push.consumeInitialCallId();
+      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+        _accountQueue = _accountQueue.then((_) => _syncAccount(user))
+            .catchError((Object _) {});
+      });
+      return;
+    }
     // FCM's background notification refers to this exact channel ID.
     try {
       final local = FlutterLocalNotificationsPlugin();
