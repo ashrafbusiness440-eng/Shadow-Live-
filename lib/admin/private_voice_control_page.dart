@@ -162,7 +162,9 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
   }
 
   void _changeCalls(bool value) {
-    if (!_callsReady) return;
+    // Emergency OFF must always remain available, even when the
+    // deployment is not launch-ready. Only enabling is gated.
+    if (!_callsReady && value) return;
     setState(() {
       _calls = value;
       _dirty = true;
