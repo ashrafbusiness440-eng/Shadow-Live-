@@ -53,6 +53,9 @@ test("both voice features stay OFF by default and production readiness is server
   assert.deepEqual(voiceConfigState(), {
     voiceNotesEnabled: false,
     privateCallsEnabled: false,
+    privateCallPricingMode: "free",
+    privateCallPriceCoins: 0,
+    paidCallsLaunchReady: false,
     version: 0,
     callsLaunchReady: false,
   });
@@ -79,6 +82,7 @@ test("both voice features stay OFF by default and production readiness is server
     voiceNotesEnabled: true, privateCallsEnabled: true,
   }, {}, { PRIVATE_CALL_MEDIA_READY: "true", PRIVATE_CALL_PUSH_READY: "true" }), {
     voiceNotesEnabled: true, privateCallsEnabled: true,
+    privateCallPricingMode: "free", privateCallPriceCoins: 0,
   });
   // Disabling a previously activated feature must ALWAYS work, even when
   // the production readiness flag is later turned OFF in an emergency.
@@ -86,6 +90,7 @@ test("both voice features stay OFF by default and production readiness is server
     voiceNotesEnabled: false, privateCallsEnabled: false,
   }, { privateCallsEnabled: true }, {}), {
     voiceNotesEnabled: false, privateCallsEnabled: false,
+    privateCallPricingMode: "free", privateCallPriceCoins: 0,
   });
   // Re-saving another setting must not strand an old enabled value, while
   // turning calls from OFF to ON still requires server readiness.
@@ -93,6 +98,7 @@ test("both voice features stay OFF by default and production readiness is server
     voiceNotesEnabled: true, privateCallsEnabled: true,
   }, { privateCallsEnabled: true }, {}), {
     voiceNotesEnabled: true, privateCallsEnabled: true,
+    privateCallPricingMode: "free", privateCallPriceCoins: 0,
   });
   assert.throws(
     () => validateVoiceChange({
@@ -110,6 +116,8 @@ test("save updates only messaging voice flags and records immutable audit and op
   assert.equal(saved.config.privateCallsEnabled, false);
   assert.equal(saved.config.version, 1);
   assert.equal(docs.get("system_config/messaging").existingMessagingPolicy, "preserve");
+  assert.equal(docs.get("system_config/messaging").privateCallPricingMode, "free");
+  assert.equal(docs.get("system_config/messaging").privateCallPriceCoins, 0);
   assert.equal(docs.get("admin_audit_logs/private_voice_" + key).reason, reason);
   assert.equal(docs.get("control_operations/" + key).actorUid, "owner");
   const repeated = await writeVoiceConfig(db, "owner", input(), {});
@@ -161,4 +169,49 @@ test("HTTP route uses validated admin session, explicit capabilities and no dire
   assert.ok(control.includes("_operationKey = op;"));
   assert.ok(control.includes("حفظ الإعدادات"));
   assert.ok(nav.includes("const PrivateVoiceControlPage()"));
+});
+
+test("paid tariff can be saved as an audited draft but cannot enable calls or charge Coins", async () => {
+  const { db, docs } = fixture();
+  const draft = { ...input(), config: {
+    voiceNotesEnabled: true, privateCallsEnabled: false,
+    privateCallPricingMode: "paid", privateCallPriceCoins: 149,
+  }};
+  const result = await writeVoiceConfig(db, "owner", draft, {});
+  assert.equal(result.config.privateCallPricingMode, "paid");
+  assert.equal(result.config.privateCallPriceCoins, 149);
+  assert.equal(result.config.callsLaunchReady, false);
+  assert.equal(result.config.paidCallsLaunchReady, false);
+  assert.equal(docs.get("admin_audit_logs/private_voice_" + key).after.privateCallPriceCoins, 149);
+  assert.equal([...docs.keys()].filter(k => k.startsWith("financial_ledger/")).length, 0);
+  assert.equal([...docs.keys()].filter(k => k.startsWith("wallet_operations/")).length, 0);
+  // A stale admin UI cannot turn a stored paid draft into a free call.
+  assert.throws(() => validateVoiceChange({
+    voiceNotesEnabled: true, privateCallsEnabled: true,
+  }, result.config, {
+    PRIVATE_CALL_MEDIA_READY: "true", PRIVATE_CALL_PUSH_READY: "true",
+  }), e => e.code === "private_call_billing_not_ready");
+  assert.equal(voiceConfigState({
+    privateCallPricingMode: "paid", privateCallPriceCoins: 149,
+  }, {
+    PRIVATE_CALL_MEDIA_READY: "true", PRIVATE_CALL_PUSH_READY: "true",
+  }).callsLaunchReady, false);
+});
+
+test("tariff validation rejects coercion, fractional, negative and zero paid prices", () => {
+  const base = { voiceNotesEnabled: false, privateCallsEnabled: false };
+  for (const [privateCallPricingMode, privateCallPriceCoins] of [
+    ["paid", 0], ["paid", -3], ["paid", 1.25], ["paid", "500"],
+    ["paid", 1_000_001], ["unknown", 100],
+  ]) {
+    assert.throws(() => validateVoiceChange({
+      ...base, privateCallPricingMode, privateCallPriceCoins,
+    }, voiceConfigState(), {}), e => e.code === "invalid_private_call_price");
+  }
+  assert.throws(() => validateVoiceChange({
+    ...base, privateCallsEnabled: true,
+    privateCallPricingMode: "paid", privateCallPriceCoins: 100,
+  }, voiceConfigState(), {
+    PRIVATE_CALL_MEDIA_READY: "true", PRIVATE_CALL_PUSH_READY: "true",
+  }), e => e.code === "private_call_billing_not_ready");
 });
