@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:zego_express_engine/zego_express_engine.dart';
 
+import '../../chat/services/private_call_signaling_client.dart';
 import 'voice_service.dart';
 import 'voice_token_client.dart';
 
@@ -11,10 +12,15 @@ import 'voice_token_client.dart';
 /// The ServerSecret never reaches this class. A short-lived token is requested
 /// from Shadow Live's authenticated backend for every room join.
 class ZegoVoiceService implements VoiceService {
-  ZegoVoiceService({VoiceTokenClient? tokenClient})
-      : _tokenClient = tokenClient ?? VoiceTokenClient();
+  ZegoVoiceService({
+    VoiceTokenClient? tokenClient,
+    PrivateCallSignalingClient? callSignalingClient,
+  }) : _tokenClient = tokenClient ?? VoiceTokenClient(),
+       _callSignalingClient =
+           callSignalingClient ?? PrivateCallSignalingClient();
 
   final VoiceTokenClient _tokenClient;
+  final PrivateCallSignalingClient _callSignalingClient;
   final _connectionController =
       StreamController<VoiceConnectionState>.broadcast();
   final _micController = StreamController<VoiceMicState>.broadcast();
@@ -28,6 +34,8 @@ class ZegoVoiceService implements VoiceService {
   String? _zegoUserId;
   String? _streamId;
   String? _accessCode;
+  String? _privateCallId;
+  String? _privateCallAccountUid;
   int? _seatIndex;
   bool _tokenRenewalInFlight = false;
   ZegoMediaPlayer? _roomMediaPlayer;
@@ -188,19 +196,40 @@ class ZegoVoiceService implements VoiceService {
         }
 
         try {
-          final session = await _tokenClient.createSession(
-            roomId,
-            roomPassword: _accessCode,
-          );
-          if (!_joined || _roomId != roomId) return;
-          if (session.appId != _appId || session.roomId != roomId) {
-            throw const VoiceException(
-              'token_session_mismatch',
-              'Voice token session does not match the active room.',
+          String renewedToken;
+          if (_privateCallId != null) {
+            final currentCallId = _privateCallId!;
+            final currentUid = _privateCallAccountUid;
+            if (currentUid == null) return;
+            final media = await _callSignalingClient.mediaSession(
+              actorUid: currentUid, callId: currentCallId,
             );
+            if (!_joined || _roomId != roomId ||
+                _privateCallId != currentCallId ||
+                media.appId != _appId || media.roomId != roomId ||
+                media.userId != _zegoUserId ||
+                media.streamId != _streamId) {
+              throw const VoiceException(
+                'call_token_session_mismatch',
+                'Call media token does not match the active session.',
+              );
+            }
+            renewedToken = media.token;
+          } else {
+            final session = await _tokenClient.createSession(
+              roomId, roomPassword: _accessCode,
+            );
+            if (!_joined || _roomId != roomId) return;
+            if (session.appId != _appId || session.roomId != roomId) {
+              throw const VoiceException(
+                'token_session_mismatch',
+                'Voice token session does not match the active room.',
+              );
+            }
+            renewedToken = session.token;
           }
 
-          await ZegoExpressEngine.instance.renewToken(roomId, session.token);
+          await ZegoExpressEngine.instance.renewToken(roomId, renewedToken);
           return;
         } catch (_) {
           if (attempt == 2 && _joined && _roomId == roomId) {
@@ -227,6 +256,8 @@ class ZegoVoiceService implements VoiceService {
     _connectionController.add(VoiceConnectionState.connecting);
     try {
       _accessCode = accessCode?.trim();
+      _privateCallId = null;
+      _privateCallAccountUid = null;
       _playingStreams.clear();
       final session = await _tokenClient.createSession(
         roomId,
@@ -271,6 +302,83 @@ class ZegoVoiceService implements VoiceService {
     }
   }
 
+  /// Private 1:1 audio reuses the existing ZEGO engine and stream handlers.
+  /// Callers MUST finish the existing voice room before invoking this method.
+  /// The Worker mediaSession must already have proven status=active.
+  Future<void> joinPrivateCall({
+    required PrivateCallMediaCredentials media,
+    required String accountUid,
+    required String displayName,
+  }) async {
+    if (_joined) {
+      throw const VoiceException(
+        'voice_session_busy',
+        'Leave the public voice room before answering the private call.',
+      );
+    }
+    if (accountUid.isEmpty ||
+        media.roomId != 'private_call_${media.callId}' ||
+        media.streamId != '${media.roomId}_${media.userId}') {
+      throw const VoiceException(
+        'invalid_call_credentials', 'Invalid private call credentials.',
+      );
+    }
+    _connectionController.add(VoiceConnectionState.connecting);
+    _playingStreams.clear();
+    var loginStarted = false;
+    try {
+      await _ensureEngine(media.appId);
+      _roomId = media.roomId;
+      _zegoUserId = media.userId;
+      _streamId = media.streamId;
+      _privateCallId = media.callId;
+      _privateCallAccountUid = accountUid;
+      _accessCode = null;
+      loginStarted = true;
+      final result = await ZegoExpressEngine.instance.loginRoom(
+        media.roomId,
+        ZegoUser(media.userId,
+          displayName.isEmpty ? 'Shadow Live' : displayName),
+        config: ZegoRoomConfig(0, true, media.token),
+      );
+      if (result.errorCode != 0) {
+        throw VoiceException(
+          'zego_call_login_failed', 'Call login error ${result.errorCode}',
+        );
+      }
+      _joined = true;
+      _publishing = false;
+      _seatIndex = null;
+      _micController.add(VoiceMicState.muted);
+      _connectionController.add(VoiceConnectionState.connected);
+      // setPlaybackEnabled already resumes known streams once.
+      await setPlaybackEnabled(true);
+      await unmuteMic();
+    } catch (error) {
+      if (_joined) {
+        await leaveRoom();
+      } else {
+        if (loginStarted && _roomId != null) {
+          try {
+            await ZegoExpressEngine.instance.logoutRoom(_roomId);
+          } catch (_) {}
+        }
+        _roomId = null;
+        _zegoUserId = null;
+        _streamId = null;
+        _privateCallId = null;
+        _privateCallAccountUid = null;
+        _playingStreams.clear();
+        _connectionController.add(VoiceConnectionState.failed);
+      }
+      if (error is VoiceException) rethrow;
+      throw VoiceException('call_media_join_failed', error.toString());
+    }
+  }
+
+  bool get privateCallAudioActive => _joined && _privateCallId != null;
+  String? get activePrivateCallId => privateCallAudioActive ? _privateCallId : null;
+
   void _requireJoined() {
     if (!_joined || _roomId == null || _zegoUserId == null) {
       throw const VoiceException('not_in_room', 'Join a voice room first.');
@@ -301,6 +409,8 @@ class ZegoVoiceService implements VoiceService {
       _zegoUserId = null;
       _streamId = null;
       _accessCode = null;
+      _privateCallId = null;
+      _privateCallAccountUid = null;
       _seatIndex = null;
       _micController.add(VoiceMicState.muted);
       _connectionController.add(VoiceConnectionState.disconnected);
@@ -550,6 +660,7 @@ class ZegoVoiceService implements VoiceService {
       _appId = null;
     }
     _tokenClient.close();
+    _callSignalingClient.dispose();
     await _connectionController.close();
     await _micController.close();
   }
