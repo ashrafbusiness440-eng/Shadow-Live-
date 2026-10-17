@@ -15,6 +15,9 @@ class AppNotification {
     this.objectId,
     this.operationId,
     this.reviewStatus,
+    this.callId,
+    this.callConversationId,
+    this.callSenderId,
     required this.agencyId,
     required this.requestType,
     required this.applicantUid,
@@ -38,6 +41,9 @@ class AppNotification {
   final String? objectId;
   final String? operationId;
   final String? reviewStatus;
+  final String? callId;
+  final String? callConversationId;
+  final String? callSenderId;
   final String? agencyId;
   final String? requestType;
   final String? applicantUid;
@@ -91,6 +97,9 @@ class AppNotification {
       objectId: _nullable(data['objectId']),
       operationId: _nullable(data['operationId']),
       reviewStatus: _nullable(data['reviewStatus']),
+      callId: _nullable(data['callId']),
+      callConversationId: _nullable(data['conversationId']),
+      callSenderId: _nullable(data['senderId']),
       agencyId: _nullable(data['agencyId']),
       requestType: _nullable(data['requestType']),
       applicantUid: _nullable(data['applicantUid'] ?? data['memberUid']),
