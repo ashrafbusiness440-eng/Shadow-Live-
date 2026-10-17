@@ -83,6 +83,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool _joining = false;
   bool _active = false;
   bool _privateCallMediaActive = false;
+  bool _privateCallMediaJoining = false;
   String? _privateCallMediaId;
   bool _minimized = false;
   bool _micMuted = true;
@@ -247,13 +248,17 @@ class VoiceRoomSessionController extends ChangeNotifier {
         _voiceService.connectionStates.listen((state) {
       // A kick or terminal voice failure must use the same cleanup path as
       // normal leave, otherwise room presence and the seat can remain stale.
-      final unexpectedLoss = _active &&
+      final unexpectedLoss = (_active || _privateCallMediaActive) &&
           _leaveInFlight == null &&
           (state == VoiceConnectionState.disconnected ||
               state == VoiceConnectionState.failed);
       _connectionState = state;
       if (state == VoiceConnectionState.connected) {
-        _active = true;
+        // Private audio uses the same ZEGO event stream but MUST NOT appear
+        // as a public room. Preserve separate room/presence/seat lifetimes.
+        if (!_privateCallMediaJoining && !_privateCallMediaActive) {
+          _active = true;
+        }
         _joining = false;
         _error = null;
       } else if (state == VoiceConnectionState.failed) {
@@ -993,7 +998,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> join(Map<String, dynamic> arguments) async {
-    if (_privateCallMediaActive) {
+    if (_privateCallMediaActive || _privateCallMediaJoining) {
       throw StateError('private_call_audio_active');
     }
     final user = FirebaseAuth.instance.currentUser;
@@ -1101,11 +1106,16 @@ class VoiceRoomSessionController extends ChangeNotifier {
     if (engine is! ZegoVoiceService) {
       throw StateError('private_call_media_unavailable');
     }
-    await engine.joinPrivateCall(
-      media: credentials,
-      accountUid: actorUid,
-      displayName: displayName,
-    );
+    _privateCallMediaJoining = true;
+    try {
+      await engine.joinPrivateCall(
+        media: credentials,
+        accountUid: actorUid,
+        displayName: displayName,
+      );
+    } finally {
+      _privateCallMediaJoining = false;
+    }
     if (FirebaseAuth.instance.currentUser?.uid != actorUid) {
       await engine.leaveRoom();
       throw StateError('account_changed');
@@ -1199,6 +1209,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _active = false;
     _joining = false;
     _privateCallMediaActive = false;
+    _privateCallMediaJoining = false;
     _privateCallMediaId = null;
     _minimized = false;
     _micMuted = true;
