@@ -38,7 +38,7 @@ void main() {
     expect(ui, contains('تعذر إجراء المكالمة'));
     expect(ui, contains('إنهاء المكالمة'));
     expect(ui, contains('إعادة المحاولة'));
-    expect(ui, contains('barrierDismissible: false') , isFalse);
+    expect(ui.contains('barrierDismissible: false'), isFalse);
     expect(ui, contains('onWillPop: () async { await _end(); return false; }'));
   });
 }
