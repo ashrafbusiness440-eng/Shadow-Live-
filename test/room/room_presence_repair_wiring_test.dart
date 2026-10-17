@@ -74,7 +74,11 @@ void main() {
     final controller = File(
       'lib/features/voice/services/voice_room_session_controller.dart',
     ).readAsStringSync();
-    expect(controller.contains('final unexpectedLoss = _active &&'), isTrue);
+    // Terminal cleanup now covers active calls as well as public rooms,
+    // while retaining the same single-flight leave path for both.
+    expect(controller.contains(
+      'final unexpectedLoss = (_active || _privateCallMediaActive) &&'
+    ), isTrue);
     expect(controller.contains('if (unexpectedLoss) unawaited(leave());'),
         isTrue);
     expect(controller.contains('Future<void>? _leaveInFlight;'), isTrue);
