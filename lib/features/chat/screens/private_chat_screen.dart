@@ -24,6 +24,7 @@ import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/chat_safety_service.dart';
 import '../services/animated_emoji_catalog.dart';
 import '../widgets/private_voice_note_controls.dart';
+import '../widgets/private_call_outgoing_dialog.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
 import '../../vip/widgets/vip_cosmetic_asset.dart';
 import '../../vip/utils/vip_public_state.dart';
@@ -68,6 +69,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _markingRead = false;
   bool _sendingImage = false;
   bool _voiceNotesEnabled = false;
+  bool _privateCallsEnabled = false;
   bool _messageActionBusy = false;
   final Set<String> _locallyHiddenMessageIds = <String>{};
   final Set<String> _locallyDeletedMessageIds = <String>{};
@@ -458,13 +460,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       final setting = await FirebaseFirestore.instance
           .collection('system_config').doc('messaging').get();
       if (_isActiveChatAccount(ownerUid)) {
-        setState(() => _voiceNotesEnabled =
-            setting.data()?['voiceNotesEnabled'] == true);
+        setState(() {
+          _voiceNotesEnabled = setting.data()?['voiceNotesEnabled'] == true;
+          _privateCallsEnabled = setting.data()?['privateCallsEnabled'] == true;
+        });
       }
     } catch (_) {
       // Fail closed. The server must explicitly enable private voice notes.
       if (_isActiveChatAccount(ownerUid)) {
-        setState(() => _voiceNotesEnabled = false);
+        setState(() {
+          _voiceNotesEnabled = false;
+          _privateCallsEnabled = false;
+        });
       }
     }
   }
@@ -810,6 +817,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
 
   bool _canDeleteMessageForEveryone(Map<String, dynamic> data) {
+    // System call events are authoritative records, not user text messages.
+    if (data['type'] == 'call_event') return false;
     if (data['senderId'] != _openedByUid ||
         data['deletedForEveryone'] == true) return false;
     final createdAt = data['createdAt'];
@@ -965,6 +974,40 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           SizedBox(width: 7),
           Text('تم حذف هذه الرسالة',
               style: TextStyle(color: Colors.white70)),
+        ],
+      );
+    } else if (type == 'call_event') {
+      final status = (data['status'] ?? '').toString();
+      final seconds = ((data['durationSeconds'] as num?)?.toInt() ?? 0)
+          .clamp(0, 86400);
+      final summary = switch (status) {
+        'missed' => 'مكالمة فائتة',
+        'rejected' => 'مكالمة مرفوضة',
+        'cancelled' => 'مكالمة ملغاة',
+        'completed' => 'مكالمة صوتية مكتملة',
+        'interrupted' => 'مكالمة منقطعة',
+        _ => 'مكالمة صوتية',
+      };
+      final durationText = seconds >= 60
+          ? '${seconds ~/ 60} د ${seconds % 60} ث'
+          : '$seconds ث';
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(status == 'missed' ? Icons.call_missed : Icons.call_end,
+            size: 20, color: const Color(0xFFFFD54A)),
+          const SizedBox(width: 9),
+          Flexible(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(summary, style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+              if (status == 'completed' && seconds > 0)
+                Text(durationText, style: const TextStyle(
+                  fontSize: 12, color: Colors.white70)),
+            ],
+          )),
         ],
       );
     } else if (type == 'voice_note') {
@@ -1163,7 +1206,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
-        onLongPress: () => _showMessageActions(doc),
+        onLongPress: type == 'call_event' ? null : () => _showMessageActions(doc),
         child: Container(
         constraints: const BoxConstraints(maxWidth: 300),
         margin: const EdgeInsets.only(bottom: 8),
@@ -1528,6 +1571,30 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 },
               ),
               actions: [
+                if (_privateCallsEnabled &&
+                    !_loadingSafety &&
+                    !_safetyStatus.blocked &&
+                    _openedByUid != null &&
+                    FirebaseAuth.instance.currentUser?.isAnonymous == false)
+                  IconButton(
+                    tooltip: 'اتصال صوتي خاص',
+                    icon: const Icon(Icons.call_rounded),
+                    onPressed: () {
+                      final accountUid = _openedByUid;
+                      if (accountUid == null ||
+                          !_isActiveChatAccount(accountUid)) return;
+                      showDialog<void>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => PrivateCallOutgoingDialog(
+                          accountUid: accountUid,
+                          otherUid: widget.otherUid,
+                          conversationId: widget.conversationId,
+                          otherName: widget.otherName,
+                        ),
+                      );
+                    },
+                  ),
                 PopupMenuButton<String>(
                   enabled: !_changingBlock && !_loadingSafety,
                   icon: const Icon(Icons.more_vert_rounded),

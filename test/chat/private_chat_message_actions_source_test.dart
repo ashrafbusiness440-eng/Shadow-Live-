@@ -7,7 +7,11 @@ void main() {
     final source = File('lib/features/chat/screens/private_chat_screen.dart')
         .readAsStringSync();
     expect(source.contains('Widget _messageBubble(QueryDocumentSnapshot'), isTrue);
-    expect(source.contains('onLongPress: () => _showMessageActions(doc)'), isTrue);
+    // Ordinary messages retain their action sheet, but server-generated
+    // call_event history cannot be deleted as if it were user text.
+    expect(source.contains(
+      "onLongPress: type == 'call_event' ? null : () => _showMessageActions(doc)"
+    ), isTrue);
     expect(source.contains('Clipboard.setData(ClipboardData(text: copyText))'), isTrue);
     expect(source.contains("'hideMessageForMe'"), isTrue);
     expect(source.contains("'حذف من عندي'"), isTrue);
