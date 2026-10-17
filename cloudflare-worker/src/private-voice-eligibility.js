@@ -78,6 +78,12 @@ export async function requireMutualPrivateVoice(db, params) {
       throw new PrivateVoicePolicyError("voice_note_during_private_call", 409);
     }
   } else {
+    // A paid draft has no accepted, atomic wallet settlement yet.
+    // Never silently treat a paid tariff as a free call, even if someone
+    // bypasses Control and edits the Firestore toggle directly.
+    if (settings.data?.privateCallPricingMode === "paid") {
+      throw new PrivateVoicePolicyError("private_call_billing_not_ready", 409);
+    }
     if (settings.data?.privateCallsEnabled !== true) {
       throw new PrivateVoicePolicyError("private_calls_disabled", 403);
     }

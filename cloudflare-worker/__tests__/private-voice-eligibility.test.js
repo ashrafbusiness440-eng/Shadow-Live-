@@ -103,3 +103,13 @@ test("voice notes reject active or ringing private calls but allow expired slots
   await requireMutualPrivateVoice(calls.db,args("call"));
   assert.equal(calls.reads.length,8);
 });
+
+test("paid-mode call is blocked by server even if a direct write turns feature ON",async()=>{
+  const {db,reads}=fixture({"system_config/messaging":{
+    voiceNotesEnabled:true, privateCallsEnabled:true,
+    privateCallPricingMode:"paid", privateCallPriceCoins:149,
+  }});
+  await assert.rejects(requireMutualPrivateVoice(db,args("call")),
+    e=>e.code==="private_call_billing_not_ready" && e.status===409);
+  assert.equal(reads.length,8);
+});
