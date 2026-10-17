@@ -59,6 +59,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   Timer? _followBadgeExpiry;
   bool _followNavigationBusy = false;
   bool _sending = false;
+  String? _pendingTextKey;
+  String? _pendingTextBody;
+  String? _pendingTextEmojiId;
+  int _textDraftRevision = 0;
   bool _changingBlock = false;
   bool _loadingSafety = true;
   ChatSafetyStatus _safetyStatus = const ChatSafetyStatus(
@@ -106,6 +110,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         .limit(100)
         .snapshots();
     _openedByUid = FirebaseAuth.instance.currentUser?.uid;
+    // One local composer listener, not a listener per chat message.
+    _controller.addListener(_onTextDraftChanged);
     if (FirebaseAuth.instance.currentUser?.isAnonymous ?? true) return;
     _markRead();
     _loadSafetyStatus();
@@ -141,18 +147,39 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
+  void _clearPendingTextOperation() {
+    _pendingTextKey = null;
+    _pendingTextBody = null;
+    _pendingTextEmojiId = null;
+  }
+
+  void _onTextDraftChanged() {
+    // Never replay a receipt for a draft the user has since edited, even
+    // if the text later returns to exactly the same value.
+    _textDraftRevision++;
+    _clearPendingTextOperation();
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
+    final emojiId = _animatedEmojiId;
+    final draftRevision = _textDraftRevision;
     final sender = FirebaseAuth.instance.currentUser;
     final senderUid = sender?.uid;
     if (text.isEmpty || _sending || text.length > 2000 ||
         !_isActiveChatAccount(senderUid)) return;
+    final key = _pendingTextKey != null &&
+            _pendingTextBody == text && _pendingTextEmojiId == emojiId
+        ? _pendingTextKey!
+        : [senderUid!, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
+    _pendingTextKey = key;
+    _pendingTextBody = text;
+    _pendingTextEmojiId = emojiId;
     setState(() => _sending = true);
     try {
       final token = await sender!.getIdToken();
       if (!_isActiveChatAccount(senderUid)) return;
       if (token == null || token.isEmpty) throw StateError('not_signed_in');
-      final key = [senderUid!, DateTime.now().microsecondsSinceEpoch.toString(), 'text'].join('_');
       final response = await http.post(
         Uri.parse('$_apiBase/chat-actions'),
         headers: {'authorization': 'Bearer ' + token, 'content-type': 'application/json'},
@@ -161,11 +188,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           'receiverId': widget.otherUid,
           'conversationId': widget.conversationId,
           'text': text,
-          if (_animatedEmojiId != null)
-            'animatedEmojiId': _animatedEmojiId,
+          if (emojiId != null)
+            'animatedEmojiId': emojiId,
           'idempotencyKey': key,
         }),
-      );
+      ).timeout(const Duration(seconds: 15));
       if (!_isActiveChatAccount(senderUid)) return;
       Map<String, dynamic> body = <String, dynamic>{};
       try {
@@ -173,10 +200,22 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         if (decoded is Map<String, dynamic>) body = decoded;
       } catch (_) {}
       if (response.statusCode == 200 && body['ok'] == true) {
-        _controller.clear();
-        _animatedEmojiId = null;
+        _clearPendingTextOperation();
+        // An in-flight send must NEVER erase a later draft typed by the user.
+        if (_textDraftRevision == draftRevision &&
+            _controller.text.trim() == text &&
+            _animatedEmojiId == emojiId) {
+          _controller.clear();
+          _animatedEmojiId = null;
+        }
         if (mounted) setState(() {});
         return;
+      }
+      // Explicit 4xx rejections are terminal for this request; transient
+      // transport failures and 5xx keep the same key for a safe manual retry.
+      if (response.statusCode >= 400 && response.statusCode < 500 &&
+          body['code'] != 'rate_limited') {
+        _clearPendingTextOperation();
       }
       switch (body['code']) {
         case 'content_blocked':
@@ -199,6 +238,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           break;
         case 'private_messages_restricted':
           _snack('الإدارة قيّدت إرسال الرسائل الخاصة مؤقتًا. راجع إشعاراتك لمعرفة السبب والمدة.');
+          break;
+        case 'message_operation_conflict':
+          _snack('تغيّر طلب الإرسال. راجع الرسالة وحاول من جديد.');
           break;
         default:
           _snack('تعذر إرسال الرسالة حالياً.');
@@ -1290,6 +1332,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     _followQuery.close();
     _storage.close();
     _chatImageLoads.clear();
+    _controller.removeListener(_onTextDraftChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -1392,6 +1435,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                   controller: _controller,
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _send(),
+                  onChanged: (_) {
+                    if (_animatedEmojiId != null) {
+                      setState(() => _animatedEmojiId = null);
+                    }
+                  },
                   minLines: 1,
                   maxLines: 5,
                   maxLength: 2000,
