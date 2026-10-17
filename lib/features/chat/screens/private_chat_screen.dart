@@ -308,6 +308,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   }
 
   Future<void> _reportUser() async {
+    final reporterUid = _openedByUid;
+    if (!_isActiveChatAccount(reporterUid)) return;
     final detailsController = TextEditingController();
     var reason = 'spam';
     var sending = false;
@@ -373,24 +375,44 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       setDialogState(() => sending = true);
                       try {
                         final screenshot = await captureReportSnapshot(_reportSnapshotKey);
+                        if (!_isActiveChatAccount(reporterUid)) {
+                          if (dialogContext.mounted) Navigator.pop(dialogContext);
+                          return;
+                        }
                         final reportId = await _safety.reportUser(
                           targetUserId: widget.otherUid,
                           conversationId: widget.conversationId,
                           reason: reason,
                           details: detailsController.text.trim(),
                         );
+                        if (!_isActiveChatAccount(reporterUid)) {
+                          if (dialogContext.mounted) Navigator.pop(dialogContext);
+                          return;
+                        }
+                        // Screenshot evidence is optional. A failure to attach it
+                        // must never turn a committed report into a false failure.
                         final attached = await _reportSnapshots.attach(
                           reportId: reportId, imageBase64: screenshot,
                         );
+                        if (!_isActiveChatAccount(reporterUid)) {
+                          if (dialogContext.mounted) Navigator.pop(dialogContext);
+                          return;
+                        }
                         if (dialogContext.mounted) Navigator.pop(dialogContext);
                         _snack(screenshot != null && !attached
-                          ? 'تم إرسال البلاغ مع الدليل الموثق، دون الصورة الاختيارية.'
+                          ? 'تم إرسال البلاغ للمراجعة بدون الصورة الاختيارية.'
                           : 'تم إرسال البلاغ للمراجعة.');
                       } on StateError catch (error) {
+                        if (!_isActiveChatAccount(reporterUid)) {
+                          if (dialogContext.mounted) Navigator.pop(dialogContext);
+                          return;
+                        }
                         if (error.message == 'rate_limited') {
                           _snack('تم إرسال عدة بلاغات مؤخرًا. حاول لاحقًا.');
                         } else if (error.message == 'report_recent_duplicate') {
                           _snack('سبق إرسال هذا البلاغ مؤخرًا. يمكنك الإبلاغ عن واقعة مختلفة.');
+                        } else if (error.message == 'report_confirmation_pending') {
+                          _snack('لم نتأكد من نتيجة البلاغ. قد يكون وصل للإدارة؛ اضغط إرسال مرة ثانية لتأكيد نفس البلاغ دون تكراره.');
                         } else {
                           _snack('تعذر إرسال البلاغ حالياً.');
                         }
@@ -398,7 +420,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                           setDialogState(() => sending = false);
                         }
                       } catch (_) {
-                        _snack('تعذر إرسال البلاغ حالياً.');
+                        if (_isActiveChatAccount(reporterUid)) {
+                          _snack('تعذر إرسال البلاغ حالياً.');
+                        }
                         if (dialogContext.mounted) {
                           setDialogState(() => sending = false);
                         }
