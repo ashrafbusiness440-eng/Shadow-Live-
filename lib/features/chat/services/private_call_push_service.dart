@@ -127,7 +127,15 @@ class PrivateCallPushService {
       // Retire the installation token on logout/account switch. Any old
       // registration is also suppressed server-side by explicit opt-in and
       // ownership re-assignment when the next account registers.
-      try { await _messaging.deleteToken(); } catch (_) {}
+      try {
+        if (kIsWeb) {
+          await web_push.deleteToken();
+        } else {
+          await _messaging.deleteToken();
+        }
+      } catch (_) {}
+      _registeredUid = null;
+      _registeredToken = null;
     }
     _currentUid = uid;
     _enabledUid = null;
@@ -138,15 +146,26 @@ class PrivateCallPushService {
           .timeout(const Duration(seconds: 12));
       if (FirebaseAuth.instance.currentUser?.uid != uid ||
           doc.data()?['privateCallPushOptIn'] != true) return;
-      final status = await _messaging.getNotificationSettings();
-      if (status.authorizationStatus != AuthorizationStatus.authorized &&
-          status.authorizationStatus != AuthorizationStatus.provisional) {
-        return;
+      if (kIsWeb) {
+        if (web_push.permission != 'granted') return;
+      } else {
+        final status = await _messaging.getNotificationSettings();
+        if (status.authorizationStatus != AuthorizationStatus.authorized &&
+            status.authorizationStatus != AuthorizationStatus.provisional) {
+          return;
+        }
       }
-      final token = await _messaging.getToken();
+      final token = kIsWeb
+          ? await web_push.getToken(_webVapidKey)
+          : await _messaging.getToken();
       if (token == null || FirebaseAuth.instance.currentUser?.uid != uid) return;
       await _register(uid, token);
       if (FirebaseAuth.instance.currentUser?.uid == uid) _enabledUid = uid;
+      if (kIsWeb) {
+        await web_push.subscribe((data) {
+          unawaited(_handleWebMessage(data));
+        });
+      }
       if (_pendingTapCallId != null) await _presentPendingTap(uid);
     } catch (_) {
       // Startup remains functional even when notification services fail.
@@ -172,7 +191,8 @@ class PrivateCallPushService {
         'content-type': 'application/json',
       },
       body: jsonEncode({
-        'action': action, 'token': token, 'platform': 'android',
+        'action': action, 'token': token,
+        'platform': kIsWeb ? 'web' : 'android',
       }),
     ).timeout(const Duration(seconds: 12));
     if (FirebaseAuth.instance.currentUser?.uid != uid) {
@@ -182,6 +202,13 @@ class PrivateCallPushService {
     if (response.statusCode != 200 || data is! Map ||
         data['ok'] != true) {
       throw StateError('push_registration_failed');
+    }
+    if (action == 'register') {
+      _registeredUid = uid;
+      _registeredToken = token;
+    } else if (_registeredUid == uid && _registeredToken == token) {
+      _registeredUid = null;
+      _registeredToken = null;
     }
   }
 
