@@ -157,6 +157,7 @@ class PrivateCallPushService {
       }
       final token = kIsWeb
           ? await web_push.getToken(_webVapidKey)
+              .timeout(const Duration(seconds: 30))
           : await _messaging.getToken();
       if (token == null || FirebaseAuth.instance.currentUser?.uid != uid) return;
       await _register(uid, token);
@@ -164,7 +165,7 @@ class PrivateCallPushService {
       if (kIsWeb) {
         await web_push.subscribe((data) {
           unawaited(_handleWebMessage(data));
-        });
+        }).timeout(const Duration(seconds: 15));
       }
       if (_pendingTapCallId != null) await _presentPendingTap(uid);
     } catch (_) {
@@ -224,7 +225,8 @@ class PrivateCallPushService {
     if (kIsWeb) {
       // The JS bridge asks Notification.permission directly from this
       // explicit user gesture; no startup/background permission prompts.
-      token = await web_push.getToken(_webVapidKey);
+      token = await web_push.getToken(_webVapidKey)
+              .timeout(const Duration(seconds: 30));
     } else {
       final permission = await _messaging.requestPermission(
         alert: true, badge: true, sound: true,
@@ -254,7 +256,7 @@ class PrivateCallPushService {
     if (kIsWeb) {
       await web_push.subscribe((data) {
         unawaited(_handleWebMessage(data));
-      });
+      }).timeout(const Duration(seconds: 15));
     }
   }
 
