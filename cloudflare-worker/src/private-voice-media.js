@@ -72,10 +72,11 @@ export function validateVoiceUpload(body) {
   }
   return {...scope,mimeType,byteLength,durationSeconds,extension:AUDIO[mimeType]};
 }
-async function eligibility(db, uid, otherUid, conversationId, transaction=null) {
+async function eligibility(db, uid, otherUid, conversationId, transaction=null,
+  allowReadDuringCall=false) {
   return requireMutualPrivateVoice(db,{
     actorUid:uid,otherUid,conversationId,kind:"voice_note",
-    transaction,
+    transaction,allowReadDuringCall,
   });
 }
 async function objectRecord(db, objectId, transaction=null) {
@@ -252,7 +253,9 @@ export async function voiceRead(db,env,uid,body) {
   const objectId=clean(body.objectId),raw=await objectRecord(db,objectId);
   const peer=uid===raw.ownerUid?raw.otherUid:uid===raw.otherUid?raw.ownerUid:"";
   if (!peer)throw new VoiceMediaError("forbidden",403);
-  await eligibility(db,uid,peer,raw.conversationId);
+  // Reading an existing note must remain possible; only creating or
+  // sending one consumes the microphone during a private call.
+  await eligibility(db,uid,peer,raw.conversationId,null,true);
   if(raw.state!=="sent"||!validTextId(raw.messageId)) {
     throw new VoiceMediaError("voice_message_unavailable",404);
   }
