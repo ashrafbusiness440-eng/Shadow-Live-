@@ -321,6 +321,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           'انقطع الاتصال قبل التأكيد. قد تكون الهدية وصلت؛ تحقق من الرصيد أولاً.',
         'gift_auth_failed' =>
           'تعذر تأكيد جلسة حسابك. أعد تسجيل الدخول ثم حاول مجددًا.',
+        'gift_account_changed' =>
+          'تغيّر الحساب أثناء الإرسال. تحقّق من سجل الهدايا والرصيد في الحساب السابق قبل أي محاولة جديدة.',
         'not_found' || 'gift_not_found' =>
           'هذه الهدية غير موجودة في المتجر حاليًا. اختر هدية أخرى.',
         'room_gifts_disabled' =>
