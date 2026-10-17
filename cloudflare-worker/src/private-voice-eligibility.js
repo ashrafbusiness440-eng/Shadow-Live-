@@ -43,7 +43,7 @@ export async function requireMutualPrivateVoice(db, params) {
     db.get(`users/${actorUid}`, transaction),
     db.get(`users/${otherUid}`, transaction),
     db.get("system_config/messaging", transaction),
-    kind === "voice_note"
+    kind === "voice_note" && params.allowReadDuringCall !== true
       ? db.get(`private_call_slots/${actorUid}`, transaction)
       : Promise.resolve({ exists: false }),
   ]);
