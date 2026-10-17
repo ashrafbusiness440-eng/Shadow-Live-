@@ -1094,6 +1094,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
       if (_privateCallMediaId == credentials.callId) return;
       throw StateError('private_call_audio_busy');
     }
+    if (_privateCallMediaJoining) {
+      throw StateError('private_call_audio_join_in_progress');
+    }
     // Joining is not cancel-safe; reject instead of racing an in-flight room
     // login and accidentally sending call sound to the wrong ZEGO room.
     if (_joining) throw StateError('voice_room_join_in_progress');
