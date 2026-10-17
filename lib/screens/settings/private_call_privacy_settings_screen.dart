@@ -238,7 +238,8 @@ class _PrivateCallPrivacySettingsScreenState
                   value: _pushEnabled,
                   onChanged: _loading || _saving || _pushSaving ||
                           _loadFailed || !_activeAccount ||
-                          !PrivateCallPushService.instance.supported
+                          (!PrivateCallPushService.instance.supported &&
+                              !_pushEnabled)
                       ? null : _changePush,
                 ),
               ),
