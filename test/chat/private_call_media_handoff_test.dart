@@ -101,6 +101,7 @@ void main() {
     expect(controller, contains('if (!_privateCallMediaJoining && !_privateCallMediaActive)'));
     expect(controller, contains('final unexpectedLoss = (_active || _privateCallMediaActive)'));
     expect(controller, contains('_privateCallMediaJoining = true;'));
+    expect(controller, contains("throw StateError('private_call_audio_join_in_progress')"));
     expect(zego, contains('await _ensureEngine(media.appId);'));
     expect(zego, contains('media.streamId'));
     expect(zego, contains('await unmuteMic();'));
