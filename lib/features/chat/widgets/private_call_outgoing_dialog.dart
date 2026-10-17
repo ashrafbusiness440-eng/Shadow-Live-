@@ -30,6 +30,7 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
   String _status = 'connecting';
   String? _message;
   bool _busy = false, _checking = false, _connected = false, _closing = false;
+  bool _joiningMedia = false;
   int _ticks = 0, _failures = 0;
 
   bool get _sameAccount =>
@@ -131,7 +132,8 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
 
   Future<void> _joinMedia() async {
     final id = _callId;
-    if (!_sameAccount || _busy || _connected || id == null) return;
+    if (!_sameAccount || _joiningMedia || _connected || id == null) return;
+    _joiningMedia = true;
     _busy = true;
     try {
       final media = await _client.mediaSession(
@@ -163,6 +165,7 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
         });
       }
     } finally {
+      _joiningMedia = false;
       _busy = false;
     }
   }
