@@ -539,7 +539,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             data?['senderId'] == senderUid &&
             data?['storageObjectId'] == objectId &&
             data?['type'] == 'image') {
-          _snack('تم إرسال الصورة. يمكنك رؤيتها داخل المحادثة.');
+          _snack(data?['moderationStatus'] == 'pending'
+              ? 'تم إرسال الصورة للمراجعة. لن تظهر حتى موافقة الإدارة.'
+              : 'تم إرسال الصورة. يمكنك رؤيتها داخل المحادثة.');
           return;
         }
       }
