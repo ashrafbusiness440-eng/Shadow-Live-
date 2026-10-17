@@ -10,6 +10,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../services/navigation_service.dart';
+import '../../../firebase_options.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../widgets/private_call_incoming_dialog.dart';
 import 'private_call_signaling_client.dart';
@@ -39,7 +40,12 @@ class PrivateCallPushService {
   StreamSubscription<RemoteMessage>? _tapSub;
 
   bool get supported =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.android &&
+      // Firebase Messaging needs a real Firebase Android app registration.
+      // The repository currently contains a web appId for Android; keep
+      // the consent/registration UI OFF until a valid Android appId is set.
+      DefaultFirebaseOptions.android.appId.contains(':android:');
   bool get enabledForCurrentUser =>
       _enabledUid != null &&
       FirebaseAuth.instance.currentUser?.uid == _enabledUid;
