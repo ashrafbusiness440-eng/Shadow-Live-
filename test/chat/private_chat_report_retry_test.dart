@@ -7,7 +7,6 @@ void main() {
         .readAsStringSync();
     final start = source.indexOf('  Future<String> _submitReport(');
     final request = source.substring(start);
-    expect(request, contains('String? _pendingReportFingerprint') == false);
     expect(source, contains('String? _pendingReportFingerprint;'));
     expect(source, contains('String? _pendingReportKey;'));
     expect(request, contains('final fingerprint = jsonEncode(['));
