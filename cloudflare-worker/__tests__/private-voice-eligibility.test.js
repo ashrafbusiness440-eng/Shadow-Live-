@@ -93,6 +93,11 @@ test("voice notes reject active or ringing private calls but allow expired slots
   const old=fixture({"private_call_slots/alice":{callId:"old",expiresAtMs:t-1}});
   const ok=await requireMutualPrivateVoice(old.db,{...args("voice_note"),nowMs:t});
   assert.equal(ok.kind,"voice_note");
+  const readable=fixture({"private_call_slots/alice":{expiresAtMs:t+1000}});
+  await requireMutualPrivateVoice(readable.db,{
+    ...args("voice_note"),nowMs:t,allowReadDuringCall:true,
+  });
+  assert.equal(readable.reads.length,8);
   // Starting calls never introduces a lookup for a voice-note-only guard.
   const calls=fixture();
   await requireMutualPrivateVoice(calls.db,args("call"));
