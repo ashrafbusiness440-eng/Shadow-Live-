@@ -9,7 +9,7 @@ void main() {
     expect(source, contains('static final instance = PrivateCallPushService._();'));
     expect(source, contains('bool get supported =>'));
     expect(source, contains('defaultTargetPlatform == TargetPlatform.android'));
-    expect(source, contains("DefaultFirebaseOptions.android.appId.contains(':android:')"));
+    expect(source, contains("DefaultFirebaseOptions.androidMessagingConfigured"));
     expect(source, contains('Future<void> enableForCurrentUser() async'));
     expect(source, contains('_messaging.requestPermission('));
     expect(source, contains('privateCallPushOptIn'));
@@ -54,6 +54,64 @@ void main() {
     expect(page, contains('enableForCurrentUser()'));
     expect(page, contains('disableForCurrentUser()'));
     expect(page, contains('تنبيهات الويب وPWA تحتاج إعداد VAPID'));
+  });
+
+  test('Android Firebase setup rejects the existing web App ID and permits an explicit native build-time ID', () {
+    final config = File('lib/firebase_options.dart').readAsStringSync();
+    final push = File(
+      'lib/features/chat/services/private_call_push_service.dart',
+    ).readAsStringSync();
+    expect(config, contains("'SHADOW_FIREBASE_ANDROID_APP_ID'"));
+    expect(config, contains("'SHADOW_FIREBASE_ANDROID_API_KEY'"));
+    expect(config, contains("1:463485983128:web:88c4953fa80d566c7a73ed"));
+    expect(config, contains('androidMessagingConfigured'));
+    expect(config, contains(r"^1:463485983128:android:[0-9a-fA-F]+$"));
+    expect(push, contains('DefaultFirebaseOptions.androidMessagingConfigured'));
+    expect(
+      RegExp(r'^1:463485983128:android:[0-9a-fA-F]+
+    final src = File(
+      'cloudflare-worker/src/private-call-push.js',
+    ).readAsStringSync();
+    expect(src, contains('account.data?.privateCallPushOptIn !== true'));
+    expect(src, contains('PRIVATE_CALL_MEDIA_READY === "true"'));
+    expect(src, contains('PRIVATE_CALL_PUSH_READY === "true"'));
+    expect(src, contains('maxDevices = 4'));
+  });
+}
+)
+          .hasMatch('1:463485983128:web:88c4953fa80d566c7a73ed'),
+      false,
+    );
+    expect(
+      RegExp(r'^1:463485983128:android:[0-9a-fA-F]+
+    final src = File(
+      'cloudflare-worker/src/private-call-push.js',
+    ).readAsStringSync();
+    expect(src, contains('account.data?.privateCallPushOptIn !== true'));
+    expect(src, contains('PRIVATE_CALL_MEDIA_READY === "true"'));
+    expect(src, contains('PRIVATE_CALL_PUSH_READY === "true"'));
+    expect(src, contains('maxDevices = 4'));
+  });
+}
+)
+          .hasMatch('1:463485983128:android:aabbccddeeff0011'),
+      true,
+    );
+    expect(
+      RegExp(r'^1:463485983128:android:[0-9a-fA-F]+
+    final src = File(
+      'cloudflare-worker/src/private-call-push.js',
+    ).readAsStringSync();
+    expect(src, contains('account.data?.privateCallPushOptIn !== true'));
+    expect(src, contains('PRIVATE_CALL_MEDIA_READY === "true"'));
+    expect(src, contains('PRIVATE_CALL_PUSH_READY === "true"'));
+    expect(src, contains('maxDevices = 4'));
+  });
+}
+)
+          .hasMatch('1:999999:android:aabbccddeeff0011'),
+      false,
+    );
   });
 
   test('server never sends on stale tokens after explicit opt-out', () {
