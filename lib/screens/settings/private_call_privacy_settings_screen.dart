@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/chat/services/private_call_push_service.dart';
+
 /// Personal preferences read by the existing private-call Worker policy.
 /// This page does not activate calls, create a parallel preferences document,
 /// or add any Firestore listeners.
@@ -22,6 +24,8 @@ class _PrivateCallPrivacySettingsScreenState
   bool _dirty = false;
   bool _allowCalls = true;
   bool _doNotDisturb = false;
+  bool _pushEnabled = false;
+  bool _pushSaving = false;
   String? _message;
 
   bool get _activeAccount {
@@ -40,7 +44,7 @@ class _PrivateCallPrivacySettingsScreenState
   }
 
   Future<void> _load() async {
-    if (_saving) return;
+    if (_saving || _pushSaving) return;
     if (!_activeAccount) {
       setState(() {
         _loading = false;
@@ -70,6 +74,7 @@ class _PrivateCallPrivacySettingsScreenState
         // Identical defaults to requireMutualPrivateVoice in the Worker.
         _allowCalls = data['allowPrivateCalls'] != false;
         _doNotDisturb = data['doNotDisturbCalls'] == true;
+        _pushEnabled = data['privateCallPushOptIn'] == true;
         _dirty = false;
       });
     } catch (_) {
@@ -119,6 +124,41 @@ class _PrivateCallPrivacySettingsScreenState
       }
     } finally {
       if (_activeAccount) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _changePush(bool enabled) async {
+    if (!_activeAccount || _loading || _saving ||
+        _pushSaving || _loadFailed) return;
+    setState(() {
+      _pushSaving = true;
+      _message = null;
+    });
+    try {
+      final push = PrivateCallPushService.instance;
+      if (enabled) {
+        await push.enableForCurrentUser();
+      } else {
+        await push.disableForCurrentUser();
+      }
+      if (!_activeAccount) return;
+      setState(() {
+        _pushEnabled = enabled;
+        _message = enabled
+            ? 'تم تشغيل تنبيهات المكالمات على هذا الجهاز. '
+              'تظل الخدمة نفسها متوقفة حتى إطلاقها.'
+            : 'تم إيقاف تنبيهات المكالمات لهذا الحساب.';
+      });
+    } catch (error) {
+      if (_activeAccount) {
+        setState(() {
+          _message = error.toString().contains('permission_denied')
+              ? 'إذن الإشعارات مرفوض. يمكنك السماح به من إعدادات الهاتف.'
+              : 'تعذر تعديل تنبيهات المكالمات. تحقق من الاتصال وحاول مجددًا.';
+        });
+      }
+    } finally {
+      if (_activeAccount) setState(() => _pushSaving = false);
     }
   }
 
@@ -183,6 +223,28 @@ class _PrivateCallPrivacySettingsScreenState
                             _dirty = true;
                           }),
                 ),
+              ),
+              Card(
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.notifications_active_outlined),
+                  title: const Text('تنبيهات المكالمات على هذا الجهاز'),
+                  subtitle: Text(
+                    PrivateCallPushService.instance.supported
+                        ? 'السماح بإشعار المكالمة الواردة عند إغلاق التطبيق '
+                          'أو وجوده بالخلفية، بعد منح إذن الهاتف.'
+                        : 'تنبيهات الويب وPWA تحتاج إعدادًا إضافيًا '
+                          'ولم يتم تشغيلها بعد.',
+                  ),
+                  value: _pushEnabled,
+                  onChanged: _loading || _saving || _pushSaving ||
+                          _loadFailed || !_activeAccount ||
+                          !PrivateCallPushService.instance.supported
+                      ? null : _changePush,
+                ),
+              ),
+              if (_pushSaving) const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: CircularProgressIndicator()),
               ),
               if (_loading) const Padding(
                 padding: EdgeInsets.all(16),
