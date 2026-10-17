@@ -42,10 +42,10 @@ class PrivateCallPushService {
   bool get supported =>
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.android &&
-      // Firebase Messaging needs a real Firebase Android app registration.
-      // The repository currently contains a web appId for Android; keep
-      // the consent/registration UI OFF until a valid Android appId is set.
-      DefaultFirebaseOptions.android.appId.contains(':android:');
+      // Fail closed unless the Android binary was built against this
+      // Firebase project's registered Android app ID. A web App ID must
+      // never enable FCM device registration.
+      DefaultFirebaseOptions.androidMessagingConfigured;
   bool get enabledForCurrentUser =>
       _enabledUid != null &&
       FirebaseAuth.instance.currentUser?.uid == _enabledUid;

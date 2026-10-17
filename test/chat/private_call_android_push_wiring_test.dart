@@ -9,7 +9,7 @@ void main() {
     expect(source, contains('static final instance = PrivateCallPushService._();'));
     expect(source, contains('bool get supported =>'));
     expect(source, contains('defaultTargetPlatform == TargetPlatform.android'));
-    expect(source, contains("DefaultFirebaseOptions.android.appId.contains(':android:')"));
+    expect(source, contains("DefaultFirebaseOptions.androidMessagingConfigured"));
     expect(source, contains('Future<void> enableForCurrentUser() async'));
     expect(source, contains('_messaging.requestPermission('));
     expect(source, contains('privateCallPushOptIn'));
@@ -54,6 +54,22 @@ void main() {
     expect(page, contains('enableForCurrentUser()'));
     expect(page, contains('disableForCurrentUser()'));
     expect(page, contains('تنبيهات الويب وPWA تحتاج إعداد VAPID'));
+  });
+
+  test('Android Firebase App ID remains gated until native registration', () {
+    final config = File('lib/firebase_options.dart').readAsStringSync();
+    final source = File(
+      'lib/features/chat/services/private_call_push_service.dart',
+    ).readAsStringSync();
+    expect(config, contains("'SHADOW_FIREBASE_ANDROID_APP_ID'"));
+    expect(config, contains("'SHADOW_FIREBASE_ANDROID_API_KEY'"));
+    expect(config, contains('androidMessagingConfigured'));
+    expect(config, contains('1:463485983128:web:88c4953fa80d566c7a73ed'));
+    expect(source, contains('DefaultFirebaseOptions.androidMessagingConfigured'));
+    final nativePattern = RegExp(r'^1:463485983128:android:[0-9a-fA-F]+$');
+    expect(nativePattern.hasMatch('1:463485983128:web:88c4953fa80d566c7a73ed'), false);
+    expect(nativePattern.hasMatch('1:463485983128:android:aabbccddeeff0011'), true);
+    expect(nativePattern.hasMatch('1:999999:android:aabbccddeeff0011'), false);
   });
 
   test('server never sends on stale tokens after explicit opt-out', () {

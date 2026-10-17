@@ -24,13 +24,26 @@ class DefaultFirebaseOptions {
     storageBucket: 'shadow-live.firebasestorage.app',
   );
 
+  // A web Firebase App ID cannot activate native Android push delivery.
+  // Pass the actual Android app registration at build time; do not guess it.
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
-    appId: '1:463485983128:web:88c4953fa80d566c7a73ed',
+    apiKey: String.fromEnvironment(
+      'SHADOW_FIREBASE_ANDROID_API_KEY',
+      defaultValue: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
+    ),
+    appId: String.fromEnvironment(
+      'SHADOW_FIREBASE_ANDROID_APP_ID',
+      defaultValue: '1:463485983128:web:88c4953fa80d566c7a73ed',
+    ),
     messagingSenderId: '463485983128',
     projectId: 'shadow-live',
     storageBucket: 'shadow-live.firebasestorage.app',
   );
+
+  static bool get androidMessagingConfigured =>
+      RegExp(r'^1:463485983128:android:[0-9a-fA-F]+$')
+          .hasMatch(android.appId) &&
+      android.apiKey.isNotEmpty;
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
