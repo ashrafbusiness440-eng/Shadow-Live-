@@ -26,12 +26,13 @@ function fixture(overrides = {}) {
   return {db,reads};
 }
 const args = (kind) => ({actorUid,otherUid,conversationId,kind});
-test("exactly 8 bounded reads and mutual follow both ways", async()=>{
+test("only 9 bounded exact reads for voice note (including call slot)", async()=>{
   const {db,reads}=fixture();
   const result=await requireMutualPrivateVoice(db,args("voice_note"));
   assert.equal(result.kind,"voice_note");
-  assert.equal(reads.length,8);
-  assert.equal(new Set(reads).size,8);
+  assert.equal(reads.length,9);
+  assert.equal(new Set(reads).size,9);
+  assert.ok(reads.includes("private_call_slots/alice"));
 });
 test("a single follow cannot send a voice note despite text allowance",async()=>{
   const {db}=fixture({[`follows/${otherUid}__${actorUid}`]:null});
@@ -82,4 +83,23 @@ test("finite note and ringing bounds; reject invalid identifiers",()=>{
   for (const bad of [0,-1,61,1.4,NaN,Infinity]) assert.equal(validVoiceDuration(bad),false);
   assert.throws(()=>validPrivateVoiceParties("alice","alice","dm"),PrivateVoicePolicyError);
   assert.throws(()=>validPrivateVoiceParties("alice","bob","/bad"),PrivateVoicePolicyError);
+});
+
+test("voice notes reject active or ringing private calls but allow expired slots", async()=>{
+  const t = 1800000000000;
+  const live=fixture({"private_call_slots/alice":{callId:"call1",expiresAtMs:t+1000}});
+  await assert.rejects(requireMutualPrivateVoice(live.db,{...args("voice_note"),nowMs:t}),
+    e=>e.code==="voice_note_during_private_call" && e.status===409);
+  const old=fixture({"private_call_slots/alice":{callId:"old",expiresAtMs:t-1}});
+  const ok=await requireMutualPrivateVoice(old.db,{...args("voice_note"),nowMs:t});
+  assert.equal(ok.kind,"voice_note");
+  const readable=fixture({"private_call_slots/alice":{expiresAtMs:t+1000}});
+  await requireMutualPrivateVoice(readable.db,{
+    ...args("voice_note"),nowMs:t,allowReadDuringCall:true,
+  });
+  assert.equal(readable.reads.length,8);
+  // Starting calls never introduces a lookup for a voice-note-only guard.
+  const calls=fixture();
+  await requireMutualPrivateVoice(calls.db,args("call"));
+  assert.equal(calls.reads.length,8);
 });

@@ -33,7 +33,7 @@ export async function requireMutualPrivateVoice(db, params) {
   // All reads are exact document lookups; no scans, listeners, or per-item polling.
   const [
     conversation, forward, backward, sentBlock, receivedBlock,
-    actor, other, settings,
+    actor, other, settings, actorCallSlot,
   ] = await Promise.all([
     db.get(`conversations/${conversationId}`, transaction),
     db.get(`follows/${actorUid}__${otherUid}`, transaction),
@@ -43,6 +43,9 @@ export async function requireMutualPrivateVoice(db, params) {
     db.get(`users/${actorUid}`, transaction),
     db.get(`users/${otherUid}`, transaction),
     db.get("system_config/messaging", transaction),
+    kind === "voice_note" && params.allowReadDuringCall !== true
+      ? db.get(`private_call_slots/${actorUid}`, transaction)
+      : Promise.resolve({ exists: false }),
   ]);
   const members = conversation.data?.participants;
   if (!conversation.exists || !Array.isArray(members) ||
@@ -65,6 +68,14 @@ export async function requireMutualPrivateVoice(db, params) {
   if (kind === "voice_note") {
     if (settings.data?.voiceNotesEnabled !== true) {
       throw new PrivateVoicePolicyError("voice_notes_disabled", 403);
+    }
+    // A live/ringing call occupies the same user audio resource. Reject at
+    // the server for every voice-note stage, including transactional commit;
+    // a second device must not bypass the local microphone guard.
+    const nowMs = Number.isFinite(params.nowMs) ? params.nowMs : Date.now();
+    if (actorCallSlot.exists &&
+        Number(actorCallSlot.data?.expiresAtMs || 0) > nowMs) {
+      throw new PrivateVoicePolicyError("voice_note_during_private_call", 409);
     }
   } else {
     if (settings.data?.privateCallsEnabled !== true) {
