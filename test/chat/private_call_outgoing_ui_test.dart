@@ -22,6 +22,9 @@ void main() {
     expect(ui, contains('await _client.mediaSession('));
     expect(ui, contains('await _client.renew('));
     expect(ui, contains('await _voice.exitPrivateCallMedia();'));
+    expect(ui, contains('void _launchStart() {'));
+    expect(ui, contains('_startInFlight = pending;'));
+    expect(ui, contains('onPressed: _busy ? null : _launchStart'));
     expect(ui, contains('_joiningMedia = true;'));
     expect(ui, contains('if (!_closing) unawaited(_check());'));
     expect(ui, contains('const Duration(seconds: 3)'));
