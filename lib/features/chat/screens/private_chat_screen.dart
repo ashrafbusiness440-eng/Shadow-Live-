@@ -24,6 +24,7 @@ import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../services/chat_safety_service.dart';
 import '../services/animated_emoji_catalog.dart';
 import '../widgets/private_voice_note_controls.dart';
+import '../widgets/private_call_outgoing_dialog.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
 import '../../vip/widgets/vip_cosmetic_asset.dart';
 import '../../vip/utils/vip_public_state.dart';
@@ -68,6 +69,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _markingRead = false;
   bool _sendingImage = false;
   bool _voiceNotesEnabled = false;
+  bool _privateCallsEnabled = false;
   bool _messageActionBusy = false;
   final Set<String> _locallyHiddenMessageIds = <String>{};
   final Set<String> _locallyDeletedMessageIds = <String>{};
@@ -458,13 +460,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       final setting = await FirebaseFirestore.instance
           .collection('system_config').doc('messaging').get();
       if (_isActiveChatAccount(ownerUid)) {
-        setState(() => _voiceNotesEnabled =
-            setting.data()?['voiceNotesEnabled'] == true);
+        setState(() {
+          _voiceNotesEnabled = setting.data()?['voiceNotesEnabled'] == true;
+          _privateCallsEnabled = setting.data()?['privateCallsEnabled'] == true;
+        });
       }
     } catch (_) {
       // Fail closed. The server must explicitly enable private voice notes.
       if (_isActiveChatAccount(ownerUid)) {
-        setState(() => _voiceNotesEnabled = false);
+        setState(() {
+          _voiceNotesEnabled = false;
+          _privateCallsEnabled = false;
+        });
       }
     }
   }
@@ -1528,6 +1535,30 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 },
               ),
               actions: [
+                if (_privateCallsEnabled &&
+                    !_loadingSafety &&
+                    !_safetyStatus.blocked &&
+                    _openedByUid != null &&
+                    FirebaseAuth.instance.currentUser?.isAnonymous == false)
+                  IconButton(
+                    tooltip: 'اتصال صوتي خاص',
+                    icon: const Icon(Icons.call_rounded),
+                    onPressed: () {
+                      final accountUid = _openedByUid;
+                      if (accountUid == null ||
+                          !_isActiveChatAccount(accountUid)) return;
+                      showDialog<void>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => PrivateCallOutgoingDialog(
+                          accountUid: accountUid,
+                          otherUid: widget.otherUid,
+                          conversationId: widget.conversationId,
+                          otherName: widget.otherName,
+                        ),
+                      );
+                    },
+                  ),
                 PopupMenuButton<String>(
                   enabled: !_changingBlock && !_loadingSafety,
                   icon: const Icon(Icons.more_vert_rounded),
