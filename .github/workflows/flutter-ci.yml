@@ -58,6 +58,8 @@ jobs:
         run: node --test cloudflare-worker/__tests__/private-call-signaling.test.js
       - name: Test gated incoming call FCM sender and account-scoped devices
         run: node --test cloudflare-worker/__tests__/private-call-push.test.js
+      - name: Test GitHub Pages scoped FCM Web Push and notification click
+        run: node --check web/firebase-messaging-sw.js && node --check web/private_call_web_push.js && node --test web/__tests__/private_call_pwa_push.test.cjs
       - name: Test voice controls, audited updates and production readiness gating
         run: node --test cloudflare-worker/__tests__/private-voice-control.test.js
       - name: Test Firestore index deploy group scoping
