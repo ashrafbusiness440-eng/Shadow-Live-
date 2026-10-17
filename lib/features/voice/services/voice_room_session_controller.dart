@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/assets/shadow_asset_registry.dart';
+import '../../chat/services/private_call_signaling_client.dart';
 import '../../room/services/room_presence_service.dart';
 import '../../room/services/room_seat_service.dart';
 import '../../room/services/star_battle_score_overlay.dart';
@@ -23,7 +24,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _observedAuthUid = nextUid;
       if (changed) {
         _mysteriousModeEnabled = false;
-        if (_active || _joining) unawaited(leave());
+        if (_active || _joining || _privateCallMediaActive) {
+          unawaited(leave());
+        }
       }
     });
     _realtimeSubscription =
@@ -79,6 +82,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void>? _leaveInFlight;
   bool _joining = false;
   bool _active = false;
+  bool _privateCallMediaActive = false;
+  String? _privateCallMediaId;
   bool _minimized = false;
   bool _micMuted = true;
   int _micRestrictedUntilMs = 0;
@@ -93,6 +98,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
   bool get joining => _joining;
   bool get active => _active;
+  bool get privateCallMediaActive => _privateCallMediaActive;
+  String? get privateCallMediaId =>
+      _privateCallMediaActive ? _privateCallMediaId : null;
   bool get minimized => _minimized;
   bool get micMuted => _micMuted;
   bool get micRestricted =>
@@ -985,6 +993,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> join(Map<String, dynamic> arguments) async {
+    if (_privateCallMediaActive) {
+      throw StateError('private_call_audio_active');
+    }
     final user = FirebaseAuth.instance.currentUser;
     final targetRoomId = (arguments['roomId'] ?? '').toString().trim();
     if (user == null) throw StateError('not_signed_in');
@@ -1061,6 +1072,52 @@ class VoiceRoomSessionController extends ChangeNotifier {
     } finally {
       notifyListeners();
     }
+  }
+
+  /// Shared-engine handoff: a callee leaves the public room ONLY after the
+  /// signaling server has accepted the call and issued scoped credentials.
+  /// Never launch a second ZEGO engine or mix public-room and call streams.
+  Future<void> enterPrivateCallMedia({
+    required String actorUid,
+    required PrivateCallMediaCredentials credentials,
+    required String displayName,
+  }) async {
+    if (FirebaseAuth.instance.currentUser?.uid != actorUid) {
+      throw StateError('account_changed');
+    }
+    if (_privateCallMediaActive) {
+      if (_privateCallMediaId == credentials.callId) return;
+      throw StateError('private_call_audio_busy');
+    }
+    // Joining is not cancel-safe; reject instead of racing an in-flight room
+    // login and accidentally sending call sound to the wrong ZEGO room.
+    if (_joining) throw StateError('voice_room_join_in_progress');
+    if (_active || _leaveInFlight != null) await leave();
+    if (FirebaseAuth.instance.currentUser?.uid != actorUid) {
+      throw StateError('account_changed');
+    }
+    await _ensureService();
+    final engine = _voiceService;
+    if (engine is! ZegoVoiceService) {
+      throw StateError('private_call_media_unavailable');
+    }
+    await engine.joinPrivateCall(
+      media: credentials,
+      accountUid: actorUid,
+      displayName: displayName,
+    );
+    if (FirebaseAuth.instance.currentUser?.uid != actorUid) {
+      await engine.leaveRoom();
+      throw StateError('account_changed');
+    }
+    _privateCallMediaActive = true;
+    _privateCallMediaId = credentials.callId;
+    notifyListeners();
+  }
+
+  Future<void> exitPrivateCallMedia() async {
+    if (!_privateCallMediaActive) return;
+    await leave();
   }
 
   Future<void> toggleMic() async {
@@ -1141,6 +1198,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
     _active = false;
     _joining = false;
+    _privateCallMediaActive = false;
+    _privateCallMediaId = null;
     _minimized = false;
     _micMuted = true;
     _error = null;
