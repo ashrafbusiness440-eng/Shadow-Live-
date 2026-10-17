@@ -25,6 +25,7 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
   final _voice = VoiceRoomSessionController.instance;
   Timer? _timer;
   StreamSubscription<User?>? _auth;
+  Future<void>? _startInFlight;
   late final String _key;
   String? _callId;
   String _status = 'connecting';
@@ -49,7 +50,8 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
       unawaited(_voice.exitPrivateCallMedia());
       Navigator.of(context).pop();
     });
-    unawaited(_start());
+    _startInFlight = _start();
+    unawaited(_startInFlight);
   }
 
   Future<void> _start() async {
@@ -60,8 +62,11 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
         actorUid: widget.accountUid, otherUid: widget.otherUid,
         conversationId: widget.conversationId, idempotencyKey: _key,
       );
-      if (!_sameAccount || _closing) return;
+      if (!_sameAccount) return;
+      // Even after a user requested hangup, retain the authoritative call ID
+      // so the in-flight start can be cancelled on the server exactly once.
       _callId = state.callId;
+      if (_closing) return;
       setState(() => _status = state.status);
       if (state.status == 'active') {
         await _joinMedia();
@@ -192,6 +197,15 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
     if (_closing) return;
     _closing = true;
     _timer?.cancel();
+    // A tap during start must not dismiss the dialog before the Worker
+    // returns the call ID: that would leave a ringing invitation orphaned.
+    // Wait once for the already-bounded request; no extra retries/listeners.
+    final starting = _startInFlight;
+    if (_callId == null && starting != null) {
+      try {
+        await starting.timeout(const Duration(seconds: 17));
+      } catch (_) {}
+    }
     await _voice.exitPrivateCallMedia();
     if (_callId != null && !_terminal && _sameAccount) {
       try {
