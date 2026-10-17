@@ -112,6 +112,7 @@ test("FCM payload is a short-lived generic call alert, not message contents", ()
 test("sends only live ring to a fresh token still owned by the callee",async()=>{
   const {db,docs,hash}=fixture();
   docs.set("private_calls/"+callId,call);
+  docs.set("users/bob", { privateCallPushOptIn: true, accountStatus: "active" });
   docs.set("private_call_push_devices/bob/tokens/"+hash,{
     token,platform:"android",updatedAtMs:now,
   });
@@ -158,4 +159,26 @@ test("registration validates token lengths and platforms; no unbounded send loop
   assert.ok(callSrc.includes('ctx.waitUntil(dispatchPrivateCallPush('));
   assert.ok(index.includes('"/api/private-call-push-devices"'));
   assert.ok(!src.includes("console.log("));
+});
+
+test("revoking user opt-in blocks even an old still registered token",async()=>{
+  const {db,docs,hash}=fixture();
+  docs.set("private_calls/"+callId,call);
+  docs.set("private_call_push_devices/bob/tokens/"+hash,{
+    token,updatedAtMs:now,
+  });
+  docs.set("private_call_push_token_owners/"+hash,{uid:"bob"});
+  let delivered=0;
+  assert.equal((await dispatchPrivateCallPush(env,"bob",callId,{
+    db,nowMs:now,send:async()=>{delivered++;return true;},
+  })).code,"push_opt_in_required");
+  docs.set("users/bob",{privateCallPushOptIn:false});
+  assert.equal((await dispatchPrivateCallPush(env,"bob",callId,{
+    db,nowMs:now,send:async()=>{delivered++;return true;},
+  })).sent,0);
+  docs.set("users/bob",{privateCallPushOptIn:true,accountStatus:"disabled"});
+  assert.equal((await dispatchPrivateCallPush(env,"bob",callId,{
+    db,nowMs:now,send:async()=>{delivered++;return true;},
+  })).sent,0);
+  assert.equal(delivered,0);
 });
