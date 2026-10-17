@@ -24,13 +24,8 @@ class DefaultFirebaseOptions {
     storageBucket: 'shadow-live.firebasestorage.app',
   );
 
-  // The Firebase web App ID is NOT a native Android Firebase registration.
-  // Until Firebase Console registers package com.shadowlive.app and provides
-  // its Android App ID, the call-push client must stay unavailable.
-  //
-  // Supply the real Android app ID at native build time, e.g.
-  // --dart-define=SHADOW_FIREBASE_ANDROID_APP_ID=1:...:android:...
-  // Never fabricate an Android identifier from the web App ID.
+  // A web Firebase App ID cannot activate native Android push delivery.
+  // Pass the actual Android app registration at build time; do not guess it.
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: String.fromEnvironment(
       'SHADOW_FIREBASE_ANDROID_API_KEY',
@@ -46,18 +41,7 @@ class DefaultFirebaseOptions {
   );
 
   static bool get androidMessagingConfigured =>
-      // App ID must belong to this Firebase project, not just end in
-      // `:android:`; package association is verified when registering it.
-      RegExp(r'^1:463485983128:android:[0-9a-fA-F]+
-    apiKey: 'AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8',
-    appId: '1:463485983128:web:88c4953fa80d566c7a73ed',
-    messagingSenderId: '463485983128',
-    projectId: 'shadow-live',
-    storageBucket: 'shadow-live.firebasestorage.app',
-    iosBundleId: 'com.mycompany.shadowlive',
-  );
-}
-)
+      RegExp(r'^1:463485983128:android:[0-9a-fA-F]+$')
           .hasMatch(android.appId) &&
       android.apiKey.isNotEmpty;
 
