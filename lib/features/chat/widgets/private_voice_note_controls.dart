@@ -59,6 +59,10 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
 
   Future<bool> _eligibleToRecord() async {
     if (!_sameAccount) return false;
+    if (VoiceRoomSessionController.instance.privateCallMediaActive) {
+      widget.onFeedback('لا يمكن تسجيل رسالة صوتية أثناء مكالمة خاصة.');
+      return false;
+    }
     if (!await _follow.isMutual(widget.otherUid)) {
       widget.onFeedback('التسجيل الصوتي يحتاج متابعة متبادلة.');
       return false;
@@ -78,6 +82,10 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
     final seats = RoomSeatService();
     try {
       final state = await seats.load(roomId);
+      if (room.privateCallMediaActive) {
+        widget.onFeedback('لا يمكن تسجيل رسالة صوتية أثناء مكالمة خاصة.');
+        return false;
+      }
       if (!state.isActive || state.seats.any((s) => s.uid == widget.accountUid)) {
         widget.onFeedback('لا يمكن تسجيل رسالة صوتية وأنت على مايك الغرفة.');
         return false;
@@ -108,7 +116,8 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
       await _recorder.start(onLimit: () {
         if (mounted && _recording) unawaited(_stop());
       });
-      if (!_sameAccount || (!_held && !_locked)) {
+      if (!_sameAccount || (!_held && !_locked) ||
+          VoiceRoomSessionController.instance.privateCallMediaActive) {
         await _recorder.cancel();
         return;
       }
@@ -128,6 +137,10 @@ class _PrivateVoiceNoteControlsState extends State<PrivateVoiceNoteControls> {
 
   Future<void> _stop() async {
     if (!_recording || _busy) return;
+    if (VoiceRoomSessionController.instance.privateCallMediaActive) {
+      await _cancel('تم إلغاء التسجيل لأنك في مكالمة خاصة.');
+      return;
+    }
     setState(() { _busy = true; _recording = false; });
     await _roomSubscription?.cancel();
     _roomSubscription = null;
