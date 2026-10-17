@@ -17,11 +17,13 @@ class PrivateVoiceControlPage extends StatefulWidget {
 
 class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
   final _reason = TextEditingController(text: 'تعديل إعدادات صوتيات الرسائل');
+  final _callPrice = TextEditingController(text: '0');
   bool _loading = true;
   bool _saving = false;
   bool _voiceNotes = false;
   bool _calls = false;
   bool _callsReady = false;
+  String _callPricingMode = 'free';
   bool _dirty = false;
   int _version = 0;
   String? _message;
@@ -36,6 +38,7 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
   @override
   void dispose() {
     _reason.dispose();
+    _callPrice.dispose();
     super.dispose();
   }
 
@@ -45,6 +48,10 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
       'انتهت صلاحية تسجيل الدخول للإدارة. أعد تسجيل الدخول.',
     'private_calls_not_ready' =>
       'المكالمات غير جاهزة للإطلاق. لن تتفعّل حتى اكتمال الاختبارات.',
+    'private_call_billing_not_ready' =>
+      'يمكن حفظ سعر المكالمات، لكن التشغيل المدفوع يحتاج اعتماد المحاسبة والاختبارات أولاً.',
+    'invalid_private_call_price' =>
+      'سعر المكالمة غير صحيح. أدخل عدد Coins صحيحًا من 1 إلى مليون عند اختيار المدفوع.',
     'voice_config_conflict' =>
       'تغيّرت الإعدادات من جهاز آخر. اضغط تحديث ثم جرّب مرة ثانية.',
     'idempotency_conflict' =>
@@ -85,6 +92,8 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
     _voiceNotes = data['voiceNotesEnabled'] == true;
     _calls = data['privateCallsEnabled'] == true;
     _callsReady = data['callsLaunchReady'] == true;
+    _callPricingMode = data['privateCallPricingMode'] == 'paid' ? 'paid' : 'free';
+    _callPrice.text = ((data['privateCallPriceCoins'] as num?)?.toInt() ?? 0).toString();
     _version = (data['version'] as num?)?.toInt() ?? 0;
     _dirty = false;
     _operationKey = null;
@@ -119,6 +128,12 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
       setState(() => _message = 'اكتب سببًا مختصرًا للتعديل.');
       return;
     }
+    final price = int.tryParse(_callPrice.text.trim());
+    if (price == null || price < 0 || price > 1000000 ||
+        (_callPricingMode == 'paid' && price == 0)) {
+      setState(() => _message = 'أدخل سعر مكالمة صحيحًا من 1 إلى مليون Coins للمدفوع، أو صفر للمجاني.');
+      return;
+    }
     final op = _operationKey ??
         'private_voice_${DateTime.now().microsecondsSinceEpoch}';
     _operationKey = op; // Preserve the operation on a network retry.
@@ -132,6 +147,8 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
         'config': {
           'voiceNotesEnabled': _voiceNotes,
           'privateCallsEnabled': _calls,
+          'privateCallPricingMode': _callPricingMode,
+          'privateCallPriceCoins': price,
         },
         'reason': _reason.text.trim(),
         'expectedVersion': _version,
@@ -156,6 +173,22 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
   void _changeVoiceNotes(bool value) {
     setState(() {
       _voiceNotes = value;
+      _dirty = true;
+      _operationKey = null;
+    });
+  }
+
+  void _changePricingMode(String? mode) {
+    if (mode == null || _calls) return;
+    setState(() {
+      _callPricingMode = mode;
+      _dirty = true;
+      _operationKey = null;
+    });
+  }
+
+  void _changePrice(String value) {
+    setState(() {
       _dirty = true;
       _operationKey = null;
     });
@@ -195,8 +228,8 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'حدد الميزات المسموحة في المحادثات الخاصة. '
-            'ما منغيّر أي أسعار أو رصيد من هذه الصفحة.',
+            'حدد ميزات المحادثات وسياسة سعر المكالمات. '
+            'إعداد السعر لا يخصم أي Coins من المستخدمين.',
           ),
           const SizedBox(height: 12),
           Card(
@@ -226,6 +259,55 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
               'المكالمات محمية ومقفلة من الخادم حتى انتهاء التجارب '
               'والموافقة على فتح الخدمة.',
               style: TextStyle(color: Colors.amberAccent),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('نوع المكالمات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: _callPricingMode,
+                    decoration: const InputDecoration(
+                      labelText: 'طريقة الاستخدام',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'free', child: Text('مجاني')),
+                      DropdownMenuItem(value: 'paid', child: Text('مدفوع — تحضير فقط')),
+                    ],
+                    onChanged: _loading || _saving || _calls ? null : _changePricingMode,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _callPrice,
+                    enabled: !_loading && !_saving && !_calls,
+                    keyboardType: TextInputType.number,
+                    onChanged: _changePrice,
+                    decoration: const InputDecoration(
+                      labelText: 'السعر لكل مكالمة (Coins)',
+                      hintText: 'أدخل سعر المكالمة للمستقبل',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'يمكن تجهيز سعر الخيار المدفوع وحفظه، لكن تشغيل '
+                    'المكالمات المدفوعة والخصم من الرصيد مقفلان حتى اكتمال '
+                    'محاسبة آمنة واختبارها. المجاني هو الافتراضي.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  if (_calls)
+                    const Text(
+                      'أوقف المكالمات أولاً قبل تغيير طريقة الاستخدام أو السعر.',
+                      style: TextStyle(color: Colors.amberAccent),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 12),
