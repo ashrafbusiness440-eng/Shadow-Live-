@@ -58,11 +58,10 @@ async function checkManager(request, env, db) {
       Array.isArray(actor.capabilities) &&
       actor.capabilities.includes("manageSystem"));
   if (!allowed) throw new ControlError("forbidden", 403);
-  const age = Math.floor(Date.now() / 1000) - Number(decoded.auth_time || 0);
-  if (!Number.isFinite(age) || age < 0 || age > 1800) {
-    throw new ControlError("recent_auth_required", 401);
-  }
-  return uid;
+  return {
+    uid,
+    authTime: Number(decoded.auth_time || 0),
+  };
 }
 
 export async function writeVoiceConfig(db, actorUid, body, env) {
@@ -133,16 +132,22 @@ export async function privateVoiceControl(request, env) {
   }
   try {
     const db = firestoreClient(env);
-    const actorUid = await checkManager(request, env, db);
+    const actor = await checkManager(request, env, db);
     const body = await readJson(request);
-    if (body.action === "load") {
+    if (body?.action === "load") {
       const snap = await db.get(CONFIG);
       return json(request, env, {
         ok: true, config: voiceConfigState(snap.data || {}, env),
       });
     }
-    if (body.action === "save") {
-      const result = await writeVoiceConfig(db, actorUid, body, env);
+    if (body?.action === "save") {
+      // Viewing a policy should stay easy; sensitive changes still require
+      // recent authentication so a long-lived admin tab cannot silently save.
+      const age = Math.floor(Date.now() / 1000) - actor.authTime;
+      if (!Number.isFinite(age) || age < 0 || age > 1800) {
+        throw new ControlError("recent_auth_required", 401);
+      }
+      const result = await writeVoiceConfig(db, actor.uid, body, env);
       return json(request, env, result);
     }
     throw new ControlError("invalid_action");
