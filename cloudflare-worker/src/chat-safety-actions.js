@@ -39,6 +39,28 @@ import {
 
 const clean = (value) => String(value ?? "").trim();
 const validKey = (value) => /^[A-Za-z0-9_-]{12,220}$/.test(clean(value));
+// Bind text retry receipts to the original participants AND exact payload.
+// SHA-256 avoids duplicating the private message body in operation records.
+export async function privateTextPayloadFingerprint(message, animatedEmojiId = "") {
+  const encoded = new TextEncoder().encode(JSON.stringify([
+    clean(message), clean(animatedEmojiId),
+  ]));
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function privateTextOperationConflicts(record = {}, expected = {}) {
+  if (record.action !== "sendMessage" || record.senderId !== expected.senderId ||
+      record.receiverId !== expected.receiverId ||
+      record.conversationId !== expected.conversationId ||
+      record.status !== "completed") return true;
+  // Older completed operations did not record a hash, so permit same
+  // identity retries without falsely rejecting past safe receipts.
+  if (record.payloadFingerprint &&
+      record.payloadFingerprint !== expected.payloadFingerprint) return true;
+  return false;
+}
+
 const AGENCY_MONTHLY_ACCRUAL_SHARDS = 32;
 
 function chatGiftOperationConflicts(data = {}, expected = {}) {
@@ -302,6 +324,7 @@ export async function sendMessage(db, uid, body) {
     throw new ApiError("invalid_request", 400);
   }
 
+  const payloadFingerprint = await privateTextPayloadFingerprint(message, animatedEmojiId);
   // One cached policy shared by all sending surfaces, before any write.
   // Even an animated-emoji request can carry user-supplied text. Never
   // bypass moderation based on a client-controlled asset identifier.
@@ -351,6 +374,11 @@ export async function sendMessage(db, uid, body) {
     ]);
 
     if (op.exists) {
+      if (privateTextOperationConflicts(op.data, {
+        senderId: uid, receiverId, conversationId, payloadFingerprint,
+      })) {
+        throw new ApiError("message_operation_conflict", 409);
+      }
       await db.rollback(transaction);
       return { ok: true, code: "duplicate", ...(op.data?.result || {}) };
     }
@@ -541,6 +569,7 @@ export async function sendMessage(db, uid, body) {
         conversationId,
         action: "sendMessage",
         status: "completed",
+        payloadFingerprint,
         result: resultData,
         createdAt: now,
       }),

@@ -50,6 +50,8 @@ jobs:
         run: node --test server/__tests__/report-duplicate-window.test.js
       - name: Test private-chat message visibility and five-minute deletion policy
         run: node --test server/__tests__/chat-message-visibility.test.js
+      - name: Test replay-safe private text sends and cross-user operation isolation
+        run: node --test cloudflare-worker/__tests__/private-chat-text-retry.test.js
       - name: Test private voice mutual-follow eligibility and limits
         run: node --test cloudflare-worker/__tests__/private-voice-eligibility.test.js
       - name: Test private R2 voice-note authorization, transactions and limits
