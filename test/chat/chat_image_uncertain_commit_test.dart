@@ -42,6 +42,8 @@ void main() {
     expect(body, contains("data?['senderId'] == senderUid"));
     expect(body, contains("data?['storageObjectId'] == objectId"));
     expect(body, contains("data?['type'] == 'image'"));
+    expect(body, contains("data?['moderationStatus'] == 'pending'"));
+    expect(body, contains('لن تظهر حتى موافقة الإدارة'));
     expect(body, contains('_isActiveChatAccount(senderUid)'));
     expect(body, contains('قد تكون وصلت بالفعل'));
     expect(body, isNot(contains('.snapshots()')));
