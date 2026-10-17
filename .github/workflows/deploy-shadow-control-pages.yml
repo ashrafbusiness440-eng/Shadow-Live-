@@ -58,6 +58,8 @@ jobs:
           flutter build web --release --pwa-strategy=none --target lib/main_control.dart --base-href /Shadow-Live-/control/
           mkdir -p site/control
           cp -R build/web/. site/control/
+          # Only Live may register private call FCM workers; never Control.
+          rm -f site/control/firebase-messaging-sw.js site/control/private_call_web_push.js
 
       - name: Verify Shadow Control build
         run: |
@@ -70,11 +72,13 @@ jobs:
           grep -q 'Shadow Control' site/control/manifest.json
 
       - name: Build Shadow Live in clean production scope
+        env:
+          SHADOW_FIREBASE_WEB_VAPID_KEY: ${{ vars.SHADOW_FIREBASE_WEB_VAPID_KEY }}
         run: |
           rm -rf build/web
           cp scripts/app_index.html web/index.html
           cp scripts/app_manifest.json web/manifest.json
-          flutter build web --release --pwa-strategy=none --target lib/main.dart --base-href /Shadow-Live-/live/
+          flutter build web --release --pwa-strategy=none --target lib/main.dart --base-href /Shadow-Live-/live/ --dart-define="SHADOW_FIREBASE_WEB_VAPID_KEY=$SHADOW_FIREBASE_WEB_VAPID_KEY"
           mkdir -p site/live
           cp -R build/web/. site/live/
           sed -i 's#/Shadow-Live-/app/#/Shadow-Live-/live/#g' site/live/manifest.json
