@@ -223,17 +223,21 @@ class PrivateCallPushService {
   Future<void> _presentPendingTap(String uid) async {
     final id = _pendingTapCallId;
     if (id == null || !enabledForCurrentUser ||
-        FirebaseAuth.instance.currentUser?.uid != uid) return;
+        FirebaseAuth.instance.currentUser?.uid != uid) {
+      return;
+    }
     _pendingTapCallId = null;
     await _presentCall(uid, id, foreground: false);
   }
 
   Future<void> _handleMessage(
-    RemoteMessage message, {required bool foreground},
+    RemoteMessage message, {required bool foreground}
   ) async {
     final id = message.data['callId']?.toString();
     if (message.data['type'] != 'private_call_incoming' ||
-        id == null || !_callIdPattern.hasMatch(id)) return;
+        id == null || !_callIdPattern.hasMatch(id)) {
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || !enabledForCurrentUser) {
       if (!foreground) _pendingTapCallId = id;
@@ -243,11 +247,13 @@ class PrivateCallPushService {
   }
 
   Future<void> _presentCall(
-    String uid, String callId, {required bool foreground},
+    String uid, String callId, {required bool foreground}
   ) async {
     if (_displayedCallId != null ||
         FirebaseAuth.instance.currentUser?.uid != uid ||
-        !enabledForCurrentUser) return;
+        !enabledForCurrentUser) {
+      return;
+    }
     // A push is only a pointer. Before displaying the caller UI, re-check
     // the Worker authority; never allow push payloads to grant room access.
     final signaling = PrivateCallSignalingClient();
@@ -266,7 +272,8 @@ class PrivateCallPushService {
     }
     if (VoiceRoomSessionController.instance.privateCallMediaActive) return;
     final nav = NavigationService.navigatorKey.currentState;
-    if (nav == null || FirebaseAuth.instance.currentUser?.uid != uid) return;
+    if (nav == null || !nav.mounted ||
+        FirebaseAuth.instance.currentUser?.uid != uid) return;
     _displayedCallId = callId;
     try {
       await showDialog<void>(
