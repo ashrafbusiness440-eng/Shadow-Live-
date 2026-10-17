@@ -158,6 +158,8 @@ test("registration validates token lengths and platforms; no unbounded send loop
   assert.ok(callSrc.includes('result.code !== "duplicate"'));
   assert.ok(callSrc.includes('ctx.waitUntil(dispatchPrivateCallPush('));
   assert.ok(index.includes('"/api/private-call-push-devices"'));
+  assert.ok(src.includes('if (!isReady(env)) {'));
+  assert.ok(src.includes('private_call_push_not_ready'));
   assert.ok(!src.includes("console.log("));
 });
 
