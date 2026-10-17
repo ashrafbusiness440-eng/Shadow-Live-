@@ -8,7 +8,8 @@ void main() {
     ).readAsStringSync();
     expect(source, contains('static final instance = PrivateCallPushService._();'));
     expect(source, contains('bool get supported =>'));
-    expect(source, contains('!kIsWeb && defaultTargetPlatform == TargetPlatform.android'));
+    expect(source, contains('defaultTargetPlatform == TargetPlatform.android'));
+    expect(source, contains("DefaultFirebaseOptions.android.appId.contains(':android:')"));
     expect(source, contains('Future<void> enableForCurrentUser() async'));
     expect(source, contains('_messaging.requestPermission('));
     expect(source, contains('privateCallPushOptIn'));
