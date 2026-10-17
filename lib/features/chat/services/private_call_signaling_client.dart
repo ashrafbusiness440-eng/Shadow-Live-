@@ -62,6 +62,66 @@ class PrivateCallState {
   }
 }
 
+
+class PrivateCallMediaCredentials {
+  const PrivateCallMediaCredentials({
+    required this.callId,
+    required this.roomId,
+    required this.streamId,
+    required this.userId,
+    required this.appId,
+    required this.token,
+    required this.expiresAt,
+  });
+
+  final String callId;
+  final String roomId;
+  final String streamId;
+  final String userId;
+  final int appId;
+  final String token;
+  final DateTime expiresAt;
+
+  factory PrivateCallMediaCredentials.fromJson(
+    Map<String, dynamic> data,
+    String expectedCallId,
+  ) {
+    final callId = (data['callId'] ?? '').toString();
+    final roomId = (data['roomId'] ?? '').toString();
+    final userId = (data['userId'] ?? '').toString();
+    final streamId = (data['streamId'] ?? '').toString();
+    final token = (data['token'] ?? '').toString();
+    final appId = (data['appId'] as num?)?.toInt() ?? 0;
+    final expiresAt = (data['expiresAt'] as num?)?.toInt() ?? 0;
+    final expiryUtc = DateTime.fromMillisecondsSinceEpoch(
+      expiresAt * 1000, isUtc: true,
+    );
+    if (callId != expectedCallId ||
+        !RegExp(r'^[a-f0-9]{32}$').hasMatch(callId) ||
+        data['status'] != 'active' ||
+        roomId != 'private_call_$callId' ||
+        !RegExp(r'^u_[a-f0-9]{40}$').hasMatch(userId) ||
+        streamId != '${roomId}_$userId' ||
+        appId <= 0 ||
+        token.length < 16 ||
+        !token.startsWith('04') ||
+        expiryUtc.isBefore(DateTime.now().toUtc().add(
+          const Duration(seconds: 15),
+        ))) {
+      throw const PrivateCallSignalingException('invalid_call_media_session');
+    }
+    return PrivateCallMediaCredentials(
+      callId: callId,
+      roomId: roomId,
+      streamId: streamId,
+      userId: userId,
+      appId: appId,
+      token: token,
+      expiresAt: expiryUtc,
+    );
+  }
+}
+
 class PrivateCallSignalingClient {
   PrivateCallSignalingClient({
     http.Client? client,
@@ -93,7 +153,7 @@ class PrivateCallSignalingClient {
   static final RegExp _callIdPattern = RegExp(r'^[a-f0-9]{32}$');
   static final RegExp _operationPattern = RegExp(r'^[A-Za-z0-9_-]{12,100}$');
 
-  Future<PrivateCallState> _send({
+  Future<Map<String, dynamic>> _post({
     required String actorUid,
     required String action,
     required Map<String, dynamic> body,
@@ -143,21 +203,44 @@ class PrivateCallSignalingClient {
         (decoded['code'] ?? 'private_call_unavailable').toString(),
       );
     }
-    // A lost start reply returns the same authoritative operation/call ID,
-    // but its current state may now be active or terminal. Read it once,
-    // never fabricate a ringing status or send a second start operation.
+    return decoded;
+  }
+
+  Future<PrivateCallState> _send({
+    required String actorUid,
+    required String action,
+    required Map<String, dynamic> body,
+  }) async {
+    final decoded = await _post(
+      actorUid: actorUid, action: action, body: body,
+    );
+    // A lost start reply can resolve to an existing *current* server call.
+    // We never retry a fresh invite or fabricate a ringing state.
     if (action == 'start' && decoded['code'] == 'duplicate') {
       final callId = (decoded['callId'] ?? '').toString();
       if (!_callIdPattern.hasMatch(callId)) {
         throw const PrivateCallSignalingException('invalid_call_response');
       }
-      return _send(
-        actorUid: actorUid,
-        action: 'get',
-        body: {'callId': callId},
-      );
+      return _send(actorUid: actorUid, action: 'get',
+          body: {'callId': callId});
     }
     return PrivateCallState.fromJson(decoded);
+  }
+
+  /// Server-issued 5-minute call-room credentials. This NEVER falls back to
+  /// the unrestricted normal room token endpoint.
+  Future<PrivateCallMediaCredentials> mediaSession({
+    required String actorUid, required String callId,
+  }) async {
+    if (!_callIdPattern.hasMatch(callId)) {
+      throw const PrivateCallSignalingException('invalid_call_id');
+    }
+    final raw = await _post(
+      actorUid: actorUid,
+      action: 'mediaSession',
+      body: {'callId': callId},
+    );
+    return PrivateCallMediaCredentials.fromJson(raw, callId);
   }
 
   Future<PrivateCallState> start({
