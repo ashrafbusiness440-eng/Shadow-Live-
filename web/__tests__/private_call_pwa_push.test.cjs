@@ -86,7 +86,7 @@ test("PWA push bridge makes no SDK, permission or worker calls on startup", () =
   assert.equal(requests, 0);
   assert.ok(src.includes("serviceWorkerRegistration: registration"));
   assert.ok(src.includes("firebase-cloud-messaging-push-scope/"));
-  assert.ok(src.includes("getToken:"));
+  assert.ok(src.includes("getToken, deleteToken, subscribe"));
 });
 
 test("Pages hosts push only in Live, with no broad cache purge", () => {
