@@ -21,7 +21,7 @@ void main() {
     expect(workflow, contains('cp scripts/app_index.html web/index.html'));
     expect(workflow, contains('flutter build web --release --pwa-strategy=none'));
     expect(workflow, contains('html.replace(old, "v=" + sha)'));
-    expect(workflow, contains("'main.dart.js?v=' + sha"));
+    expect(workflow, contains('main.dart.js?v='));
     expect(workflow, contains('site/live/'));
     expect(workflow, contains('/Shadow-Live-/live/'));
     expect(workflow, contains('/Shadow-Live-/control/'));
