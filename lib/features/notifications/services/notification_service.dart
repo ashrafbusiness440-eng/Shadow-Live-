@@ -192,10 +192,17 @@ class NotificationService {
   }
 
   Future<void> markRead(String notificationId) async {
-    if (_auth.currentUser == null) throw StateError('auth_required');
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) throw StateError('auth_required');
+    if (notificationId.isEmpty || notificationId.contains('/')) {
+      throw StateError('invalid_notification_id');
+    }
     await _firestore.collection('notifications').doc(notificationId).update({
       'read': true,
     });
+    // Firestore rules enforce document ownership; do not leak a stale
+    // acknowledgement into another signed-in account's interface.
+    if (_auth.currentUser?.uid != uid) throw StateError('account_changed');
   }
 
   /// A single explicit tap marks unread notifications for this account,
