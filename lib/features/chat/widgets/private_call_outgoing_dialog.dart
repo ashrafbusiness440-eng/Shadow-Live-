@@ -50,8 +50,15 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
       unawaited(_voice.exitPrivateCallMedia());
       Navigator.of(context).pop();
     });
-    _startInFlight = _start();
-    unawaited(_startInFlight);
+    _launchStart();
+  }
+
+  void _launchStart() {
+    // Track each explicit retry, not only the initial attempt, so closing
+    // during an HTTP retry cannot orphan a live ringing invitation.
+    final pending = _start();
+    _startInFlight = pending;
+    unawaited(pending);
   }
 
   Future<void> _start() async {
@@ -267,7 +274,7 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
         ]),
         actions: [
           if (_status == 'error' && _callId == null)
-            TextButton(onPressed: _busy ? null : _start,
+            TextButton(onPressed: _busy ? null : _launchStart,
               child: const Text('إعادة المحاولة')),
           FilledButton.icon(
             onPressed: _closing ? null : _end,
