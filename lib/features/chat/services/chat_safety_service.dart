@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -21,7 +22,15 @@ class ChatSafetyService {
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
 
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  // Preserve the server operation ID for a still-unconfirmed report so
+  // a manual retry never registers another report or consumes extra quota.
+  String? _pendingReportFingerprint;
+  String? _pendingReportKey;
+
+  void _clearPendingReport() {
+    _pendingReportFingerprint = null;
+    _pendingReportKey = null;
+  }
 
   Future<ChatSafetyStatus> status(String targetUserId) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -100,30 +109,71 @@ class ChatSafetyService {
     required String reason,
     required String details,
   }) async {
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (token == null || token.isEmpty) throw StateError('not_signed_in');
-    final idempotencyKey =
-        _uid + '_' + DateTime.now().microsecondsSinceEpoch.toString() + '_report';
-    final response = await http.post(
-      Uri.parse(_baseUrl + '/chat-actions'),
-      headers: {
-        'authorization': 'Bearer ' + token,
-        'content-type': 'application/json',
-      },
-      body: jsonEncode({
-        'action': action,
-        'targetUserId': targetUserId,
-        if (conversationId != null) 'conversationId': conversationId,
-        'reason': reason,
-        'details': details,
-        'idempotencyKey': idempotencyKey,
-      }),
-    );
-    final body = _body(response.body);
-    if (response.statusCode == 200 && body['ok'] == true) {
-      return (body['reportId'] ?? '').toString();
+    final reporter = FirebaseAuth.instance.currentUser;
+    final reporterUid = reporter?.uid;
+    if (reporterUid == null || reporterUid.isEmpty) {
+      throw StateError('not_signed_in');
     }
-    throw StateError((body['code'] ?? 'report_failed').toString());
+    final token = await reporter!.getIdToken();
+    if (FirebaseAuth.instance.currentUser?.uid != reporterUid) {
+      throw StateError('report_account_changed');
+    }
+    if (token == null || token.isEmpty) throw StateError('not_signed_in');
+
+    // Same reporter, destination, reason and details -> same server receipt.
+    // A different account or any edited field starts a fresh operation.
+    final fingerprint = jsonEncode([
+      reporterUid, action, targetUserId, conversationId ?? '', reason, details,
+    ]);
+    final key = _pendingReportFingerprint == fingerprint &&
+            _pendingReportKey != null
+        ? _pendingReportKey!
+        : reporterUid + '_' +
+            DateTime.now().microsecondsSinceEpoch.toString() + '_report';
+    _pendingReportFingerprint = fingerprint;
+    _pendingReportKey = key;
+    try {
+      if (FirebaseAuth.instance.currentUser?.uid != reporterUid) {
+        throw StateError('report_account_changed');
+      }
+      final response = await http.post(
+        Uri.parse(_baseUrl + '/chat-actions'),
+        headers: {
+          'authorization': 'Bearer ' + token,
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': action,
+          'targetUserId': targetUserId,
+          if (conversationId != null) 'conversationId': conversationId,
+          'reason': reason,
+          'details': details,
+          'idempotencyKey': key,
+        }),
+      ).timeout(const Duration(seconds: 15));
+      if (FirebaseAuth.instance.currentUser?.uid != reporterUid) {
+        throw StateError('report_account_changed');
+      }
+      final body = _body(response.body);
+      if (response.statusCode == 200 && body['ok'] == true) {
+        final reportId = (body['reportId'] ?? '').toString().trim();
+        if (reportId.isEmpty) throw StateError('report_confirmation_pending');
+        _clearPendingReport();
+        return reportId;
+      }
+      // A definite 4xx rejection never created this report. HTTP 408,
+      // transient server errors and lost responses leave the key reserved.
+      if (response.statusCode >= 400 && response.statusCode < 500 &&
+          response.statusCode != 408) {
+        _clearPendingReport();
+        throw StateError((body['code'] ?? 'report_failed').toString());
+      }
+      throw StateError('report_confirmation_pending');
+    } on TimeoutException {
+      throw StateError('report_confirmation_pending');
+    } on http.ClientException {
+      throw StateError('report_confirmation_pending');
+    }
   }
 
   Map<String, dynamic> _body(String raw) {
