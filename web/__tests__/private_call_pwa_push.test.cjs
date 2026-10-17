@@ -74,6 +74,7 @@ test("PWA push bridge makes no SDK, permission or worker calls on startup", () =
   };
   const sandbox = {
     globalThis: globals,
+    Notification: globals.Notification,
     navigator: { serviceWorker: { register: () => { loads++; } } },
     document: { head: { appendChild: () => { loads++; } } },
     location: { origin: "https://example.test" },
