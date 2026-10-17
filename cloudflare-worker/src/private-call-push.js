@@ -92,6 +92,13 @@ export async function updatePrivateCallPushDevice(
 }
 
 export async function privateCallPushDevices(request, env) {
+  // The token registry must not accept writes ahead of product/FCM launch.
+  // Both independent release flags are OFF in production by default.
+  if (!isReady(env)) {
+    return json(request, env, {
+      ok: false, code: "private_call_push_not_ready",
+    }, 503);
+  }
   if (request.method !== "POST") {
     return json(request, env, { ok: false, code: "method_not_allowed" }, 405);
   }
@@ -177,6 +184,13 @@ export async function dispatchPrivateCallPush(env, calleeUid, callId, {
       call.data?.status !== "ringing" ||
       Number(call.data?.ringDeadlineMs || 0) <= nowMs) {
     return { code: "not_ringing", sent: 0 };
+  }
+  // A token can outlive logout, permission revocation or a failed unregister.
+  // Never send unless the current account explicitly opted in at the server.
+  const account = await db.get("users/" + calleeUid);
+  if (!account.exists || account.data?.privateCallPushOptIn !== true ||
+      !["", "active"].includes(clean(account.data?.accountStatus))) {
+    return { code: "push_opt_in_required", sent: 0 };
   }
   const devices = await db.runQuery(
     "private_call_push_devices/" + calleeUid + "/tokens",

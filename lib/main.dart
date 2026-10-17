@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'features/chat/services/private_call_push_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'firebase_options.dart';
@@ -117,6 +118,12 @@ Future<void> main() async {
       child: const MyApp(),
     ),
   );
+  // One opt-in Android notification coordinator per app instance.
+  // No permission request during startup and no browser/PWA token without
+  // a verified VAPID/service-worker configuration.
+  if (!e2eTest && !e2eRoomTest) {
+    unawaited(PrivateCallPushService.instance.start());
+  }
 }
 
 class MyApp extends StatelessWidget {
