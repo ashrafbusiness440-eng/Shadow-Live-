@@ -382,7 +382,8 @@ class _PrivateVoicePlaybackTileState extends State<PrivateVoicePlaybackTile> {
       setState(() => _playing = true);
     } catch (_) {
       await _clearListeners();
-      if (mounted && generation == _generation) {
+      if (mounted && generation == _generation &&
+          FirebaseAuth.instance.currentUser?.uid == widget.accountUid) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية. حاول مجدداً.')),
         );
