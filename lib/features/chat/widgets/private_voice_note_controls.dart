@@ -303,50 +303,139 @@ class PrivateVoicePlaybackTile extends StatefulWidget {
 class _PrivateVoicePlaybackTileState extends State<PrivateVoicePlaybackTile> {
   final _client = PrivateVoiceMediaClient();
   AudioPlayer? _player;
+  StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<void>? _completeSubscription;
+  StreamSubscription<User?>? _accountSubscription;
+  Duration _position = Duration.zero;
   bool _busy = false, _playing = false;
+  int _generation = 0;
+
+  // Subscribe only when the user taps Play. Idle message bubbles never
+  // allocate players, stream listeners, or per-message network polling.
+  void _listenWhilePlaying(AudioPlayer player, int generation) {
+    _positionSubscription = player.onPositionChanged.listen((position) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _position = position);
+    });
+    _completeSubscription = player.onPlayerComplete.listen((_) {
+      if (!mounted || generation != _generation) return;
+      _generation++;
+      setState(() {
+        _playing = false;
+        _position = Duration.zero;
+      });
+      unawaited(_clearListeners());
+    });
+    _accountSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user?.uid != widget.accountUid && generation == _generation) {
+        unawaited(_halt());
+      }
+    });
+  }
+
+  Future<void> _clearListeners() async {
+    final position = _positionSubscription;
+    final complete = _completeSubscription;
+    final account = _accountSubscription;
+    _positionSubscription = null;
+    _completeSubscription = null;
+    _accountSubscription = null;
+    await Future.wait<void>([
+      if (position != null) position.cancel(),
+      if (complete != null) complete.cancel(),
+      if (account != null) account.cancel(),
+    ]);
+  }
+
+  Future<void> _halt() async {
+    _generation++;
+    try { await _player?.stop(); } catch (_) {}
+    await _clearListeners();
+    if (mounted) setState(() {
+      _playing = false;
+      _busy = false;
+      _position = Duration.zero;
+    });
+  }
+
   Future<void> _toggle() async {
     if (_busy || FirebaseAuth.instance.currentUser?.uid != widget.accountUid) return;
     if (_playing) {
-      await _player?.stop();
-      if (mounted) setState(() => _playing = false);
+      await _halt();
       return;
     }
+    final generation = ++_generation;
     setState(() => _busy = true);
     try {
       final bytes = await _client.read(
         userUid: widget.accountUid, objectId: widget.objectId);
-      if (!mounted || FirebaseAuth.instance.currentUser?.uid != widget.accountUid) return;
-      _player ??= AudioPlayer();
-      await _player!.play(BytesSource(bytes, mimeType:'audio/wav'));
-      if (mounted) setState(() => _playing = true);
+      if (!mounted || generation != _generation ||
+          FirebaseAuth.instance.currentUser?.uid != widget.accountUid) return;
+      final player = _player ??= AudioPlayer();
+      _listenWhilePlaying(player, generation);
+      await player.play(BytesSource(bytes, mimeType: 'audio/wav'));
+      if (!mounted || generation != _generation ||
+          FirebaseAuth.instance.currentUser?.uid != widget.accountUid) {
+        await _halt();
+        return;
+      }
+      setState(() => _playing = true);
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية. حاول مجدداً.')));
+      await _clearListeners();
+      if (mounted && generation == _generation) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية. حاول مجدداً.')),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && generation == _generation) {
+        setState(() => _busy = false);
+      }
     }
   }
+
   @override
   void dispose() {
-    if(_player!=null)unawaited(_player!.dispose());
+    _generation++;
+    unawaited(_clearListeners());
+    if (_player != null) unawaited(_player!.dispose());
     _client.dispose();
     super.dispose();
   }
+
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize:MainAxisSize.min, children:[
+  Widget build(BuildContext context) {
+    final maxMs = widget.durationSeconds > 0 ? widget.durationSeconds * 1000 : 1000;
+    final progress = (_position.inMilliseconds / maxMs).clamp(0.0, 1.0).toDouble();
+    final elapsed = _position.inSeconds.clamp(0, widget.durationSeconds);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
       IconButton(
-        tooltip:_playing?'إيقاف الرسالة الصوتية':'تشغيل الرسالة الصوتية',
-        onPressed:_busy?null:_toggle,
-        icon:_busy
-          ? const SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2))
-          : Icon(_playing?Icons.stop_rounded:Icons.play_arrow_rounded,
-              color:const Color(0xFFBB9FFF)),
+        tooltip: _playing ? 'إيقاف الرسالة الصوتية' : 'تشغيل الرسالة الصوتية',
+        onPressed: _busy ? null : _toggle,
+        icon: _busy
+          ? const SizedBox(width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : Icon(_playing ? Icons.stop_rounded : Icons.play_arrow_rounded,
+              color: const Color(0xFFBB9FFF)),
       ),
-      const Icon(Icons.graphic_eq_rounded,color:Colors.white54,size:18),
-      const SizedBox(width:10),
-      Text('${widget.durationSeconds}ث',
-        style: const TextStyle(color:Colors.white70)),
-    ],
-  );
+      const Icon(Icons.graphic_eq_rounded, color: Colors.white54, size: 18),
+      const SizedBox(width: 8),
+      SizedBox(
+        width: 90,
+        child: Semantics(
+          label: 'تقدم الرسالة الصوتية',
+          value: '$elapsed من ${widget.durationSeconds} ثانية',
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 4,
+            backgroundColor: Colors.white24,
+            color: const Color(0xFFFFD54A),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Text('$elapsed/${widget.durationSeconds}ث',
+          style: const TextStyle(color: Colors.white70, fontSize: 12)),
+    ]);
+  }
 }
