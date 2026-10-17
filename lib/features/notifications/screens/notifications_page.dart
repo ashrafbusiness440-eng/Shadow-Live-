@@ -9,6 +9,7 @@ import '../../diaries/screens/diaries_screen.dart';
 import '../../profile/screens/public_profile_screen.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 import '../../relationships/services/relationship_service.dart';
+import '../../chat/widgets/private_call_incoming_dialog.dart';
 import '../services/notification_service.dart';
 import '../widgets/account_action_appeal_dialog.dart';
 import '../../../shared/services/user_storage_service.dart';
@@ -202,6 +203,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
             objectId: item.objectId,
             operationId: item.operationId,
             reviewStatus: item.reviewStatus,
+            callId: item.callId,
+            callConversationId: item.callConversationId,
+            callSenderId: item.callSenderId,
             agencyId: item.agencyId,
             requestType: item.requestType,
             applicantUid: item.applicantUid,
@@ -214,6 +218,29 @@ class _NotificationsPageState extends State<NotificationsPage> {
           );
         });
       }
+    }
+
+    // The existing notifications inbox is the incoming call entrypoint.
+    // Clicking an old incoming/missed event reads the authoritative call
+    // state; it never auto-answers or mixes audio in the background.
+    if ((item.type == 'private_call_incoming' ||
+            item.type == 'private_call_missed') &&
+        (item.callId?.isNotEmpty ?? false)) {
+      final ownerUid = _pageOwnerUid;
+      if (ownerUid == null ||
+          FirebaseAuth.instance.currentUser?.uid != ownerUid) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PrivateCallIncomingDialog(
+          accountUid: ownerUid,
+          callId: item.callId!,
+          callerName: (item.callSenderId?.isNotEmpty ?? false)
+              ? item.callSenderId!
+              : 'المتصل',
+        ),
+      );
+      return;
     }
 
     if ((item.diaryId?.isNotEmpty ?? false) &&
