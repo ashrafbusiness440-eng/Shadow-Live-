@@ -216,7 +216,7 @@ class _PrivateVoiceControlPageState extends State<PrivateVoiceControlPage> {
                   ? 'السماح بمكالمات بين حسابين متابعين لبعضهما.'
                   : 'غير متاحة للتفعيل حاليًا. بقيت فحوص الأمان والتشغيل على هاتفين.'),
               value: _calls,
-              onChanged: _loading || _saving || !_callsReady
+              onChanged: _loading || _saving || (!_callsReady && !_calls)
                   ? null : _changeCalls,
             ),
           ),
