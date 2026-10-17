@@ -27,7 +27,11 @@ void main() {
       greaterThanOrEqualTo(4),
     );
     expect(source.contains('_authSubscription?.cancel()'), isTrue);
-    expect(source.contains('_pageOwnerUid != FirebaseAuth.instance.currentUser?.uid'), isTrue);
+    // Notification taps now pin both the account and navigation epoch,
+    // stronger than the old literal UID comparison in the tap callback.
+    expect(source.contains('ownerUid == _pageOwnerUid'), isTrue);
+    expect(source.contains('FirebaseAuth.instance.currentUser?.uid == ownerUid'), isTrue);
+    expect(source.contains('accountEpoch == _requestEpoch'), isTrue);
 
     // Auth observes only the route. No per-notification streams or poll loops.
     expect(source.contains('Timer.periodic('), isFalse);
