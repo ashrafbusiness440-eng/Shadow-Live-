@@ -176,9 +176,11 @@ test("revoking user opt-in blocks even an old still registered token",async()=>{
   assert.equal((await dispatchPrivateCallPush(env,"bob",callId,{
     db,nowMs:now,send:async()=>{delivered++;return true;},
   })).sent,0);
-  docs.set("users/bob",{privateCallPushOptIn:true,accountStatus:"disabled"});
-  assert.equal((await dispatchPrivateCallPush(env,"bob",callId,{
-    db,nowMs:now,send:async()=>{delivered++;return true;},
-  })).sent,0);
+  for (const accountStatus of ["disabled", "deleted", "suspended", "banned"]) {
+    docs.set("users/bob",{privateCallPushOptIn:true,accountStatus});
+    assert.equal((await dispatchPrivateCallPush(env,"bob",callId,{
+      db,nowMs:now,send:async()=>{delivered++;return true;},
+    })).sent,0);
+  }
   assert.equal(delivered,0);
 });
