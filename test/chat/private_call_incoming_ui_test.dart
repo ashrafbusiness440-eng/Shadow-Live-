@@ -38,7 +38,7 @@ void main() {
     expect(ui, contains('await _voice.enterPrivateCallMedia('));
     expect(ui, contains('const Duration(seconds: 12)'));
     expect(ui, contains('await _client.renew('));
-    expect(ui, contains('if (_status == \'active\' && !_active)'), isFalse);
+    expect(ui.contains("if (_status == 'active' && !_active)"), isFalse);
     expect(ui, contains("!(_status == 'active' && !_active)"));
     expect(ui, contains('توقف الصوت'));
   });
