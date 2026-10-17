@@ -220,14 +220,21 @@ class PrivateCallPushService {
       throw StateError('registered_account_required');
     }
     final uid = user.uid;
-    final permission = await _messaging.requestPermission(
-      alert: true, badge: true, sound: true,
-    );
-    if (permission.authorizationStatus != AuthorizationStatus.authorized &&
-        permission.authorizationStatus != AuthorizationStatus.provisional) {
-      throw StateError('push_permission_denied');
+    String? token;
+    if (kIsWeb) {
+      // The JS bridge asks Notification.permission directly from this
+      // explicit user gesture; no startup/background permission prompts.
+      token = await web_push.getToken(_webVapidKey);
+    } else {
+      final permission = await _messaging.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+      if (permission.authorizationStatus != AuthorizationStatus.authorized &&
+          permission.authorizationStatus != AuthorizationStatus.provisional) {
+        throw StateError('push_permission_denied');
+      }
+      token = await _messaging.getToken();
     }
-    final token = await _messaging.getToken();
     if (token == null || token.isEmpty) {
       throw StateError('push_token_unavailable');
     }
@@ -244,6 +251,11 @@ class PrivateCallPushService {
       rethrow;
     }
     if (FirebaseAuth.instance.currentUser?.uid == uid) _enabledUid = uid;
+    if (kIsWeb) {
+      await web_push.subscribe((data) {
+        unawaited(_handleWebMessage(data));
+      });
+    }
   }
 
   Future<void> disableForCurrentUser() async {
@@ -259,19 +271,45 @@ class PrivateCallPushService {
         .timeout(const Duration(seconds: 12));
     _enabledUid = null;
     try {
-      final token = await _messaging.getToken();
+      final token = kIsWeb && _registeredUid == uid
+          ? _registeredToken
+          : kIsWeb ? null : await _messaging.getToken();
       if (token != null && FirebaseAuth.instance.currentUser?.uid == uid) {
         await _register(uid, token, action: 'unregister');
       }
+      if (kIsWeb) await web_push.deleteToken();
     } catch (_) {
       // Server opt-in has already been turned OFF.
     }
+  }
+
+  Future<void> _handleWebMessage(Map<String, dynamic> data) async {
+    final id = data['callId']?.toString();
+    if (data['type'] != 'private_call_incoming' ||
+        id == null || !_callIdPattern.hasMatch(id)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !enabledForCurrentUser) {
+      _pendingTapCallId = id;
+      return;
+    }
+    await _presentCall(uid, id, foreground: false);
   }
 
   Future<void> _presentPendingTap(String uid) async {
     final id = _pendingTapCallId;
     if (id == null || !enabledForCurrentUser ||
         FirebaseAuth.instance.currentUser?.uid != uid) {
+      return;
+    }
+    if (NavigationService.navigatorKey.currentState == null) {
+      // Flutter may still be mounting its root MaterialApp after a cold
+      // notification click. Retry one frame, never poll in a loop.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pendingTapCallId != null &&
+            FirebaseAuth.instance.currentUser?.uid == uid) {
+          unawaited(_presentPendingTap(uid));
+        }
+      });
       return;
     }
     _pendingTapCallId = null;
