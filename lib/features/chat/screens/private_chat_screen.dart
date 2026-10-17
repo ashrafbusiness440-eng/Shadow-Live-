@@ -518,6 +518,41 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
+  /// Check one exact message receipt after a possibly committed Firestore
+  /// batch. A failed read is inconclusive, never proof that we can delete R2.
+  /// This makes no collection scan and does not retry a financial or image
+  /// mutation while the result is uncertain.
+  Future<void> _reportUncertainImageCommit(
+    DocumentReference<Map<String, dynamic>>? messageRef,
+    String senderUid,
+    String? objectId,
+  ) async {
+    if (!_isActiveChatAccount(senderUid)) return;
+    try {
+      if (messageRef != null && objectId != null) {
+        final receipt = await messageRef.get(
+          const GetOptions(source: Source.server),
+        );
+        if (!_isActiveChatAccount(senderUid)) return;
+        final data = receipt.data();
+        if (receipt.exists &&
+            data?['senderId'] == senderUid &&
+            data?['storageObjectId'] == objectId &&
+            data?['type'] == 'image') {
+          _snack(data?['moderationStatus'] == 'pending'
+              ? 'تم إرسال الصورة للمراجعة. لن تظهر حتى موافقة الإدارة.'
+              : 'تم إرسال الصورة. يمكنك رؤيتها داخل المحادثة.');
+          return;
+        }
+      }
+    } catch (_) {
+      // Network/permission failure cannot prove whether commit succeeded.
+    }
+    if (_isActiveChatAccount(senderUid)) {
+      _snack('لم نتأكد من نتيجة الصورة. قد تكون وصلت بالفعل؛ حدّث المحادثة قبل محاولة إرسالها مرة ثانية.');
+    }
+  }
+
   Future<void> _sendImage() async {
     final senderUid = FirebaseAuth.instance.currentUser?.uid;
     if (_sendingImage || !_isActiveChatAccount(senderUid)) return;
@@ -573,6 +608,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
     if (!_isActiveChatAccount(senderUid)) return;
     String? uploadedObjectId;
+    // Once a batch commit starts, deleting the uploaded R2 bytes can break
+    // a message already saved if only the network acknowledgement was lost.
+    DocumentReference<Map<String, dynamic>>? attemptedMessageRef;
+    bool imageCommitAttempted = false;
     try {
       final upload = await _storage.upload(
         scope: 'chat_image',
@@ -606,6 +645,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         'sizeBytes': upload.sizeBytes,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      attemptedMessageRef = messageRef;
+      imageCommitAttempted = true;
       await batch.commit();
       uploadedObjectId = null;
     } on UserStoragePendingModeration catch (pending) {
@@ -617,8 +658,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       }
       // The conversation stores only an inaccessible image reference until
       // the owner approves the exact private R2 bytes and linked message.
+      DocumentReference<Map<String, dynamic>>? pendingMessageRef;
       try {
         final messageRef = _conversation.collection('messages').doc();
+        pendingMessageRef = messageRef;
         final batch = FirebaseFirestore.instance.batch();
         batch.update(_conversation, {
           'lastMessage': '📷 صورة قيد المراجعة',
@@ -641,9 +684,19 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         await batch.commit();
         _snack('أُرسلت صورة قيد المراجعة. لن تظهر حتى موافقة الإدارة.');
       } catch (_) {
-        _snack('تعذر ربط الصورة بالمحادثة. لم يتم نشرها.');
+        // The moderation placeholder may already have committed, even if
+        // the client lost the response. Never present a definite failure.
+        await _reportUncertainImageCommit(
+          pendingMessageRef, senderUid, pending.objectId,
+        );
       }
     } on FirebaseException catch (error) {
+      if (imageCommitAttempted) {
+        await _reportUncertainImageCommit(
+          attemptedMessageRef, senderUid, uploadedObjectId,
+        );
+        return;
+      }
       if (uploadedObjectId != null) {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
@@ -653,6 +706,12 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         _snack('تعذر حفظ الصورة في المحادثة حالياً.');
       }
     } on StateError catch (error) {
+      if (imageCommitAttempted) {
+        await _reportUncertainImageCommit(
+          attemptedMessageRef, senderUid, uploadedObjectId,
+        );
+        return;
+      }
       if (uploadedObjectId != null) {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
@@ -665,10 +724,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         _snack('تعذر رفع الصورة حالياً.');
       }
     } catch (_) {
+      if (imageCommitAttempted) {
+        await _reportUncertainImageCommit(
+          attemptedMessageRef, senderUid, uploadedObjectId,
+        );
+        return;
+      }
       if (uploadedObjectId != null) {
         await _deleteUploadedObjectQuietly(uploadedObjectId);
       }
-      _snack('تعذر إرسال الصورة.');
+      if (_isActiveChatAccount(senderUid)) {
+        _snack('تعذر إرسال الصورة.');
+      }
     }
   }
 
