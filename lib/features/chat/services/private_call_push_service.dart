@@ -41,6 +41,7 @@ class PrivateCallPushService {
   String? _registeredUid;
   String? _displayedCallId;
   String? _pendingTapCallId;
+  int _pendingNavigationRetries = 0;
   Future<void> _accountQueue = Future<void>.value();
   StreamSubscription<User?>? _authSub;
   StreamSubscription<String>? _tokenSub;
@@ -136,6 +137,8 @@ class PrivateCallPushService {
       } catch (_) {}
       _registeredUid = null;
       _registeredToken = null;
+      _pendingTapCallId = null;
+      _pendingNavigationRetries = 0;
     }
     _currentUid = uid;
     _enabledUid = null;
@@ -304,16 +307,19 @@ class PrivateCallPushService {
       return;
     }
     if (NavigationService.navigatorKey.currentState == null) {
-      // Flutter may still be mounting its root MaterialApp after a cold
-      // notification click. Retry one frame, never poll in a loop.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_pendingTapCallId != null &&
-            FirebaseAuth.instance.currentUser?.uid == uid) {
-          unawaited(_presentPendingTap(uid));
-        }
-      });
+      // A cold launch can precede MaterialApp mounting. Retry at most twice:
+      // no unbounded animation-frame polling or repeated subscriptions.
+      if (_pendingNavigationRetries++ < 2) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_pendingTapCallId != null &&
+              FirebaseAuth.instance.currentUser?.uid == uid) {
+            unawaited(_presentPendingTap(uid));
+          }
+        });
+      }
       return;
     }
+    _pendingNavigationRetries = 0;
     _pendingTapCallId = null;
     await _presentCall(uid, id, foreground: false);
   }
