@@ -59,7 +59,17 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  // The gift sheet is owned by the account which opened it. Never switch
+  // the sender implicitly if another account signs in while it is open.
+  late final String _ownerUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  bool get _isOriginalAccount =>
+      mounted && _ownerUid.isNotEmpty &&
+      FirebaseAuth.instance.currentUser?.uid == _ownerUid;
+  String get _uid => _ownerUid;
+
+  void _requireOriginalAccount() {
+    if (!_isOriginalAccount) throw StateError('gift_account_changed');
+  }
 
   // Keep the same server idempotency key after an ambiguous network failure.
   // Changing recipient, gift, quantity, bag mode or context starts a new operation.
@@ -77,15 +87,18 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
   }
 
   Future<void> _ensureConversation(String conversationId) async {
+    _requireOriginalAccount();
     final ref = FirebaseFirestore.instance
         .collection('conversations')
         .doc(conversationId);
     try {
       final snapshot = await ref.get();
+      _requireOriginalAccount();
       if (snapshot.exists) return;
     } on FirebaseException catch (error) {
       if (error.code != 'permission-denied') rethrow;
     }
+    _requireOriginalAccount();
     final participants = [_uid, widget.receiverId]..sort();
     await ref.set({
       'participants': participants,
@@ -93,6 +106,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       'updatedAt': FieldValue.serverTimestamp(),
       'unreadCounts': {_uid: 0, widget.receiverId: 0},
     });
+    _requireOriginalAccount();
   }
 
   Future<GiftPickerSendResult> _send(
@@ -100,6 +114,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
+    _requireOriginalAccount();
     if (_uid.isEmpty ||
         widget.receiverId.isEmpty ||
         _uid == widget.receiverId) {
@@ -117,16 +132,21 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     if (diaryId.isEmpty && suppliedConversationId.isEmpty) {
       await _ensureConversation(conversationId);
     }
+    _requireOriginalAccount();
 
     String? token;
     try {
-      token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final sender = FirebaseAuth.instance.currentUser;
+      _requireOriginalAccount();
+      token = await sender?.getIdToken();
+      _requireOriginalAccount();
     } on FirebaseAuthException catch (error) {
       // Refreshing a session token can fail before any gift reaches the API.
       throw StateError(error.code == 'network-request-failed'
           ? 'gift_network_unavailable'
           : 'gift_auth_failed');
     }
+    _requireOriginalAccount();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
     // A request may have committed even when its response times out. Reuse
     // the original key for exactly the same gift, instead of charging again.
@@ -150,6 +170,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
               ].join('_');
     _retryFingerprint = fingerprint;
     _retryIdempotencyKey = key;
+    _requireOriginalAccount();
     late final http.Response response;
     try {
       response = await http.post(
@@ -174,6 +195,9 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     } on http.ClientException {
       throw StateError('gift_network_unavailable');
     }
+    // A completed request belongs to the original account only. Another
+    // signed-in account cannot receive its balance, callback or success UI.
+    _requireOriginalAccount();
 
     Map<String, dynamic> body = <String, dynamic>{};
     try {
@@ -202,6 +226,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     }
 
     // Success, including a server-side duplicate response, is definitive.
+    _requireOriginalAccount();
     _clearRetryReservation();
     final totalCost =
         (body['totalCost'] as num?)?.toInt() ?? gift.priceCoins * quantity;
@@ -231,7 +256,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       title: widget.diaryId == null
           ? 'إرسال هدية إلى ${widget.receiverName}'
           : 'هدية ليوميات ${widget.receiverName}',
-      canSend: _uid.isNotEmpty &&
+      canSend: _isOriginalAccount &&
           widget.receiverId.isNotEmpty &&
           _uid != widget.receiverId,
       recipientArea: Container(
