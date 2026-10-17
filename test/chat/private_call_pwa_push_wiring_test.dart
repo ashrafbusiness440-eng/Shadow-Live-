@@ -39,6 +39,11 @@ void main() {
     expect(js, contains('serviceWorkerRegistration: registration'));
     expect(js, contains('firebase-cloud-messaging-push-scope/'));
     expect(js, contains('push_vapid_not_configured'));
+    final settings = File(
+      'lib/screens/settings/private_call_privacy_settings_screen.dart',
+    ).readAsStringSync();
+    // Revoking notifications must stay possible even if VAPID is withdrawn.
+    expect(settings, contains('!_pushEnabled'));
     expect(workflow, contains('rm -f site/control/firebase-messaging-sw.js'));
     expect(workflow, contains('SHADOW_FIREBASE_WEB_VAPID_KEY'));
     expect(workflow, contains('/Shadow-Live-/live/'));
