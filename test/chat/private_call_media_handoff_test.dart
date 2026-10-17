@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:voice_chat_room/features/chat/services/private_call_signaling_client.dart';
 
 const callId = 'abcdef0123456789abcdef0123456789';
+const voiceUserId = 'u_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 Map<String, dynamic> validMedia() => {
   'ok': true,
@@ -14,8 +15,8 @@ Map<String, dynamic> validMedia() => {
   'status': 'active',
   'appId': 55555,
   'roomId': 'private_call_$callId',
-  'userId': 'u_${'a' * 40}',
-  'streamId': 'private_call_${callId}_u_${'a' * 40}',
+  'userId': voiceUserId,
+  'streamId': 'private_call_${callId}_$voiceUserId',
   'token': '04abcdefghijklmnopqrstuvwxyz1234567890',
   'expiresAt': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 300,
 };
