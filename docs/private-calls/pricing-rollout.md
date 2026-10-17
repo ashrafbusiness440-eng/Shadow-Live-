@@ -38,4 +38,4 @@ real Android/PWA two-device tests are signed off.
 Approval/testing tracker: https://trello.com/c/PmCt10u2
 Field acceptance: https://trello.com/c/z0zPEz0j
 
-No Vercel. Deploy only to GitHub Pages + current Cloudflare Worker.
+Deploy only to GitHub Pages + the current Cloudflare Worker.
