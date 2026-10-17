@@ -23,6 +23,9 @@
        startup forces downloads, slows voice-room navigation, and silently
        breaks future Firebase background-call delivery. Versioned Flutter
        bootstrap and main.dart.js URLs already control production updates. -->
+  <!-- The tiny bridge loads no Firebase SDK or worker until explicit opt-in.
+       The live scope is independent of Shadow Control. -->
+  <script src="private_call_web_push.js"></script>
   <script src="flutter_bootstrap.js?v=20261002-main-shell-fix" async></script>
 </body>
 </html>

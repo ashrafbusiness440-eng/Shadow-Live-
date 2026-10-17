@@ -14,10 +14,13 @@ import '../../../firebase_options.dart';
 import '../../voice/services/voice_room_session_controller.dart';
 import '../widgets/private_call_incoming_dialog.dart';
 import 'private_call_signaling_client.dart';
+import 'private_call_web_push_stub.dart'
+    if (dart.library.js_interop) 'private_call_web_push_web.dart'
+    as web_push;
 
-/// One app-lifetime Android FCM coordinator; no per-message, per-chat or
-/// per-avatar listeners. Not activated for browser/PWA without its VAPID and
-/// service-worker setup. Server call + push rollout gates stay OFF.
+/// One app-lifetime call push coordinator (Android and opt-in PWA).
+/// No per-chat listeners, implicit permission prompts, or second call engine.
+/// Server media/push rollout gates remain OFF until device acceptance.
 class PrivateCallPushService {
   PrivateCallPushService._();
   static final instance = PrivateCallPushService._();
@@ -27,25 +30,28 @@ class PrivateCallPushService {
     defaultValue: 'https://shadow-live.ashraf-business-440.workers.dev/api',
   );
   static final _callIdPattern = RegExp(r'^[a-f0-9]{32}$');
+  static const _webVapidKey = String.fromEnvironment(
+    'SHADOW_FIREBASE_WEB_VAPID_KEY',
+  );
 
   bool _started = false;
   String? _currentUid;
   String? _enabledUid;
+  String? _registeredToken;
+  String? _registeredUid;
   String? _displayedCallId;
   String? _pendingTapCallId;
+  int _pendingNavigationRetries = 0;
   Future<void> _accountQueue = Future<void>.value();
   StreamSubscription<User?>? _authSub;
   StreamSubscription<String>? _tokenSub;
   StreamSubscription<RemoteMessage>? _foregroundSub;
   StreamSubscription<RemoteMessage>? _tapSub;
 
-  bool get supported =>
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.android &&
-      // Fail closed unless the Android binary was built against this
-      // Firebase project's registered Android app ID. A web App ID must
-      // never enable FCM device registration.
-      DefaultFirebaseOptions.androidMessagingConfigured;
+  bool get supported => kIsWeb
+      ? _webVapidKey.isNotEmpty && web_push.supported
+      : defaultTargetPlatform == TargetPlatform.android &&
+          DefaultFirebaseOptions.androidMessagingConfigured;
   bool get enabledForCurrentUser =>
       _enabledUid != null &&
       FirebaseAuth.instance.currentUser?.uid == _enabledUid;
@@ -55,6 +61,16 @@ class PrivateCallPushService {
   Future<void> start() async {
     if (_started || !supported) return;
     _started = true;
+    if (kIsWeb) {
+      // No Firebase SDK or service worker is loaded until a user who opted
+      // in explicitly enables notifications, or resumes granted permission.
+      _pendingTapCallId = web_push.consumeInitialCallId();
+      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+        _accountQueue = _accountQueue.then((_) => _syncAccount(user))
+            .catchError((Object _) {});
+      });
+      return;
+    }
     // FCM's background notification refers to this exact channel ID.
     try {
       final local = FlutterLocalNotificationsPlugin();
@@ -112,7 +128,17 @@ class PrivateCallPushService {
       // Retire the installation token on logout/account switch. Any old
       // registration is also suppressed server-side by explicit opt-in and
       // ownership re-assignment when the next account registers.
-      try { await _messaging.deleteToken(); } catch (_) {}
+      try {
+        if (kIsWeb) {
+          await web_push.deleteToken();
+        } else {
+          await _messaging.deleteToken();
+        }
+      } catch (_) {}
+      _registeredUid = null;
+      _registeredToken = null;
+      _pendingTapCallId = null;
+      _pendingNavigationRetries = 0;
     }
     _currentUid = uid;
     _enabledUid = null;
@@ -123,15 +149,27 @@ class PrivateCallPushService {
           .timeout(const Duration(seconds: 12));
       if (FirebaseAuth.instance.currentUser?.uid != uid ||
           doc.data()?['privateCallPushOptIn'] != true) return;
-      final status = await _messaging.getNotificationSettings();
-      if (status.authorizationStatus != AuthorizationStatus.authorized &&
-          status.authorizationStatus != AuthorizationStatus.provisional) {
-        return;
+      if (kIsWeb) {
+        if (web_push.permission != 'granted') return;
+      } else {
+        final status = await _messaging.getNotificationSettings();
+        if (status.authorizationStatus != AuthorizationStatus.authorized &&
+            status.authorizationStatus != AuthorizationStatus.provisional) {
+          return;
+        }
       }
-      final token = await _messaging.getToken();
+      final token = kIsWeb
+          ? await web_push.getToken(_webVapidKey)
+              .timeout(const Duration(seconds: 30))
+          : await _messaging.getToken();
       if (token == null || FirebaseAuth.instance.currentUser?.uid != uid) return;
       await _register(uid, token);
       if (FirebaseAuth.instance.currentUser?.uid == uid) _enabledUid = uid;
+      if (kIsWeb) {
+        await web_push.subscribe((data) {
+          unawaited(_handleWebMessage(data));
+        }).timeout(const Duration(seconds: 15));
+      }
       if (_pendingTapCallId != null) await _presentPendingTap(uid);
     } catch (_) {
       // Startup remains functional even when notification services fail.
@@ -157,7 +195,8 @@ class PrivateCallPushService {
         'content-type': 'application/json',
       },
       body: jsonEncode({
-        'action': action, 'token': token, 'platform': 'android',
+        'action': action, 'token': token,
+        'platform': kIsWeb ? 'web' : 'android',
       }),
     ).timeout(const Duration(seconds: 12));
     if (FirebaseAuth.instance.currentUser?.uid != uid) {
@@ -167,6 +206,13 @@ class PrivateCallPushService {
     if (response.statusCode != 200 || data is! Map ||
         data['ok'] != true) {
       throw StateError('push_registration_failed');
+    }
+    if (action == 'register') {
+      _registeredUid = uid;
+      _registeredToken = token;
+    } else if (_registeredUid == uid && _registeredToken == token) {
+      _registeredUid = null;
+      _registeredToken = null;
     }
   }
 
@@ -178,14 +224,22 @@ class PrivateCallPushService {
       throw StateError('registered_account_required');
     }
     final uid = user.uid;
-    final permission = await _messaging.requestPermission(
-      alert: true, badge: true, sound: true,
-    );
-    if (permission.authorizationStatus != AuthorizationStatus.authorized &&
-        permission.authorizationStatus != AuthorizationStatus.provisional) {
-      throw StateError('push_permission_denied');
+    String? token;
+    if (kIsWeb) {
+      // The JS bridge asks Notification.permission directly from this
+      // explicit user gesture; no startup/background permission prompts.
+      token = await web_push.getToken(_webVapidKey)
+              .timeout(const Duration(seconds: 30));
+    } else {
+      final permission = await _messaging.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+      if (permission.authorizationStatus != AuthorizationStatus.authorized &&
+          permission.authorizationStatus != AuthorizationStatus.provisional) {
+        throw StateError('push_permission_denied');
+      }
+      token = await _messaging.getToken();
     }
-    final token = await _messaging.getToken();
     if (token == null || token.isEmpty) {
       throw StateError('push_token_unavailable');
     }
@@ -202,6 +256,11 @@ class PrivateCallPushService {
       rethrow;
     }
     if (FirebaseAuth.instance.currentUser?.uid == uid) _enabledUid = uid;
+    if (kIsWeb) {
+      await web_push.subscribe((data) {
+        unawaited(_handleWebMessage(data));
+      }).timeout(const Duration(seconds: 15));
+    }
   }
 
   Future<void> disableForCurrentUser() async {
@@ -217,13 +276,28 @@ class PrivateCallPushService {
         .timeout(const Duration(seconds: 12));
     _enabledUid = null;
     try {
-      final token = await _messaging.getToken();
+      final token = kIsWeb && _registeredUid == uid
+          ? _registeredToken
+          : kIsWeb ? null : await _messaging.getToken();
       if (token != null && FirebaseAuth.instance.currentUser?.uid == uid) {
         await _register(uid, token, action: 'unregister');
       }
+      if (kIsWeb) await web_push.deleteToken();
     } catch (_) {
       // Server opt-in has already been turned OFF.
     }
+  }
+
+  Future<void> _handleWebMessage(Map<String, dynamic> data) async {
+    final id = data['callId']?.toString();
+    if (data['type'] != 'private_call_incoming' ||
+        id == null || !_callIdPattern.hasMatch(id)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !enabledForCurrentUser) {
+      _pendingTapCallId = id;
+      return;
+    }
+    await _presentCall(uid, id, foreground: false);
   }
 
   Future<void> _presentPendingTap(String uid) async {
@@ -232,6 +306,20 @@ class PrivateCallPushService {
         FirebaseAuth.instance.currentUser?.uid != uid) {
       return;
     }
+    if (NavigationService.navigatorKey.currentState == null) {
+      // A cold launch can precede MaterialApp mounting. Retry at most twice:
+      // no unbounded animation-frame polling or repeated subscriptions.
+      if (_pendingNavigationRetries++ < 2) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_pendingTapCallId != null &&
+              FirebaseAuth.instance.currentUser?.uid == uid) {
+            unawaited(_presentPendingTap(uid));
+          }
+        });
+      }
+      return;
+    }
+    _pendingNavigationRetries = 0;
     _pendingTapCallId = null;
     await _presentCall(uid, id, foreground: false);
   }
