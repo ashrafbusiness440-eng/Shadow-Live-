@@ -178,6 +178,15 @@ export async function dispatchPrivateCallPush(env, calleeUid, callId, {
       Number(call.data?.ringDeadlineMs || 0) <= nowMs) {
     return { code: "not_ringing", sent: 0 };
   }
+  // A token can outlive logout, permission revocation or a failed unregister.
+  // Never send unless the current account explicitly opted in at the server.
+  const account = await db.get("users/" + calleeUid);
+  if (!account.exists || account.data?.privateCallPushOptIn !== true ||
+      account.data?.accountStatus === "banned" ||
+      account.data?.accountStatus === "suspended" ||
+      account.data?.accountStatus === "disabled") {
+    return { code: "push_opt_in_required", sent: 0 };
+  }
   const devices = await db.runQuery(
     "private_call_push_devices/" + calleeUid + "/tokens",
     { limit: maxDevices },
