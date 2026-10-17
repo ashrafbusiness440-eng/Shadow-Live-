@@ -26,7 +26,7 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
   String _status = 'loading';
   String? _error;
   bool _busy = false, _active = false, _checking = false, _closing = false;
-  int _ticks = 0, _errors = 0;
+  int _ticks = 0, _errors = 0, _deadlineRefreshes = 0;
 
   bool get _sameUser =>
       mounted && FirebaseAuth.instance.currentUser?.uid == widget.accountUid;
@@ -55,11 +55,15 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
       );
       if (!_sameUser || _closing) return;
       setState(() { _status = state.status; _error = null; });
-      if (state.status == 'ringing' && state.ringDeadlineMs > 0) {
+      if (state.status == 'ringing' && state.ringDeadlineMs > 0 &&
+          _deadlineRefreshes < 2) {
+        // Device time may be incorrect: never spin in a 100ms loop while
+        // waiting for the 30-second server-authoritative ring deadline.
+        _deadlineRefreshes++;
         final delay = state.ringDeadlineMs -
             DateTime.now().millisecondsSinceEpoch + 300;
         _timer?.cancel();
-        _timer = Timer(Duration(milliseconds: delay.clamp(100, 30000).toInt()),
+        _timer = Timer(Duration(milliseconds: delay.clamp(2000, 30000).toInt()),
             () { if (_sameUser) unawaited(_load()); });
       }
     } catch (_) {
