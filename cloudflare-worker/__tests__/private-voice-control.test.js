@@ -71,6 +71,20 @@ test("both voice features stay OFF by default and production readiness is server
   }, {}, { PRIVATE_CALL_MEDIA_READY: "true" }), {
     voiceNotesEnabled: true, privateCallsEnabled: true,
   });
+  // Disabling a previously activated feature must ALWAYS work, even when
+  // the production readiness flag is later turned OFF in an emergency.
+  assert.deepEqual(validateVoiceChange({
+    voiceNotesEnabled: false, privateCallsEnabled: false,
+  }, { privateCallsEnabled: true }, {}), {
+    voiceNotesEnabled: false, privateCallsEnabled: false,
+  });
+  // Re-saving another setting must not strand an old enabled value, while
+  // turning calls from OFF to ON still requires server readiness.
+  assert.deepEqual(validateVoiceChange({
+    voiceNotesEnabled: true, privateCallsEnabled: true,
+  }, { privateCallsEnabled: true }, {}), {
+    voiceNotesEnabled: true, privateCallsEnabled: true,
+  });
   assert.throws(
     () => validateVoiceChange({
       voiceNotesEnabled: 1, privateCallsEnabled: false,
@@ -133,6 +147,8 @@ test("HTTP route uses validated admin session, explicit capabilities and no dire
   assert.ok(index.includes('"/api/private-voice-control"'));
   assert.ok(control.includes("shadowApiEndpoint('private-voice-control')"));
   assert.ok(control.includes("!_callsReady"));
+  assert.ok(control.includes("(!_callsReady && !_calls)"));
+  assert.ok(control.includes("if (!_callsReady && value) return;"));
   assert.ok(control.includes("_operationKey = op;"));
   assert.ok(control.includes("حفظ الإعدادات"));
   assert.ok(nav.includes("const PrivateVoiceControlPage()"));
