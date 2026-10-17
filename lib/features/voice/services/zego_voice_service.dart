@@ -351,7 +351,7 @@ class ZegoVoiceService implements VoiceService {
       _seatIndex = null;
       _micController.add(VoiceMicState.muted);
       _connectionController.add(VoiceConnectionState.connected);
-      unawaited(_resumeRemoteAudio(media.roomId));
+      // setPlaybackEnabled already resumes known streams once.
       await setPlaybackEnabled(true);
       await unmuteMic();
     } catch (error) {
