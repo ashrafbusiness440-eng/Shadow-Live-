@@ -656,8 +656,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       }
       // The conversation stores only an inaccessible image reference until
       // the owner approves the exact private R2 bytes and linked message.
+      DocumentReference<Map<String, dynamic>>? pendingMessageRef;
       try {
         final messageRef = _conversation.collection('messages').doc();
+        pendingMessageRef = messageRef;
         final batch = FirebaseFirestore.instance.batch();
         batch.update(_conversation, {
           'lastMessage': '📷 صورة قيد المراجعة',
@@ -683,7 +685,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         // The moderation placeholder may already have committed, even if
         // the client lost the response. Never present a definite failure.
         await _reportUncertainImageCommit(
-          messageRef, senderUid, pending.objectId,
+          pendingMessageRef, senderUid, pending.objectId,
         );
       }
     } on FirebaseException catch (error) {
