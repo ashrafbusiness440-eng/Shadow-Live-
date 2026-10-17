@@ -28,6 +28,18 @@ void main() {
     expect(screen, contains('callId: item.callId!'));
   });
 
+  test('call history events have visible labels and cannot be deleted as text', () {
+    final chat = File(
+      'lib/features/chat/screens/private_chat_screen.dart',
+    ).readAsStringSync();
+    expect(chat, contains("type == 'call_event'"));
+    expect(chat, contains('مكالمة فائتة'));
+    expect(chat, contains('مكالمة صوتية مكتملة'));
+    expect(chat, contains("data['durationSeconds']"));
+    expect(chat, contains("onLongPress: type == 'call_event' ? null"));
+    expect(chat, contains("if (data['type'] == 'call_event') return false;"));
+  });
+
   test('receiver leaves the public room only after accepted status', () {
     final ui = File(
       'lib/features/chat/widgets/private_call_incoming_dialog.dart',
