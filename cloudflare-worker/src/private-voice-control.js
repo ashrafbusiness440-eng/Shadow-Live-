@@ -7,6 +7,7 @@ import { firestoreClient } from "./firestore.js";
 const CONFIG = "system_config/messaging";
 const clean = value => String(value ?? "").trim();
 const KEY_PATTERN = /^[A-Za-z0-9_-]{12,180}$/;
+const MAX_CALL_PRICE_COINS = 1_000_000;
 
 class ControlError extends Error {
   constructor(code, status = 400) {
@@ -17,14 +18,26 @@ class ControlError extends Error {
 }
 
 export function voiceConfigState(source = {}, env = {}) {
+  const privateCallPricingMode =
+    source.privateCallPricingMode === "paid" ? "paid" : "free";
+  const rawPrice = source.privateCallPriceCoins;
+  const privateCallPriceCoins =
+    Number.isSafeInteger(rawPrice) && rawPrice >= 0 &&
+    rawPrice <= MAX_CALL_PRICE_COINS ? rawPrice : 0;
   return {
     voiceNotesEnabled: source.voiceNotesEnabled === true,
     privateCallsEnabled: source.privateCallsEnabled === true,
+    privateCallPricingMode,
+    privateCallPriceCoins,
+    // Paid calls deliberately have no billing/ledger implementation yet.
+    // No environment setting can make them billable at this stage.
+    paidCallsLaunchReady: false,
     version: Number.isSafeInteger(Number(source.voiceControlVersion)) &&
       Number(source.voiceControlVersion) >= 0
       ? Number(source.voiceControlVersion) : 0,
     callsLaunchReady: env.PRIVATE_CALL_MEDIA_READY === "true" &&
-      env.PRIVATE_CALL_PUSH_READY === "true",
+      env.PRIVATE_CALL_PUSH_READY === "true" &&
+      privateCallPricingMode === "free",
   };
 }
 
@@ -33,6 +46,20 @@ export function validateVoiceChange(input, current, env) {
       typeof input.voiceNotesEnabled !== "boolean" ||
       typeof input.privateCallsEnabled !== "boolean") {
     throw new ControlError("invalid_voice_config");
+  }
+  // Older Control clients may send only toggles. Preserve stored pricing,
+  // rather than reverting an existing paid draft to free on an old save.
+  const mode = input.privateCallPricingMode ?? current.privateCallPricingMode ?? "free";
+  const price = input.privateCallPriceCoins ?? current.privateCallPriceCoins ?? 0;
+  if ((mode !== "free" && mode !== "paid") ||
+      !Number.isSafeInteger(price) || price < 0 ||
+      price > MAX_CALL_PRICE_COINS || (mode === "paid" && price < 1)) {
+    throw new ControlError("invalid_private_call_price");
+  }
+  // Save a future paid tariff while the call feature is OFF, but never
+  // allow a billable call until the atomic ledger path is implemented.
+  if (mode === "paid" && input.privateCallsEnabled === true) {
+    throw new ControlError("private_call_billing_not_ready", 409);
   }
   // Both media and incoming-call push gates must be ready before enabling.
   // The owner can always emergency-disable calls regardless of readiness.
@@ -45,6 +72,8 @@ export function validateVoiceChange(input, current, env) {
   return {
     voiceNotesEnabled: input.voiceNotesEnabled,
     privateCallsEnabled: input.privateCallsEnabled,
+    privateCallPricingMode: mode,
+    privateCallPriceCoins: price,
   };
 }
 
@@ -114,6 +143,8 @@ export async function writeVoiceConfig(db, actorUid, body, env) {
         before: {
           voiceNotesEnabled: current.voiceNotesEnabled,
           privateCallsEnabled: current.privateCallsEnabled,
+          privateCallPricingMode: current.privateCallPricingMode,
+          privateCallPriceCoins: current.privateCallPriceCoins,
         },
         after: values, version, createdAt: now,
       }),
