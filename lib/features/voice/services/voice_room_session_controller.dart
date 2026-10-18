@@ -1302,8 +1302,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _effectSoundHttp.close();
     _effectSoundCache.clear();
     _serviceInitialized = false;
-    if (firstFailure != null) {
-      Error.throwWithStackTrace(firstFailure, firstFailureTrace!);
+    final shutdownFailure = firstFailure;
+    if (shutdownFailure != null) {
+      Error.throwWithStackTrace(shutdownFailure, firstFailureTrace!);
     }
   }
 }
