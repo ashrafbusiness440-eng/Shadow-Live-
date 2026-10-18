@@ -36,6 +36,13 @@ abstract final class ShadowAssetRegistry {
 }
 
 abstract final class ShadowAssetKeys {
+  // Default visual for EVERY voice room when no valid equipped background exists.
+  // The Asset Studio can replace this key without editing room UI code.
+  static const roomDefaultBackground = 'room.background.default';
+  // Offline/error fallback, published by Asset Studio at the same path.
+  static const roomDefaultBackgroundBundledPath =
+      'assets/images/rooms/shadow_room_default.png';
+
   // App-wide presentation only; room/profile custom selections keep priority.
   static const globalWallpaper = 'app.background.global';
   static const globalWallpaperBundledPath =
