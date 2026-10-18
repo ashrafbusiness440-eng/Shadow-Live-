@@ -50,30 +50,44 @@ jobs:
           echo "Original assets size:"
           du -sh assets/images
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends optipng pngquant webp
+          sudo apt-get install -y -qq --no-install-recommends optipng pngquant python3-pil
 
-          # A high-quality perceptual palette dramatically shrinks large
-          # photo-style PNGs without changing image paths or source files.
-          # If the quality floor cannot be met, retain the full-quality PNG.
+          # Keep all original artwork in the repository; edit only the
+          # temporary build workspace. PNGs retain their exact asset paths.
           find assets/images -type f -iname '*.png' -size +200k -print0 |
             xargs -0 -r -P 2 -n 1 bash -c 'pngquant --quality=88-98 --speed 3 --strip --skip-if-larger --force --ext .png "$0" || optipng -o2 -quiet "$0" || echo "Kept original PNG: $0" >&2'
 
-          # The bundled gift WebPs contain oversized images. Re-encode only
-          # these 4 large gift previews at quality 91 while retaining alpha.
-          # A larger recode is discarded, preserving the original file.
-          while IFS= read -r -d '' f; do
-            tempdir="$(mktemp -d)"
-            if dwebp "$f" -o "$tempdir/source.png" >/dev/null 2>&1 &&
-               cwebp -quiet -q 91 -alpha_q 100 -m 6 "$tempdir/source.png" -o "$tempdir/recode.webp"; then
-              if [ "$(stat -c%s "$tempdir/recode.webp")" -lt "$(stat -c%s "$f")" ]; then
-                cp "$tempdir/recode.webp" "$f"
-                echo "Recompressed gift preview: $f"
-              fi
-            fi
-            rm -rf "$tempdir"
-          done < <(find assets/images/gifts -type f -name '*.webp' -size +500k -print0)
+          # A small number of large photo-style PNGs exceed the high-quality
+          # palette threshold. Permit a conservative fallback only for those
+          # still above 1 MB; preserve any image that fails the quality floor.
+          find assets/images -type f -iname '*.png' -size +1000k -print0 |
+            xargs -0 -r -P 2 -n 1 bash -c 'pngquant --quality=80-95 --speed 3 --strip --skip-if-larger --force --ext .png "$0" || echo "Preserved full-quality PNG: $0" >&2'
 
-          # Remove one known test-only picture from the build copy only.
+          # WebP images retain their format and path. Preserve animated
+          # assets, alpha and larger-or-equal originals; no removed artwork.
+          /usr/bin/python3 - <<'PY'
+          from io import BytesIO
+          from pathlib import Path
+          from PIL import Image
+
+          for image_path in Path('assets/images').rglob('*.webp'):
+              old_size = image_path.stat().st_size
+              if old_size < 300_000:
+                  continue
+              try:
+                  with Image.open(image_path) as im:
+                      if getattr(im, 'n_frames', 1) != 1:
+                          continue
+                      output = BytesIO()
+                      im.save(output, format='WEBP', quality=92, method=5, exact=True)
+                      encoded = output.getvalue()
+                  if len(encoded) < old_size:
+                      image_path.write_bytes(encoded)
+                      print('Compressed WebP', image_path, old_size, '->', len(encoded))
+              except Exception as error:
+                  print('Preserved WebP', image_path, str(error)[:120])
+          PY
+
           if [ -f assets/images/misc/asset_test.png ] &&
              ! grep -R -F -q 'asset_test.png' lib; then
             rm assets/images/misc/asset_test.png
