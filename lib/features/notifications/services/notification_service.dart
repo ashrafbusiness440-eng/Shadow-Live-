@@ -18,6 +18,8 @@ class AppNotification {
     this.callId,
     this.callConversationId,
     this.callSenderId,
+    this.reportStatus,
+    this.reportSubject,
     required this.agencyId,
     required this.requestType,
     required this.applicantUid,
@@ -44,6 +46,11 @@ class AppNotification {
   final String? callId;
   final String? callConversationId;
   final String? callSenderId;
+  // Server-authored report decision metadata. The notice body contains the
+  // full optional rejection reason and is scoped by notifications Firestore
+  // ownership rules to the reporter, never the accused account.
+  final String? reportStatus;
+  final String? reportSubject;
   final String? agencyId;
   final String? requestType;
   final String? applicantUid;
@@ -100,6 +107,8 @@ class AppNotification {
       callId: _nullable(data['callId']),
       callConversationId: _nullable(data['conversationId']),
       callSenderId: _nullable(data['senderId']),
+      reportStatus: _nullable(data['reportStatus']),
+      reportSubject: _nullable(data['reportSubject']),
       agencyId: _nullable(data['agencyId']),
       requestType: _nullable(data['requestType']),
       applicantUid: _nullable(data['applicantUid'] ?? data['memberUid']),
