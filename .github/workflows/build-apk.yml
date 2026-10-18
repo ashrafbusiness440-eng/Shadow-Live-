@@ -43,20 +43,37 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Lossless image optimization in build workspace only
+      - name: Compact bundled artwork in Android build workspace only
         shell: bash
         run: |
           set -euo pipefail
           echo "Original assets size:"
           du -sh assets/images
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends optipng
-          # Keep the source artwork untouched. Optimize only the ephemeral
-          # runner copy. PNG pixel data is unchanged by optipng.
+          sudo apt-get install -y -qq --no-install-recommends optipng pngquant webp
+
+          # A high-quality perceptual palette dramatically shrinks large
+          # photo-style PNGs without changing image paths or source files.
+          # If the quality floor cannot be met, retain the full-quality PNG.
           find assets/images -type f -iname '*.png' -size +200k -print0 |
-            xargs -0 -r -P 2 -n 1 bash -c 'optipng -o2 -quiet "$0" || echo "Kept unchanged PNG: $0" >&2'
-          # Exclude an old testing-only image if production Dart code has no
-          # reference to it; keep it in the repository itself.
+            xargs -0 -r -P 2 -n 1 bash -c 'pngquant --quality=88-98 --speed 3 --strip --skip-if-larger --force --ext .png "$0" || optipng -o2 -quiet "$0" || echo "Kept original PNG: $0" >&2'
+
+          # The bundled gift WebPs contain oversized images. Re-encode only
+          # these 4 large gift previews at quality 91 while retaining alpha.
+          # A larger recode is discarded, preserving the original file.
+          while IFS= read -r -d '' f; do
+            tempdir="$(mktemp -d)"
+            if dwebp "$f" -o "$tempdir/source.png" >/dev/null 2>&1 &&
+               cwebp -quiet -q 91 -alpha_q 100 -m 6 "$tempdir/source.png" -o "$tempdir/recode.webp"; then
+              if [ "$(stat -c%s "$tempdir/recode.webp")" -lt "$(stat -c%s "$f")" ]; then
+                cp "$tempdir/recode.webp" "$f"
+                echo "Recompressed gift preview: $f"
+              fi
+            fi
+            rm -rf "$tempdir"
+          done < <(find assets/images/gifts -type f -name '*.webp' -size +500k -print0)
+
+          # Remove one known test-only picture from the build copy only.
           if [ -f assets/images/misc/asset_test.png ] &&
              ! grep -R -F -q 'asset_test.png' lib; then
             rm assets/images/misc/asset_test.png
