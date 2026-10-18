@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required in release builds for rooms, chat, Firebase and Cloudflare. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Requested only when user enables call notifications from Settings. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
