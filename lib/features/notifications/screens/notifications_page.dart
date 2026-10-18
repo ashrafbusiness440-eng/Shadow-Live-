@@ -185,7 +185,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (AccountActionAppealDialog.operationIdFrom(item).isNotEmpty) {
       if (!item.read) {
         try {
-          await _service.markRead(item.id);
+          await _service.markRead(item.id)
+              .timeout(const Duration(seconds: 3));
         } catch (_) {
           // A read-receipt failure must not hide an actionable appeal.
         }
@@ -197,10 +198,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (!item.read) {
       var acknowledged = false;
       try {
-        await _service.markRead(item.id);
+        await _service.markRead(item.id)
+              .timeout(const Duration(seconds: 3));
         acknowledged = true;
       } catch (_) {
-        // Leave the badge unread, but opening the notification still works.
+        // Includes offline writes awaiting server acknowledgment; the
+        // pending Firestore request is bounded for navigation, not retried.
+        // Leave the badge unread until an actual server acknowledgment.
+        // Opening the notification must still work.
       }
       if (!activeOwner()) return;
       final index = _items.indexWhere((entry) => entry.id == item.id);
@@ -222,6 +227,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             callId: item.callId,
             callConversationId: item.callConversationId,
             callSenderId: item.callSenderId,
+            reportStatus: item.reportStatus,
+            reportSubject: item.reportSubject,
             agencyId: item.agencyId,
             requestType: item.requestType,
             applicantUid: item.applicantUid,
@@ -238,6 +245,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     // A stale response cannot route another account to this notification.
     if (!activeOwner()) return;
+
+    // Report decisions are full, read-only notifications from the server.
+    // Opening them must show an optional rejection reason in full, rather
+    // than only marking the list tile read and silently doing nothing.
+    if (item.type == 'report_status') {
+      await _openReportOutcome(item);
+      return;
+    }
 
     // The existing notifications inbox is the incoming call entrypoint.
     // Clicking an old incoming/missed event reads the authoritative call
@@ -298,6 +313,59 @@ class _NotificationsPageState extends State<NotificationsPage> {
         (item.requestId?.isNotEmpty ?? false)) {
       await _openAgencyInvitation(item.requestId!);
     }
+  }
+
+  Future<void> _openReportOutcome(AppNotification item) async {
+    final ownerUid = _pageOwnerUid;
+    if (!mounted || ownerUid == null ||
+        FirebaseAuth.instance.currentUser?.uid != ownerUid) return;
+    final statusLabel = switch (item.reportStatus) {
+      'under_review' => 'قيد المراجعة',
+      'rejected' => 'مرفوض',
+      'actioned' => 'تم اتخاذ إجراء',
+      'closed' => 'مغلق',
+      _ => 'تحديث حالة البلاغ',
+    };
+    // The complete reason comes from the server-owned notification body.
+    // No further query, per-item listener, or speculative admin state.
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF111522),
+          title: Text(
+            item.title.isNotEmpty ? item.title : 'نتيجة مراجعة البلاغ',
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'حالة البلاغ: $statusLabel',
+                  style: const TextStyle(color: Color(0xFFFFD54F)),
+                ),
+                if (item.body.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SelectableText(
+                    item.body,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _openImageModeration(AppNotification item) async {
