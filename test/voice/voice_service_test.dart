@@ -97,6 +97,32 @@ void main() {
     expect(join, contains("'zego_login_cleanup_failed'"));
   });
 
+  test('failed private ZEGO login never hides a failed SDK logout', () {
+    final source = File(
+      'lib/features/voice/services/zego_voice_service.dart',
+    ).readAsStringSync();
+    final begin = source.indexOf('Future<void> joinPrivateCall({');
+    final end = source.indexOf('bool get privateCallAudioActive', begin);
+    expect(begin, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(begin));
+    final join = source.substring(begin, end);
+    final failureHandler = join.indexOf('} catch (error) {');
+    final sdkLogout = join.indexOf(
+      'await ZegoExpressEngine.instance.logoutRoom(failedCallRoomId);',
+      failureHandler,
+    );
+    final localReset = join.indexOf('_roomId = null;', failureHandler);
+    expect(join, contains('var loginStarted = false;'));
+    expect(join, contains('failedCallRoomId == media.roomId'));
+    expect(sdkLogout, greaterThan(failureHandler));
+    expect(localReset, greaterThan(sdkLogout));
+    expect(join, contains('logoutFailure = failure;'));
+    expect(join, contains("if (logoutFailure != null) {"));
+    expect(join, contains("'zego_call_login_cleanup_failed'"));
+    // The old implementation suppressed a real failed logout.
+    expect(join, isNot(contains('logoutRoom(_roomId);')));
+  });
+
   test('ZEGO room cleanup always attempts logout after a stream stop failure', () {
     final source = File(
       'lib/features/voice/services/zego_voice_service.dart',

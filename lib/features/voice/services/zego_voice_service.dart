@@ -374,13 +374,21 @@ class ZegoVoiceService implements VoiceService {
       await setPlaybackEnabled(true);
       await unmuteMic();
     } catch (error) {
+      Object? logoutFailure;
       if (_joined) {
         await leaveRoom();
       } else {
-        if (loginStarted && _roomId != null) {
+        // A failed SDK login may still hold native call room state.
+        // An unsuccessful logout must not be hidden from the caller.
+        final failedCallRoomId = _roomId;
+        if (loginStarted &&
+            failedCallRoomId != null &&
+            failedCallRoomId == media.roomId) {
           try {
-            await ZegoExpressEngine.instance.logoutRoom(_roomId);
-          } catch (_) {}
+            await ZegoExpressEngine.instance.logoutRoom(failedCallRoomId);
+          } catch (failure) {
+            logoutFailure = failure;
+          }
         }
         _roomId = null;
         _zegoUserId = null;
@@ -389,6 +397,12 @@ class ZegoVoiceService implements VoiceService {
         _privateCallAccountUid = null;
         _playingStreams.clear();
         _connectionController.add(VoiceConnectionState.failed);
+      }
+      if (logoutFailure != null) {
+        throw VoiceException(
+          'zego_call_login_cleanup_failed',
+          'ZEGO call login failed ($error) and logout failed ($logoutFailure).',
+        );
       }
       if (error is VoiceException) rethrow;
       throw VoiceException('call_media_join_failed', error.toString());

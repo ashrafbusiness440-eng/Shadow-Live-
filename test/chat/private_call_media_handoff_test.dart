@@ -108,6 +108,12 @@ void main() {
     expect(zego, contains('await setPlaybackEnabled(true);'));
     expect(zego, contains("_callSignalingClient.mediaSession("));
     expect(zego, contains('media.roomId != roomId'));
-    expect(zego, contains('await ZegoExpressEngine.instance.logoutRoom(_roomId);'));
+    // Failed native call login must attempt a matching-room rollback,
+    // while retaining the logout failure for the original caller.
+    expect(zego, contains('failedCallRoomId == media.roomId'));
+    expect(zego, contains(
+      'await ZegoExpressEngine.instance.logoutRoom(failedCallRoomId);',
+    ));
+    expect(zego, contains("'zego_call_login_cleanup_failed'"));
   });
 }
