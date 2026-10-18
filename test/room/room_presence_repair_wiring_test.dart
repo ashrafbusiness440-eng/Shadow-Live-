@@ -79,7 +79,7 @@ void main() {
     expect(controller.contains(
       'final unexpectedLoss = (_active || _privateCallMediaActive) &&'
     ), isTrue);
-    expect(controller.contains('if (unexpectedLoss) unawaited(leave());'),
+    expect(controller.contains('if (unexpectedLoss) unawaited(_leaveAfterTerminalSignal());'),
         isTrue);
     expect(controller.contains('Future<void>? _leaveInFlight;'), isTrue);
     expect(controller.contains('if (pending != null) return pending;'),
