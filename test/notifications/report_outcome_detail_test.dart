@@ -39,6 +39,9 @@ void main() {
     expect(dispatch, contains('await _openReportOutcome(item);'));
     expect(dispatch, contains('reportStatus: item.reportStatus'));
     expect(dispatch, contains('reportSubject: item.reportSubject'));
+    // An offline read receipt may never complete. Both notification paths
+    // must have a strict timeout and retain account isolation.
+    expect('timeout(const Duration(seconds: 3))'.allMatches(dispatch).length, 2);
     expect(dispatch.indexOf('if (!activeOwner()) return;'),
       lessThan(dispatch.indexOf("item.type == 'report_status'")));
 
