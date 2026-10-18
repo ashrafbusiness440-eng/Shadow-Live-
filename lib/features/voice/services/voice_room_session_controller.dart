@@ -25,7 +25,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       if (changed) {
         _mysteriousModeEnabled = false;
         if (_active || _joining || _privateCallMediaActive) {
-          unawaited(leave());
+          unawaited(_leaveAfterTerminalSignal());
         }
       }
     });
@@ -268,7 +268,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         _joining = false;
       }
       notifyListeners();
-      if (unexpectedLoss) unawaited(leave());
+      if (unexpectedLoss) unawaited(_leaveAfterTerminalSignal());
     });
     _micSubscription = _voiceService.micStates.listen((state) {
       _micMuted = state == VoiceMicState.muted;
@@ -886,7 +886,11 @@ class VoiceRoomSessionController extends ChangeNotifier {
     try {
       await setMicMuted(true); // stop publishing voice before cleanup IO.
     } catch (_) {}
-    await leave(); // leaves ZEGO, socket and mic, not only room UI.
+    try {
+      await leave(); // leaves ZEGO, socket and mic, not only room UI.
+    } catch (_) {
+      return; // leave() already recorded the unsafe SDK cleanup failure.
+    }
     _error = 'room_entry_restricted';
     notifyListeners();
   }
@@ -894,7 +898,11 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> _leaveBannedRoom() async {
     final departingRoomId = roomId;
     if (departingRoomId.isEmpty) return;
-    await leave();
+    try {
+      await leave();
+    } catch (_) {
+      return; // Never overwrite an SDK cleanup failure with a room label.
+    }
     if (_active && roomId != departingRoomId) return;
     _error = 'room_banned';
     notifyListeners();
@@ -975,7 +983,11 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void> _leaveClosedRoom() async {
     final departingRoomId = roomId;
     if (departingRoomId.isEmpty) return;
-    await leave();
+    try {
+      await leave();
+    } catch (_) {
+      return; // Never overwrite an SDK cleanup failure with a room label.
+    }
     if (_active && roomId != departingRoomId) return;
     _error = 'room_closed';
     notifyListeners();
@@ -1180,6 +1192,16 @@ class VoiceRoomSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Terminal SDK callbacks and policy snapshots cannot await a user-facing
+  // exit. Observe its error rather than creating an unhandled Future.
+  Future<void> _leaveAfterTerminalSignal() async {
+    try {
+      await leave();
+    } catch (_) {
+      // _leaveRoomSession already exposed voice_session_cleanup_failed.
+    }
+  }
+
   Future<void> leave() {
     final pending = _leaveInFlight;
     if (pending != null) return pending;
@@ -1204,10 +1226,17 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _roomModerationSubscription = null;
     _micRestrictedUntilMs = 0;
     _roomMicSeatMuteInFlight = false;
+    Object? voiceLogoutFailure;
+    StackTrace? voiceLogoutTrace;
     if (_serviceInitialized) {
       try {
         await _voiceService.leaveRoom();
-      } catch (_) {}
+      } catch (error, trace) {
+        // Preserve a failed ZEGO logout: callers MUST NOT start another
+        // public room or private call as if the old SDK room were closed.
+        voiceLogoutFailure = error;
+        voiceLogoutTrace = trace;
+      }
     }
     _active = false;
     _joining = false;
@@ -1216,8 +1245,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _privateCallMediaId = null;
     _minimized = false;
     _micMuted = true;
-    _error = null;
-    _connectionState = VoiceConnectionState.disconnected;
+    _error = voiceLogoutFailure == null ? null : 'voice_session_cleanup_failed';
+    _connectionState = voiceLogoutFailure == null
+        ? VoiceConnectionState.disconnected : VoiceConnectionState.failed;
     _roomArguments = <String, dynamic>{};
     _starBattleScores.clear();
     _pkScores.clear();
@@ -1230,6 +1260,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _roomChatMentionTarget = null;
     _sessionUserUid = null;
     notifyListeners();
+    if (voiceLogoutFailure != null) {
+      Error.throwWithStackTrace(voiceLogoutFailure, voiceLogoutTrace!);
+    }
   }
 
   Future<void> shutdown() async {

@@ -163,6 +163,37 @@ void main() {
     expect(cleanup, contains('_publishingForRoomMedia = false;'));
   });
 
+  test('room controller propagates failed ZEGO logout after resetting UI', () {
+    final source = File(
+      'lib/features/voice/services/voice_room_session_controller.dart',
+    ).readAsStringSync();
+    final begin = source.indexOf('Future<void> _leaveRoomSession() async {');
+    final end = source.indexOf('Future<void> shutdown() async {', begin);
+    expect(begin, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(begin));
+    final leaving = source.substring(begin, end);
+    final voiceExit = leaving.indexOf('await _voiceService.leaveRoom();');
+    final caughtError = leaving.indexOf('voiceLogoutFailure = error;');
+    final reset = leaving.indexOf('_active = false;', caughtError);
+    final state = leaving.indexOf(
+      "_error = voiceLogoutFailure == null ? null : 'voice_session_cleanup_failed';",
+    );
+    final notified = leaving.indexOf('notifyListeners();', reset);
+    final propagationIndex = leaving.indexOf('Error.throwWithStackTrace(');
+    expect(voiceExit, greaterThanOrEqualTo(0));
+    expect(caughtError, greaterThan(voiceExit));
+    expect(reset, greaterThan(caughtError));
+    expect(state, greaterThan(reset));
+    expect(propagationIndex, greaterThan(notified));
+    expect(leaving, contains('VoiceConnectionState.failed;'));
+    expect(leaving, isNot(contains('catch (_) {}\n    }\n    _active = false;')));
+
+    // Auth changes and terminal callbacks are fire-and-forget. They must
+    // observe leave errors without changing explicit handoff fail-closed.
+    expect(source, contains('unawaited(_leaveAfterTerminalSignal());'));
+    expect(source, contains('Future<void> _leaveAfterTerminalSignal() async {'));
+  });
+
   test('web startup does not delete all application caches per reload', () {
     final html = File('web/index.html').readAsStringSync();
     expect(html, contains('flutter_bootstrap.js'));
