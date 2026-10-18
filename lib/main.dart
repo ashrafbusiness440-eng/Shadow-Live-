@@ -284,6 +284,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _voiceMicMuted = true;
   String? _voiceError;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
+
   String _ownerDisplayName = 'صاحب الغرفة';
   String _ownerPhotoUrl = '';
   String _ownerLocation = '';
@@ -6767,29 +6768,66 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  // A room gets at most one refresh of the default asset, not a network
+  // lookup per frame or per keyboard/seat repaint.
+  Future<Uri?>? _defaultRoomBackgroundFuture;
+
   Widget _buildRoomBackground({
     required String rewardImageUrl,
     required String rewardAssetKey,
   }) {
-    Widget fallback() => const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF24123D),
-                Color(0xFF080A10),
-                Colors.black,
-              ],
+    // The Asset Studio publishes this exact source file into the repository.
+    // Keep a local fallback so a room is never black when offline or when the
+    // CDN/asset registry is unavailable. The user's selected skin takes priority.
+    Widget bundledDefault() => Image.asset(
+          ShadowAssetKeys.roomDefaultBackgroundBundledPath,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF24123D),
+                  Color(0xFF161026),
+                  Color(0xFF130D20),
+                ],
+              ),
             ),
           ),
         );
 
+    Widget publishedDefault() => FutureBuilder<Uri?>(
+          future: _defaultRoomBackgroundFuture ??=
+              ShadowAssetRegistry.remoteUrl(
+                ShadowAssetKeys.roomDefaultBackground,
+                refresh: true,
+              ).timeout(const Duration(seconds: 8), onTimeout: () => null)
+               .catchError((Object _) => null),
+          builder: (context, snapshot) {
+            final uri = snapshot.data;
+            if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
+              return bundledDefault();
+            }
+            return Image.network(
+              uri.toString(),
+              fit: BoxFit.cover,
+              loadingBuilder: (_, child, progress) =>
+                  progress == null ? child : bundledDefault(),
+              errorBuilder: (_, __, ___) => bundledDefault(),
+            );
+          },
+        );
+
+    // Any active, unexpired background from "مقتنياتي" remains first choice.
+    // Fall back if its image fails, including failures from remote asset keys.
     if (rewardImageUrl.isNotEmpty) {
       return Image.network(
         rewardImageUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => fallback(),
+        loadingBuilder: (_, child, progress) =>
+            progress == null ? child : publishedDefault(),
+        errorBuilder: (_, __, ___) => publishedDefault(),
       );
     }
     if (rewardAssetKey.isNotEmpty) {
@@ -6797,16 +6835,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         future: ShadowAssetRegistry.remoteUrl(rewardAssetKey),
         builder: (context, snapshot) {
           final uri = snapshot.data;
-          if (uri == null) return fallback();
+          if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
+            return publishedDefault();
+          }
           return Image.network(
             uri.toString(),
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => fallback(),
+            loadingBuilder: (_, child, progress) =>
+                progress == null ? child : publishedDefault(),
+            errorBuilder: (_, __, ___) => publishedDefault(),
           );
         },
       );
     }
-    return fallback();
+    return publishedDefault();
   }
 
   @override
@@ -6882,9 +6924,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.black.withValues(alpha: .42),
-                                Colors.black.withValues(alpha: .72),
-                                Colors.black,
+                                Colors.black.withValues(alpha: .24),
+                                Colors.black.withValues(alpha: .48),
+                                Colors.black.withValues(alpha: .64),
                               ],
                             ),
                           ),
