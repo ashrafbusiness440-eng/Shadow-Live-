@@ -13,6 +13,27 @@ void main() {
     expect(chat, contains("tooltip: 'اتصال صوتي خاص'"));
   });
 
+  test('outgoing hangup still finishes server call after ZEGO exit failure', () {
+    final ui = File(
+      'lib/features/chat/widgets/private_call_outgoing_dialog.dart',
+    ).readAsStringSync();
+    final start = ui.indexOf('Future<void> _end() async {');
+    final end = ui.indexOf('void dispose()', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final hangup = ui.substring(start, end);
+    final localExit = hangup.indexOf('await _voice.exitPrivateCallMedia();');
+    final captured = hangup.indexOf('_localAudioCleanupFailed = true;');
+    final serverFinish = hangup.indexOf('await _client.finish(');
+    final warning = hangup.indexOf('if (_localAudioCleanupFailed) {');
+    expect(captured, greaterThan(localExit));
+    expect(serverFinish, greaterThan(captured));
+    expect(warning, greaterThan(serverFinish));
+    expect(ui, contains('bool _localAudioCleanupFailed = false;'));
+    expect(hangup, contains('تعذر تأكيد توقف الصوت'));
+    expect(hangup, contains('await starting.timeout(const Duration(seconds: 17));'));
+  });
+
   test('outbound call uses same idempotent key and no duplicate engine', () {
     final ui = File(
       'lib/features/chat/widgets/private_call_outgoing_dialog.dart',
