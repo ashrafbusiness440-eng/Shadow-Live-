@@ -391,29 +391,48 @@ class ZegoVoiceService implements VoiceService {
       _connectionController.add(VoiceConnectionState.disconnected);
       return;
     }
+    final leavingRoomId = _roomId;
+    // Stop new callbacks from restarting speakers while the room is leaving.
+    _joined = false;
     try {
-      await stopLocalEffect();
-      await stopRoomMedia();
+      // A failing ZEGO media/stream stop must not skip logoutRoom: otherwise
+      // the next public room or private call may inherit a live SDK session.
+      try {
+        await stopLocalEffect();
+      } catch (_) {}
+      try {
+        await stopRoomMedia();
+      } catch (_) {}
       if (_publishing) {
-        await ZegoExpressEngine.instance.stopPublishingStream();
+        try {
+          await ZegoExpressEngine.instance.stopPublishingStream();
+        } catch (_) {}
       }
       for (final streamId in List<String>.from(_playingStreams)) {
-        await ZegoExpressEngine.instance.stopPlayingStream(streamId);
+        try {
+          await ZegoExpressEngine.instance.stopPlayingStream(streamId);
+        } catch (_) {}
       }
-      _playingStreams.clear();
-      await ZegoExpressEngine.instance.logoutRoom(_roomId);
     } finally {
-      _joined = false;
-      _publishing = false;
-      _roomId = null;
-      _zegoUserId = null;
-      _streamId = null;
-      _accessCode = null;
-      _privateCallId = null;
-      _privateCallAccountUid = null;
-      _seatIndex = null;
-      _micController.add(VoiceMicState.muted);
-      _connectionController.add(VoiceConnectionState.disconnected);
+      try {
+        // Unlike optional stop failures, a failed logout must reach the
+        // caller so it cannot silently start another ZEGO media session.
+        await ZegoExpressEngine.instance.logoutRoom(leavingRoomId);
+      } finally {
+        _playingStreams.clear();
+        _joined = false;
+        _publishing = false;
+        _publishingForRoomMedia = false;
+        _roomId = null;
+        _zegoUserId = null;
+        _streamId = null;
+        _accessCode = null;
+        _privateCallId = null;
+        _privateCallAccountUid = null;
+        _seatIndex = null;
+        _micController.add(VoiceMicState.muted);
+        _connectionController.add(VoiceConnectionState.disconnected);
+      }
     }
   }
 
