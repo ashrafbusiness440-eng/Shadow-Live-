@@ -65,6 +65,38 @@ void main() {
   });
 
 
+  test('failed public ZEGO login attempts bounded logout before state reset', () {
+    final source = File(
+      'lib/features/voice/services/zego_voice_service.dart',
+    ).readAsStringSync();
+    final begin = source.indexOf('Future<void> joinRoom({');
+    final end = source.indexOf('/// Private 1:1 audio', begin);
+    expect(begin, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(begin));
+    final join = source.substring(begin, end);
+
+    // Token-fetch and engine-creation failures must not log out an SDK room
+    // which was never attempted; SDK login failures must clean up.
+    final loginMarker = join.indexOf('loginStarted = true;');
+    final nativeLogin = join.indexOf(
+      'final result = await ZegoExpressEngine.instance.loginRoom(',
+    );
+    final failureHandler = join.indexOf('} catch (error) {');
+    final logout = join.indexOf(
+      'await ZegoExpressEngine.instance.logoutRoom(roomId);',
+      failureHandler,
+    );
+    final stateReset = join.indexOf('_roomId = null;', failureHandler);
+    expect(join, contains('var loginStarted = false;'));
+    expect(loginMarker, greaterThanOrEqualTo(0));
+    expect(nativeLogin, greaterThan(loginMarker));
+    expect(join, contains('if (loginStarted && _roomId == roomId) {'));
+    expect(logout, greaterThan(failureHandler));
+    expect(stateReset, greaterThan(logout));
+    expect(join, contains("if (logoutFailure != null) {"));
+    expect(join, contains("'zego_login_cleanup_failed'"));
+  });
+
   test('ZEGO room cleanup always attempts logout after a stream stop failure', () {
     final source = File(
       'lib/features/voice/services/zego_voice_service.dart',
