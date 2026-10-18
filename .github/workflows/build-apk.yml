@@ -54,7 +54,7 @@ jobs:
           # Keep the source artwork untouched. Optimize only the ephemeral
           # runner copy. PNG pixel data is unchanged by optipng.
           find assets/images -type f -iname '*.png' -size +200k -print0 |
-            xargs -0 -r -P 2 -n 1 optipng -o2 -quiet
+            xargs -0 -r -P 2 -n 1 bash -c 'optipng -o2 -quiet "$0" || echo "Kept unchanged PNG: $0" >&2'
           # Exclude an old testing-only image if production Dart code has no
           # reference to it; keep it in the repository itself.
           if [ -f assets/images/misc/asset_test.png ] &&
