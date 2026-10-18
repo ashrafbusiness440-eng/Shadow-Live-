@@ -185,7 +185,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (AccountActionAppealDialog.operationIdFrom(item).isNotEmpty) {
       if (!item.read) {
         try {
-          await _service.markRead(item.id);
+          await _service.markRead(item.id)
+              .timeout(const Duration(seconds: 3));
         } catch (_) {
           // A read-receipt failure must not hide an actionable appeal.
         }
@@ -197,10 +198,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (!item.read) {
       var acknowledged = false;
       try {
-        await _service.markRead(item.id);
+        await _service.markRead(item.id)
+              .timeout(const Duration(seconds: 3));
         acknowledged = true;
       } catch (_) {
-        // Leave the badge unread, but opening the notification still works.
+        // Includes offline writes awaiting server acknowledgment; the
+        // pending Firestore request is bounded for navigation, not retried.
+        // Leave the badge unread until an actual server acknowledgment.
+        // Opening the notification must still work.
       }
       if (!activeOwner()) return;
       final index = _items.indexWhere((entry) => entry.id == item.id);
