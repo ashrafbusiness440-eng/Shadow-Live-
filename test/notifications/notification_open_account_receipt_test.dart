@@ -9,11 +9,9 @@ void main() {
     final end = page.indexOf('Future<void> _openImageModeration(', start);
     final open = page.substring(start, end);
     expect(open, contains('var acknowledged = false;'));
-    expect(open, contains('try {
-        await _service.markRead(item.id)'));
+    expect(open, contains('await _service.markRead(item.id)'));
     expect('timeout(const Duration(seconds: 3))'.allMatches(open).length, 2);
-    expect(open, contains('} catch (_) {
-        // Includes offline writes'));
+    expect(open, contains('Includes offline writes'));
     expect(open, contains('Leave the badge unread until an actual server acknowledgment.'));
     expect(open, contains('if (acknowledged && index >= 0)'));
     expect(open, contains('if (!activeOwner()) return;'));
