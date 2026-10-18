@@ -179,12 +179,12 @@ void main() {
       "_error = voiceLogoutFailure == null ? null : 'voice_session_cleanup_failed';",
     );
     final notified = leaving.indexOf('notifyListeners();', reset);
-    final rethrow = leaving.indexOf('Error.throwWithStackTrace(');
+    final propagationIndex = leaving.indexOf('Error.throwWithStackTrace(');
     expect(voiceExit, greaterThanOrEqualTo(0));
     expect(caughtError, greaterThan(voiceExit));
     expect(reset, greaterThan(caughtError));
     expect(state, greaterThan(reset));
-    expect(rethrow, greaterThan(notified));
+    expect(propagationIndex, greaterThan(notified));
     expect(leaving, contains('VoiceConnectionState.failed;'));
     expect(leaving, isNot(contains('catch (_) {}\n    }\n    _active = false;')));
 
