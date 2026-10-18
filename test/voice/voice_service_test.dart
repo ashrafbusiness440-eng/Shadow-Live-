@@ -64,6 +64,47 @@ void main() {
     expect(initialResume, greaterThan(loginSuccess));
   });
 
+
+  test('ZEGO room cleanup always attempts logout after a stream stop failure', () {
+    final source = File(
+      'lib/features/voice/services/zego_voice_service.dart',
+    ).readAsStringSync();
+    final start = source.indexOf('Future<void> leaveRoom() async {');
+    final end = source.indexOf('ZegoVoiceChangerPreset _zegoVoiceChangerPreset', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final cleanup = source.substring(start, end);
+
+    // Close out the SDK session even if media or a particular speaker's
+    // stop fails. A dangling room would block the next call or room.
+    expect(cleanup, contains('final leavingRoomId = _roomId;'));
+    expect(cleanup, contains('await stopLocalEffect();'));
+    expect(cleanup, contains('await stopRoomMedia();'));
+    expect(
+      RegExp(
+        r'for \(final streamId in List<String>\.from\(_playingStreams\)\) '
+        r'\{\s*try \{\s*await ZegoExpressEngine\.instance'
+        r'\.stopPlayingStream\(streamId\);\s*\} catch \(_\) \{\}',
+      ).hasMatch(cleanup),
+      isTrue,
+    );
+    expect(
+      cleanup,
+      contains('await ZegoExpressEngine.instance.logoutRoom(leavingRoomId);'),
+    );
+    expect(
+      cleanup.indexOf('logoutRoom(leavingRoomId)'),
+      greaterThan(cleanup.indexOf('stopPlayingStream(streamId)')),
+    );
+    expect(
+      cleanup,
+      contains('} finally {\n      try {\n'
+          '        // Unlike optional stop failures'),
+    );
+    expect(cleanup, contains('_playingStreams.clear();'));
+    expect(cleanup, contains('_publishingForRoomMedia = false;'));
+  });
+
   test('web startup does not delete all application caches per reload', () {
     final html = File('web/index.html').readAsStringSync();
     expect(html, contains('flutter_bootstrap.js'));
