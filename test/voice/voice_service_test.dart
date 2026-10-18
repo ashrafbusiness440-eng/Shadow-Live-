@@ -194,6 +194,32 @@ void main() {
     expect(source, contains('Future<void> _leaveAfterTerminalSignal() async {'));
   });
 
+  test('shutdown attempts all voice resources after native logout failure', () {
+    final source = File(
+      'lib/features/voice/services/voice_room_session_controller.dart',
+    ).readAsStringSync();
+    final start = source.indexOf('Future<void> shutdown() async {');
+    expect(start, greaterThanOrEqualTo(0));
+    final shutdown = source.substring(start);
+    final leave = shutdown.indexOf('await attempt(leave);');
+    final cancel = shutdown.indexOf('_authSubscription?.cancel()');
+    final engine = shutdown.indexOf('await attempt(_voiceService.dispose);');
+    final presence = shutdown.indexOf('_presenceService.close();');
+    final cleared = shutdown.indexOf('_serviceInitialized = false;');
+    final error = shutdown.indexOf('Error.throwWithStackTrace(');
+    expect(shutdown, contains('firstFailure ??= error;'));
+    expect(shutdown, contains('firstFailureTrace ??= trace;'));
+    expect(leave, greaterThanOrEqualTo(0));
+    expect(cancel, greaterThan(leave));
+    expect(engine, greaterThan(cancel));
+    expect(presence, greaterThan(engine));
+    expect(cleared, greaterThan(presence));
+    expect(error, greaterThan(cleared));
+    expect(shutdown, contains('await attempt(() async => await _roomBanSubscription?.cancel());'));
+    expect(shutdown, contains('await attempt(() async => await _roomModerationSubscription?.cancel());'));
+    expect(shutdown, contains('_effectSoundHttp.close();'));
+  });
+
   test('web startup does not delete all application caches per reload', () {
     final html = File('web/index.html').readAsStringSync();
     expect(html, contains('flutter_bootstrap.js'));

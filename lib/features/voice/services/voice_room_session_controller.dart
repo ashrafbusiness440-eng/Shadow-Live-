@@ -1266,24 +1266,45 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> shutdown() async {
-    await leave();
-    await _authSubscription?.cancel();
+    // A native logout can fail. Still release the remaining subscriptions,
+    // ZEGO engine and local resources, then surface the original failure.
+    Object? firstFailure;
+    StackTrace? firstFailureTrace;
+    Future<void> attempt(Future<void> Function() operation) async {
+      try {
+        await operation();
+      } catch (error, trace) {
+        firstFailure ??= error;
+        firstFailureTrace ??= trace;
+      }
+    }
+
+    await attempt(leave);
+    await attempt(() async => await _authSubscription?.cancel());
     _authSubscription = null;
-    await _connectionSubscription?.cancel();
-    await _micSubscription?.cancel();
-    await _realtimeSubscription?.cancel();
+    await attempt(() async => await _connectionSubscription?.cancel());
+    _connectionSubscription = null;
+    await attempt(() async => await _micSubscription?.cancel());
+    _micSubscription = null;
+    await attempt(() async => await _realtimeSubscription?.cancel());
     _realtimeSubscription = null;
-    await _roomLifecycleSubscription?.cancel();
-    await _roomBanSubscription?.cancel();
-    await _roomModerationSubscription?.cancel();
+    await attempt(() async => await _roomLifecycleSubscription?.cancel());
+    _roomLifecycleSubscription = null;
+    await attempt(() async => await _roomBanSubscription?.cancel());
+    _roomBanSubscription = null;
+    await attempt(() async => await _roomModerationSubscription?.cancel());
     _roomModerationSubscription = null;
     if (_serviceInitialized) {
-      await _voiceService.dispose();
+      await attempt(_voiceService.dispose);
     }
     _presenceService.close();
     _seatService.close();
     _effectSoundHttp.close();
     _effectSoundCache.clear();
     _serviceInitialized = false;
+    final shutdownFailure = firstFailure;
+    if (shutdownFailure != null) {
+      Error.throwWithStackTrace(shutdownFailure, firstFailureTrace!);
+    }
   }
 }
