@@ -26,6 +26,7 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
   String _status = 'loading';
   String? _error;
   bool _busy = false, _active = false, _checking = false, _closing = false;
+  bool _localAudioCleanupFailed = false;
   int _ticks = 0, _errors = 0, _deadlineRefreshes = 0;
 
   bool get _sameUser =>
@@ -170,7 +171,13 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
     if (_closing) return;
     _closing = true;
     _timer?.cancel();
-    await _voice.exitPrivateCallMedia();
+    // A native ZEGO logout failure must not skip the authoritative server
+    // finish; otherwise the call slot can remain active on both accounts.
+    try {
+      await _voice.exitPrivateCallMedia();
+    } catch (_) {
+      _localAudioCleanupFailed = true;
+    }
     // A second device may see a call already answered on the first.
     // Dismissing this notification must not terminate that live device.
     if (_sameUser && !_terminal &&
@@ -187,6 +194,15 @@ class _PrivateCallIncomingDialogState extends State<PrivateCallIncomingDialog> {
         });
         return;
       }
+    }
+    if (_localAudioCleanupFailed) {
+      // Do not falsely report that the native audio engine was closed.
+      _closing = false;
+      if (mounted) setState(() {
+        _error = 'تم إرسال إنهاء المكالمة، لكن تعذر تأكيد توقف الصوت على جهازك. '
+            'أغلق التطبيق وافتحه مجددًا قبل أي مكالمة أخرى.';
+      });
+      return;
     }
     if (mounted) Navigator.of(context).pop();
   }

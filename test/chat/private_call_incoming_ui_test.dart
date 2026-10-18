@@ -40,6 +40,30 @@ void main() {
     expect(chat, contains("if (data['type'] == 'call_event') return false;"));
   });
 
+  test('incoming hangup attempts server finish after failed native cleanup', () {
+    final ui = File(
+      'lib/features/chat/widgets/private_call_incoming_dialog.dart',
+    ).readAsStringSync();
+    final start = ui.indexOf('Future<void> _end() async {');
+    final end = ui.indexOf('void dispose()', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final hangup = ui.substring(start, end);
+    final localExit = hangup.indexOf('await _voice.exitPrivateCallMedia();');
+    final captured = hangup.indexOf('_localAudioCleanupFailed = true;');
+    final serverFinish = hangup.indexOf('await _client.finish(');
+    final warning = hangup.indexOf('if (_localAudioCleanupFailed) {');
+    final navigator = hangup.indexOf('Navigator.of(context).pop();');
+    expect(localExit, greaterThanOrEqualTo(0));
+    expect(captured, greaterThan(localExit));
+    expect(serverFinish, greaterThan(captured));
+    expect(warning, greaterThan(serverFinish));
+    expect(navigator, greaterThan(warning));
+    expect(ui, contains('bool _localAudioCleanupFailed = false;'));
+    expect(hangup, contains('تعذر تأكيد توقف الصوت'));
+    expect(hangup, contains("!(_status == 'active' && !_active)"));
+  });
+
   test('receiver leaves the public room only after accepted status', () {
     final ui = File(
       'lib/features/chat/widgets/private_call_incoming_dialog.dart',

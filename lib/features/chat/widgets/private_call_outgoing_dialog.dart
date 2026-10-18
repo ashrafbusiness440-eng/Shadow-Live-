@@ -32,6 +32,7 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
   String? _message;
   bool _busy = false, _checking = false, _connected = false, _closing = false;
   bool _joiningMedia = false;
+  bool _localAudioCleanupFailed = false;
   int _ticks = 0, _failures = 0;
 
   bool get _sameAccount =>
@@ -213,7 +214,12 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
         await starting.timeout(const Duration(seconds: 17));
       } catch (_) {}
     }
-    await _voice.exitPrivateCallMedia();
+    // Do not strand the server call when native ZEGO cleanup throws.
+    try {
+      await _voice.exitPrivateCallMedia();
+    } catch (_) {
+      _localAudioCleanupFailed = true;
+    }
     if (_callId != null && !_terminal && _sameAccount) {
       try {
         await _client.finish(
@@ -226,6 +232,16 @@ class _PrivateCallOutgoingDialogState extends State<PrivateCallOutgoingDialog> {
         });
         return;
       }
+    }
+    if (_localAudioCleanupFailed) {
+      // Preserve the native-cleanup failure, even if a later local no-op
+      // exit returns successfully after controller state was already reset.
+      _closing = false;
+      if (mounted) setState(() {
+        _message = 'تم إرسال إنهاء المكالمة، لكن تعذر تأكيد توقف الصوت على جهازك. '
+            'أغلق التطبيق وافتحه مجددًا قبل أي مكالمة أخرى.';
+      });
+      return;
     }
     if (mounted) Navigator.of(context).pop();
   }
