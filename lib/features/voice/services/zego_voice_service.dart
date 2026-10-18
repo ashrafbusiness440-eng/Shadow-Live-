@@ -254,6 +254,7 @@ class ZegoVoiceService implements VoiceService {
     if (_joined) await leaveRoom();
 
     _connectionController.add(VoiceConnectionState.connecting);
+    var loginStarted = false;
     try {
       _accessCode = accessCode?.trim();
       _privateCallId = null;
@@ -269,6 +270,7 @@ class ZegoVoiceService implements VoiceService {
       _zegoUserId = session.userId;
       _streamId = '${roomId}_${session.userId}';
       final roomToken = token != null && token.isNotEmpty ? token : session.token;
+      loginStarted = true;
       final result = await ZegoExpressEngine.instance.loginRoom(
         roomId,
         ZegoUser(session.userId, displayName),
@@ -291,12 +293,29 @@ class ZegoVoiceService implements VoiceService {
       // Resume the queued existing speakers without blocking room display.
       unawaited(_resumeRemoteAudio(roomId));
     } catch (error) {
+      // A failed or interrupted public-room login may still have native SDK
+      // state. Attempt exactly one matching logout, as private calls do.
+      // Keep any logout failure visible instead of claiming clean recovery.
+      Object? logoutFailure;
+      if (loginStarted && _roomId == roomId) {
+        try {
+          await ZegoExpressEngine.instance.logoutRoom(roomId);
+        } catch (failure) {
+          logoutFailure = failure;
+        }
+      }
       _playingStreams.clear();
       _roomId = null;
       _zegoUserId = null;
       _streamId = null;
       _accessCode = null;
       _connectionController.add(VoiceConnectionState.failed);
+      if (logoutFailure != null) {
+        throw VoiceException(
+          'zego_login_cleanup_failed',
+          'ZEGO room login failed ($error) and logout failed ($logoutFailure).',
+        );
+      }
       if (error is VoiceException) rethrow;
       throw VoiceException('join_failed', error.toString());
     }
