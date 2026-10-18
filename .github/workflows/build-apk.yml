@@ -1,15 +1,26 @@
-name: Build Shadow Live APK
+name: Build compact Shadow Live Android APK
 
 on:
   workflow_dispatch:
+  # Only the isolated Android packaging branch can automatically create test APKs.
+  # Do not run Android packaging for every main push or deploy.
+  push:
+    branches:
+      - 'android/compact-arm64-apk-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-android-arm64-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-apk:
+  build-arm64-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 65
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source revision
         uses: actions/checkout@v4
 
       - name: Set up Java 21
@@ -26,22 +37,65 @@ jobs:
           flutter-version: '3.47.2'
           cache: true
 
-      - name: Flutter version
-        run: flutter --version
+      - name: Flutter and Android environment
+        run: flutter doctor -v
 
-      - name: Get dependencies
+      - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Build debug APK
-        run: flutter build apk --debug --android-skip-build-dependency-validation
+      - name: Lossless image optimization in build workspace only
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Original assets size:"
+          du -sh assets/images
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends optipng
+          # Keep the source artwork untouched. Optimize only the ephemeral
+          # runner copy. PNG pixel data is unchanged by optipng.
+          find assets/images -type f -iname '*.png' -size +200k -print0 |
+            xargs -0 -r -P 2 -n 1 optipng -o2 -quiet
+          # Exclude an old testing-only image if production Dart code has no
+          # reference to it; keep it in the repository itself.
+          if [ -f assets/images/misc/asset_test.png ] &&
+             ! grep -R -F -q 'asset_test.png' lib; then
+            rm assets/images/misc/asset_test.png
+            echo 'Excluded unused asset_test.png from Android package only'
+          fi
+          echo "Optimized assets size:"
+          du -sh assets/images
 
-      - name: Prepare APK
-        run: cp build/app/outputs/flutter-apk/app-debug.apk Shadow-Live-debug.apk
+      - name: Build ARM64 release APK with icon and ABI splitting
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --release \
+            --target-platform android-arm64 \
+            --split-per-abi \
+            --tree-shake-icons \
+            --android-skip-build-dependency-validation
 
-      - name: Upload Shadow Live APK
+      - name: Verify output and report package size
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          test -s "$apk"
+          mkdir -p android-artifacts
+          cp "$apk" android-artifacts/Shadow-Live-ARM64-test.apk
+          echo "## Shadow Live Android test build" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source commit: \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Architecture: ARM64 only, optimized release mode" >> "$GITHUB_STEP_SUMMARY"
+          echo "- APK size: $(du -h android-artifacts/Shadow-Live-ARM64-test.apk | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Signed using the project's current Android debug signing configuration: **test/sideload only**, not Play Store release signing." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Android Firebase native push app registration is not supplied. Private call and push readiness remain disabled." >> "$GITHUB_STEP_SUMMARY"
+          ls -lh android-artifacts/Shadow-Live-ARM64-test.apk
+
+      - name: Upload installable Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: Shadow-Live-debug-apk
-          path: Shadow-Live-debug.apk
+          name: Shadow-Live-ARM64-test-apk
+          path: android-artifacts/Shadow-Live-ARM64-test.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
+          compression-level: 0
