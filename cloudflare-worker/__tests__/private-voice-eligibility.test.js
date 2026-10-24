@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   PrivateVoicePolicyError, requireMutualPrivateVoice,
   validVoiceDuration, PRIVATE_VOICE_RING_MS,
-  validPrivateVoiceParties,
+  validPrivateVoiceParties, assertPrivateVoiceAccountAvailable,
 } from "../src/private-voice-eligibility.js";
 
 const actorUid = "alice", otherUid = "bob", conversationId = "dm_alice_bob";
@@ -112,4 +112,35 @@ test("paid-mode call is blocked by server even if a direct write turns feature O
   await assert.rejects(requireMutualPrivateVoice(db,args("call")),
     e=>e.code==="private_call_billing_not_ready" && e.status===409);
   assert.equal(reads.length,8);
+});
+
+test("deleted accounts cannot send, receive or answer private voice calls or notes", async () => {
+  const retired = [
+    { accountStatus: "deleted" },
+    { accountStatus: "deletion_processing" },
+    { accountStatus: "deletion_completed" },
+    { authDeleted: true },
+    { deletionProcessing: true },
+  ];
+  for (const status of retired) {
+    for (const uid of [actorUid, otherUid]) {
+      for (const kind of ["call", "voice_note"]) {
+        const {db,reads} = fixture({[`users/${uid}`]:status});
+        await assert.rejects(requireMutualPrivateVoice(db,args(kind)),
+          e=>e.code==="private_voice_account_deleted" && e.status===409);
+        assert.equal(reads.length,kind==="call"?8:9);
+      }
+    }
+    assert.throws(()=>assertPrivateVoiceAccountAvailable(status),
+      e=>e.code==="private_voice_account_deleted" && e.status===409);
+  }
+});
+test("pending request and review-ready grace window retain normal voice eligibility", async () => {
+  for (const status of [{accountStatus:"active"},{accountStatus:"pending"},
+                        {accountStatus:"review_ready"},{}]) {
+    assert.doesNotThrow(()=>assertPrivateVoiceAccountAvailable(status));
+    const {db}=fixture({[`users/${otherUid}`]:status});
+    const voice=await requireMutualPrivateVoice(db,args("voice_note"));
+    assert.equal(voice.kind,"voice_note");
+  }
 });
