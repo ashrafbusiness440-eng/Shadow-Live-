@@ -164,7 +164,8 @@ test("source and router do not trigger destructive cleanup prematurely", () => {
   assert.doesNotMatch(server, /deleteAuthUser\(/);
   assert.doesNotMatch(server, /USER_STORAGE\.delete\(/);
   assert.match(settings, /const AccountDeletionRequestScreen\(\)/);
-  assert.match(screen, /_service.send\('request'\)/);
-  assert.match(screen, /_service.send\('cancel'\)/);
+  assert.match(screen, /_change\\('request'\\)/);
+  assert.match(screen, /_change\\('cancel'\\)/);
+  assert.match(screen, /_service.send\\(action\\)/);
   assert.doesNotMatch(server, /setInterval\(/);
 });
