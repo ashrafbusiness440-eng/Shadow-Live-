@@ -163,3 +163,28 @@ A pending or review-ready deletion *request* does not by itself stop
 the user's right to send/receive gifts during the cancellation window;
 the financial review must account for balances at finalization time.
 The check does not delete historic gifts or balance records.
+
+## Historical support snapshot sanitization — bounded internal stage
+
+Historical support rank rows in `user_level_support/{other}/wealth/{deleted}`
+and `user_level_support/{other}/attraction/{deleted}` may hold copies of the
+deleted person's displayName, profileImageUrl, and publicId. A new internal
+`redactDeletedSupporterPair` primitive accepts **one already enumerated
+counterparty** and can mask only those three personal fields in at most
+two documents in one transaction. It does not change points, giftCount,
+wallet or financial ledger entries.
+
+It is intentionally **not connected to any production route or cron**.
+It requires a current, exactly matching deletion request in `processing`,
+user in `deletion_processing`, checkpoint phase `support_snapshots`,
+`destructiveAllowed=true`, and no current review, legal or deletion hold.
+Current deployment checkpoints are always `preflight_blocked` and
+`destructiveAllowed=false`, so this cannot run on real accounts until a
+future independently verified finalizer authorizes the stage.
+
+This is **not sufficient to prove account erasure**, since Firestore
+document IDs and counterpart references can still contain a UID and
+legacy pairs must be exhaustively discovered and resolved under a
+retention/anonymization policy. The actual finalizer must handle those
+references and safely retry incomplete batches. No financial counters
+or legitimate recipient rewards may be reduced by privacy cleanup.
