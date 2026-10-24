@@ -75,6 +75,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _voiceNotesEnabled = false;
   bool _privateCallsEnabled = false;
   bool _messageActionBusy = false;
+  // Verified only by the existing public_profiles header stream.
+  // No extra listener or polling. Do not enable composer on network errors.
+  bool _peerProfileLoaded = false;
+  bool _peerDeleted = true;
   final Set<String> _locallyHiddenMessageIds = <String>{};
   final Set<String> _locallyDeletedMessageIds = <String>{};
   int? _selfVipLevelCache;
@@ -166,7 +170,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     final draftRevision = _textDraftRevision;
     final sender = FirebaseAuth.instance.currentUser;
     final senderUid = sender?.uid;
-    if (text.isEmpty || _sending || text.length > 2000 ||
+    if (text.isEmpty || _sending || _peerDeleted ||
+        !_peerProfileLoaded || text.length > 2000 ||
         !_isActiveChatAccount(senderUid)) return;
     final key = _pendingTextKey != null &&
             _pendingTextBody == text && _pendingTextEmojiId == emojiId
@@ -1483,9 +1488,25 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
   }
 
-  void _openProfile()=>showQuickProfileSheet(context,userId:widget.otherUid);
+  void _openProfile() {
+    if (_peerDeleted || !_peerProfileLoaded) return;
+    showQuickProfileSheet(context, userId: widget.otherUid);
+  }
 
-  Widget _composer() => SafeArea(
+  Widget _composer() => !_peerProfileLoaded || _peerDeleted
+      ? SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              _peerProfileLoaded ? 'حساب محذوف — لا يمكن مراسلته أو الاتصال به.'
+                  : 'جار التحقق من حالة الحساب…',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white60),
+            ),
+          ),
+        )
+      : SafeArea(
         top: false,
         child: Container(
           padding: const EdgeInsets.fromLTRB(6, 8, 6, 10),
@@ -1643,18 +1664,41 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                     .snapshots(),
                 builder: (context, snapshot) {
                   final data = snapshot.data?.data();
-                  final provider = _avatarProvider(data);
-                  final name = (data?['displayName'] ?? widget.otherName).toString();
-                  final currentVip =
-                      data == null ? 0 : effectivePublicVipLevel(data);
+                  final peerDeleted = snapshot.hasData &&
+                      (!snapshot.data!.exists ||
+                          data?['accountStatus'] == 'deleted' ||
+                          data?['authDeleted'] == true);
+                  if (snapshot.hasData &&
+                      (!_peerProfileLoaded || _peerDeleted != peerDeleted)) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      if (!_peerProfileLoaded || _peerDeleted != peerDeleted) {
+                        setState(() {
+                          _peerProfileLoaded = true;
+                          _peerDeleted = peerDeleted;
+                        });
+                      }
+                    });
+                  }
+                  final hideIdentity = peerDeleted || !_peerProfileLoaded;
+                  final provider = hideIdentity ? null : _avatarProvider(data);
+                  final name = hideIdentity ? 'حساب محذوف'
+                      : (data?['displayName'] ?? widget.otherName).toString();
+                  final currentVip = hideIdentity || data == null
+                      ? 0 : effectivePublicVipLevel(data);
                   return InkWell(
-                    onTap: _openProfile,
+                    onTap: hideIdentity ? null : _openProfile,
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 5),
                       child: Row(
                         children: [
-                          ProfileAvatarWithFrame(
+                          if (hideIdentity)
+                            const CircleAvatar(
+                              radius: 19,
+                              child: Icon(Icons.person_off_outlined),
+                            )
+                          else ProfileAvatarWithFrame(
                             diameter: 38,
                             userId: widget.otherUid,
                             fallbackProfile:
@@ -1711,6 +1755,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               ),
               actions: [
                 if (_privateCallsEnabled &&
+                    _peerProfileLoaded && !_peerDeleted &&
                     !_loadingSafety &&
                     !_safetyStatus.blocked &&
                     _openedByUid != null &&
