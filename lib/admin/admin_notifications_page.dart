@@ -131,6 +131,10 @@ class AdminInboxService {
   static Future<Map<String, dynamic>> repairDiaryReportInbox() =>
       _post('repairDiaryReportInbox');
 
+  /// Owner-only, bounded and privacy-minimized completed deletion receipts.
+  static Future<Map<String, dynamic>> completedAccountDeletionLogs() =>
+      _post('accountDeletionCompletedLogs');
+
   static Future<Map<String, dynamic>> accountDeletionReview(
     String action,
     String targetUid,
