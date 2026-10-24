@@ -76,6 +76,29 @@ test("requires valid actor and refuses contradictory checkpoint", async () => {
   await assert.rejects(start(db), /checkpoint_conflict/);
   assert.equal(db.writes.length, 0);
 });
+test("older checkpoint may never authorize a new lifecycle", async () => {
+  const db = new MockDb();
+  db.docs.set("account_deletion_erasure_checkpoints/" + uid,
+    { requestId: "older-request-1111111111", phase: "completed", destructiveAllowed: true });
+  const result = await start(db);
+  assert.equal(result.destructiveAllowed, false);
+  assert.equal(db.docs.get("account_deletion_erasure_checkpoints/" + uid).requestId, requestId);
+  assert.equal(db.docs.get("account_deletion_erasure_checkpoints/" + uid).phase, "preflight_blocked");
+});
+test("retry after failed transaction does not report success", async () => {
+  const db = new MockDb();
+  const commit = db.commit.bind(db);
+  let failures = 1;
+  db.commit = async (...args) => {
+    if (failures-- > 0) throw Error("network_failure");
+    return commit(...args);
+  };
+  await assert.rejects(start(db), /network_failure/);
+  assert.equal(db.writes.length, 0);
+  const result = await start(db);
+  assert.equal(result.duplicate, false);
+  assert.equal(db.writes.length, 2);
+});
 test("eligibility cannot itself certify financial or content erasure", () => {
   const result = checkErasureStartEligibility({
     uid, requestId, request: { exists: true, data: req() },
