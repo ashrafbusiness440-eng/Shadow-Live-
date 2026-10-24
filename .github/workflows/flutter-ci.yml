@@ -71,6 +71,8 @@ jobs:
         run: node --test server/__tests__/chat-message-visibility.test.js
       - name: Verify deleted accounts cannot receive new room gifts
         run: node --test server/__tests__/room-gift-deleted-account.test.js
+      - name: Test gated redaction of historical deleted supporter snapshots
+        run: node --test server/__tests__/account-deletion-support-snapshot-stage.test.js
       - name: Test replay-safe private text sends and cross-user operation isolation
         run: node --test cloudflare-worker/__tests__/private-chat-text-retry.test.js
       - name: Test private voice mutual-follow eligibility and limits

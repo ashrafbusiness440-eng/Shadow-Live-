@@ -206,3 +206,24 @@ test("deleted supporter controls disable opening private profiles", async () => 
   assert.match(screen, /onTap: item\.accountDeleted \? null :/);
   assert.match(screen, /الهوية غير متاحة بعد حذف الحساب/);
 });
+
+test("processing erasure does not expose legacy supporter identity in list", async () => {
+  const db = {
+    async runQuery() {
+      return [{id: "closing_member", data: {
+        counterpartUid: "closing_member", displayName: "Sensitive Old Name",
+        profileImageUrl: "https://private.example/photo.jpg", publicId: "778899",
+        points: 88, giftCount: 4,
+      }}];
+    },
+    async getMany() {
+      return [{exists: true, data: {accountStatus: "deletion_processing"}}];
+    },
+  };
+  const page = await loadUserLevelSupportPage(db, "target_123", "attraction");
+  assert.equal(page.items[0].displayName, "حساب محذوف");
+  assert.equal(page.items[0].accountDeleted, true);
+  assert.equal(page.items[0].points, 88);
+  assert.equal(page.items[0].giftCount, 4);
+  assert.equal(JSON.stringify(page).includes("Sensitive Old Name"), false);
+});

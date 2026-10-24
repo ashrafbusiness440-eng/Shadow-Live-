@@ -193,7 +193,7 @@ export async function loadUserLevelSupportPage(
     const currentUser = byUid.get(counterpartUid) || {};
     const accountDeleted = !hasActiveDocument ||
       currentUser.authDeleted === true ||
-      ["deleted", "deletion_completed"].includes(
+      ["deleted", "deletion_completed", "deletion_processing"].includes(
         clean(currentUser.accountStatus).toLowerCase(),
       );
     // Never fall back to the saved name/photo/public ID snapshot after
