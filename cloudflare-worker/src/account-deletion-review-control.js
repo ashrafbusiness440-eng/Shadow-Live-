@@ -135,7 +135,7 @@ export async function setAccountDeletionReviewHold(db, {
       throw new AccountDeletionReviewControlError("owner_protected", 409);
     }
     const hold = action === "accountDeletionHold";
-    if (current.reviewHold === hold &&
+    if (Boolean(current.reviewHold) === hold &&
         (!hold || clean(current.reviewHoldReason) === reason)) {
       await db.rollback(tx);
       return { ok: true, status: "review_ready", reviewHold: hold,
