@@ -188,3 +188,25 @@ legacy pairs must be exhaustively discovered and resolved under a
 retention/anonymization policy. The actual finalizer must handle those
 references and safely retry incomplete batches. No financial counters
 or legitimate recipient rewards may be reduced by privacy cleanup.
+
+## Bounded public profile erasure stage (internal only)
+
+`erasePublicProfileStage` removes exactly `public_profiles/{uid}` in a
+single Firestore transaction, only if the **current** deletion request is
+`processing`, its request ID matches the erasure checkpoint, the checkpoint
+phase is `public_profile` with `destructiveAllowed=true`, the user is in
+`deletion_processing`, and no review, legal, retention or deletion hold
+exists on the request, checkpoint, user, or profile. Owner accounts cannot
+pass the gate. A missing profile is idempotently reported as already absent;
+a saved UID mismatch blocks deletion rather than changing another identity.
+The stage never deletes `users/{uid}`, financial ledgers, report evidence,
+wallets, R2 objects, or Firebase Authentication.
+
+There is **no HTTP route, cron, or production caller** for this stage; current
+preflight checkpoints remain `destructiveAllowed=false`, so production
+account data cannot be deleted by this code. Mock and Firestore emulator
+tests verify the transaction, retries, cancellation and retained unrelated
+records. Full compliance still requires preserving permitted public/shared
+content, clearing remaining identity references, R2 and messages under
+legal evidence rules, an independent financial settlement, Auth deletion
+**last**, and a signed verified-completion receipt.
