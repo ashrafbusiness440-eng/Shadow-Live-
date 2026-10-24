@@ -133,7 +133,7 @@ class _AccountDeletionRequestScreenState
   @override
   Widget build(BuildContext context) {
     final status = _state?.status ?? 'none';
-    final pending = status == 'pending';
+    final pending = status == 'pending' || status == 'review_ready';
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -182,7 +182,9 @@ class _AccountDeletionRequestScreenState
                     children: [
                       Text(
                         pending
-                            ? 'طلب الحذف مسجّل'
+                            ? status == 'review_ready'
+                                ? 'طلب الحذف بانتظار مراجعة الإدارة'
+                                : 'طلب الحذف مسجّل'
                             : status == 'cancelled'
                                 ? 'طلب الحذف مُلغى'
                                 : status == 'processing'
