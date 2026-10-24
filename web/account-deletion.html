@@ -116,8 +116,8 @@
       try {
         const state = await send("status");
         let text = "لا يوجد طلب حذف نشط.";
-        if (state.status === "pending") {
-          text = "طلب حذف الحساب مُسجل.\nتاريخ الطلب: " +
+        if (state.status === "pending" || state.status === "review_ready") {
+          text = (state.status === "review_ready"\n            ? "انتهت المهلة والطلب بانتظار مراجعة الإدارة.\n"\n            : "طلب حذف الحساب مُسجل.\n") + "تاريخ الطلب: " +
             format(state.requestedAt) + "\nبعد انتهاء المهلة: " +
             format(state.eligibleAt) +
             "\nبعد انتهاء المهلة يلزم إتمام مراجعة الاحتفاظ ومسار إزالة البيانات.";
@@ -130,7 +130,7 @@
         }
         el("status").textContent = text;
         show("request", ["none","cancelled"].includes(state.status));
-        show("cancel", state.status === "pending" && state.cancellationAvailable);
+        show("cancel", ["pending","review_ready"].includes(state.status) && state.cancellationAvailable);
       } catch(e) {
         message(describeError(e));
       } finally { busy = false; }
