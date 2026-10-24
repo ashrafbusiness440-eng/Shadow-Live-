@@ -1273,7 +1273,7 @@ class _OwnerAccountActionsCard extends StatelessWidget {
                   label:const Text('فك الحظر / تفعيل'),
                 ),
               if(canDelete) ...[
-                const OutlinedButton.icon(
+                OutlinedButton.icon(
                   onPressed: null,
                   icon: Icon(Icons.shield_outlined),
                   label: Text('الحذف النهائي ضمن المراجعة فقط'),
