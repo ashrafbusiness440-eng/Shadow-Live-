@@ -8,6 +8,16 @@ export class PrivateVoicePolicyError extends Error {
     this.status = status;
   }
 }
+// Shared server-side check for all voice-note stages and private call paths.
+// No client state, new Firestore queries or extra listeners are trusted.
+export function assertPrivateVoiceAccountAvailable(data) {
+  const status = clean(data?.accountStatus).toLowerCase();
+  if (data?.authDeleted === true || data?.deletionProcessing === true ||
+      ["deleted", "deletion_completed", "deletion_processing"].includes(status)) {
+    throw new PrivateVoicePolicyError("private_voice_account_deleted", 409);
+  }
+}
+
 export const PRIVATE_VOICE_RING_MS = 30_000;
 export const PRIVATE_VOICE_NOTE_MAX_SECONDS = 60;
 export function validVoiceDuration(seconds) {
@@ -53,6 +63,8 @@ export async function requireMutualPrivateVoice(db, params) {
       !members.includes(otherUid) || !actor.exists || !other.exists) {
     throw new PrivateVoicePolicyError("private_voice_conversation_unavailable", 404);
   }
+  assertPrivateVoiceAccountAvailable(actor.data);
+  assertPrivateVoiceAccountAvailable(other.data);
   if (sentBlock.exists || receivedBlock.exists) {
     throw new PrivateVoicePolicyError("blocked", 403);
   }
