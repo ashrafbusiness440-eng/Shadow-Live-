@@ -100,3 +100,32 @@ snapshots, shared ownership transfers, financial/legal sign-offs, R2 cleanup,
 Firebase Auth as final irreversible step, and isolated emulator/account
 tests. Retained materials require explicit basis, retention period and
 access policy.
+
+## Deleted participant chat safety tranche (after PR #472)
+
+The chat-list identity cache now distinguishes a confirmed missing
+`public_profiles/{uid}` record from network errors. An explicitly deleted
+public profile also has its stored avatar/name/frames suppressed at the
+visual-identity model layer; deleted conversation participants display
+`حساب محذوف` and cannot open quick profiles. Existing conversations remain
+visible to their other participants; removing or retaining message content
+is a separate audited erasure/retention decision.
+
+In a private-chat detail view, the **existing profile stream** (no new
+listener) controls a fail-closed composer, chat-profile access and call
+button. While identity is loading or the stream errors, the composer
+remains unavailable. Confirmed missing/deleted profiles show the neutral
+identity with no saved photo. The Worker independently rejects new
+private text or gift transactions when sender/receiver `users` state is
+deleted, deletion_processing, or authDeleted. A previously accepted
+idempotency receipt can still return its existing result; it cannot
+authorize a new operation.
+
+This is interface and write-gating safety, **not** final message/content
+erasure. The approved finalizer must separately enumerate conversation
+message collections using small resumable batches, remove the deleted
+sender's personal text/voice/attachments (unless protected evidence
+requires a legal basis and separate access control), retain the other
+party's messages, update both counterpart/preview snapshots, and purge
+R2 links safely after retention decisions. Do not mark completed merely
+because the profile stream shows a tombstone.
