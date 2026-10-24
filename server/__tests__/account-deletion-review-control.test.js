@@ -169,6 +169,30 @@ test("idempotent hold, audited release, no duplicate destructive action", async 
   assert.equal(db.docs.has(inboxPath), false);
 });
 
+test("new request after cancellation cannot inherit an old legal hold", async () => {
+  const db = dbForUser();
+  await setAccountDeletionReviewHold(db, {
+    actorUid: ownerUid, targetUid: uid, requestId,
+    action: "accountDeletionHold", reason: "حجز مستندات الحساب السابقة",
+    nowMs, idFactory: () => auditId,
+  });
+  const actor = {
+    sub: uid, auth_time: Math.floor(nowMs / 1000),
+    firebase: { sign_in_provider: "google.com" },
+  };
+  await ownAccountDeletion(db, actor, {action:"cancel"}, {
+    nowMs, idFactory: () => "cancel-audit-12345678",
+  });
+  const fresh = await ownAccountDeletion(db, actor, {action:"request"}, {
+    nowMs: nowMs+1000, idFactory: () => "new-deletion-request-1234",
+  });
+  assert.equal(fresh.status, "pending");
+  assert.equal(db.docs.get(reqPath).reviewHold, false);
+  assert.equal(db.docs.get(reqPath).reviewHoldReason, "");
+  assert.equal(db.docs.get(reqPath).reviewUpdatedBy, null);
+  assert.equal(db.docs.has(inboxPath), false);
+});
+
 test("stale or forbidden review actions are rejected without writes", async () => {
   const db = dbForUser();
   const base = {
