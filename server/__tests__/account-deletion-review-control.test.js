@@ -98,6 +98,15 @@ test("owner summary contains only bounded risk flags and direct reads", async ()
   assert.equal(db.writes.length, 0);
 });
 
+test("missing wallet fields never count as verified zero balance", async () => {
+  const db = dbForUser();
+  delete db.docs.get(profilePath).coins;
+  delete db.docs.get(profilePath).diamonds;
+  const details = await inspectAccountDeletionForOwner(db, uid, { nowMs });
+  assert.equal(details.signals.balanceDetected, false);
+  assert.equal(details.signals.balanceUnknown, true);
+});
+
 test("only review-ready, due, current request can be assessed", async () => {
   const db = dbForUser({status:"cancelled"});
   await assert.rejects(() => inspectAccountDeletionForOwner(db, uid, {nowMs}),
