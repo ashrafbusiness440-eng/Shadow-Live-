@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
+import '../../../shared/services/shadow_device_permissions.dart';
 
 const int privateVoiceSampleRate = 16000;
 const int privateVoiceMaxSeconds = 60;
@@ -67,6 +68,11 @@ class PrivateVoiceRecorder {
   Future<void> start({required void Function() onLimit}) async {
     if (_disposed || _recording || _subscription != null) {
       throw StateError('voice_recorder_busy');
+    }
+    // Ask only when the user starts a voice note; never during chat load.
+    if (await ShadowDevicePermissions.ensureMicrophone() !=
+        ShadowMicrophoneAccess.granted) {
+      throw StateError('microphone_permission_required');
     }
     if (!await _recorder.hasPermission()) {
       throw StateError('microphone_permission_required');

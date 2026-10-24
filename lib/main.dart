@@ -18,6 +18,7 @@ import 'features/user/bloc/user_bloc.dart';
 import 'shared/services/firebase_service.dart' as shared_fb;
 import 'shared/services/storage_service.dart';
 import 'shared/services/user_storage_service.dart';
+import 'shared/services/shadow_device_permissions.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 import 'widgets/host_section.dart';
@@ -591,6 +592,37 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     return state?.seats.any((seat) => seat.uid == uid) == true;
   }
 
+  Future<bool> _ensureRoomMicrophonePermission(String roomId, String uid) async {
+    ShadowMicrophoneAccess access;
+    try {
+      access = await ShadowDevicePermissions.ensureMicrophone();
+    } catch (_) {
+      access = ShadowMicrophoneAccess.denied;
+    }
+    // Never resume microphone actions against a closed room or old account
+    // after the Android runtime permission dialog returns.
+    if (!mounted ||
+        FirebaseAuth.instance.currentUser?.uid != uid ||
+        !_voiceSession.active ||
+        _voiceSession.roomId != roomId) {
+      return false;
+    }
+    if (access == ShadowMicrophoneAccess.granted) return true;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(access == ShadowMicrophoneAccess.settingsRequired
+          ? 'الميكروفون محظور من Android. افتح إعدادات التطبيق للسماح به.'
+          : 'التحدث يحتاج إذن الميكروفون. لم يتم تشغيل المايك.'),
+      action: access == ShadowMicrophoneAccess.settingsRequired
+          ? SnackBarAction(
+              label: 'الإعدادات',
+              onPressed: () =>
+                  unawaited(ShadowDevicePermissions.openSystemSettings()),
+            )
+          : null,
+    ));
+    return false;
+  }
+
   Future<void> _toggleVoiceMic() async {
     if (_micActionInFlight) return;
     _micActionInFlight = true;
@@ -654,6 +686,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           );
           return;
         }
+        // Permission first: do not reserve or unmute a server seat when
+        // Android has not authorized capture.
+        if (!await _ensureRoomMicrophonePermission(roomId, uid)) return;
         final taken = await _runSeatAction(
           () => _roomSeatService.takeSeat(
             roomId: roomId,
@@ -710,6 +745,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       return;
     }
 
+    if (_voiceSession.micMuted &&
+        !await _ensureRoomMicrophonePermission(roomId, uid)) {
+      return;
+    }
     try {
       final muted = !_voiceSession.micMuted;
       // Muting is immediate for safety. Unmuting must be acknowledged by
