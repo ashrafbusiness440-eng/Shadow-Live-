@@ -17,6 +17,7 @@ import {
   cleanupQueuedStorageObject,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
+  verifyAccountStorageCleanupJob,
   authorizeAgencyLogoManagement,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
@@ -28,6 +29,50 @@ import {
   publicMediaStorageKey,
   publicMediaUrl,
 } from "../../cloudflare-worker/src/public-media.js";
+
+// Test the existing object-transfer/deletion scenarios only behind the
+// production-equivalent certified request + immutable queue audit gate.
+function certifiedCleanupDb(baseDb, {hold=false}={}) {
+  let ownerUid="",requestId="";
+  return {
+    ...baseDb,
+    async runQuery(path,options) {
+      const items=await baseDb.runQuery(path,options);
+      if(path!=="storage_account_cleanup_jobs" || !items.length) return items;
+      const job=items[0];
+      ownerUid=job.data.ownerUid;
+      requestId="certified_cleanup_"+job.id;
+      return [{
+        ...job,
+        data:{...job.data,requestId,reason:"account_deleted_verified",status:"queued"},
+      }];
+    },
+    async get(path,...rest) {
+      if(ownerUid && requestId) {
+        if(path==="account_deletion_requests/"+ownerUid) return {
+          exists:true,data:{uid:ownerUid,requestId,status:"processing",reviewHold:hold},
+        };
+        if(path==="account_deletion_erasure_checkpoints/"+ownerUid) return {
+          exists:true,data:{
+            requestId,phase:"storage_media",destructiveAllowed:true,
+            storageRetentionApproved:true,sharedMediaOwnershipReviewed:true,
+            legalEvidenceReviewComplete:true,financialSettlementApproved:true,
+            playBillingReviewComplete:true,
+          },
+        };
+        if(path==="admin_audit_logs/r2_deletion_queue_"+requestId) return {
+          exists:true,data:{requestId,targetId:ownerUid,action:"accountErasureR2QueueCertified"},
+        };
+        if(path==="users/"+ownerUid) {
+          const existing=await baseDb.get(path,...rest);
+          return {exists:true,data:{...(existing?.exists ? existing.data : {}),
+            role:"user",accountStatus:"deletion_processing"}};
+        }
+      }
+      return baseDb.get(path,...rest);
+    },
+  };
+}
 
 test("storage MIME allowlist only accepts supported image formats", () => {
   assert.equal(storageExtensionForMime("image/jpeg"), "jpg");
@@ -635,7 +680,7 @@ test("deleted-account cleanup processes at most 25 storage objects per run", asy
   };
 
   const result = await runDeletedAccountStorageCleanup(
-    db,
+    certifiedCleanupDb(db),
     bucket,
     { nowMs: 1_000, limit: 25 },
   );
@@ -706,7 +751,7 @@ test("deleted-account cleanup closes the job after the final partial batch", asy
   const bucket = { async delete() {} };
 
   const result = await runDeletedAccountStorageCleanup(
-    db,
+    certifiedCleanupDb(db),
     bucket,
     { nowMs: 2_000, limit: 25 },
   );
@@ -791,7 +836,7 @@ test("deleted-account cleanup transfers an active shared room cover instead of d
   const bucket = { async delete() { bucketDeletes += 1; } };
 
   const result = await runDeletedAccountStorageCleanup(
-    db,
+    certifiedCleanupDb(db),
     bucket,
     { nowMs: 3_000, limit: 25 },
   );
@@ -880,7 +925,7 @@ test("deleted-account profile cleanup clears active Firestore image references",
   const bucket = { async delete() {} };
 
   const result = await runDeletedAccountStorageCleanup(
-    db,
+    certifiedCleanupDb(db),
     bucket,
     { nowMs: 4_000, limit: 25 },
   );
@@ -969,7 +1014,7 @@ test("deleted official-room host does not delete the active room cover", async (
   const bucket = { async delete() { bucketDeletes += 1; } };
 
   const result = await runDeletedAccountStorageCleanup(
-    db,
+    certifiedCleanupDb(db),
     bucket,
     { nowMs: 5_000, limit: 25 },
   );
@@ -1125,4 +1170,69 @@ test("VIP4 animated avatar storage is isolated and entitlement-gated", () => {
   assert.match(source, /vip4_required_for_animated_avatar/);
   assert.match(source, /activeEffectiveVipLevelFromUser/);
   assert.match(source, /profileAvatarAnimationObjectId/);
+});
+
+test("uncertified legacy R2 job is blocked before any object lookup or deletion", async () => {
+  const rows=[];
+  const db={
+    async runQuery(collection){
+      rows.push(collection);
+      if(collection==="storage_account_cleanup_jobs") return [{
+        id:"legacy_direct_delete_job",
+        data:{ownerUid:"deleted_member_123",reason:"account_deleted"},
+      }];
+      throw Error("storage_scanned_without_verification");
+    },
+    async get(){throw Error("should_not_read_for_invalid_job");},
+    async commit(){throw Error("must_never_commit");},
+  };
+  const bucket={async delete(){throw Error("R2 deletion must not happen");}};
+  const result=await runDeletedAccountStorageCleanup(db,bucket,{limit:25});
+  assert.equal(result.jobsChecked,1);
+  assert.equal(result.checked,0);
+  assert.equal(result.deleted,0);
+  assert.equal(result.blocked,true);
+  assert.deepEqual(rows,["storage_account_cleanup_jobs"]);
+});
+
+test("verified queued R2 job is blocked again when Owner adds a review hold", async () => {
+  const db={
+    async runQuery(collection){
+      if(collection==="storage_account_cleanup_jobs")return [{
+        id:"verified_job_123",data:{
+          ownerUid:"deleted_member_123",requestId:"verified_req_123456",
+          reason:"account_deleted_verified",status:"queued",
+        },
+      }];
+      throw Error("storage_objects_must_not_be_scanned");
+    },
+    async get(path){
+      if(path==="account_deletion_requests/deleted_member_123")return {
+        exists:true,data:{uid:"deleted_member_123",requestId:"verified_req_123456",
+          status:"processing",reviewHold:true},
+      };
+      if(path==="account_deletion_erasure_checkpoints/deleted_member_123")return {
+        exists:true,data:{requestId:"verified_req_123456",phase:"storage_media",
+          destructiveAllowed:true,storageRetentionApproved:true,
+          sharedMediaOwnershipReviewed:true,legalEvidenceReviewComplete:true,
+          financialSettlementApproved:true,playBillingReviewComplete:true},
+      };
+      if(path==="users/deleted_member_123")return {
+        exists:true,data:{role:"user",accountStatus:"deletion_processing"},
+      };
+      if(path==="admin_audit_logs/r2_deletion_queue_verified_req_123456")return {
+        exists:true,data:{targetId:"deleted_member_123",
+          requestId:"verified_req_123456",
+          action:"accountErasureR2QueueCertified"},
+      };
+      throw Error("unexpected_lookup_"+path);
+    },
+    async commit(){throw Error("must_not_commit");},
+  };
+  const result=await runDeletedAccountStorageCleanup(db,{
+    async delete(){throw Error("must_not_delete_bucket");},
+  },{limit:25});
+  assert.equal(result.blocked,true);
+  assert.equal(result.checked,0);
+  assert.equal(result.deleted,0);
 });
