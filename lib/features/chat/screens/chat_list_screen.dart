@@ -826,18 +826,25 @@ class _ConversationTile extends StatelessWidget {
       future: identityFuture,
       builder: (context, snapshot) {
         final user = snapshot.data?.toProfileMap() ?? const <String, dynamic>{};
-        final name = (user['displayName'] ?? 'مستخدم Shadow Live').toString();
-        final photo = (user['profileImageUrl'] ?? '').toString();
+        final accountDeleted = user['accountDeleted'] == true;
+        final name = accountDeleted ? 'حساب محذوف'
+            : (user['displayName'] ?? 'مستخدم Shadow Live').toString();
+        final photo = accountDeleted ? ''
+            : (user['profileImageUrl'] ?? '').toString();
         return Material(
           color: const Color(0xFF101522),
           borderRadius: BorderRadius.circular(18),
           child: ListTile(
-            leading: ProfileAvatarWithFrame(
-              diameter: 40,
-              userId: otherUid,
-              fallbackProfile: user,
-              snapshotOnly: true,
-            ),
+            leading: accountDeleted
+                ? const CircleAvatar(
+                    radius: 20, child: Icon(Icons.person_off_outlined),
+                  )
+                : ProfileAvatarWithFrame(
+                    diameter: 40,
+                    userId: otherUid,
+                    fallbackProfile: user,
+                    snapshotOnly: true,
+                  ),
             title: Text(name, style: TextStyle(color: Colors.white, fontWeight: unread > 0 ? FontWeight.w900 : FontWeight.w700)),
             subtitle: Text(lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: unread > 0 ? Colors.white70 : Colors.white54)),
             trailing: Column(
@@ -859,7 +866,7 @@ class _ConversationTile extends StatelessWidget {
                 textDirection: TextDirection.rtl,
                 child: SafeArea(
                   child: Wrap(children: [
-                    ListTile(
+                    if (!accountDeleted) ListTile(
                       leading: const Icon(Icons.person_outline_rounded, color: Color(0xFFFFD54A)),
                       title: const Text('عرض الملف الشخصي', style: TextStyle(color: Colors.white)),
                       onTap: () {
