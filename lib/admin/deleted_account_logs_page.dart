@@ -69,6 +69,13 @@ class _DeletedAccountLogsPageState extends State<DeletedAccountLogsPage> {
         'expired' => 'انتهى الاحتفاظ',
         _ => 'غير موثّق بعد',
       };
+  String _basis(dynamic value) => switch (value) {
+        'financial_audit' => 'تدقيق مالي',
+        'moderation_evidence' => 'أدلة إشرافية',
+        'legal_obligation' => 'التزام قانوني',
+        'none' => 'لا ينطبق',
+        _ => 'غير موثّق بعد',
+      };
 
   @override
   Widget build(BuildContext context) => Directionality(
@@ -118,6 +125,8 @@ class _DeletedAccountLogsPageState extends State<DeletedAccountLogsPage> {
                       Text('المنفّذ: ${item['executor'] == 'owner' ? 'الأونر' : item['executor'] == 'system' ? 'النظام' : 'غير مسجّل'}'),
                       Text('التسوية: ${_financial(item['financialStatus'])}'),
                       Text('الأدلة: ${_evidence(item['evidenceStatus'])}'),
+                      Text('سبب الاحتفاظ (فئة عامة): ${_basis(item['retentionBasis'])}'),
+                      Text('انتهاء الاحتفاظ: ${_time(item['retentionExpiresAt'])}'),
                       if (item['retentionCategories'] is List &&
                           (item['retentionCategories'] as List).isNotEmpty)
                         const Text('توجد فئات احتفاظ مسموح بها ضمن سجل العملية.'),
