@@ -1097,6 +1097,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       data.remove('storageObjectId');
       data.remove('imageUrl');
     }
+    // Presentation safeguard while awaiting permanent at-rest cleanup.
+    // Do not touch the counterpart's messages or gift/settlement records.
+    if (_peerProfileLoaded && _peerDeleted &&
+        data['senderId'] == widget.otherUid &&
+        <String>{'text', 'voice_note', 'image'}
+            .contains((data['type'] ?? 'text').toString())) {
+      data['type'] = 'deleted';
+      data['deletedForEveryone'] = true;
+      data.remove('text');
+      data.remove('storageObjectId');
+      data.remove('imageUrl');
+    }
     final mine = data['senderId'] == _uid;
     final type = (data['type'] ?? 'text').toString();
     final vipLevel = type == 'image'
