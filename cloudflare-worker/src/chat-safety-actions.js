@@ -696,6 +696,8 @@ export async function sendGift(db, uid, body, options = {}) {
     if (!receiver.exists) {
       throw new ApiError("receiver_not_found", 404);
     }
+    assertPrivateChatAccountLive(sender.data, "sender");
+    assertPrivateChatAccountLive(receiver.data, "recipient");
     if (!contextDoc.exists) {
       throw new ApiError(
         contextType === "diary" ? "diary_not_found" : "conversation_not_found",
