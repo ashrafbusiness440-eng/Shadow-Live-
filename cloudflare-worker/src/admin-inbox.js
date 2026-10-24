@@ -9,6 +9,7 @@ import {
   setAccountDeletionReviewHold,
   AccountDeletionReviewControlError,
 } from "./account-deletion-review-control.js";
+import { inspectAccountErasureInventory } from "./account-deletion-erasure-inventory.js";
 import { generalReportType } from "./general-reports.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import {
@@ -666,13 +667,26 @@ export async function adminInbox(request, env) {
     }
     // Reuse the existing admin inbox route; never expose account erasure
     // controls or retention notes to ordinary moderators.
-    if (["accountDeletionDetails", "accountDeletionHold",
-         "accountDeletionReleaseHold"].includes(action)) {
+    if (["accountDeletionDetails", "accountDeletionInventory",
+         "accountDeletionHold", "accountDeletionReleaseHold"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       const targetUid = clean(body.targetUid);
       if (action === "accountDeletionDetails") {
         return json(request, env,
           await inspectAccountDeletionForOwner(db, targetUid));
+      }
+      if (action === "accountDeletionInventory") {
+        const details = await inspectAccountDeletionForOwner(db, targetUid);
+        // Never inspect data on behalf of a stale, cancelled, substituted,
+        // processing or already completed request.
+        if (clean(body.requestId) !== details.requestId) {
+          throw new AdminInboxError("review_no_longer_available", 409);
+        }
+        const inventory = await inspectAccountErasureInventory(db, targetUid);
+        return json(request, env, {
+          ...inventory, targetUid, requestId: details.requestId,
+          reviewHold: details.reviewHold,
+        });
       }
       const age = Math.floor(Date.now() / 1000) -
         Number(decoded?.auth_time);
