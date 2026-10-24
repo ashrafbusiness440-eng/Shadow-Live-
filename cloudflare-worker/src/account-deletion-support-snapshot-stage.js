@@ -5,7 +5,8 @@ const validUid = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const validRequestId = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const protectedHold = record => [
   record?.legalHold, record?.retentionHold, record?.deletionHold,
-  record?.reviewHold,
+  record?.reviewHold, record?.evidenceHold,
+  record?.investigationHold,
 ].some(value => value === true);
 const REDACTED_NAME = "حساب محذوف";
 
@@ -50,7 +51,8 @@ export async function redactDeletedSupporterPair(db, {
         checkpoint.data?.destructiveAllowed !== true ||
         clean(user.data?.accountStatus) !== "deletion_processing" ||
         clean(user.data?.role) === "owner" ||
-        protectedHold(request.data) || protectedHold(user.data)) {
+        protectedHold(request.data) || protectedHold(checkpoint.data) ||
+        protectedHold(user.data)) {
       throw new SupportSnapshotStageError("support_erasure_not_authorized");
     }
 
@@ -58,6 +60,9 @@ export async function redactDeletedSupporterPair(db, {
     rows.forEach((row, index) => {
       if (!row.exists) return;
       const d = row.data || {};
+      if (protectedHold(d)) {
+        throw new SupportSnapshotStageError("support_snapshot_retention_hold");
+      }
       // A corrupted legacy row must never be rewritten as someone else's.
       if (clean(d.counterpartUid) && clean(d.counterpartUid) !== deletedUid) {
         throw new SupportSnapshotStageError("support_erasure_pair_conflict");
