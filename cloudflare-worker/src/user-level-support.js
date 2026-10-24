@@ -189,7 +189,30 @@ export async function loadUserLevelSupportPage(
   const items = pageRows.map((row, index) => {
     const data = row.data || {};
     const counterpartUid = clean(data.counterpartUid || row.id);
+    const hasActiveDocument = byUid.has(counterpartUid);
     const currentUser = byUid.get(counterpartUid) || {};
+    const accountDeleted = !hasActiveDocument ||
+      currentUser.authDeleted === true ||
+      ["deleted", "deletion_completed"].includes(
+        clean(currentUser.accountStatus).toLowerCase(),
+      );
+    // Never fall back to the saved name/photo/public ID snapshot after
+    // account deletion. Keep historical points and gift counts unchanged.
+    // Blank UID disables profile navigation; do not expose a tombstone key.
+    if (accountDeleted) {
+      return {
+        rank: decoded.loaded + index + 1,
+        points: safePoints(data.points),
+        giftCount: safePoints(data.giftCount),
+        uid: "",
+        displayName: "حساب محذوف",
+        profileImageUrl: "",
+        publicId: "",
+        mysteriousMode: false,
+        mysteriousId: "",
+        accountDeleted: true,
+      };
+    }
     const presentation = applyMysteriousIdentityPresentation(
       {
         uid: counterpartUid,
@@ -212,6 +235,7 @@ export async function loadUserLevelSupportPage(
       points: safePoints(data.points),
       giftCount: safePoints(data.giftCount),
       ...presentation,
+      accountDeleted: false,
     };
   });
 

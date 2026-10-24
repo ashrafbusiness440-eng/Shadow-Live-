@@ -23,6 +23,7 @@ import 'admin/reports_hub_page.dart';
 import 'admin/general_reports_control_page.dart'
     show showAccountActionHistoryDialog, generalReportErrorMessage;
 import 'admin/admin_notifications_page.dart';
+import 'admin/deleted_account_logs_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
@@ -93,7 +94,7 @@ class AdminGate extends StatelessWidget {
                   Uri.base.queryParameters['assetSearch']?.trim() ?? '',
             );
           }
-          return const ControlShell();
+          return ControlShell(ownerMode: role == 'owner');
         },
       );
     },
@@ -224,8 +225,9 @@ class AccessDeniedPage extends StatelessWidget {
 }
 
 class ControlShell extends StatefulWidget {
-  const ControlShell({super.key, this.initialNavIndex = 0});
+  const ControlShell({super.key, this.initialNavIndex = 0, this.ownerMode = false});
   final int initialNavIndex;
+  final bool ownerMode;
   @override State<ControlShell> createState()=>_ControlShellState();
 }
 
@@ -268,7 +270,7 @@ class _ControlShellState extends State<ControlShell> {
   @override Widget build(BuildContext context) {
     final pages=[
       DashboardPage(onOpen:(i)=>setState(()=>index=i)),
-      const UsersPage(),
+      UsersPage(ownerMode: widget.ownerMode),
       const RoomsPage(),
       const FinancePage(),
       const IdManagementPage(),
@@ -455,7 +457,8 @@ class DashboardPage extends StatelessWidget {
 }
 
 class UsersPage extends StatefulWidget {
-  const UsersPage({super.key});
+  const UsersPage({super.key, this.ownerMode = false});
+  final bool ownerMode;
   @override State<UsersPage> createState()=>_UsersPageState();
 }
 
@@ -636,6 +639,18 @@ class _UsersPageState extends State<UsersPage> {
             icon:const Icon(Icons.refresh_rounded),
           ),
         ]),
+        if(widget.ownerMode) ...[
+          OutlinedButton.icon(
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('سجلات الحسابات المحذوفة'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const DeletedAccountLogsPage(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         const SizedBox(height:12),
         TextField(
           onChanged:(v)=>setState(()=>query=v),
@@ -682,7 +697,7 @@ class _UsersPageState extends State<UsersPage> {
               title:Text(bucketLabel(selected),style:const TextStyle(fontWeight:FontWeight.w900)),
               subtitle:Text(
                 selected==_UserBucket.deleted
-                  ? 'الحسابات المحذوفة محفوظة كسجل تدقيق ولا تدخل ضمن عدد المستخدمين.'
+                  ? 'حسابات موسومة بمحذوف ضمن السجلات المحمّلة؛ سجل الحذف النهائي الموثّق في قسم الأونر المستقل.'
                   : selected==_UserBucket.disabled
                     ? 'يشمل الحسابات المعطّلة والمعلّقة مؤقتًا.'
                     : _hasMore

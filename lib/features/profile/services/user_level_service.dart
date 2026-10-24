@@ -215,6 +215,7 @@ class UserLevelSupportItem {
     required this.giftCount,
     required this.mysteriousMode,
     required this.mysteriousId,
+    required this.accountDeleted,
   });
 
   final String uid;
@@ -226,6 +227,7 @@ class UserLevelSupportItem {
   final int giftCount;
   final bool mysteriousMode;
   final String mysteriousId;
+  final bool accountDeleted;
 
   factory UserLevelSupportItem.fromJson(Map<String, dynamic> json) =>
       UserLevelSupportItem(
@@ -238,6 +240,7 @@ class UserLevelSupportItem {
         giftCount: UserLevelSectionSummary._int(json['giftCount']),
         mysteriousMode: json['mysteriousMode'] == true,
         mysteriousId: (json['mysteriousId'] ?? '').toString(),
+        accountDeleted: json['accountDeleted'] == true,
       );
 }
 

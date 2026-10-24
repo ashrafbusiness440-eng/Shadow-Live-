@@ -10,6 +10,7 @@ import {
   AccountDeletionReviewControlError,
 } from "./account-deletion-review-control.js";
 import { inspectAccountErasureInventory } from "./account-deletion-erasure-inventory.js";
+import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
 import { generalReportType } from "./general-reports.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
@@ -668,10 +669,13 @@ export async function adminInbox(request, env) {
     }
     // Reuse the existing admin inbox route; never expose account erasure
     // controls or retention notes to ordinary moderators.
-    if (["accountDeletionDetails", "accountDeletionInventory",
+    if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
          "accountDeletionHold", "accountDeletionReleaseHold",
          "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
+      if (action === "accountDeletionCompletedLogs") {
+        return json(request, env, await listCompletedAccountDeletionLogs(db));
+      }
       const targetUid = clean(body.targetUid);
       if (action === "accountDeletionDetails") {
         return json(request, env,
