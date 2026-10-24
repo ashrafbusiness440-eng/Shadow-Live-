@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'admin_account_identity_tile.dart';
+import 'account_deletion_owner_review_page.dart';
 import 'agency_control_page.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
@@ -130,6 +131,17 @@ class AdminInboxService {
   static Future<Map<String, dynamic>> repairDiaryReportInbox() =>
       _post('repairDiaryReportInbox');
 
+  static Future<Map<String, dynamic>> accountDeletionReview(
+    String action,
+    String targetUid,
+    String requestId,
+    String reason,
+  ) => _post(action, <String, dynamic>{
+        'targetUid': targetUid,
+        'requestId': requestId,
+        'reason': reason,
+      });
+
   static Future<void> markRead(String key) async {
     await _post('markRead', <String, dynamic>{'key': key});
   }
@@ -241,36 +253,17 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
         );
       } else if (item.route == 'account_deletion_review' &&
           item.type == 'account_deletion_review') {
-        // Owner-only item verified by the admin inbox server. This is an
-        // informational review, NOT a button that can delete the account.
+        // The backend still checks the owner role, recent-auth and current
+        // requestId for each hold/unhold. Reuse the existing admin inbox API.
         final ownerUid = (item.meta['userUid'] ?? '').toString().trim();
-        if (ownerUid.isEmpty || ownerUid != item.targetId) return;
-        final dueMs = (item.meta['eligibleAtMs'] as num?)?.toInt() ?? 0;
-        final due = dueMs > 0
-            ? DateTime.fromMillisecondsSinceEpoch(dueMs).toLocal()
-            : null;
-        await showDialog<void>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('مراجعة طلب حذف حساب'),
-            content: Text(
-              'حساب صاحب الطلب: ' + ownerUid +
-              (due == null ? '' : '\\nتاريخ الاستحقاق: ${due.day}/${due.month}/${due.year}') +
-              '\\n\\nلا يوجد حذف تلقائي في هذه الشاشة. '
-              'يجب مراجعة الرصيد والمعاملات المالية والمحتوى والبلاغات '
-              'وحقوق الاحتفاظ قبل السماح بالمعالجة النهائية. '
-              'يمكن للمستخدم إلغاء الطلب إلى أن تبدأ المعالجة.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('إغلاق'),
-              ),
-            ],
-          ),
+        final requestId = (item.meta['requestId'] ?? '').toString().trim();
+        if (ownerUid.isEmpty || ownerUid != item.targetId ||
+            requestId.isEmpty) return;
+        page = AccountDeletionOwnerReviewPage(
+          targetUid: ownerUid,
+          requestId: requestId,
+          request: AdminInboxService.accountDeletionReview,
         );
-        if (mounted) await _load();
-        return;
       }
       if (page == null) return;
 
