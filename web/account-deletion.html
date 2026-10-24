@@ -117,7 +117,9 @@
         const state = await send("status");
         let text = "لا يوجد طلب حذف نشط.";
         if (state.status === "pending" || state.status === "review_ready") {
-          text = (state.status === "review_ready"\n            ? "انتهت المهلة والطلب بانتظار مراجعة الإدارة.\n"\n            : "طلب حذف الحساب مُسجل.\n") + "تاريخ الطلب: " +
+          text = (state.status === "review_ready"
+            ? "انتهت المهلة والطلب بانتظار مراجعة الإدارة.\\n"
+            : "طلب حذف الحساب مُسجل.\\n") + "تاريخ الطلب: " +
             format(state.requestedAt) + "\nبعد انتهاء المهلة: " +
             format(state.eligibleAt) +
             "\nبعد انتهاء المهلة يلزم إتمام مراجعة الاحتفاظ ومسار إزالة البيانات.";
