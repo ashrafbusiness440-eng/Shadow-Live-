@@ -50,3 +50,15 @@ test("chat list and detail screens never expose deleted profiles or enable compo
   assert.match(list, /'محادثة مع حساب محذوف'/);
   assert.doesNotMatch(detail, /Timer\.periodic/);
 });
+
+test("processing erasure and revocation flags hide chat identity before Auth deletion", () => {
+  const model = readFileSync("lib/features/profile/services/profile_visual_identity_service.dart", "utf8");
+  const details = readFileSync("lib/features/chat/screens/private_chat_screen.dart", "utf8");
+  for (const marker of ["deletion_processing", "deletion_completed", "deletionProcessing"]) {
+    assert.equal(model.includes(marker), true);
+    assert.equal(details.includes(marker), true);
+  }
+  assert.match(model, /final safe = deleted \? const <String, dynamic>\{\} : data;/);
+  assert.match(details, /final hideIdentity =/);
+  assert.match(details, /_peerDeleted \|\| !_peerProfileLoaded/);
+});

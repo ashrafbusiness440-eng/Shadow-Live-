@@ -43,8 +43,11 @@ class ProfileVisualIdentity {
     Map<String, dynamic> data, {
     bool missing = false,
   }) {
-    final deleted = data['accountStatus'] == 'deleted' ||
-        data['authDeleted'] == true;
+    final deleted = const <String>{
+          'deleted', 'deletion_processing', 'deletion_completed',
+        }.contains(data['accountStatus']) ||
+        data['authDeleted'] == true ||
+        data['deletionProcessing'] == true;
     final safe = deleted ? const <String, dynamic>{} : data;
     return ProfileVisualIdentity(
       publicRecordMissing: missing || deleted,
