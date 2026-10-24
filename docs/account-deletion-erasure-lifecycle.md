@@ -131,3 +131,22 @@ R2 links safely after retention decisions. Do not mark completed merely
 because the profile stream shows a tombstone.
 
 The normal conversation UI also replaces the deleted sender's visible text, voice and image messages with deletion tombstones and suppresses old last-message previews. Other participants' own messages and gift/settlement events remain visible. This does **not** erase original text/media bytes or the message documents at rest: evidence and stored snapshots must still pass legal review and the future deletion executor.
+
+## Legacy admin direct-delete shutdown — safety gate
+
+The old Owner-only `manageUserAccount(accountAction: deleteAccount)` path
+previously called Firebase Auth deletion before finishing the Firestore
+transaction and before financial, legal and R2 retention review. This could
+leave orphaned PII or unresolved liabilities if a later operation failed.
+
+That direct-delete action now returns a non-mutating HTTP 409
+`account_deletion_lifecycle_required` after verifying Owner authority.
+The Shadow Control Users screen no longer presents an enabled direct-delete
+button and directs Owner to existing deletion-request review instead.
+Moderation suspension, ban, session revocation and warning flows remain
+independent. The old Auth-first deletion helper was removed.
+
+This safety closure is **not** an implemented full executor. Account deletion
+still requires a separately tested, bounded, resumable finalizer that reviews
+financial settlement, protected evidence and ownership before deleting
+Firebase Auth last. No actual user data was destroyed by this change.

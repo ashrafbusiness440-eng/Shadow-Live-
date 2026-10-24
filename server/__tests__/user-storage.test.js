@@ -505,7 +505,7 @@ test("R2 PUT presign is short-lived and content-type bound", async () => {
 });
 
 
-test("account deletion storage cleanup is metadata-indexed and bounded", () => {
+test("storage cleanup stays bounded and is not queued by unsafe direct delete", () => {
   const accountSource = fs.readFileSync(
     new URL("../../cloudflare-worker/src/manage-user-account.js", import.meta.url),
     "utf8",
@@ -515,7 +515,10 @@ test("account deletion storage cleanup is metadata-indexed and bounded", () => {
     "utf8",
   );
 
-  assert.match(accountSource, /storage_account_cleanup_jobs/);
+  // Direct admin deletion no longer queues cleanup AFTER deleting Auth.
+  // The eventual verified erasure executor must authorize this queue safely.
+  assert.doesNotMatch(accountSource, /storage_account_cleanup_jobs/);
+  assert.match(accountSource, /account_deletion_lifecycle_required/);
   assert.match(storageSource, /runQuery\("storage_account_cleanup_jobs"/);
   assert.match(storageSource, /runQuery\("storage_objects"/);
   assert.match(storageSource, /field:\s*"ownerUid",\s*op:\s*"=="/);

@@ -1204,31 +1204,6 @@ class _OwnerAccountActionsCard extends StatelessWidget {
     if(ok==true&&context.mounted)await _execute(context,action,reason);
   }
 
-  Future<void> _delete(BuildContext context) async {
-    final reason=await _reason(context,'حذف حساب المستخدم');
-    if(reason==null||!context.mounted)return;
-    final confirm=TextEditingController();
-    final ok=await showDialog<bool>(
-      context:context,
-      builder:(c)=>AlertDialog(
-        title:const Text('حذف الحساب نهائيًا'),
-        content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
-          const Text('سيتم حذف حساب Firebase Auth ومنع تسجيل الدخول نهائيًا. السجل المالي وAudit Log يبقيان محفوظين للتدقيق.'),
-          const SizedBox(height:12),
-          TextField(controller:confirm,decoration:const InputDecoration(labelText:'اكتب كلمة حذف للتأكيد',border:OutlineInputBorder())),
-        ]),
-        actions:[
-          TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('إلغاء')),
-          FilledButton(
-            onPressed:()=>confirm.text.trim()=='حذف'?Navigator.pop(c,true):null,
-            child:const Text('حذف نهائي'),
-          ),
-        ],
-      ),
-    );
-    confirm.dispose();
-    if(ok==true&&context.mounted)await _execute(context,'deleteAccount',reason);
-  }
 
   @override Widget build(BuildContext context){
     final suspendedText=suspendedUntil==null||'$suspendedUntil'.isEmpty?'':' • حتى: $suspendedUntil';
@@ -1297,14 +1272,24 @@ class _OwnerAccountActionsCard extends StatelessWidget {
                   icon:const Icon(Icons.lock_open_outlined),
                   label:const Text('فك الحظر / تفعيل'),
                 ),
-              if(canDelete)
-                FilledButton.icon(
-                  style:FilledButton.styleFrom(backgroundColor:Colors.red.shade800),
-                  onPressed:locked?null:()=>_delete(context),
-                  icon:const Icon(Icons.delete_forever_outlined),
-                  label:const Text('حذف الحساب'),
+              if(canDelete) ...[
+                OutlinedButton.icon(
+                  onPressed: null,
+                  icon: Icon(Icons.shield_outlined),
+                  label: Text('الحذف النهائي ضمن المراجعة فقط'),
                 ),
+              ],
             ]),
+            if(canDelete && !protectedOwner) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'لحماية أرصدة المستخدم وبياناته، أُوقف الحذف المباشر القديم. '
+                'راجع طلب حذف الحساب عبر إشعارات الإدارة. '
+                'الحذف النهائي لن يُتاح قبل إتمام التسويات وحماية الأدلة '
+                'واختبارات التصفية الآمنة.',
+                style: TextStyle(fontSize: 12, color: Color(0xFFFFD54A)),
+              ),
+            ],
             if(!isOwner&&actorEnabled)...[
               const SizedBox(height:10),
               Text(
