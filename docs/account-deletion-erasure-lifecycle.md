@@ -129,3 +129,5 @@ requires a legal basis and separate access control), retain the other
 party's messages, update both counterpart/preview snapshots, and purge
 R2 links safely after retention decisions. Do not mark completed merely
 because the profile stream shows a tombstone.
+
+The normal conversation UI also replaces the deleted sender's visible text, voice and image messages with deletion tombstones and suppresses old last-message previews. Other participants' own messages and gift/settlement events remain visible. This does **not** erase original text/media bytes or the message documents at rest: evidence and stored snapshots must still pass legal review and the future deletion executor.
