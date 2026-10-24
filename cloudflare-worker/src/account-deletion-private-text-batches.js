@@ -107,7 +107,6 @@ export async function drainAccountPrivateTextPage(db, {
   // touching the first message. Exact-record transactions recheck.
   const evidenceFlags = await Promise.all(selected.map(row =>
     db.get("content_filter_flags/" + row.id)));
-  let alreadyRedacted = 0;
   for (const [i, row] of selected.entries()) {
     const msg = row.data;
     if (clean(msg.senderId) !== uid ||
@@ -121,7 +120,7 @@ export async function drainAccountPrivateTextPage(db, {
       msg.deletedForEveryone === true &&
       clean(msg.erasureRequestId) === requestId &&
       Object.keys(msg).every(key => tombstoneFields.has(key));
-    if (isTombstone) { alreadyRedacted++; continue; }
+    if (isTombstone) continue;
     if (!allowedText.has(clean(msg.type))) {
       // Includes old tombstones and voice, video, gifts, photos, etc.
       reject("private_text_batch_media_or_legacy_review");
