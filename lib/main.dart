@@ -6968,7 +6968,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         height: micHeight,
                         child: SingleChildScrollView(
                           // Keep taps on seats, but prevent dragging the fixed mic stage.
-                           physics: const NeverScrollableScrollPhysics(),
+                          physics: const NeverScrollableScrollPhysics(),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
