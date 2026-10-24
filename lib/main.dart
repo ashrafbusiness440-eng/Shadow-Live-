@@ -496,16 +496,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     // negotiation without adding another network call or exposing room data
     // before access is granted. The result is only applied after join succeeds.
     Future<RoomBootstrapSnapshot?>? authorizedBootstrap;
+    Future<RoomBootstrapSnapshot?> fetchAuthorizedBootstrap() async {
+      try {
+        return await _roomBootstrapService.load(roomId);
+      } catch (_) {
+        // A failed room-details read must never block or fail the ZEGO join.
+        return null;
+      }
+    }
+
     void beginAuthorizedBootstrap() {
       if (!mounted ||
           _minimizeAfterJoin ||
           FirebaseAuth.instance.currentUser?.uid != user.uid) {
         return;
       }
-      authorizedBootstrap ??= _roomBootstrapService.load(roomId).then(
-        (snapshot) => snapshot,
-        onError: (Object error, StackTrace stack) => null,
-      );
+      authorizedBootstrap ??= fetchAuthorizedBootstrap();
     }
 
     try {
