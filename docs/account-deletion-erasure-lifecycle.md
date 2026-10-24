@@ -8,7 +8,7 @@ Last updated: 2026-10-24. **Technical implementation checklist, not a legal opin
 2. Thirty-day cancellation window (product decision, not a claim that the Play policy endorses this specific delay).
 3. Feature-gated, hourly bounded transition into `review_ready` for owner review, off by default.
 4. Owner-only review, audit-backed hold/release; customer may still cancel before processing.
-5. On-demand read-only inventory via **existing** admin inbox API, nine single-result existence queries. `not_seen` **does not** mean absent or erased.
+5. On-demand read-only inventory via **existing** admin inbox API, 17 single-result existence queries. `not_seen` **does not** mean absent or erased.
 
 ## Required erasure and retention inventory, by domain
 
@@ -37,7 +37,7 @@ Last updated: 2026-10-24. **Technical implementation checklist, not a legal opin
 
 ## Bounded inventory contract
 
-API action: `accountDeletionInventory` under the existing `/api/admin-inbox` endpoint. AuthZ: owner only, validated signed-in admin session, current `review_ready` request ID. Queries: owner diaries, owned R2 metadata, current/legacy room ownership, participants of private chats, existing financial-ledger rows (`userId`), Google Play purchase rows (`uid`), reports made by the account (`reporterUid`), and reports targeting the account (`targetUid`); each query `limit: 1`, performed **only** on explicit owner click. Legacy report ID fields, gift counterparty records, refund disputes and supporting evidence may not appear; these are separate manual/technical review gates. Fails closed: query errors remain `not_verified`. Returned keys represent only existence indicators, never raw messages, media URLs, reports, receipts, or contact details. The response permanently declares `exhaustive: false`, `erasureAllowed: false`, `erasureExecuted: false`.
+API action: `accountDeletionInventory` under the existing `/api/admin-inbox` endpoint. AuthZ: owner only, validated signed-in admin session, current `review_ready` request ID. Queries: owner diaries, owned R2 metadata, current/legacy room ownership, participants of private chats, existing financial-ledger rows (`userId`), Google Play purchase rows (`uid`), reports made by the account (`reporterUid`), and reports targeting the account (`targetUid`); each query `limit: 1`, performed **only** on explicit owner click. Gift transactions (senderId/receiverId), ledger counterparties (single UID and group array), wallet transfer sender/recipient and legacy report reporterId/targetUserId are now probed as bounded existence checks. A legacy field may store a public identifier rather than UID, so an empty result still does not establish absence. Refund disputes, agency settlements and evidence remain separate manual/technical review gates. Fails closed: query errors remain `not_verified`. Returned keys represent only existence indicators, never raw messages, media URLs, reports, receipts, or contact details. The response permanently declares `exhaustive: false`, `erasureAllowed: false`, `erasureExecuted: false`.
 
 ## Non-destructive owner preflight checkpoint (PR #469 and successor)
 
@@ -55,3 +55,9 @@ financial settlement, Google Play purchase handling, legal-hold evidence,
 shared ownership, retention policy, bounded data deletion with resumable
 checkpoints, Firebase Auth deletion as final phase, and isolated test-account
 validation remain mandatory.
+
+## Financial and report counterparty preflight expansion (17 probes)
+
+The owner-triggered inventory now covers eight additional indexed, single-result checks in `gift_transactions`, `financial_ledger`, `wallet_transfers`, and legacy `reports`. Each check is `limit: 1`, sequential, without exposing private IDs or content. As with earlier probes, `not_seen` cannot certify absence, errors produce `not_verified`, and none of these checks authorizes erasure.
+
+**Outstanding:** purchase refunds and chargebacks, the original coins/diamonds source of truth, agency salary/profit distributions, unindexed legacy schemas, retention periods and legal holds. Do not zero balances, delete financial ledgers or hide chargeback liabilities based on these existence flags.
