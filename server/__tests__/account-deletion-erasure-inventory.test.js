@@ -50,6 +50,14 @@ test("bounded targeted queries discover linked content without authorizing erasu
     googlePlayPurchases: "found",
     reportedByUser: "not_seen",
     reportsOnUser: "found",
+    giftSender: "not_seen",
+    giftRecipient: "not_seen",
+    ledgerCounterparty: "not_seen",
+    ledgerGroupCounterparty: "not_seen",
+    walletTransferSender: "not_seen",
+    walletTransferRecipient: "not_seen",
+    legacyReporter: "not_seen",
+    legacyReportedUser: "not_seen",
   });
   assert.equal(JSON.stringify(result).includes("privateObject"), false);
   assert.equal(JSON.stringify(result).includes("privateDiary"), false);
@@ -74,6 +82,14 @@ test("bounded targeted queries discover linked content without authorizing erasu
     ["google_play_purchases", "uid", "=="],
     ["reports", "reporterUid", "=="],
     ["reports", "targetUid", "=="],
+    ["gift_transactions", "senderId", "=="],
+    ["gift_transactions", "receiverId", "=="],
+    ["financial_ledger", "counterpartyUid", "=="],
+    ["financial_ledger", "counterpartyUids", "array-contains"],
+    ["wallet_transfers", "senderUid", "=="],
+    ["wallet_transfers", "recipientUid", "=="],
+    ["reports", "reporterId", "=="],
+    ["reports", "targetUserId", "=="],
   ]);
 });
 
@@ -134,4 +150,24 @@ test("source: owner-only route checks current request ID and UI is read-only", (
   assert.match(client, /result\['erasureExecuted'\] != false/);
   assert.doesNotMatch(source, /db\.list\(|writeDelete\(|writeUpdate\(|deleteAuthUser\(|setInterval\(/);
   assert.doesNotMatch(client, /accountDeletionErase|deleteAuthUser/);
+});
+
+test("gift counterparty and legacy report presence never returns private IDs", async () => {
+  const db = new LimitedDb();
+  db.results.set("gift_transactions/receiverId", [{ id: "gift-private-001" }]);
+  db.results.set("financial_ledger/counterpartyUids", [{ id: "ledger-private-001" }]);
+  db.results.set("wallet_transfers/recipientUid", [{ id: "transfer-private-001" }]);
+  db.results.set("reports/reporterId", [{ id: "report-private-001" }]);
+  db.failFor = "reports/targetUserId";
+  const result = await inspectAccountErasureInventory(db, uid);
+  assert.equal(result.domains.giftRecipient, "found");
+  assert.equal(result.domains.ledgerGroupCounterparty, "found");
+  assert.equal(result.domains.walletTransferRecipient, "found");
+  assert.equal(result.domains.legacyReporter, "found");
+  assert.equal(result.domains.legacyReportedUser, "not_verified");
+  assert.equal(result.exhaustive, false);
+  assert.equal(result.erasureAllowed, false);
+  for (const id of ["gift-private", "ledger-private", "transfer-private", "report-private"]) {
+    assert.equal(JSON.stringify(result).includes(id), false);
+  }
 });

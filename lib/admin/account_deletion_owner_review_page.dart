@@ -173,6 +173,14 @@ class _AccountDeletionOwnerReviewPageState
       'googlePlayPurchases': 'مشتريات Google Play',
       'reportedByUser': 'البلاغات المقدّمة من المستخدم',
       'reportsOnUser': 'البلاغات المرتبطة بالمستخدم كطرف مُبلّغ عنه',
+      'giftSender': 'هدايا الغرف التي أرسلها المستخدم',
+      'giftRecipient': 'هدايا الغرف التي استلمها المستخدم',
+      'ledgerCounterparty': 'ارتباط المستخدم بطرف مقابل في السجل المالي',
+      'ledgerGroupCounterparty': 'سجلات مالية بهدايا جماعية مرتبطة بالمستخدم',
+      'walletTransferSender': 'تحويلات المحفظة الصادرة من الحساب',
+      'walletTransferRecipient': 'تحويلات المحفظة الواردة إلى الحساب',
+      'legacyReporter': 'بلاغات قديمة مقدمة من الحساب (حسب UID)',
+      'legacyReportedUser': 'بلاغات قديمة ضد الحساب (حسب UID)',
     };
     final checks = <String, String>{
       'ownerAccount': 'حساب أونر محمي',
