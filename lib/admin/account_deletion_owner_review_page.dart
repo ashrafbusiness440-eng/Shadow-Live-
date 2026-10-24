@@ -169,6 +169,10 @@ class _AccountDeletionOwnerReviewPageState
       'rooms': 'الغرف المسجّلة بصفة المالك',
       'legacyRooms': 'ملكية غرف بالنظام القديم',
       'conversations': 'المحادثات المرتبطة بالمستخدم',
+      'financialLedger': 'سجلات الحركات المالية',
+      'googlePlayPurchases': 'مشتريات Google Play',
+      'reportedByUser': 'البلاغات المقدّمة من المستخدم',
+      'reportsOnUser': 'البلاغات المرتبطة بالمستخدم كطرف مُبلّغ عنه',
     };
     final checks = <String, String>{
       'ownerAccount': 'حساب أونر محمي',
@@ -269,7 +273,8 @@ class _AccountDeletionOwnerReviewPageState
                   );
                 }),
                 const Text(
-                  'ما زالت السجلات المالية والشراء والهدايا وأدلة البلاغات '
+                  'فحص وجود سجل مالي أو بلاغ لا يكشف كل تفاصيله، ' 
+                  'كما أن غياب النتيجة لا يؤكد خلو الحساب. ما زالت '
                   'والتعليقات والرسائل والمرفقات والبيانات القديمة تحتاج '
                   'مراجعة ومعالجة مستقلة. لا يوجد سماح بالحذف النهائي.',
                   style: TextStyle(color: Colors.amber),
