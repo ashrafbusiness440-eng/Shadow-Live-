@@ -81,6 +81,8 @@ jobs:
         run: node --test server/__tests__/account-deletion-r2-queue.test.js
       - name: Test gated per-counterparty follow and block erasure
         run: node --test server/__tests__/account-deletion-social-pair-stage.test.js
+      - name: Private call push erasure stage safety
+        run: node --test server/__tests__/account-deletion-private-call-push-stage.test.js
       - name: Test replay-safe private text sends and cross-user operation isolation
         run: node --test cloudflare-worker/__tests__/private-chat-text-retry.test.js
       - name: Test private voice mutual-follow eligibility and limits
