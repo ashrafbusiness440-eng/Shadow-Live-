@@ -1243,6 +1243,7 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
   }
 
   Future<void> _openIdentity(UserLevelSupportItem item) async {
+    if (item.accountDeleted) return;
     if (item.mysteriousMode) {
       await showMysteriousIdentitySheet(
         context,
@@ -1460,7 +1461,7 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
   Widget _supportRow(UserLevelSupportItem item) {
     final identity = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _openIdentity(item),
+      onTap: item.accountDeleted ? null : () => _openIdentity(item),
       child: Row(
         children: [
           if (item.mysteriousMode)
@@ -1495,7 +1496,9 @@ class _UserLevelSupportSheetState extends State<_UserLevelSupportSheet> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  item.publicId.isEmpty
+                  item.accountDeleted
+                      ? 'الهوية غير متاحة بعد حذف الحساب'
+                      : item.publicId.isEmpty
                       ? 'ID غير متاح'
                       : 'ID: ${item.publicId}',
                   textDirection: TextDirection.ltr,
