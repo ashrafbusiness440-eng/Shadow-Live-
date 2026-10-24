@@ -30,8 +30,11 @@ class _AccountDeletionOwnerReviewPageState
     extends State<AccountDeletionOwnerReviewPage> {
   final _reason = TextEditingController();
   Map<String, dynamic>? _details;
+  Map<String, dynamic>? _inventory;
   String? _error;
+  String? _inventoryError;
   bool _busy = false;
+  bool _inventoryBusy = false;
 
   @override
   void initState() {
@@ -121,6 +124,35 @@ class _AccountDeletionOwnerReviewPageState
     if (mounted && saved) await _load();
   }
 
+  Future<void> _inspectInventory() async {
+    if (_busy || _inventoryBusy || _details == null) return;
+    setState(() {
+      _inventoryBusy = true;
+      _inventoryError = null;
+      _inventory = null;
+    });
+    try {
+      final result = await widget.request(
+        'accountDeletionInventory', widget.targetUid, widget.requestId, '',
+      );
+      if (!mounted) return;
+      if (result['targetUid'] != widget.targetUid ||
+          result['requestId'] != widget.requestId ||
+          result['erasureAllowed'] != false ||
+          result['erasureExecuted'] != false) {
+        throw StateError('نتيجة جرد غير صالحة. لم تُنفّذ أي عملية حذف.');
+      }
+      setState(() => _inventory = result);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _inventoryError =
+            'تعذر إكمال جرد البيانات: ${error.toString()}');
+      }
+    } finally {
+      if (mounted) setState(() => _inventoryBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final details = _details;
@@ -128,6 +160,16 @@ class _AccountDeletionOwnerReviewPageState
         ? Map<String, dynamic>.from(details!['signals'] as Map)
         : const <String, dynamic>{};
     final hold = details?['reviewHold'] == true;
+    final erasureDomains = _inventory?['domains'] is Map
+        ? Map<String, dynamic>.from(_inventory!['domains'] as Map)
+        : const <String, dynamic>{};
+    final domainTitles = <String, String>{
+      'diaries': 'اليوميات المرتبطة بالحساب',
+      'storage': 'الملفات المخزنة باسم المستخدم في R2',
+      'rooms': 'الغرف المسجّلة بصفة المالك',
+      'legacyRooms': 'ملكية غرف بالنظام القديم',
+      'conversations': 'المحادثات المرتبطة بالمستخدم',
+    };
     final checks = <String, String>{
       'ownerAccount': 'حساب أونر محمي',
       'adminAccount': 'حساب مسؤول',
@@ -186,13 +228,53 @@ class _AccountDeletionOwnerReviewPageState
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(signals[entry.key] == true
                         ? Icons.warning_amber_rounded
-                        : Icons.check_circle_outline,
+                        : Icons.help_outline,
                       color: signals[entry.key] == true
                           ? Colors.amber : Colors.grey),
                     title: Text(entry.value),
                     subtitle: Text(signals[entry.key] == true
-                        ? 'يتطلب متابعة' : 'غير ظاهر في البيانات المختصرة'),
+                        ? 'يتطلب متابعة' : 'غير مؤكد من الفحص المختصر'),
                   )),
+              const SizedBox(height: 14),
+              const Text(
+                'فحص ارتباطات الحساب — قراءة فقط. '
+                'عدم ظهور مستند في استعلام محدود لا يعني أن كل بياناته حُذفت.',
+              ),
+              OutlinedButton.icon(
+                onPressed: (_busy || _inventoryBusy)
+                    ? null : _inspectInventory,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('فحص البيانات المرتبطة (دون حذف)'),
+              ),
+              if (_inventoryBusy) const LinearProgressIndicator(),
+              if (_inventoryError != null)
+                Text(_inventoryError!,
+                    style: const TextStyle(color: Colors.redAccent)),
+              if (_inventory != null) ...[
+                ...domainTitles.entries.map((entry) {
+                  final state = erasureDomains[entry.key]?.toString() ?? '';
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(state == 'found'
+                        ? Icons.warning_amber_rounded
+                        : Icons.info_outline,
+                        color: state == 'found' ? Colors.amber : Colors.grey),
+                    title: Text(entry.value),
+                    subtitle: Text(state == 'found'
+                        ? 'تم العثور على ارتباط؛ يحتاج معالجة'
+                        : state == 'not_seen'
+                            ? 'لم يظهر ارتباط ضمن البحث المحدود — ليس إثبات حذف'
+                            : 'لم يكتمل التحقق؛ لا يمكن اعتبار البيانات محذوفة'),
+                  );
+                }),
+                const Text(
+                  'ما زالت السجلات المالية والشراء والهدايا وأدلة البلاغات '
+                  'والتعليقات والرسائل والمرفقات والبيانات القديمة تحتاج '
+                  'مراجعة ومعالجة مستقلة. لا يوجد سماح بالحذف النهائي.',
+                  style: TextStyle(color: Colors.amber),
+                ),
+              ],
               const SizedBox(height: 14),
               TextField(
                 controller: _reason,
