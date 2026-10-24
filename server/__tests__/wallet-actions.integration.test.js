@@ -153,3 +153,14 @@ test("erasure processing blocks new transfers and wallet exchange without touchi
   assert.equal((await recipientRef.get()).data().coins,1000);
   assert.equal((await db.collection("financial_ledger").doc(sender+"__"+opKey+"__sender").get()).exists,false);
 });
+
+test("deleted accounts cannot enroll a new wallet password", async () => {
+  const uid="wallet_deleted_"+Date.now().toString();
+  await db.collection("users").doc(uid).set({
+    role:"user",accountStatus:"deletion_processing",coins:100,diamonds:2,
+  });
+  await assert.rejects(setWalletPassword(cloudflareDb,uid,{
+    password:fixtureSecret(),
+  }),e=>e.code==="wallet_account_deleted" && e.status===409);
+  assert.equal((await db.collection("wallet_private").doc(uid).get()).exists,false);
+});
