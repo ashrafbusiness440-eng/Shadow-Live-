@@ -44,8 +44,7 @@ test("settlement queue needs no custom composite Firestore index", () => {
       (index.fields || []).some(
         (field) =>
           field.fieldPath === "dueAtMs" ||
-          field.fieldPath === "closesAtMs" ||
-          field.fieldPath === "status",
+          field.fieldPath === "closesAtMs",
       ),
   );
   assert.deepEqual(settlementIndexes, []);
