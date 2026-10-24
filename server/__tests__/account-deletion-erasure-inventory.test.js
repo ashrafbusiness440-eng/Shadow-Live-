@@ -31,6 +31,9 @@ test("bounded targeted queries discover linked content without authorizing erasu
   db.results.set("diaries/ownerUid", [{ id: "privateDiary" }]);
   db.results.set("storage_objects/ownerUid", [{ id: "privateObject" }]);
   db.results.set("conversations/participants", [{ id: "privateConversation" }]);
+  db.results.set("financial_ledger/userId", [{ id: "privateLedger" }]);
+  db.results.set("google_play_purchases/uid", [{ id: "privateReceipt" }]);
+  db.results.set("reports/targetUid", [{ id: "protectedReport" }]);
   const result = await inspectAccountErasureInventory(db, uid);
   assert.equal(result.ok, true);
   assert.equal(result.probesPerformed, ACCOUNT_ERASURE_PROBES.length);
@@ -43,10 +46,17 @@ test("bounded targeted queries discover linked content without authorizing erasu
     rooms: "not_seen",
     legacyRooms: "not_seen",
     conversations: "found",
+    financialLedger: "found",
+    googlePlayPurchases: "found",
+    reportedByUser: "not_seen",
+    reportsOnUser: "found",
   });
   assert.equal(JSON.stringify(result).includes("privateObject"), false);
   assert.equal(JSON.stringify(result).includes("privateDiary"), false);
   assert.equal(JSON.stringify(result).includes("privateConversation"), false);
+  assert.equal(JSON.stringify(result).includes("privateLedger"), false);
+  assert.equal(JSON.stringify(result).includes("privateReceipt"), false);
+  assert.equal(JSON.stringify(result).includes("protectedReport"), false);
   assert.ok(result.manualReviewRequired.includes("moneyAndPurchaseLedger"));
   assert.ok(result.manualReviewRequired.includes("moderationReportsEvidenceAndLegalHolds"));
   assert.ok(result.manualReviewRequired.includes("publicProfilesAndFirebaseAuth"));
@@ -60,6 +70,10 @@ test("bounded targeted queries discover linked content without authorizing erasu
     ["rooms", "ownerUid", "=="],
     ["rooms", "ownerId", "=="],
     ["conversations", "participants", "array-contains"],
+    ["financial_ledger", "userId", "=="],
+    ["google_play_purchases", "uid", "=="],
+    ["reports", "reporterUid", "=="],
+    ["reports", "targetUid", "=="],
   ]);
 });
 
@@ -71,6 +85,16 @@ test("failed query is always not_verified rather than an ungrounded success", as
   assert.equal(result.exhaustive, false);
   assert.equal(result.erasureAllowed, false);
   assert.equal(db.calls.length, ACCOUNT_ERASURE_PROBE_LIMIT);
+});
+
+test("unverifiable financial index fails closed rather than presenting cleared money", async () => {
+  const db = new LimitedDb();
+  db.failFor = "financial_ledger/userId";
+  const result = await inspectAccountErasureInventory(db, uid);
+  assert.equal(result.domains.financialLedger, "not_verified");
+  assert.equal(result.domains.googlePlayPurchases, "not_seen");
+  assert.equal(result.erasureAllowed, false);
+  assert.equal(result.exhaustive, false);
 });
 
 test("quota errors are propagated, and no global scans are used", async () => {
