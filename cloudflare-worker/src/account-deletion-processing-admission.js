@@ -122,7 +122,8 @@ export async function admitCertifiedAccountErasure(db, {
     }
     if (r.status !== "review_ready" || c.phase !== "preflight_blocked" ||
         c.destructiveAllowed !== false ||
-        !["", "active"].includes(clean(u.accountStatus)) ||
+        !["", "active", "suspended", "banned", "disabled"].includes(
+          clean(u.accountStatus)) ||
         startAudit.exists) {
       throw new AccountErasureAdmissionError("erasure_admission_state_conflict");
     }
@@ -159,7 +160,9 @@ export async function admitCertifiedAccountErasure(db, {
       db.writeUpdate(checkpointPath, {
         phase: "processing_admitted", destructiveAllowed: false,
         processingStartedAt: now, admittedByUid: clean(actor.uid),
-      }, ["phase", "destructiveAllowed", "processingStartedAt", "admittedByUid"]),
+        priorAccountStatus: clean(u.accountStatus || "active"),
+      }, ["phase", "destructiveAllowed", "processingStartedAt", "admittedByUid",
+        "priorAccountStatus"]),
       db.writeCreate(startAuditPath(requestId), {
         action: "accountErasureProcessingAdmitted",
         actorUid: clean(actor.uid),

@@ -11,7 +11,7 @@ const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const firestore=getFirestore(app),db=cloudflareFirestoreAdapter(firestore);
 after(async()=>{await deleteApp(app);});
 
-test("emulator: two concurrent admission attempts produce one audit and no erasure",async()=>{
+test("emulator: concurrent certified admission of suspended account preserves moderation status",async()=>{
   const suffix=randomUUID().replaceAll("-","").slice(0,18);
   const uid="erase_admit_"+suffix,requestId="admit_req_"+suffix;
   const ownerUid="verified_owner_123";
@@ -32,7 +32,7 @@ test("emulator: two concurrent admission attempts produce one audit and no erasu
       eligibleAt:new Date(requestedAtMs+30*86400_000)}),
     checkpoint.set({uid,requestId,phase:"preflight_blocked",
       destructiveAllowed:false}),
-    user.set({role:"user",accountStatus:"active",
+    user.set({role:"user",accountStatus:"suspended",
       name:"kept",coins:900,diamonds:10}),
     ...REQUIRED_ERASURE_ADMISSION_DOMAINS.flatMap((domain,index)=>[
       certs[index*2].set({uid,requestId,domain,decision:"approved",
@@ -57,6 +57,7 @@ test("emulator: two concurrent admission attempts produce one audit and no erasu
     assert.equal(userRow.coins,900);
     assert.equal(userRow.diamonds,10);
     assert.equal((await checkpoint.get()).data().destructiveAllowed,false);
+    assert.equal((await checkpoint.get()).data().priorAccountStatus,"suspended");
     assert.equal((await startAudit.get()).data().action,
       "accountErasureProcessingAdmitted");
     await request.update({reviewHold:true});
