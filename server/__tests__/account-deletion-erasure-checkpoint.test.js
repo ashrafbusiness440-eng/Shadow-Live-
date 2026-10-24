@@ -36,7 +36,7 @@ class MockDb {
   }
 }
 const start = (db, opts = {}) => recordErasurePreflightCheckpoint(db, {
-  uid, requestId, actorUid: "testOwner_999", nowMs, ...opts,
+  uid, requestId, actor: { uid: "testOwner_999", owner: true }, nowMs, ...opts,
 });
 test("records a fail-closed checkpoint without deleting accounts or money", async () => {
   const db = new MockDb();
@@ -69,7 +69,8 @@ test("rejects cancelled, held, stale or future requests", async () => {
 });
 test("requires valid actor and refuses contradictory checkpoint", async () => {
   const db = new MockDb();
-  await assert.rejects(start(db, { actorUid: "../invalid" }), /owner_required/);
+  await assert.rejects(start(db, { actor: { uid: "../invalid", owner: true } }), /owner_required/);
+  await assert.rejects(start(db, { actor: { uid: "regularUser", owner: false } }), /owner_required/);
   db.docs.set("account_deletion_erasure_checkpoints/" + uid,
     { requestId, phase: "completed", destructiveAllowed: true });
   await assert.rejects(start(db), /checkpoint_conflict/);
