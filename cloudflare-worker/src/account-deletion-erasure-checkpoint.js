@@ -49,9 +49,9 @@ export function checkErasureStartEligibility({ uid, requestId, request, user, no
 // Deliberately records BLOCKED (not PROCESSING) until independent sign-offs
 // exist for money, shared content, evidence, billing and retention.
 export async function recordErasurePreflightCheckpoint(db, {
-  uid, requestId, actorUid, nowMs = Date.now(),
+  uid, requestId, actor, nowMs = Date.now(),
 } = {}) {
-  if (!validUid(actorUid)) {
+  if (!actor || actor.owner !== true || !validUid(actor.uid)) {
     throw new AccountErasureCheckpointError("owner_required", 403);
   }
   const requestPath = "account_deletion_requests/" + uid;
@@ -78,7 +78,7 @@ export async function recordErasurePreflightCheckpoint(db, {
     const checkpoint = {
       ...eligible,
       createdAt: new Date(nowMs),
-      actorUid,
+      actorUid: actor.uid,
       requiredReviews: [
         "financial_settlement", "play_billing",
         "reports_and_legal_holds", "shared_rooms_and_agencies",
@@ -93,7 +93,7 @@ export async function recordErasurePreflightCheckpoint(db, {
         "admin_audit_logs/erasure_preflight_" + requestId,
         {
           action: "accountErasurePreflightBlocked",
-          actorUid, targetType: "user", targetId: uid,
+          actorUid: actor.uid, targetType: "user", targetId: uid,
           requestId, createdAt: new Date(nowMs),
         },
       ),
