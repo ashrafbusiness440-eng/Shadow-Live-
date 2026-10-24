@@ -10,6 +10,12 @@ const held = d => [
   d?.evidenceHold, d?.investigationHold, d?.reported,
 ].some(x => x === true);
 const textKinds = new Set(["text", "animated_emoji"]);
+const textSchemaKeys = new Set([
+  "senderId", "receiverId", "createdAt", "type", "deletedForEveryone",
+  "deletedAt", "erasureRequestId", "hiddenForUids", "text", "vipLevel",
+  "animatedEmojiId", "animatedEmojiAssetKey",
+  "animatedEmojiFallbackGlyph", "animatedEmojiMinVipLevel",
+]);
 export const MAX_ACCOUNT_PRIVATE_INVENTORY_PAGE = 5;
 
 export class AccountPrivateInventoryError extends Error {
@@ -60,6 +66,7 @@ export async function inspectAccountPrivateErasurePage(db, {
     reject("private_inventory_review_blocked");
   }
   let path;
+  let counterpartyUid = "";
   if (kind === "conversations") {
     path = "conversations";
   } else {
@@ -73,6 +80,7 @@ export async function inspectAccountPrivateErasurePage(db, {
         !chat.data.participants.every(uidOk)) {
       reject("private_inventory_conversation_review_required");
     }
+    counterpartyUid = chat.data.participants.find(p => p !== uid);
   }
   const rows = await db.runQuery(path, {
     filters: kind === "conversations"
@@ -116,7 +124,9 @@ export async function inspectAccountPrivateErasurePage(db, {
       // A redaction tombstone is not evidence that all private content
       // or identifiers have been cleared elsewhere.
       const needsReview = !textKinds.has(type) ||
-        !uidOk(message.receiverId) ||
+        clean(message.receiverId) !== counterpartyUid ||
+        (textKinds.has(type) &&
+          Object.keys(message).some(key => !textSchemaKeys.has(key))) ||
         held(message) || flags[index].exists;
       return {
         id: row.id,
