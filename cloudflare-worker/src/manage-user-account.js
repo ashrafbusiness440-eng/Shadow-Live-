@@ -131,15 +131,6 @@ async function updateAuthUser(env, targetUid, { disabled, revoke = true } = {}) 
   return identityRequest(env, "update", payload);
 }
 
-async function deleteAuthUser(env, targetUid) {
-  try {
-    return await identityRequest(env, "delete", { localId: targetUid });
-  } catch (error) {
-    if (error instanceof ApiError && /USER_NOT_FOUND/i.test(error.code)) return {};
-    throw error;
-  }
-}
-
 function statusPatch(action, body, actorUid, now) {
   const base = {
     moderatedBy: actorUid,
@@ -274,23 +265,6 @@ function statusPatch(action, body, actorUid, now) {
       sessionsRevokedAt: now,
     };
   }
-  if (action === "deleteAccount") {
-    return {
-      ...base,
-      accountStatus: "deleted",
-      authDeleted: true,
-      deletedAt: now,
-      deletedBy: actorUid,
-      deletionReason: clean(body.reason),
-      adminEnabled: false,
-      capabilities: [],
-      suspendedUntil: null,
-      suspensionMinutes: null,
-      bannedAt: null,
-      disabledAt: null,
-      sessionsRevokedAt: now,
-    };
-  }
   throw new ApiError("invalid_action", 400);
 }
 
@@ -381,6 +355,14 @@ async function mutateAccount(db, env, actorPayload, body) {
     throw new ApiError("forbidden", 403);
   }
 
+  // Legacy direct deletion erased Firebase Auth FIRST and could orphan
+  // Firestore/R2 data, balances and protected evidence on partial failure.
+  // Never allow this old path to bypass the verified account-erasure lifecycle.
+  // The owner may still suspend/ban/revoke sessions independently.
+  if (action === "deleteAccount") {
+    throw new ApiError("account_deletion_lifecycle_required", 409);
+  }
+
   const [targetSnap, operationSnap] = await Promise.all([
     db.get(`users/${targetUid}`),
     db.get(`control_operations/${key}`),
@@ -398,9 +380,7 @@ async function mutateAccount(db, env, actorPayload, body) {
   const target = targetSnap.data || {};
   if (clean(target.role) === "owner") throw new ApiError("owner_protected", 409);
 
-  if (action === "deleteAccount") {
-    await deleteAuthUser(env, targetUid);
-  } else if (action === "unban" || action === "enable") {
+  if (action === "unban" || action === "enable") {
     // Also repairs legacy accounts that were disabled in Firebase Auth.
     await updateAuthUser(env, targetUid, { disabled: false, revoke: true });
   } else if (action === "revokeSessions") {
@@ -749,17 +729,6 @@ async function mutateAccount(db, env, actorPayload, body) {
           updatedAt: now,
         }),
       ] : []),
-      ...(action === "deleteAccount"
-        ? [
-            db.writeCreate(`storage_account_cleanup_jobs/${key}`, {
-              jobId: key,
-              ownerUid: targetUid,
-              requestedBy: actorUid,
-              reason: "account_deleted",
-              createdAt: now,
-            }),
-          ]
-        : []),
     ]);
 
       return { ok: true, code: "ok", operationId: key, ...resultData };
