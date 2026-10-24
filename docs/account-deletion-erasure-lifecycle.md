@@ -244,3 +244,15 @@ attachments and access revocation, erasure of sender UID routing
 references according to retention rules, transaction-safe checkpoint
 advancement and recovery, and Auth deletion as the final step.
 No successful message tombstone is proof that an account was erased.
+
+## Preflight checkpoint request rotation protection
+
+A new deletion request after cancellation may replace a checkpoint from
+an older request **only** if the older checkpoint is still strictly
+`preflight_blocked` with `destructiveAllowed=false`. No Owner or
+system workflow may overwrite a checkpoint in `processing`, `completed`,
+or any other advanced phase, including an older request ID; it must be
+investigated rather than reset. Target UID, request ID and timestamp are
+validated before any Firestore path construction/transaction. Regression
+tests enforce both properties. This checkpoint still authorizes **no**
+destructive work.

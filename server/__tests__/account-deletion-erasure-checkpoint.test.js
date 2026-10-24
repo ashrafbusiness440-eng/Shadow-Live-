@@ -78,14 +78,39 @@ test("requires valid actor and refuses contradictory checkpoint", async () => {
   await assert.rejects(start(db), /checkpoint_conflict/);
   assert.equal(db.writes.length, 0);
 });
-test("older checkpoint may never authorize a new lifecycle", async () => {
+test("older completed or active checkpoints cannot be overwritten by a new request", async () => {
+  for (const phase of ["completed","processing","storage_media"]) {
+    const db = new MockDb();
+    db.docs.set("account_deletion_erasure_checkpoints/" + uid,
+      { requestId: "older-request-1111111111", phase, destructiveAllowed: true });
+    await assert.rejects(start(db), /checkpoint_conflict/);
+    assert.equal(db.writes.length, 0);
+    assert.equal(db.docs.get("account_deletion_erasure_checkpoints/" + uid).phase, phase);
+  }
+});
+
+test("older blocked preflight can be safely replaced after cancellation", async () => {
   const db = new MockDb();
   db.docs.set("account_deletion_erasure_checkpoints/" + uid,
-    { requestId: "older-request-1111111111", phase: "completed", destructiveAllowed: true });
+    { requestId: "older-request-1111111111", phase: "preflight_blocked", destructiveAllowed: false });
   const result = await start(db);
   assert.equal(result.destructiveAllowed, false);
+  assert.equal(result.duplicate, false);
   assert.equal(db.docs.get("account_deletion_erasure_checkpoints/" + uid).requestId, requestId);
-  assert.equal(db.docs.get("account_deletion_erasure_checkpoints/" + uid).phase, "preflight_blocked");
+});
+
+test("malformed target never starts a Firestore transaction or assembles a document path", async () => {
+  const db = new MockDb();
+  db.beginTransaction = async () => { throw Error("unexpected_transaction"); };
+  for (const patch of [
+    {uid: "../unsafe"},
+    {requestId: "../../unsafe"},
+    {requestId: "short"},
+    {nowMs: Number.NaN},
+  ]) {
+    await assert.rejects(start(db, patch), e => e.code === "invalid_erasure_target" && e.status === 400);
+  }
+  assert.equal(db.writes.length, 0);
 });
 test("retry after failed transaction does not report success", async () => {
   const db = new MockDb();

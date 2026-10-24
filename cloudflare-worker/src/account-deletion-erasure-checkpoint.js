@@ -55,6 +55,11 @@ export async function recordErasurePreflightCheckpoint(db, {
   if (!actor || actor.owner !== true || !validUid(actor.uid)) {
     throw new AccountErasureCheckpointError("owner_required", 403);
   }
+  // Validate before constructing Firestore paths or initiating any reads.
+  if (!validUid(uid) || !validId(requestId) ||
+      !Number.isFinite(nowMs)) {
+    throw new AccountErasureCheckpointError("invalid_erasure_target", 400);
+  }
   const requestPath = "account_deletion_requests/" + uid;
   const checkpointPath = "account_deletion_erasure_checkpoints/" + uid;
   const tx = await db.beginTransaction();
@@ -67,14 +72,17 @@ export async function recordErasurePreflightCheckpoint(db, {
     const eligible = checkErasureStartEligibility({
       uid, requestId, request, user, nowMs,
     });
-    if (previous.exists &&
-        clean(previous.data?.requestId) === requestId) {
+    if (previous.exists) {
+      // A new request after a cancelled lifecycle may replace ONLY a
+      // non-destructive preflight. Never reset active or completed progress.
       if (previous.data?.phase !== "preflight_blocked" ||
           previous.data?.destructiveAllowed !== false) {
         throw new AccountErasureCheckpointError("checkpoint_conflict");
       }
-      await db.rollback(tx);
-      return { ...eligible, duplicate: true };
+      if (clean(previous.data?.requestId) === requestId) {
+        await db.rollback(tx);
+        return { ...eligible, duplicate: true };
+      }
     }
     const checkpoint = {
       ...eligible,
