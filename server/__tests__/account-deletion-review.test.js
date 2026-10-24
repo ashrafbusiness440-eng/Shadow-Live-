@@ -212,7 +212,7 @@ test("source guard: cron is explicitly opted-in, owner inbox only and composite 
 
 test("external deletion portal inline module remains syntactically valid", () => {
   const html = readFileSync("web/account-deletion.html", "utf8");
-  const match = html.match(/<script type="module">([\\s\\S]*?)<\\/script>/);
+  const match = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   assert.ok(match, "external authenticated page should include module script");
   const check = spawnSync(process.execPath, ["--input-type=module", "--check"], {
     input: match[1], encoding: "utf8",
