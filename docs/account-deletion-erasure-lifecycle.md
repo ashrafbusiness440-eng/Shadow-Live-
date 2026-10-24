@@ -210,3 +210,37 @@ records. Full compliance still requires preserving permitted public/shared
 content, clearing remaining identity references, R2 and messages under
 legal evidence rules, an independent financial settlement, Auth deletion
 **last**, and a signed verified-completion receipt.
+
+## Bounded private-text redaction — internal and disabled
+
+`redactDeletedPrivateTextMessage` accepts exactly **one** already
+enumerated private conversation/message, and is intentionally not wired
+to HTTP routes, timers, cron or current Owner controls. Its single
+Firestore transaction reads the current deletion request/checkpoint,
+the processing user, both-party conversation, target message, and an
+exact `content_filter_flags/{messageId}` marker. It requires
+`status=processing`, `phase=private_text`, `destructiveAllowed=true`,
+`privateMessageRetentionCleared=true`,
+`legalEvidenceReviewComplete=true`, matching request IDs, and no
+retention or legal holds. These approvals are **not** set by any current
+production route, so erasure remains disabled.
+
+Only a text/animated-emoji message **sent by the deleted account** can
+be replaced. Firestore masked updates remove text and emoji presentation
+fields at rest, leaving a minimum sender/receiver routing tombstone
+for the other participant. If it authored the stored preview, the
+conversation preview becomes `رسالة من حساب محذوف`. The other person's
+messages and financial/credit records are not changed. Unknown message
+fields, evidence holds, content-filter evidence, gift, voice, image or
+room-invite types **block** the operation rather than silently discarding
+required evidence or untracked R2 objects. A repeated authorized
+operation is idempotent. Firestore Emulator tests exercise concurrent
+same-message retries, retained counterparty messages and cancellation.
+
+**Still outstanding:** legally reviewed retention disposition for
+private reports not indexed by message ID, enumeration and pagination
+of all historical conversations/legacy schemas, R2 voice/image
+attachments and access revocation, erasure of sender UID routing
+references according to retention rules, transaction-safe checkpoint
+advancement and recovery, and Auth deletion as the final step.
+No successful message tombstone is proof that an account was erased.
