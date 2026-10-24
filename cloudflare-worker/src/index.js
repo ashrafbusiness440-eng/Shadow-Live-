@@ -53,6 +53,7 @@ import { generalReports } from "./general-reports.js";
 import { reportScreenshot } from "./report-screenshot.js";
 import { userLevelSummary } from "./user-level-summary.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
+import { firestoreClient } from "./firestore.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {
   annotatePressureRequest,
