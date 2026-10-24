@@ -98,8 +98,16 @@ export async function redactDeletedPrivateTextMessage(db, {
       throw new PrivateTextErasureError("private_message_type_requires_review");
     }
     assertKnownTextSchema(data);
-    const tombstone={type:"deleted",deletedForEveryone:true,
-      deletedAt:now,erasureRequestId:requestId};
+    const tombstone={
+      senderId:uid,receiverId:clean(data.receiverId),
+      ...(data.createdAt != null ? {createdAt:data.createdAt} : {}),
+      ...(Array.isArray(data.hiddenForUids) ? {
+        hiddenForUids:data.hiddenForUids.filter(x =>
+          conversation.data.participants.includes(x)),
+      } : {}),
+      type:"deleted",deletedForEveryone:true,
+      deletedAt:now,erasureRequestId:requestId,
+    };
     // The existing document retains routing metadata for the counterparty.
     // Omitted text/emoji fields in the field mask are deleted at rest.
     const fieldMask=[
