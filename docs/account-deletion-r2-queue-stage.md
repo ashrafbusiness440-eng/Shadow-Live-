@@ -38,3 +38,27 @@ can remove Firebase Auth. A queued job alone is not proof of R2 erasure.
 Unit tests and Firestore Emulator tests validate hold/cancellation
 fail-closed behavior, exactly one queue job, idempotent retries even after
 the queue row is consumed, and no user balance changes.
+
+## Defense in depth: the existing R2 worker also verifies the queue job
+
+The existing hourly `runDeletedAccountStorageCleanup` now independently
+checks the job's reason, request ID, and queued status, then makes exactly
+four direct Firestore reads for the current deletion request, checkpoint,
+user, and immutable audit certificate. It rechecks the current processing
+request, Owner protection, five required financial/media/legal reviews,
+and all deletion/legal/review/retention holds **before** querying
+`storage_objects` or touching R2 bytes.
+
+A legacy `account_deleted` job without certification is blocked.
+Unsupported/malformed jobs are left in place for manual Owner
+investigation; the worker does **not** silently drop them, authorize
+deletion, or begin new polling. As a result, an oldest invalid queue
+item can halt the queue until resolved; this is deliberate fail-closed
+behavior and must be surfaced through operational review.
+
+The individual-object retention/archive and shared room/agency transfer
+rules still apply. Preflight validation is not sufficient to guarantee
+that a hold cannot change during a long external bucket operation.
+The verified finalizer must keep the account in its storage-media phase
+until cleanup has completed, avoid concurrent release of review holds,
+and validate the completion record before proceeding to Auth deletion.
