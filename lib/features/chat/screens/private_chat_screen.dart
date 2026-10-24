@@ -1680,9 +1680,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       }
                     });
                   }
-                  final hideIdentity = peerDeleted || !_peerProfileLoaded;
+                  final hideIdentity = peerDeleted || !snapshot.hasData;
                   final provider = hideIdentity ? null : _avatarProvider(data);
-                  final name = hideIdentity ? 'حساب محذوف'
+                  final name = !snapshot.hasData ? 'جار التحقق من الحساب'
+                      : peerDeleted ? 'حساب محذوف'
                       : (data?['displayName'] ?? widget.otherName).toString();
                   final currentVip = hideIdentity || data == null
                       ? 0 : effectivePublicVipLevel(data);
