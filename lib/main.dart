@@ -299,6 +299,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _changingRoomFollow = false;
   bool _changingRoomFavorite = false;
   RoomSeatState? _roomSeatState;
+  int _roomLiveRevision = 0;
   bool _changingSeat = false;
   bool _micActionInFlight = false;
   RoomModeratorState? _roomModeratorState;
@@ -496,6 +497,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     // before access is granted. The result is only applied after join succeeds.
     Future<RoomBootstrapSnapshot?>? authorizedBootstrap;
     void beginAuthorizedBootstrap() {
+      if (!mounted ||
+          _minimizeAfterJoin ||
+          FirebaseAuth.instance.currentUser?.uid != user.uid) {
+        return;
+      }
       authorizedBootstrap ??= _roomBootstrapService.load(roomId).then(
         (snapshot) => snapshot,
         onError: (Object error, StackTrace stack) => null,
@@ -872,6 +878,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   ) async {
     if (roomId.isEmpty) return;
     final joinedUserUid = FirebaseAuth.instance.currentUser?.uid;
+    final liveRevisionAtStart = _roomLiveRevision;
     if (mounted) setState(() => _loadingRoomInsights = true);
     try {
       final scoreRevisionAtStart = _voiceSession.starBattleScoreRevision;
@@ -889,10 +896,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         return;
       }
 
-      _voiceSession.applyBootstrapRoom(
-        snapshot.room,
-        starBattleStartedAtRevision: scoreRevisionAtStart,
-      );
+      // Firestore can deliver a newer live seat/moderator snapshot while the
+      // HTTP bootstrap is in flight. Never rewind its live state.
+      final hasNewerLiveSnapshot = _roomLiveRevision != liveRevisionAtStart;
+      if (!hasNewerLiveSnapshot) {
+        _voiceSession.applyBootstrapRoom(
+          snapshot.room,
+          starBattleStartedAtRevision: scoreRevisionAtStart,
+        );
+      }
       final owner = snapshot.ownerProfile;
       final ownerName =
           (owner['displayName'] ?? '').toString().trim();
@@ -903,19 +915,35 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
       setState(() {
         _roomArguments = <String, dynamic>{
+          if (hasNewerLiveSnapshot) ...snapshot.room,
           ..._roomArguments,
-          ...snapshot.room,
+          if (!hasNewerLiveSnapshot) ...snapshot.room,
         };
         if (ownerName.isNotEmpty) _ownerDisplayName = ownerName;
         _ownerPhotoUrl = ownerPhoto;
         _ownerLocation = ownerLocation;
-        _roomSeatState = snapshot.seatState;
-        _roomModeratorState = snapshot.moderatorState;
+        if (!hasNewerLiveSnapshot) {
+          _roomSeatState = snapshot.seatState;
+          _roomModeratorState = snapshot.moderatorState;
+        } else {
+          // Keep the latest seats, but recover owner/global authority flags
+          // supplied by the authenticated bootstrap.
+          _roomModeratorState = _roomModeratorState?.copyWithPlatformAccess(
+                platformOwner: snapshot.moderatorState.platformOwner,
+                ownerAbsoluteRoomAccess:
+                    snapshot.moderatorState.ownerAbsoluteRoomAccess,
+                globalRoomManage: snapshot.moderatorState.globalRoomManage,
+                authoritySuppressed: snapshot.moderatorState.authoritySuppressed,
+              ) ??
+              snapshot.moderatorState;
+        }
         _roomInsights = snapshot.insights;
         _bootstrapRocketState = snapshot.rocketState;
         _bootstrapGames = snapshot.games;
       });
-      _applyRoomSeatSafety(snapshot.seatState);
+      if (!hasNewerLiveSnapshot) {
+        _applyRoomSeatSafety(snapshot.seatState);
+      }
       unawaited(_refreshRoomGhostMode());
     } catch (_) {
       // Voice/audio stay independent. The shared room snapshot stream keeps
@@ -975,6 +1003,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               previousModeratorState?.authoritySuppressed == true,
         );
         setState(() {
+          _roomLiveRevision++;
           _roomArguments = <String, dynamic>{
             ..._roomArguments,
             ...data,
