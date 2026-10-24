@@ -1678,8 +1678,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                   final data = snapshot.data?.data();
                   final peerDeleted = snapshot.hasData &&
                       (!snapshot.data!.exists ||
-                          data?['accountStatus'] == 'deleted' ||
-                          data?['authDeleted'] == true);
+                          const <String>{
+                            'deleted', 'deletion_processing', 'deletion_completed',
+                          }.contains(data?['accountStatus']) ||
+                          data?['authDeleted'] == true ||
+                          data?['deletionProcessing'] == true);
                   if (snapshot.hasError &&
                       (_peerProfileLoaded || !_peerDeleted)) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
