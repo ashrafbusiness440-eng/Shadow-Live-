@@ -45,5 +45,8 @@ test("chat list and detail screens never expose deleted profiles or enable compo
   assert.match(detail, /Widget _composer\(\) => !_peerProfileLoaded \|\| _peerDeleted/);
   assert.match(detail, /_peerProfileLoaded && !_peerDeleted/);
   assert.match(detail, /'حساب محذوف'/);
+  assert.match(detail, /_peerProfileLoaded && _peerDeleted/);
+  assert.match(detail, /'text', 'voice_note', 'image'/);
+  assert.match(list, /'محادثة مع حساب محذوف'/);
   assert.doesNotMatch(detail, /Timer\.periodic/);
 });
