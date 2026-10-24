@@ -31,7 +31,8 @@ export function checkErasureStartEligibility({ uid, requestId, request, user, no
       clean(request.data?.status) !== "review_ready" ||
       request.data?.reviewHold === true ||
       user.data?.authDeleted === true ||
-      clean(user.data?.accountStatus) === "deleted") {
+      clean(user.data?.accountStatus) === "deleted" ||
+      clean(user.data?.role) === "owner") {
     throw new AccountErasureCheckpointError("erasure_preflight_blocked");
   }
   const dueMs = timeMs(request.data.eligibleAt);
