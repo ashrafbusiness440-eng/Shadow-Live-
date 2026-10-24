@@ -99,7 +99,7 @@ export async function ownAccountDeletion(db, decoded, body = {}, {
     }
     const existing = previous.exists ? previous.data || {} : null;
     if (existing &&
-        !["pending", "cancelled", "processing", "completed"].includes(
+        !["pending", "review_ready", "cancelled", "processing", "completed"].includes(
           clean(existing.status))) {
       throw new AccountDeletionError("deletion_state_invalid", 409);
     }
