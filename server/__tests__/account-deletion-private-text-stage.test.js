@@ -91,6 +91,9 @@ test("other user's message, image, unknown fields or any moderation flag fail cl
  d=>d.docs.get(messagePath).type="gift",
  d=>d.docs.get(messagePath).unexpectedAttachmentUrl="https://private",
  d=>d.docs.get(messagePath).legalHold=true,
+ d=>d.docs.get(messagePath).investigationHold=true,
+ d=>d.docs.get(conversationPath).evidenceHold=true,
+ d=>d.docs.get(conversationPath).participants=[uid,uid],
  d=>d.docs.set("content_filter_flags/"+messageId,{evidence:{text:"retain"}}),
  d=>d.docs.get(conversationPath).participants=[uid,"unknown"],
  ];
