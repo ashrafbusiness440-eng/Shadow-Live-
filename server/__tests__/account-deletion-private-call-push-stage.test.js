@@ -120,6 +120,6 @@ test("commit network failure leaves tokens intact for safe retry", async () => {
 test("one-token stage never scans, calls Auth/FCM or leaks raw token in response", () => {
   const source = readFileSync(
     "cloudflare-worker/src/account-deletion-private-call-push-stage.js", "utf8");
-  assert.doesNotMatch(source, /runQuery\\(|fetch\\(|deleteAuthUser\\(|setInterval\\(/);
+  assert.doesNotMatch(source, /runQuery\(|fetch\(|deleteAuthUser\(|setInterval\(/);
   assert.match(source, /destructiveAllowed !== true/);
 });
