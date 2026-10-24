@@ -45,8 +45,12 @@ function validateRequest(uid, request, nowMs = Date.now()) {
 function accountReviewSummary(request, user, membership, uid) {
   const account = user.data || {};
   const data = request.data || {};
-  const coins = Number(account.coins ?? account.balance ?? 0);
-  const diamonds = Number(account.diamonds ?? 0);
+  // Missing wallet fields are UNKNOWN, not proof of a zero balance.
+  const hasCoins = Object.prototype.hasOwnProperty.call(account, "coins") ||
+    Object.prototype.hasOwnProperty.call(account, "balance");
+  const hasDiamonds = Object.prototype.hasOwnProperty.call(account, "diamonds");
+  const coins = hasCoins ? Number(account.coins ?? account.balance) : NaN;
+  const diamonds = hasDiamonds ? Number(account.diamonds) : NaN;
   const financialBalanceDetected = (Number.isFinite(coins) && coins !== 0) ||
     (Number.isFinite(diamonds) && diamonds !== 0);
   return {
@@ -64,7 +68,8 @@ function accountReviewSummary(request, user, membership, uid) {
       legalHold: [account.legalHold, account.retentionHold,
         account.deletionHold].some((flag) => flag === true),
       balanceDetected: financialBalanceDetected,
-      balanceUnknown: !Number.isFinite(coins) || !Number.isFinite(diamonds),
+      balanceUnknown: !hasCoins || !hasDiamonds ||
+        !Number.isFinite(coins) || !Number.isFinite(diamonds),
       agencyMembershipPresent: membership?.exists === true,
       // Indexed per-actor histories, gift settlements, reports and financial
       // ledgers cannot be established from three direct reads. Never mark
