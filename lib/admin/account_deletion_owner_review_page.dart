@@ -104,11 +104,13 @@ class _AccountDeletionOwnerReviewPageState
       _busy = true;
       _error = null;
     });
+    var saved = false;
     try {
       await widget.request(
         hold ? 'accountDeletionHold' : 'accountDeletionReleaseHold',
         widget.targetUid, widget.requestId, reason,
       );
+      saved = true;
     } catch (error) {
       if (mounted) {
         setState(() => _error = 'تعذر تعديل المراجعة: ${error.toString()}');
@@ -116,7 +118,7 @@ class _AccountDeletionOwnerReviewPageState
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-    if (mounted) await _load();
+    if (mounted && saved) await _load();
   }
 
   @override
