@@ -1,7 +1,7 @@
 // A bounded, on-demand, read-only inventory for the owner. This cannot
 // authorize erasure: Firestore legacy schemas, financial history, third-party
 // state and protected reports require a separately reviewed deletion executor.
-export const ACCOUNT_ERASURE_PROBE_LIMIT = 9;
+export const ACCOUNT_ERASURE_PROBE_LIMIT = 17;
 
 const safeUid = value =>
   /^[A-Za-z0-9_-]{3,128}$/.test(String(value || "").trim());
@@ -64,6 +64,56 @@ export const ACCOUNT_ERASURE_PROBES = Object.freeze([
     key: "reportsOnUser",
     collection: "reports",
     field: "targetUid",
+    op: "==",
+  }),
+  // Counterparty histories are not captured by financial_ledger.userId.
+  // Schemas below are grounded in room-gift.js / wallet-actions.js writers.
+  Object.freeze({
+    key: "giftSender",
+    collection: "gift_transactions",
+    field: "senderId",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "giftRecipient",
+    collection: "gift_transactions",
+    field: "receiverId",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "ledgerCounterparty",
+    collection: "financial_ledger",
+    field: "counterpartyUid",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "ledgerGroupCounterparty",
+    collection: "financial_ledger",
+    field: "counterpartyUids",
+    op: "array-contains",
+  }),
+  Object.freeze({
+    key: "walletTransferSender",
+    collection: "wallet_transfers",
+    field: "senderUid",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "walletTransferRecipient",
+    collection: "wallet_transfers",
+    field: "recipientUid",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "legacyReporter",
+    collection: "reports",
+    field: "reporterId",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "legacyReportedUser",
+    collection: "reports",
+    field: "targetUserId",
     op: "==",
   }),
 ]);
