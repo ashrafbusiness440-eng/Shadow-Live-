@@ -170,8 +170,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     final draftRevision = _textDraftRevision;
     final sender = FirebaseAuth.instance.currentUser;
     final senderUid = sender?.uid;
-    if (text.isEmpty || _sending || _peerDeleted ||
-        !_peerProfileLoaded || text.length > 2000 ||
+    if (text.isEmpty || _sending || text.length > 2000 ||
+        _peerDeleted || !_peerProfileLoaded ||
         !_isActiveChatAccount(senderUid)) return;
     final key = _pendingTextKey != null &&
             _pendingTextBody == text && _pendingTextEmojiId == emojiId
