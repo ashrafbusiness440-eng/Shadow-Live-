@@ -24,6 +24,8 @@ test("owner log query is bounded, exposes verified receipts only and no personal
           financialStatus: "settled",
           evidenceStatus: "retained_under_policy",
           executorKind: "owner",
+          retentionBasis: "moderation_evidence",
+          retentionExpiresAt: "2027-01-22T12:00:00Z",
           retentionCategories: ["moderation_evidence", "legal_hold", "unrecognized"],
         } },
         { id: "pending", data: {
@@ -42,6 +44,8 @@ test("owner log query is bounded, exposes verified receipts only and no personal
   assert.deepEqual(result.items[0].retentionCategories, ["moderation_evidence", "legal_hold"]);
   assert.equal(result.items[0].requestedAt, "2026-09-10T12:00:00.000Z");
   assert.equal(result.items[0].completedAt, "2026-10-24T12:00:00.000Z");
+  assert.equal(result.items[0].retentionBasis, "moderation_evidence");
+  assert.equal(result.items[0].retentionExpiresAt, "2027-01-22T12:00:00.000Z");
   for (const secret of Object.values(privateData)) {
     assert.equal(JSON.stringify(result).includes(secret), false);
   }
@@ -69,4 +73,22 @@ test("owner-only server action and owner UI are wired without deletion controls"
   assert.match(control, /if\(widget\.ownerMode\)/);
   assert.match(page, /AdminInboxService\.completedAccountDeletionLogs\(\)/);
   assert.doesNotMatch(page, /writeDelete|deleteAuthUser|collection\(/);
+});
+
+test("owner logs never echo arbitrary personal free-text legal reasons", async () => {
+  const db = { async runQuery() {
+    return [{ data: {
+      status: "completed", erasureVerified: true,
+      requestId: "account_erasure_request_20261029",
+      completedAt: "2026-10-24T12:00:00Z",
+      retentionBasis: "private identity detailed reason",
+      retentionExpiresAt: "not a date",
+      retentionCategories: ["private_id", "legal_hold", "private_id"],
+    } }];
+  } };
+  const result = await listCompletedAccountDeletionLogs(db);
+  assert.equal(result.items[0].retentionBasis, "not_recorded");
+  assert.equal(result.items[0].retentionExpiresAt, null);
+  assert.deepEqual(result.items[0].retentionCategories, ["legal_hold"]);
+  assert.equal(JSON.stringify(result).includes("private identity"), false);
 });
