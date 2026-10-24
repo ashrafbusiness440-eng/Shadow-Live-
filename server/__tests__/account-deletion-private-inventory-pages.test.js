@@ -104,6 +104,16 @@ test("protected evidence, voice and gifts require review rather than automatic e
   assert.equal(page.items[1].evidenceFlagPresent,true);
   assert.equal(page.needsReview,true);
 });
+test("mismatched recipient or unknown text schema is marked for separate review",async()=>{
+  const db=new Db();
+  db.addMessage(1,uid,"text",{receiverId:"third_party_123"});
+  db.addMessage(2,uid,"text",{unexpectedPrivateMediaUrl:"secret"});
+  const page=await run(db,{kind:"authored_messages",conversationId});
+  assert.equal(page.items.length,2);
+  assert.deepEqual(page.items.map(x=>x.needsReview),[true,true]);
+  assert.equal(page.needsReview,true);
+  assert.equal(JSON.stringify(page).includes("secret"),false);
+});
 test("holds, cancelled/stale requests and invalid conversation block query",async()=>{
   const cases=[
     d=>d.docs.get(rp).status="cancelled",
