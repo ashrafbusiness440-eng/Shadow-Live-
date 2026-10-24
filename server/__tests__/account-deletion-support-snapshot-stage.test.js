@@ -82,6 +82,8 @@ test("requires same current request, certified checkpoint, and processing user",
     db => db.docs.get("account_deletion_requests/" + uid).requestId = "old_request_id_999",
     db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).destructiveAllowed = false,
     db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).phase = "preflight_blocked",
+    db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).evidenceHold = true,
+    db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).investigationHold = true,
     db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).requestId = "old_request_id_999",
     db => db.docs.get("users/" + uid).accountStatus = "active",
     db => db.docs.get("users/" + uid).legalHold = true,
@@ -94,6 +96,21 @@ test("requires same current request, certified checkpoint, and processing user",
     await assert.rejects(redact(db), e => e.code === "support_erasure_not_authorized");
     assert.equal(db.commits.length, 0);
     assert.equal(db.docs.get(wealthPath).displayName, "Legacy Recipient");
+  }
+});
+
+test("historical wealth or attraction with protected evidence never gets redacted", async () => {
+  for (const [path,flag] of [
+    [wealthPath,"legalHold"],[attractionPath,"retentionHold"],
+    [wealthPath,"evidenceHold"],[attractionPath,"investigationHold"],
+  ]) {
+    const db = new Db();
+    db.docs.get(path)[flag] = true;
+    await assert.rejects(redact(db),
+      error => error.code === "support_snapshot_retention_hold");
+    assert.equal(db.commits.length,0);
+    assert.equal(db.docs.get(wealthPath).displayName,"Legacy Recipient");
+    assert.equal(db.docs.get(attractionPath).displayName,"Legacy Sender");
   }
 });
 

@@ -46,6 +46,8 @@ test("no cleanup if cancellation, hold, old request or owner account",async()=>{
  d=>d.docs.get(cp).requestId="stale_request_12345",
  d=>d.docs.get(cp).destructiveAllowed=false,
  d=>d.docs.get(cp).legalHold=true,
+ d=>d.docs.get(cp).evidenceHold=true,
+ d=>d.docs.get(rp).investigationHold=true,
  d=>d.docs.get(up).accountStatus="active",
  d=>d.docs.get(up).role="owner",
  d=>d.docs.get(up).retentionHold=true,
@@ -54,6 +56,16 @@ test("no cleanup if cancellation, hold, old request or owner account",async()=>{
  for(const mod of mods){const db=new Db();mod(db);
   await assert.rejects(run(db),e=>e.code==="social_pair_erasure_blocked");
   assert.equal(db.commits.length,0);assert.equal(db.docs.has(paths[0]),true);
+ }
+});
+test("a hold on ANY individual follows/blocks row prevents the whole transaction",async()=>{
+ for(const path of paths){
+  for(const flag of ["legalHold","retentionHold","evidenceHold","investigationHold"]){
+   const db=new Db();db.docs.get(path)[flag]=true;
+   await assert.rejects(run(db),e=>e.code==="social_pair_retention_hold");
+   assert.equal(db.commits.length,0);
+   for(const id of paths)assert.equal(db.docs.has(id),true);
+  }
  }
 });
 test("a corrupt legacy follow or block cannot cause partial cleanup",async()=>{

@@ -3,7 +3,7 @@
 const clean=v=>String(v??"").trim();
 const uidOk=v=>/^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const reqOk=v=>/^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
-const hold=d=>[d?.reviewHold,d?.legalHold,d?.retentionHold,d?.deletionHold].some(x=>x===true);
+const hold=d=>[d?.reviewHold,d?.legalHold,d?.retentionHold,d?.deletionHold,d?.evidenceHold,d?.investigationHold].some(x=>x===true);
 export class SocialPairErasureError extends Error {
   constructor(code,status=409){super(code);this.code=code;this.status=status;}
 }
@@ -41,6 +41,7 @@ export async function removeDeletedAccountSocialPair(db,{uid,otherUid,requestId}
     const writes=[];
     for(let i=0;i<links.length;i++){
       const row=rows[i],expected=links[i];if(!row.exists)continue;
+      if(hold(row.data))throw new SocialPairErasureError("social_pair_retention_hold");
       // Never delete a malformed pair record that points to a third user.
       for(const field of ["followerUid","followingUid","blockerUid","blockedUid"]){
         if(field in expected && clean(row.data?.[field]) &&
