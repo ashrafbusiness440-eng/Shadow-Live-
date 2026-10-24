@@ -1668,7 +1668,15 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       (!snapshot.data!.exists ||
                           data?['accountStatus'] == 'deleted' ||
                           data?['authDeleted'] == true);
-                  if (snapshot.hasData &&
+                  if (snapshot.hasError &&
+                      (_peerProfileLoaded || !_peerDeleted)) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() {
+                        _peerProfileLoaded = false;
+                        _peerDeleted = true;
+                      });
+                    });
+                  } else if (!snapshot.hasError && snapshot.hasData &&
                       (!_peerProfileLoaded || _peerDeleted != peerDeleted)) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
@@ -1680,9 +1688,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       }
                     });
                   }
-                  final hideIdentity = peerDeleted || !snapshot.hasData;
+                  final hideIdentity =
+                      snapshot.hasError || peerDeleted || !snapshot.hasData;
                   final provider = hideIdentity ? null : _avatarProvider(data);
-                  final name = !snapshot.hasData ? 'جار التحقق من الحساب'
+                  final name = !snapshot.hasData || snapshot.hasError
+                      ? 'جار التحقق من الحساب'
                       : peerDeleted ? 'حساب محذوف'
                       : (data?['displayName'] ?? widget.otherName).toString();
                   final currentVip = hideIdentity || data == null
