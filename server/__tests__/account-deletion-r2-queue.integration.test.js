@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import {after,test} from "node:test";
+import {randomUUID} from "node:crypto";
+import {deleteApp,getApps,initializeApp} from "firebase-admin/app";
+import {getFirestore} from "firebase-admin/firestore";
+import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
+import {queueAccountDeletionR2Stage} from "../../cloudflare-worker/src/account-deletion-r2-queue-stage.js";
+
+const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
+const db=getFirestore(app), workerDb=cloudflareFirestoreAdapter(db);
+after(async()=>{await deleteApp(app);});
+test("emulator: one certified cleanup job despite concurrent retries and consumed queue",async()=>{
+ const suffix=randomUUID().replaceAll("-","").slice(0,18);
+ const uid="erase_storage_"+suffix,requestId="erase_request_"+suffix;
+ const request=db.doc("account_deletion_requests/"+uid);
+ const checkpoint=db.doc("account_deletion_erasure_checkpoints/"+uid);
+ const user=db.doc("users/"+uid);
+ const job=db.doc("storage_account_cleanup_jobs/"+uid);
+ const audit=db.doc("admin_audit_logs/r2_deletion_queue_"+requestId);
+ await Promise.all([
+  request.set({uid,requestId,status:"processing"}),
+  checkpoint.set({requestId,phase:"storage_media",destructiveAllowed:true,
+    storageRetentionApproved:true,sharedMediaOwnershipReviewed:true,
+    legalEvidenceReviewComplete:true,financialSettlementApproved:true,
+    playBillingReviewComplete:true}),
+  user.set({role:"user",accountStatus:"deletion_processing",coins:50}),
+ ]);
+ const args={uid,requestId};
+ try {
+  const outcomes=await Promise.all([
+    queueAccountDeletionR2Stage(workerDb,args),
+    queueAccountDeletionR2Stage(workerDb,args),
+  ]);
+  assert.deepEqual(outcomes.map(x=>x.queued).sort(),[false,true]);
+  assert.equal((await job.get()).data().requestId,requestId);
+  assert.equal((await audit.get()).data().targetId,uid);
+  await job.delete();
+  assert.deepEqual(await queueAccountDeletionR2Stage(workerDb,args),
+    {ok:true,queued:false,duplicate:true});
+  assert.equal((await job.get()).exists,false);
+  await request.update({reviewHold:true});
+  await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
+    e=>e.code==="storage_queue_not_authorized");
+  assert.equal((await user.get()).data().coins,50);
+ } finally {
+  await Promise.all([request,checkpoint,user,job,audit].map(ref=>ref.delete()));
+ }
+});
