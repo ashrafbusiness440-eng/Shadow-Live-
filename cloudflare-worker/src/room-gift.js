@@ -161,6 +161,15 @@ class ApiError extends Error {
   }
 }
 
+export function assertRoomGiftAccountLive(user, which = "recipient") {
+  const state = clean(user?.accountStatus).toLowerCase();
+  if (user?.authDeleted === true || user?.deletionProcessing === true ||
+      ["deleted", "deletion_completed", "deletion_processing"].includes(state)) {
+    throw new ApiError(which === "sender"
+      ? "sender_account_deleted" : "recipient_account_deleted", 409);
+  }
+}
+
 async function assertRoomPresence(
   db,
   transaction,
@@ -395,6 +404,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       throw new ApiError("room_gifts_disabled", 409);
     }
     if (!senderSnap.exists) throw new ApiError("user_not_found", 404);
+    assertRoomGiftAccountLive(senderSnap.data, "sender");
 
     const economyLock = lockSnap.data || {};
     if (
@@ -531,6 +541,7 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       if (!item.receiverSnap.exists) {
         throw new ApiError("user_not_found", 404);
       }
+      assertRoomGiftAccountLive(item.receiverSnap.data, "recipient");
       if (item.senderBlock.exists || item.receiverBlock.exists) {
         throw new ApiError("blocked", 409);
       }

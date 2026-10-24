@@ -150,3 +150,16 @@ This safety closure is **not** an implemented full executor. Account deletion
 still requires a separately tested, bounded, resumable finalizer that reviews
 financial settlement, protected evidence and ownership before deleting
 Firebase Auth last. No actual user data was destroyed by this change.
+
+## Room gifts to deleted accounts — fail-closed financial gate
+
+Room gifts use a separate Worker mutation from private chat gifts.
+The room gift sender and **every** selected receiver now undergo the same
+deletion-state guard inside the existing gift transaction, before any
+wallet debit, recipient credit, ledger or support-ranking writes.
+States `deleted`, `deletion_completed`, `deletion_processing`,
+`authDeleted=true` and `deletionProcessing=true` are rejected with 409.
+A pending or review-ready deletion *request* does not by itself stop
+the user's right to send/receive gifts during the cancellation window;
+the financial review must account for balances at finalization time.
+The check does not delete historic gifts or balance records.
