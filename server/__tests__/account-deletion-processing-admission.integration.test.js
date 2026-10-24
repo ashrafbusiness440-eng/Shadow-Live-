@@ -63,6 +63,15 @@ test("emulator: concurrent certified admission of suspended account preserves mo
     await request.update({reviewHold:true});
     await assert.rejects(admitCertifiedAccountErasure(db,opts),
       error=>error.code==="erasure_admission_blocked");
+    await request.update({reviewHold:false,investigationHold:true});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_admission_blocked");
+    await request.update({investigationHold:false});
+    await checkpoint.update({reported:true});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_admission_blocked");
+    assert.equal((await user.get()).data().coins,900);
+    assert.equal((await checkpoint.get()).data().destructiveAllowed,false);
   }finally{
     await Promise.all(refs.map(ref=>ref.delete()));
   }
