@@ -7,7 +7,8 @@ void main() {
   final roomStart = source.indexOf('class _VoiceChatRoomState');
   final roomEnd = source.indexOf('class _RoomToolToggle', roomStart);
   final roomSource = source.substring(roomStart, roomEnd);
-  final buildStart = roomSource.lastIndexOf('  Widget build(BuildContext context) {');
+  final buildStart =
+      roomSource.lastIndexOf('  Widget build(BuildContext context) {');
   final buildSource = roomSource.substring(buildStart);
 
   test('opening the keyboard does not resize the room mic stage', () {
@@ -26,7 +27,10 @@ void main() {
 
   test('seats and room audience cannot be dragged vertically', () {
     final micStart = buildSource.indexOf('top: micTop,');
-    final chatStart = buildSource.indexOf('// The chat list owns scrolling.', micStart);
+    final chatStart = buildSource.indexOf(
+      '// The chat list owns scrolling.',
+      micStart,
+    );
     expect(micStart, greaterThanOrEqualTo(0));
     expect(chatStart, greaterThan(micStart));
 
