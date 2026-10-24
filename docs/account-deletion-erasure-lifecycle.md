@@ -8,7 +8,7 @@ Last updated: 2026-10-24. **Technical implementation checklist, not a legal opin
 2. Thirty-day cancellation window (product decision, not a claim that the Play policy endorses this specific delay).
 3. Feature-gated, hourly bounded transition into `review_ready` for owner review, off by default.
 4. Owner-only review, audit-backed hold/release; customer may still cancel before processing.
-5. On-demand read-only inventory via **existing** admin inbox API, five single-result existence queries. `not_seen` **does not** mean absent or erased.
+5. On-demand read-only inventory via **existing** admin inbox API, nine single-result existence queries. `not_seen` **does not** mean absent or erased.
 
 ## Required erasure and retention inventory, by domain
 
@@ -37,4 +37,4 @@ Last updated: 2026-10-24. **Technical implementation checklist, not a legal opin
 
 ## Bounded inventory contract
 
-API action: `accountDeletionInventory` under the existing `/api/admin-inbox` endpoint. AuthZ: owner only, validated signed-in admin session, current `review_ready` request ID. Queries: owner diaries, owned R2 metadata, current/legacy room ownership, participants of private chats; each query `limit: 1`, performed **only** on explicit owner click. Fails closed: query errors remain `not_verified`. Returned keys represent only existence indicators, never raw messages, media URLs, reports, receipts, or contact details. The response permanently declares `exhaustive: false`, `erasureAllowed: false`, `erasureExecuted: false`.
+API action: `accountDeletionInventory` under the existing `/api/admin-inbox` endpoint. AuthZ: owner only, validated signed-in admin session, current `review_ready` request ID. Queries: owner diaries, owned R2 metadata, current/legacy room ownership, participants of private chats, existing financial-ledger rows (`userId`), Google Play purchase rows (`uid`), reports made by the account (`reporterUid`), and reports targeting the account (`targetUid`); each query `limit: 1`, performed **only** on explicit owner click. Legacy report ID fields, gift counterparty records, refund disputes and supporting evidence may not appear; these are separate manual/technical review gates. Fails closed: query errors remain `not_verified`. Returned keys represent only existence indicators, never raw messages, media URLs, reports, receipts, or contact details. The response permanently declares `exhaustive: false`, `erasureAllowed: false`, `erasureExecuted: false`.
