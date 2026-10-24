@@ -89,7 +89,6 @@ export async function redactDeletedPrivateTextMessage(db, {
     }
     if (data.deletedForEveryone===true && data.type==="deleted" &&
         data.erasureRequestId===requestId &&
-        !redactableTextKeys.has("no_key") &&
         ![...redactableTextKeys].some(key => key in data)) {
       await db.rollback(tx);
       return {ok:true,redacted:false,duplicate:true};
