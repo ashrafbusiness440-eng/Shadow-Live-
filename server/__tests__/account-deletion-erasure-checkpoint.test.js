@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   checkErasureStartEligibility,
   recordErasurePreflightCheckpoint,
@@ -60,6 +61,7 @@ test("rejects cancelled, held, stale or future requests", async () => {
     d => { d.docs.get("account_deletion_requests/" + uid).eligibleAt = new Date(nowMs + 1); },
     d => { d.docs.get("users/" + uid).legalHold = true; },
     d => { d.docs.get("users/" + uid).authDeleted = true; },
+    d => { d.docs.get("users/" + uid).role = "owner"; },
   ]) {
     const db = new MockDb();
     mutate(db);
@@ -106,4 +108,13 @@ test("eligibility cannot itself certify financial or content erasure", () => {
   });
   assert.equal(result.destructiveAllowed, false);
   assert.equal(result.phase, "preflight_blocked");
+});
+
+test("admin inbox checkpoint is owner-only, recently authenticated, and routed to non-destructive gate", () => {
+  const inbox = readFileSync("cloudflare-worker/src/admin-inbox.js", "utf8");
+  assert.match(inbox, /"accountDeletionPreflightCheckpoint"\]\.includes\(action\)/);
+  assert.match(inbox, /if \(!actor\.owner\) throw new AdminInboxError\("forbidden", 403\)/);
+  assert.match(inbox, /age > 600/);
+  assert.match(inbox, /recordErasurePreflightCheckpoint\(db, \{/);
+  assert.match(inbox, /actor,\s*\}\)/);
 });

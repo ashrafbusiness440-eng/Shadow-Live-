@@ -10,6 +10,7 @@ import {
   AccountDeletionReviewControlError,
 } from "./account-deletion-review-control.js";
 import { inspectAccountErasureInventory } from "./account-deletion-erasure-inventory.js";
+import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
 import { generalReportType } from "./general-reports.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import {
@@ -668,7 +669,8 @@ export async function adminInbox(request, env) {
     // Reuse the existing admin inbox route; never expose account erasure
     // controls or retention notes to ordinary moderators.
     if (["accountDeletionDetails", "accountDeletionInventory",
-         "accountDeletionHold", "accountDeletionReleaseHold"].includes(action)) {
+         "accountDeletionHold", "accountDeletionReleaseHold",
+         "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       const targetUid = clean(body.targetUid);
       if (action === "accountDeletionDetails") {
@@ -693,6 +695,14 @@ export async function adminInbox(request, env) {
       if (!Number.isFinite(age) || age < -60 || age > 600) {
         throw new AdminInboxError("recent_auth_required", 401);
       }
+      if (action === "accountDeletionPreflightCheckpoint") {
+        return json(request, env,
+          await recordErasurePreflightCheckpoint(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            actor,
+          }));
+      }
       return json(request, env,
         await setAccountDeletionReviewHold(db, {
           actorUid: actor.uid,
@@ -707,7 +717,8 @@ export async function adminInbox(request, env) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
     if (error instanceof AdminInboxError ||
-        error instanceof AccountDeletionReviewControlError) {
+        error instanceof AccountDeletionReviewControlError ||
+         error instanceof AccountErasureCheckpointError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
     const code = clean(error?.code || error?.message || "admin_inbox_failed");
