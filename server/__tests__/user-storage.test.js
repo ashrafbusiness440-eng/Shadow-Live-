@@ -17,7 +17,6 @@ import {
   cleanupQueuedStorageObject,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
-  verifyAccountStorageCleanupJob,
   authorizeAgencyLogoManagement,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
