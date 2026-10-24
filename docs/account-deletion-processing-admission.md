@@ -60,3 +60,22 @@ review, verified R2 exhaustion, Firebase Auth **last**, and completion
 receipt only after proof. End-to-end disposable account and emulator tests
 must pass before enabling any destructive flow. Until then, production
 preflight remains blocked and no real account is erased.
+
+## Investigation and active-report holds (24 October 2026)
+
+Admission now rejects **both** `investigationHold=true` and
+`reported=true` on the current deletion request, checkpoint and
+user document, as well as on **every** independent domain approval
+certificate and its matching immutable administrative audit entry.
+These markers are treated as review blockers, not automatically
+resolved evidence. Any such hold keeps the request in
+`review_ready` and the checkpoint at `destructiveAllowed=false`.
+
+Cancellation or evidence review cannot be bypassed merely because
+financial or storage signoffs exist. On repeated calls after admission,
+a newly recorded investigation or report hold also denies the
+duplicate processing transition. Unit tests exercise the six domains
+and the account-level gates; Firestore Emulator tests cover late
+holds on a previously admitted request. This is an **additional
+fail-closed safeguard** and does not implement automatic signing,
+settlement, actual erasure, R2 deletion or Firebase Auth deletion.

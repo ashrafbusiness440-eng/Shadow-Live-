@@ -6,7 +6,7 @@ const idOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 const held = d => [
   d?.reviewHold, d?.legalHold, d?.retentionHold, d?.deletionHold,
-  d?.evidenceHold,
+  d?.evidenceHold, d?.investigationHold, d?.reported,
 ].some(x => x === true);
 const ms = v => {
   if (v instanceof Date) return v.getTime();
