@@ -6897,7 +6897,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         textDirection: TextDirection.rtl,
         child: Scaffold(
         backgroundColor: Colors.black,
-        resizeToAvoidBottomInset: true,
+        // Keep the mic stage fixed when the keyboard opens.
+        resizeToAvoidBottomInset: false,
         body: SafeArea(
           child: Center(
             child: Container(
@@ -6966,7 +6967,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         right: 10,
                         height: micHeight,
                         child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
+                          // Keep seat taps, but disable dragging on the mic stage.
+                          physics: const NeverScrollableScrollPhysics(),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -7072,7 +7074,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       Positioned(
                         left: 0,
                         right: 0,
-                        bottom: 0,
+                        // Lift only the composer over the IME, without moving seats.
+                        bottom: MediaQuery.viewInsetsOf(context).bottom,
                         child: _buildRoomBottomBar(),
                       ),
                     ],
