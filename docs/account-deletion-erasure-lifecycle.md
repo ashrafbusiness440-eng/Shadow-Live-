@@ -38,3 +38,20 @@ Last updated: 2026-10-24. **Technical implementation checklist, not a legal opin
 ## Bounded inventory contract
 
 API action: `accountDeletionInventory` under the existing `/api/admin-inbox` endpoint. AuthZ: owner only, validated signed-in admin session, current `review_ready` request ID. Queries: owner diaries, owned R2 metadata, current/legacy room ownership, participants of private chats, existing financial-ledger rows (`userId`), Google Play purchase rows (`uid`), reports made by the account (`reporterUid`), and reports targeting the account (`targetUid`); each query `limit: 1`, performed **only** on explicit owner click. Legacy report ID fields, gift counterparty records, refund disputes and supporting evidence may not appear; these are separate manual/technical review gates. Fails closed: query errors remain `not_verified`. Returned keys represent only existence indicators, never raw messages, media URLs, reports, receipts, or contact details. The response permanently declares `exhaustive: false`, `erasureAllowed: false`, `erasureExecuted: false`.
+
+## Non-destructive owner preflight checkpoint (PR #469 and successor)
+
+A server-authorized owner can call existing `/api/admin-inbox` with action
+`accountDeletionPreflightCheckpoint`, `targetUid`, and current `requestId`.
+The route uses the existing verified Firebase session, role loaded from Firestore,
+and a recent authentication timestamp (ten minutes). The atomic checkpoint
+`account_deletion_erasure_checkpoints/{uid}` remains `preflight_blocked`,
+`destructiveAllowed: false`, regardless of inventory results. Existing audit
+logs are written once per request ID. Repeating the same request is idempotent.
+
+This is **not** the actual erasure executor and does not change the request to
+`processing`. The client has no button for it yet. Independent signed-off
+financial settlement, Google Play purchase handling, legal-hold evidence,
+shared ownership, retention policy, bounded data deletion with resumable
+checkpoints, Firebase Auth deletion as final phase, and isolated test-account
+validation remain mandatory.
