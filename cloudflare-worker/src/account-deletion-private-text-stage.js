@@ -6,7 +6,8 @@ const validUid = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const validId = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const held = data => [
   data?.legalHold, data?.retentionHold, data?.deletionHold,
-  data?.reviewHold, data?.evidenceHold, data?.reported,
+  data?.reviewHold, data?.evidenceHold, data?.investigationHold,
+  data?.reported,
 ].some(flag => flag === true);
 
 export class PrivateTextErasureError extends Error {
@@ -67,8 +68,10 @@ export async function redactDeletedPrivateTextMessage(db, {
         held(request.data)||held(checkpoint.data)||held(user.data)) {
       throw new PrivateTextErasureError("private_text_erasure_blocked");
     }
-    if (!conversation.exists || !Array.isArray(conversation.data?.participants) ||
+    if (!conversation.exists || held(conversation.data) ||
+        !Array.isArray(conversation.data?.participants) ||
         conversation.data.participants.length!==2 ||
+        new Set(conversation.data.participants).size!==2 ||
         !conversation.data.participants.includes(uid) ||
         !conversation.data.participants.every(validUid)) {
       throw new PrivateTextErasureError("private_conversation_invalid");
