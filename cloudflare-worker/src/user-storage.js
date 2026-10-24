@@ -1589,6 +1589,43 @@ async function deleteAccountOwnedStorageObject({
   return { objectId, deleted: true, transferredToUid: "" };
 }
 
+// Existing hourly R2 processor must independently verify every queued job.
+// A forged or legacy Auth-first job cannot bypass the verified finalizer gate.
+export async function verifyAccountStorageCleanupJob(db, job) {
+  const uid = clean(job?.data?.ownerUid);
+  const requestId = clean(job?.data?.requestId);
+  if (!/^[A-Za-z0-9_-]{3,128}$/.test(uid) ||
+      !/^[A-Za-z0-9_-]{12,180}$/.test(requestId) ||
+      clean(job?.data?.reason) !== "account_deleted_verified" ||
+      clean(job?.data?.status) !== "queued") return false;
+  const [request, checkpoint, user, audit] = await Promise.all([
+    db.get("account_deletion_requests/" + uid),
+    db.get("account_deletion_erasure_checkpoints/" + uid),
+    db.get("users/" + uid),
+    db.get("admin_audit_logs/r2_deletion_queue_" + requestId),
+  ]);
+  const held = d => [d?.legalHold, d?.retentionHold,
+    d?.deletionHold, d?.reviewHold].some(x => x === true);
+  return request.exists && checkpoint.exists && user.exists && audit.exists &&
+    clean(request.data?.uid) === uid &&
+    clean(request.data?.requestId) === requestId &&
+    clean(checkpoint.data?.requestId) === requestId &&
+    clean(request.data?.status) === "processing" &&
+    clean(checkpoint.data?.phase) === "storage_media" &&
+    checkpoint.data?.destructiveAllowed === true &&
+    checkpoint.data?.storageRetentionApproved === true &&
+    checkpoint.data?.sharedMediaOwnershipReviewed === true &&
+    checkpoint.data?.legalEvidenceReviewComplete === true &&
+    checkpoint.data?.financialSettlementApproved === true &&
+    checkpoint.data?.playBillingReviewComplete === true &&
+    clean(user.data?.accountStatus) === "deletion_processing" &&
+    clean(user.data?.role) !== "owner" &&
+    clean(audit.data?.targetId) === uid &&
+    clean(audit.data?.requestId) === requestId &&
+    clean(audit.data?.action) === "accountErasureR2QueueCertified" &&
+    !held(request.data) && !held(checkpoint.data) && !held(user.data);
+}
+
 export async function runDeletedAccountStorageCleanup(
   db,
   bucket,
@@ -1614,13 +1651,16 @@ export async function runDeletedAccountStorageCleanup(
   }
 
   const job = jobs[0];
-  const ownerUid = clean(job.data?.ownerUid);
-  if (!ownerUid) {
-    await db.commit(null, [
-      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
-    ]);
-    return { jobsChecked: 1, checked: 0, deleted: 0, failed: 1 };
+  // Never remove a legacy job or touch any R2 bytes without an immutable
+  // finalizer certificate + still-valid user/request/retention state.
+  // Quarantine by leaving it for explicit Owner review; no busy retry added.
+  if (!await verifyAccountStorageCleanupJob(db, job)) {
+    console.error("Blocked unverified deleted-account storage cleanup job",
+      clean(job.id).slice(0, 100));
+    return { jobsChecked: 1, checked: 0, deleted: 0, failed: 1,
+      blocked: true };
   }
+  const ownerUid = clean(job.data.ownerUid);
 
   const objects = await db.runQuery("storage_objects", {
     filters: [{ field: "ownerUid", op: "==", value: ownerUid }],
