@@ -3,6 +3,7 @@ import { corsHeaders, json } from "./http.js";
 import { adjustBalance } from "./adjust-balance.js";
 import { appAssets } from "./app-assets.js";
 import { authConfig } from "./auth-config.js";
+import { runDueAccountDeletionReviews } from "./account-deletion-review.js";
 import { accountDeletion } from "./account-deletion.js";
 import { privateVoiceControl } from "./private-voice-control.js";
 import { contentFilterControl } from "./content-filter-control.js";
@@ -52,6 +53,7 @@ import { generalReports } from "./general-reports.js";
 import { reportScreenshot } from "./report-screenshot.js";
 import { userLevelSummary } from "./user-level-summary.js";
 import { configureLegacyEnv, getFirestore } from "./legacy-firebase-admin-shim.js";
+import { firestoreClient } from "./firestore.js";
 import { settleDueGameOperations } from "./legacy-games/game-runtime.js";
 import {
   annotatePressureRequest,
@@ -374,6 +376,25 @@ export default {
         }
       } catch (error) {
         console.error("Evidence retention cleanup failed",
+          String(error?.message || "failed").slice(0, 100));
+      }
+    }
+
+    // Manual rollout gate: no extra Firestore scan or user-data mutation in
+    // production before retention-policy review and composite-index readiness.
+    // Reuse the existing hourly cron; never create a new timer or listener.
+    if (schedule.getUTCMinutes() === 0 &&
+        env.ACCOUNT_DELETION_REVIEW_READY === "true") {
+      try {
+        const review = await runDueAccountDeletionReviews(
+          firestoreClient(env), { nowMs: Date.now(), limit: 6 },
+        );
+        if (review.checked || review.failed) {
+          console.log("Account deletion review queue",
+            JSON.stringify(review));
+        }
+      } catch (error) {
+        console.error("Account deletion review unavailable",
           String(error?.message || "failed").slice(0, 100));
       }
     }

@@ -79,6 +79,7 @@ function itemAllowedForActor(actor, item) {
     case "agency_identity_change":
       return canManageAgencies(actor);
     case "agency_ownership_transfer":
+    case "account_deletion_review":
       return actor.owner;
     case "agency_cooldown_exception":
       return canManageMemberships(actor);
@@ -497,6 +498,9 @@ function inboxActorRoles(item) {
       break;
     case "account_action_appeal":
       candidates.push(["صاحب الاعتراض", meta.userUid]);
+      break;
+    case "account_deletion_review":
+      candidates.push(["صاحب طلب الحذف", meta.userUid]);
       break;
     case "system_repeat_flag":
       candidates.push(["الحساب المرتبط بالتنبيهات", meta.actorUid]);

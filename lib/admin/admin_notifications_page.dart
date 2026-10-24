@@ -239,6 +239,38 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
           focusType: item.type,
           focusId: item.targetId,
         );
+      } else if (item.route == 'account_deletion_review' &&
+          item.type == 'account_deletion_review') {
+        // Owner-only item verified by the admin inbox server. This is an
+        // informational review, NOT a button that can delete the account.
+        final ownerUid = (item.meta['userUid'] ?? '').toString().trim();
+        if (ownerUid.isEmpty || ownerUid != item.targetId) return;
+        final dueMs = (item.meta['eligibleAtMs'] as num?)?.toInt() ?? 0;
+        final due = dueMs > 0
+            ? DateTime.fromMillisecondsSinceEpoch(dueMs).toLocal()
+            : null;
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('مراجعة طلب حذف حساب'),
+            content: Text(
+              'حساب صاحب الطلب: ' + ownerUid +
+              (due == null ? '' : '\\nتاريخ الاستحقاق: ${due.day}/${due.month}/${due.year}') +
+              '\\n\\nلا يوجد حذف تلقائي في هذه الشاشة. '
+              'يجب مراجعة الرصيد والمعاملات المالية والمحتوى والبلاغات '
+              'وحقوق الاحتفاظ قبل السماح بالمعالجة النهائية. '
+              'يمكن للمستخدم إلغاء الطلب إلى أن تبدأ المعالجة.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) await _load();
+        return;
       }
       if (page == null) return;
 
@@ -268,6 +300,7 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
   }
 
   IconData _iconFor(String type) => switch (type) {
+        'account_deletion_review' => Icons.person_remove_outlined,
         'diary_report' => Icons.flag_outlined,
         'user_report' => Icons.person_off_outlined,
         'room_report' => Icons.meeting_room_outlined,

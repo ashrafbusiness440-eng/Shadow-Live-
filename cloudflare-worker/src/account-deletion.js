@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { firestoreQuotaResponse, json, readJson } from "./http.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import { adminInboxDeleteWrite } from "./admin-inbox-index.js";
 
 // A request is NOT a completed deletion. The data-erasure / legal-retention
 // worker must be separately verified before marking a request completed.
@@ -37,7 +38,7 @@ function publicStatus(record) {
     cancellationAvailable: false,
   };
   const status = clean(record.status);
-  if (!["pending", "cancelled", "processing", "completed"].includes(status)) {
+  if (!["pending", "review_ready", "cancelled", "processing", "completed"].includes(status)) {
     throw new AccountDeletionError("deletion_state_invalid", 409);
   }
   return {
@@ -45,7 +46,7 @@ function publicStatus(record) {
     status,
     requestedAt: iso(record.requestedAt),
     eligibleAt: iso(record.eligibleAt),
-    cancellationAvailable: status === "pending",
+    cancellationAvailable: status === "pending" || status === "review_ready",
   };
 }
 
@@ -98,12 +99,12 @@ export async function ownAccountDeletion(db, decoded, body = {}, {
     }
     const existing = previous.exists ? previous.data || {} : null;
     if (existing &&
-        !["pending", "cancelled", "processing", "completed"].includes(
+        !["pending", "review_ready", "cancelled", "processing", "completed"].includes(
           clean(existing.status))) {
       throw new AccountDeletionError("deletion_state_invalid", 409);
     }
     if (action === "request") {
-      if (existing?.status === "pending") {
+      if (["pending", "review_ready"].includes(existing?.status)) {
         await db.rollback(tx);
         return { ...publicStatus(existing), duplicate: true };
       }
@@ -145,7 +146,7 @@ export async function ownAccountDeletion(db, decoded, body = {}, {
       await db.rollback(tx);
       return { ...publicStatus(existing), duplicate: true };
     }
-    if (existing.status !== "pending") {
+    if (!["pending", "review_ready"].includes(existing.status)) {
       throw new AccountDeletionError("deletion_not_cancellable", 409);
     }
     const now = new Date(nowMs);
@@ -161,6 +162,9 @@ export async function ownAccountDeletion(db, decoded, body = {}, {
         cancelledAt: now,
         updatedAt: now,
       }, ["status", "cancelledAt", "updatedAt"]),
+      ...(existing.status === "review_ready" ? [
+        adminInboxDeleteWrite(db, "account_deletion_review", uid),
+      ] : []),
       db.writeCreate("admin_audit_logs/self_delete_cancel_" + idFactory(), {
         action: "selfAccountDeletionCancelled",
         actorUid: uid,
