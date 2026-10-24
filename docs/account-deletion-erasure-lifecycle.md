@@ -61,3 +61,42 @@ validation remain mandatory.
 The owner-triggered inventory now covers eight additional indexed, single-result checks in `gift_transactions`, `financial_ledger`, `wallet_transfers`, and legacy `reports`. Each check is `limit: 1`, sequential, without exposing private IDs or content. As with earlier probes, `not_seen` cannot certify absence, errors produce `not_verified`, and none of these checks authorizes erasure.
 
 **Outstanding:** purchase refunds and chargebacks, the original coins/diamonds source of truth, agency salary/profit distributions, unindexed legacy schemas, retention periods and legal holds. Do not zero balances, delete financial ledgers or hide chargeback liabilities based on these existence flags.
+
+## Approved account-deletion presentation and owner receipts — 24 October 2026
+
+The owner approved: **(a)** a distinct `سجلات الحسابات المحذوفة` section in
+Shadow Control, **(b)** maintaining previously earned support/ranking points
+without exposing the deleted supporter identity, and **(c)** replacing deleted
+participants in private conversations with `حساب محذوف` without opening
+profiles, calling or messaging them. The other participant's messages and
+lawfully retained reports/evidence must be handled independently; do not use
+an indiscriminate conversation-wide delete.
+
+**Implemented in the presentation tranche:** `user-level-support` reads
+only a bounded batch of current user documents for at most 20 support rows.
+Missing user documents or completed/deleted account markers are rendered as
+`حساب محذوف`, with empty `uid`, `profileImageUrl`, `publicId`, and no
+mysterious identity. Historical `points` and `giftCount` are not changed;
+the profile screen explicitly disables navigation for such items. The old
+profile snapshot still exists in historical documents until future verified
+cleanup; serving a tombstone is **not proof of erasure at rest**.
+
+The new owner-only Shadow Control section reads at most 21 indexed records
+from `account_deletion_erasure_receipts`, showing up to 20 verified, fully
+completed receipts. No data-mutation, no user profile or sensitive evidence
+can be retrieved. Receipt allowlist: request operation ID, request/completion
+timestamps, executor kind, pre-approved financial/evidence statuses, and
+retention categories. No receipts are created by the preflight checkpoint.
+An empty screen means **no verified completion receipt**, not that a pending
+request was erased. The future finalizer must independently create a receipt
+only when all erasure gates have passed; it must not copy user names, emails,
+media, report text or raw legal evidence into the receipt.
+
+**Outstanding before full deletion compliance:** actual bounded cleanup of
+historical support snapshots in both `user_level_support/{sender}/wealth`
+and `user_level_support/{receiver}/attraction`, private conversation
+participant tombstones and attachment cleanup, notifications/comment
+snapshots, shared ownership transfers, financial/legal sign-offs, R2 cleanup,
+Firebase Auth as final irreversible step, and isolated emulator/account
+tests. Retained materials require explicit basis, retention period and
+access policy.
