@@ -57,6 +57,8 @@ jobs:
 
       - name: Verify bounded read-only account erasure inventory
         run: node --test server/__tests__/account-deletion-erasure-inventory.test.js
+      - name: Verify fail-closed account erasure preflight checkpoint
+        run: node --test server/__tests__/account-deletion-erasure-checkpoint.test.js
       - name: Test U6 direct profile report, anti-spam and private chat compatibility
         run: node --test server/__tests__/report-duplicate-window.test.js
       - name: Test private-chat message visibility and five-minute deletion policy
