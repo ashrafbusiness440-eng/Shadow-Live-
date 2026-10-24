@@ -124,6 +124,14 @@ export async function ownAccountDeletion(db, decoded, body = {}, {
         updatedAt: now,
         // Stay pending until a verified erasure/retention processor exists.
         retentionReviewRequired: true,
+        // A new request after cancellation is a new lifecycle. It must
+        // never inherit the previous review's hold or owner decisions.
+        reviewHold: false,
+        reviewHoldReason: "",
+        reviewUpdatedBy: null,
+        reviewUpdatedAt: null,
+        reviewQueuedAt: null,
+        reviewReason: null,
         requestId: idFactory(),
       };
       const writes = [
