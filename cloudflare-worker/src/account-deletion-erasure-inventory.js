@@ -1,7 +1,7 @@
 // A bounded, on-demand, read-only inventory for the owner. This cannot
 // authorize erasure: Firestore legacy schemas, financial history, third-party
 // state and protected reports require a separately reviewed deletion executor.
-export const ACCOUNT_ERASURE_PROBE_LIMIT = 5;
+export const ACCOUNT_ERASURE_PROBE_LIMIT = 9;
 
 const safeUid = value =>
   /^[A-Za-z0-9_-]{3,128}$/.test(String(value || "").trim());
@@ -38,6 +38,33 @@ export const ACCOUNT_ERASURE_PROBES = Object.freeze([
     collection: "conversations",
     field: "participants",
     op: "array-contains",
+  }),
+  // The following fields are grounded in the live purchase, financial
+  // settlement and general-report writers. These are existence checks only,
+  // not a complete accounting or evidence retention audit.
+  Object.freeze({
+    key: "financialLedger",
+    collection: "financial_ledger",
+    field: "userId",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "googlePlayPurchases",
+    collection: "google_play_purchases",
+    field: "uid",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "reportedByUser",
+    collection: "reports",
+    field: "reporterUid",
+    op: "==",
+  }),
+  Object.freeze({
+    key: "reportsOnUser",
+    collection: "reports",
+    field: "targetUid",
+    op: "==",
   }),
 ]);
 
