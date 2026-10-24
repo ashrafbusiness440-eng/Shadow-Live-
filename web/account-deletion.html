@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#090816">
+  <meta name="robots" content="index,follow">
+  <title>حذف الحساب | Shadow Live</title>
+  <style>
+    :root {color-scheme:dark;font-family:system-ui,-apple-system,"Noto Sans Arabic",Arial,sans-serif}
+    * {box-sizing:border-box} body {background:radial-gradient(circle at top,#291341,#080a16 65%);color:#fff;line-height:1.8;margin:0;padding:20px}
+    main {max-width:600px;margin:30px auto;background:#121326ee;border:1px solid #4d3872;border-radius:22px;padding:24px}
+    h1{color:#ffd166;margin:0 0 8px}h2{font-size:1.18rem;color:#e4cbff}
+    p,li {color:#c9c2d8} input,button{font:inherit;width:100%;border-radius:12px;padding:12px;margin:6px 0}
+    input{background:#0c0c1a;color:white;border:1px solid #5a4f70}
+    button{background:#7042be;color:white;border:0;cursor:pointer;font-weight:bold}
+    button:disabled{opacity:.55;cursor:default}
+    button.danger{background:#a33653}button.secondary{background:transparent;border:1px solid #9179b3}
+    a{color:#e8c56e}.hidden{display:none} #feedback{padding:10px;color:#ffd166;white-space:pre-wrap;min-height:22px}
+    #recaptcha{margin:8px 0;min-height:0}
+    .note{font-size:.9rem;color:#aaa5bd} .status{border:1px solid #615087;background:#231632;border-radius:12px;padding:14px;margin:15px 0;white-space:pre-wrap}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media(max-width:440px){main{padding:18px;margin:0 auto}.row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Shadow Live — طلب حذف الحساب</h1>
+    <p>تقدر تطلب حذف حسابك من هذه الصفحة حتى لو تطبيق Android غير مثبت على جهازك. يتم التحقق من ملكية الحساب عبر Firebase قبل قبول أي طلب.</p>
+    <p class="note">مدة التراجع عن الطلب: 30 يومًا. بعد انتهاء المهلة يصبح الطلب مؤهلًا للمعالجة. إزالة المحتوى والبيانات تخضع للتحقق والاحتفاظ بالسجلات المطلوبة قانونيًا، ولا يعني انتهاء المهلة أن الحذف اكتمل آليًا.</p>
+    <section id="login">
+      <h2>1. تأكيد ملكية الحساب</h2>
+      <button type="button" id="google">الدخول عبر Google</button>
+      <label for="email">البريد الإلكتروني</label>
+      <input id="email" type="email" autocomplete="email" placeholder="email@example.com">
+      <label for="password">كلمة المرور</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <button type="button" id="emailLogin">الدخول بالبريد وكلمة المرور</button>
+      <h2>أو التحقق برقم الهاتف</h2>
+      <label for="phone">رقم الهاتف بصيغة دولية، مثال +971...</label>
+      <input id="phone" type="tel" autocomplete="tel" placeholder="+9715...">
+      <div id="recaptcha"></div>
+      <button type="button" id="phoneLogin">إرسال رمز التحقق SMS</button>
+      <div id="otpSection" class="hidden">
+        <label for="otp">رمز التحقق</label>
+        <input id="otp" inputmode="numeric" autocomplete="one-time-code">
+        <button type="button" id="confirmOtp">تأكيد الرمز</button>
+      </div>
+    </section>
+    <section id="loggedIn" class="hidden">
+      <h2>2. إدارة طلب حذف الحساب</h2>
+      <p id="identity"></p>
+      <div id="status" class="status">جارٍ تحميل الحالة...</div>
+      <button type="button" id="refresh" class="secondary">تحديث الحالة</button>
+      <button type="button" id="request" class="danger hidden">إرسال طلب حذف حسابي</button>
+      <button type="button" id="cancel" class="secondary hidden">إلغاء طلب الحذف الحالي</button>
+      <button type="button" id="logout" class="secondary">تسجيل الخروج من هذه الصفحة</button>
+    </section>
+    <div id="feedback" role="status" aria-live="polite"></div>
+    <p class="note">إذا انتهت صلاحية إعادة التحقق، سجّل خروجًا من هذه الصفحة ثم ادخل مرة ثانية. لا تشارك رمز التحقق مع أي شخص. لن يُطلب منك دفع أي رسوم لإرسال طلب الحذف.</p>
+    <p><a href="/Shadow-Live-/live/">العودة إلى Shadow Live</a></p>
+  </main>
+  <script type="module">
+    import {initializeApp} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+    import {
+      getAuth, GoogleAuthProvider, onAuthStateChanged,
+      signInWithPopup, signInWithEmailAndPassword, signInWithPhoneNumber,
+      RecaptchaVerifier, signOut, getIdToken
+    } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+
+    const config = {
+      apiKey: "AIzaSyAjDi9RdObZXHF16ecWt4J4zj2_1rdDmf8",
+      authDomain: "shadow-live.firebaseapp.com",
+      projectId: "shadow-live",
+      appId: "1:463485983128:web:88c4953fa80d566c7a73ed",
+    };
+    const api = "https://shadow-live.ashraf-business-440.workers.dev/api/account-deletion";
+    const auth = getAuth(initializeApp(config));
+    const el = id => document.getElementById(id);
+    let confirmation = null;
+    let verifier = null;
+    let busy = false;
+    const show = (id, visible) => el(id).classList.toggle("hidden", !visible);
+    const message = text => { el("feedback").textContent = text; };
+    const describeError = error => {
+      const code = String(error?.code || error?.message || "");
+      if (code.includes("recent_auth_required")) return "يلزم تسجيل دخول حديث. اضغط تسجيل خروج ثم سجّل دخولك مجددًا.";
+      if (code.includes("unauthorized")) return "تعذر تأكيد ملكية الحساب. سجّل دخولك مجددًا.";
+      if (code.includes("auth/operation-not-allowed")) return "طريقة الدخول غير مفعلة. جرّب طريقة الدخول المرتبطة بحسابك.";
+      if (code.includes("auth/unauthorized-domain")) return "نطاق الموقع غير معتمد لدى Firebase. تواصل مع دعم التطبيق.";
+      return "تعذرت العملية. تحقق من تسجيل الدخول والاتصال، أو جرّب من داخل تطبيق Shadow Live.";
+    };
+    const format = iso => iso ? new Date(iso).toLocaleString("ar-AE") : "غير محدد";
+
+    async function send(action) {
+      const user = auth.currentUser;
+      if (!user || user.isAnonymous) throw Error("unauthorized");
+      const token = await getIdToken(user);
+      const response = await fetch(api, {
+        method:"POST", headers:{
+          "Content-Type":"application/json",
+          Authorization:"Bearer " + token,
+        },
+        body: JSON.stringify({action}),
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) throw Error(data.code || "request_failed");
+      if (auth.currentUser?.uid !== user.uid) throw Error("unauthorized");
+      return data;
+    }
+
+    async function refresh() {
+      if (!auth.currentUser || busy) return;
+      busy = true;
+      message("");
+      try {
+        const state = await send("status");
+        let text = "لا يوجد طلب حذف نشط.";
+        if (state.status === "pending") {
+          text = "طلب حذف الحساب مُسجل.\nتاريخ الطلب: " +
+            format(state.requestedAt) + "\nبعد انتهاء المهلة: " +
+            format(state.eligibleAt) +
+            "\nبعد انتهاء المهلة يلزم إتمام مراجعة الاحتفاظ ومسار إزالة البيانات.";
+        } else if (state.status === "cancelled") {
+          text = "تم إلغاء طلب الحذف السابق.";
+        } else if (state.status === "processing") {
+          text = "طلب حذف الحساب قيد المعالجة ولا يمكن إلغاؤه الآن.";
+        } else if (state.status === "completed") {
+          text = "تم إغلاق طلب حذف الحساب.";
+        }
+        el("status").textContent = text;
+        show("request", ["none","cancelled"].includes(state.status));
+        show("cancel", state.status === "pending" && state.cancellationAvailable);
+      } catch(e) {
+        message(describeError(e));
+      } finally { busy = false; }
+    }
+
+    async function submit(action) {
+      if (busy) return;
+      if (!confirm(action === "request"
+        ? "هل تؤكد طلب حذف حسابك مع مهلة تراجع 30 يومًا؟"
+        : "هل تريد إلغاء طلب حذف الحساب؟")) return;
+      busy = true;
+      message("");
+      try {
+        await send(action);
+        message(action === "request" ? "تم تسجيل الطلب." : "تم إلغاء الطلب.");
+      } catch(e) {
+        message(describeError(e));
+      } finally { busy = false; await refresh(); }
+    }
+    el("request").addEventListener("click", () => submit("request"));
+    el("cancel").addEventListener("click", () => submit("cancel"));
+    el("refresh").addEventListener("click", refresh);
+    el("logout").addEventListener("click", async () => {
+      message("");
+      await signOut(auth);
+    });
+    el("google").addEventListener("click", async () => {
+      try {
+        message("");
+        await signInWithPopup(auth, new GoogleAuthProvider());
+      } catch(e) { message(describeError(e)); }
+    });
+    el("emailLogin").addEventListener("click", async () => {
+      try {
+        message("");
+        await signInWithEmailAndPassword(auth, el("email").value.trim(), el("password").value);
+        el("password").value = "";
+      } catch(e) { message(describeError(e)); }
+    });
+    el("phoneLogin").addEventListener("click", async () => {
+      try {
+        message("");
+        if (!verifier) {
+          verifier = new RecaptchaVerifier(auth, "recaptcha", {size:"normal"});
+          await verifier.render();
+        }
+        confirmation = await signInWithPhoneNumber(auth, el("phone").value.trim(), verifier);
+        show("otpSection", true);
+        message("تم إرسال رمز التحقق إلى رقم الهاتف.");
+      } catch(e) {
+        message(describeError(e));
+        if (verifier) { verifier.clear(); verifier = null; }
+      }
+    });
+    el("confirmOtp").addEventListener("click", async () => {
+      if (!confirmation) return;
+      try {
+        message("");
+        await confirmation.confirm(el("otp").value.trim());
+        confirmation = null;
+        el("otp").value = "";
+        show("otpSection", false);
+      } catch(e) { message(describeError(e)); }
+    });
+    onAuthStateChanged(auth, user => {
+      show("login", !user);
+      show("loggedIn", !!user);
+      if (user) {
+        el("identity").textContent = "الحساب المسجّل: " +
+          (user.email || user.phoneNumber || "حساب Google");
+        refresh();
+      } else {
+        el("status").textContent = "";
+        show("request", false);
+        show("cancel", false);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -46,6 +46,8 @@ jobs:
         run: node --test server/__tests__/image-moderation-policy.test.js server/__tests__/image-moderation-gate.test.js server/__tests__/image-moderation-review.test.js server/__tests__/image-moderation-approval.test.js server/__tests__/image-moderation-appeal.test.js server/__tests__/image-moderation-retention.test.js server/__tests__/image-moderation-diary.test.js server/__tests__/image-moderation-chat.test.js server/__tests__/image-moderation-readiness.test.js
       - name: Test U6 account sanction appeal and verified reversal
         run: node --test server/__tests__/account-action-appeals.test.js
+      - name: Verify self-service account deletion lifecycle safety
+        run: node --test server/__tests__/account-deletion.test.js
       - name: Test U6 direct profile report, anti-spam and private chat compatibility
         run: node --test server/__tests__/report-duplicate-window.test.js
       - name: Test private-chat message visibility and five-minute deletion policy

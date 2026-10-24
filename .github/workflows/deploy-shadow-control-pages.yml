@@ -184,6 +184,14 @@ jobs:
           </html>
           EOF
 
+      - name: Publish independent account deletion request page
+        run: |
+          mkdir -p site/account-deletion
+          cp web/account-deletion.html site/account-deletion/index.html
+          test -s site/account-deletion/index.html
+          grep -q '/api/account-deletion' site/account-deletion/index.html
+          grep -q 'signInWithPhoneNumber' site/account-deletion/index.html
+
       - name: Retire legacy app scope and add deployment markers
         run: |
           mkdir -p site/app
