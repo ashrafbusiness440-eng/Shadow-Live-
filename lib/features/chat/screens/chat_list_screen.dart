@@ -846,7 +846,12 @@ class _ConversationTile extends StatelessWidget {
                     snapshotOnly: true,
                   ),
             title: Text(name, style: TextStyle(color: Colors.white, fontWeight: unread > 0 ? FontWeight.w900 : FontWeight.w700)),
-            subtitle: Text(lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: unread > 0 ? Colors.white70 : Colors.white54)),
+            subtitle: Text(
+              accountDeleted ? 'محادثة مع حساب محذوف'
+                  : lastMessage.isEmpty ? 'ابدأ المحادثة' : lastMessage,
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: unread > 0 ? Colors.white70 : Colors.white54),
+            ),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
