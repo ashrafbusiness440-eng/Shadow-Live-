@@ -305,6 +305,18 @@ export async function changePrivateMessageVisibility(db, actorUid, body) {
   });
 }
 
+// Prevent new chat messages against a tombstoned or actively erased account.
+// Pending/review-ready requests still have the original cancellation window.
+export function assertPrivateChatAccountLive(account, which = "recipient") {
+  const state = clean(account?.accountStatus).toLowerCase();
+  if (account?.authDeleted === true ||
+      account?.deletionProcessing === true ||
+      ["deleted", "deletion_completed", "deletion_processing"].includes(state)) {
+    throw new ApiError(which === "sender"
+      ? "sender_account_deleted" : "recipient_account_deleted", 409);
+  }
+}
+
 export async function sendMessage(db, uid, body) {
   const receiverId = clean(body.receiverId);
   const conversationId = clean(body.conversationId);
@@ -385,6 +397,8 @@ export async function sendMessage(db, uid, body) {
     if (!sender.exists || !receiver.exists || !conversation.exists) {
       throw new ApiError("not_found", 404);
     }
+    assertPrivateChatAccountLive(sender.data, "sender");
+    assertPrivateChatAccountLive(receiver.data, "recipient");
 
     if (timestampMs(sender.data?.privateMessagesRestrictedUntil) > nowMs) {
       throw new ApiError("private_messages_restricted", 403);
@@ -682,6 +696,8 @@ export async function sendGift(db, uid, body, options = {}) {
     if (!receiver.exists) {
       throw new ApiError("receiver_not_found", 404);
     }
+    assertPrivateChatAccountLive(sender.data, "sender");
+    assertPrivateChatAccountLive(receiver.data, "recipient");
     if (!contextDoc.exists) {
       throw new ApiError(
         contextType === "diary" ? "diary_not_found" : "conversation_not_found",

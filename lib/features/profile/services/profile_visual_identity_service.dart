@@ -16,9 +16,13 @@ class ProfileVisualIdentity {
     required this.activeProfileFrameImageUrl,
     required this.activeProfileFrameExpiresAtMs,
     required this.activeProfileFramePermanent,
+    this.publicRecordMissing = false,
   });
 
   final String uid;
+  /// True only after an actual public-profile lookup found no record,
+  /// or the profile is explicitly tombstoned. Never infer from network errors.
+  final bool publicRecordMissing;
   final String displayName;
   final String profileImageUrl;
   final String profileAvatarAsset;
@@ -36,43 +40,49 @@ class ProfileVisualIdentity {
 
   factory ProfileVisualIdentity.fromMap(
     String uid,
-    Map<String, dynamic> data,
-  ) {
+    Map<String, dynamic> data, {
+    bool missing = false,
+  }) {
+    final deleted = data['accountStatus'] == 'deleted' ||
+        data['authDeleted'] == true;
+    final safe = deleted ? const <String, dynamic>{} : data;
     return ProfileVisualIdentity(
+      publicRecordMissing: missing || deleted,
       uid: uid,
-      displayName: (data['displayName'] ?? data['username'] ?? '').toString().trim(),
+      displayName: (safe['displayName'] ?? safe['username'] ?? '').toString().trim(),
       profileImageUrl:
-          (data['profileImageUrl'] ?? '').toString().trim(),
+          (safe['profileImageUrl'] ?? '').toString().trim(),
       profileAvatarAsset:
-          (data['profileAvatarAsset'] ?? '').toString().trim(),
+          (safe['profileAvatarAsset'] ?? '').toString().trim(),
       profileAvatarAnimationUrl:
-          (data['profileAvatarAnimationUrl'] ?? '').toString().trim(),
-      effectiveVipLevel: data.containsKey('effectiveVipLevel')
-          ? (data['effectiveVipLevel'] is num
-              ? (data['effectiveVipLevel'] as num).toInt()
-              : int.tryParse((data['effectiveVipLevel'] ?? '').toString()))
+          (safe['profileAvatarAnimationUrl'] ?? '').toString().trim(),
+      effectiveVipLevel: safe.containsKey('effectiveVipLevel')
+          ? (safe['effectiveVipLevel'] is num
+              ? (safe['effectiveVipLevel'] as num).toInt()
+              : int.tryParse((safe['effectiveVipLevel'] ?? '').toString()))
           : null,
-      vipExpiresAt: data['vipExpiresAt'],
-      hasVipExpiresAt: data.containsKey('vipExpiresAt'),
+      vipExpiresAt: safe['vipExpiresAt'],
+      hasVipExpiresAt: safe.containsKey('vipExpiresAt'),
       activeProfileFrameAssetKey:
-          (data['activeProfileFrameAssetKey'] ?? '').toString().trim(),
+          (safe['activeProfileFrameAssetKey'] ?? '').toString().trim(),
       activeProfileFrameImageUrl:
-          (data['activeProfileFrameImageUrl'] ?? '').toString().trim(),
+          (safe['activeProfileFrameImageUrl'] ?? '').toString().trim(),
       activeProfileFrameExpiresAtMs:
-          (data['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
+          (safe['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
               int.tryParse(
-                (data['activeProfileFrameExpiresAtMs'] ?? '0').toString(),
+                (safe['activeProfileFrameExpiresAtMs'] ?? '0').toString(),
               ) ??
               0,
       activeProfileFramePermanent:
-          data['activeProfileFramePermanent'] == true,
+          safe['activeProfileFramePermanent'] == true,
     );
   }
 
-  factory ProfileVisualIdentity.empty(String uid) =>
-      ProfileVisualIdentity.fromMap(uid, const <String, dynamic>{});
+  factory ProfileVisualIdentity.empty(String uid, {bool missing = false}) =>
+      ProfileVisualIdentity.fromMap(uid, const <String, dynamic>{}, missing: missing);
 
   Map<String, dynamic> toProfileMap() => <String, dynamic>{
+        if (publicRecordMissing) 'accountDeleted': true,
         if (displayName.isNotEmpty) 'displayName': displayName,
         'profileImageUrl': profileImageUrl,
         'profileAvatarAsset': profileAvatarAsset,
@@ -205,7 +215,7 @@ class ProfileVisualIdentityService {
         }
 
         for (final uid in batch) {
-          final value = found[uid] ?? ProfileVisualIdentity.empty(uid);
+          final value = found[uid] ?? ProfileVisualIdentity.empty(uid, missing: true);
           _putCache(uid, value, fromPublicRecord: true);
           final completer = _pending.remove(uid);
           if (completer != null && !completer.isCompleted) {

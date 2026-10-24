@@ -61,6 +61,8 @@ jobs:
         run: node --test server/__tests__/account-deletion-erasure-checkpoint.test.js
       - name: Verify privacy-minimized completed account deletion logs
         run: node --test server/__tests__/account-deletion-completed-logs.test.js
+      - name: Verify deleted account private chat and gift protections
+        run: node --test server/__tests__/account-deletion-chat-tombstone.test.js
       - name: Test U6 direct profile report, anti-spam and private chat compatibility
         run: node --test server/__tests__/report-duplicate-window.test.js
       - name: Test private-chat message visibility and five-minute deletion policy
