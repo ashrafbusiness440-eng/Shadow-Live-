@@ -15,7 +15,7 @@ endpoint/cron for it, and production users cannot invoke it.
 The current `account_deletion_requests/{uid}` must have `review_ready`,
 a strictly matching request ID, requestedAt and eligibleAt dates that
 establish **at least 30 actual days elapsed**, and no review/legal/retention
-hold. `users/{uid}` must be active, not Owner and not Auth-deleted. The
+hold. `users/{uid}` must be in a known not-yet-deleted state (`active`, `suspended`, `banned`, or `disabled`), not Owner and not Auth-deleted. Moderation restrictions never waive the six certifications or legal holds; the previous state is recorded as `priorAccountStatus` on the checkpoint so it is not silently lost. A suspended/banned user retains the right to request erasure subject to lawful evidence retention. The
 matching `account_deletion_erasure_checkpoints/{uid}` must still have
 `phase=preflight_blocked` and `destructiveAllowed=false`. Never reset an
 advanced checkpoint or cross deletion request lifecycles.

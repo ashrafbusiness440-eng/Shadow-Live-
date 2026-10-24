@@ -113,6 +113,26 @@ test("missing or forged domain certification and audit deny admission",async()=>
     }
   }
 });
+test("moderated suspended, banned and disabled accounts may still finish lawful deletion",async()=>{
+  for(const status of ["suspended","banned","disabled"]){
+    const db=new Db();db.docs.get(userPath).accountStatus=status;
+    const result=await run(db);
+    assert.equal(result.admitted,true);
+    assert.equal(db.docs.get(userPath).accountStatus,"deletion_processing");
+    assert.equal(db.docs.get(checkpointPath).priorAccountStatus,status);
+    assert.equal(db.docs.get(checkpointPath).destructiveAllowed,false);
+    assert.equal(db.docs.get(userPath).coins,300);
+  }
+});
+test("unknown, deleted and already-processing statuses remain blocked",async()=>{
+  for(const status of ["mystery_status","deleted","deletion_processing"]){
+    const db=new Db();db.docs.get(userPath).accountStatus=status;
+    await assert.rejects(run(db),
+      e=>e.code==="erasure_admission_state_conflict");
+    assert.equal(db.commits.length,0);
+  }
+});
+
 test("enforces actual 30-day grace, not merely a forged eligibleAt",async()=>{
   const mods=[
     d=>{d.docs.get(requestPath).requestedAt=new Date(nowMs-86400_000);},
