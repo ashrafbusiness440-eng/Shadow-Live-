@@ -5,6 +5,9 @@ const clean = value => String(value ?? "").trim();
 const allowedFinancial = new Set(["settled", "retained_under_policy", "not_applicable"]);
 const allowedEvidence = new Set(["none", "retained_under_policy", "expired"]);
 const allowedExecutor = new Set(["system", "owner"]);
+const allowedRetentionBasis = new Set([
+  "financial_audit", "moderation_evidence", "legal_obligation", "none",
+]);
 const retainedKinds = new Set(["financial_audit", "moderation_evidence", "legal_hold"]);
 
 const safeTime = value => {
@@ -39,6 +42,9 @@ export async function listCompletedAccountDeletionLogs(db, { limit = 20 } = {}) 
         ? financialStatus : "not_recorded",
       evidenceStatus: allowedEvidence.has(evidenceStatus)
         ? evidenceStatus : "not_recorded",
+      retentionBasis: allowedRetentionBasis.has(clean(d.retentionBasis))
+        ? clean(d.retentionBasis) : "not_recorded",
+      retentionExpiresAt: safeTime(d.retentionExpiresAt),
       retentionCategories: Array.isArray(d.retentionCategories)
         ? [...new Set(d.retentionCategories.filter(value =>
             retainedKinds.has(value)))].slice(0, 3)
