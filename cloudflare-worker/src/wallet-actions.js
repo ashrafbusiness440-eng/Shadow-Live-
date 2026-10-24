@@ -14,6 +14,17 @@ class ApiError extends Error {
     this.status = status;
   }
 }
+// Prevent new wallet writes once account erasure is in progress or complete.
+// Read-only financial audits and previously completed idempotency receipts
+// remain accessible through their normal authorized paths.
+export function assertWalletAccountLive(user) {
+  const status = clean(user?.accountStatus).toLowerCase();
+  if (user?.authDeleted === true || user?.deletionProcessing === true ||
+      ["deleted", "deletion_completed", "deletion_processing"].includes(status)) {
+    throw new ApiError("wallet_account_deleted", 409);
+  }
+}
+
 
 function asInt(value) {
   const number = Number(value);
@@ -83,6 +94,7 @@ export async function setWalletPassword(db, uid, body) {
         db.get(`wallet_private/${uid}`, transaction),
       ]);
       if (!userSnap.exists) throw new ApiError("user_not_found", 404);
+      assertWalletAccountLive(userSnap.data);
       if (privateSnap.exists && clean(privateSnap.data?.passwordHash)) {
         throw new ApiError("password_already_set", 409);
       }
@@ -147,6 +159,7 @@ export async function exchangeDiamonds(db, uid, body) {
           ...(operationSnap.data?.result || {}),
         };
       }
+      assertWalletAccountLive(userSnap.data);
 
       const lock = lockSnap.data || {};
       if (lock.enabled === true || lock.economyLocked === true ||
@@ -257,6 +270,8 @@ export async function giftDiamonds(db, uid, body) {
           ...(operationSnap.data?.result || {}),
         };
       }
+      assertWalletAccountLive(senderSnap.data);
+      assertWalletAccountLive(recipientSnap.data);
 
       const lock = lockSnap.data || {};
       if (lock.enabled === true || lock.economyLocked === true ||

@@ -119,3 +119,48 @@ test("emergency lock blocks exchange without mutating wallet",async()=>{
   assert.equal(user.data().diamonds,2);
   assert.equal(user.data().coins,7000);
 });
+
+test("erasure processing blocks new transfers and wallet exchange without touching money", async () => {
+  const suffix=Date.now().toString()+"_deleted_wallet";
+  const sender="wallet_sender_"+suffix;
+  const recipient="wallet_receiver_"+suffix;
+  const secret=fixtureSecret();
+  const senderRef=db.collection("users").doc(sender);
+  const recipientRef=db.collection("users").doc(recipient);
+  const opKey="wallet_erasure_"+suffix;
+  await Promise.all([
+    senderRef.set({role:"user",accountStatus:"active",diamonds:4,coins:250}),
+    recipientRef.set({role:"user",accountStatus:"deletion_processing",diamonds:0,coins:1000}),
+    db.collection("system_config").doc("emergency_lock").set({
+      enabled:false,economyLocked:false,transfersLocked:false,
+    }),
+  ]);
+  await setWalletPassword(cloudflareDb,sender,{password:secret});
+  const params={recipientUid:recipient,diamonds:2,password:secret,idempotencyKey:opKey};
+  await assert.rejects(giftDiamonds(cloudflareDb,sender,params),
+    e=>e.code==="wallet_account_deleted" && e.status===409);
+  assert.equal((await senderRef.get()).data().diamonds,4);
+  assert.equal((await recipientRef.get()).data().coins,1000);
+  assert.equal((await db.collection("wallet_transfers").doc(sender+"__"+opKey).get()).exists,false);
+  await recipientRef.update({accountStatus:"active"});
+  await senderRef.update({accountStatus:"deletion_processing"});
+  await assert.rejects(giftDiamonds(cloudflareDb,sender,params),
+    e=>e.code==="wallet_account_deleted" && e.status===409);
+  await assert.rejects(exchangeDiamonds(cloudflareDb,sender,{
+    diamonds:2,password:secret,idempotencyKey:"exchange_erasure_"+suffix,
+  }),e=>e.code==="wallet_account_deleted" && e.status===409);
+  assert.equal((await senderRef.get()).data().diamonds,4);
+  assert.equal((await recipientRef.get()).data().coins,1000);
+  assert.equal((await db.collection("financial_ledger").doc(sender+"__"+opKey+"__sender").get()).exists,false);
+});
+
+test("deleted accounts cannot enroll a new wallet password", async () => {
+  const uid="wallet_deleted_"+Date.now().toString();
+  await db.collection("users").doc(uid).set({
+    role:"user",accountStatus:"deletion_processing",coins:100,diamonds:2,
+  });
+  await assert.rejects(setWalletPassword(cloudflareDb,uid,{
+    password:fixtureSecret(),
+  }),e=>e.code==="wallet_account_deleted" && e.status===409);
+  assert.equal((await db.collection("wallet_private").doc(uid).get()).exists,false);
+});
