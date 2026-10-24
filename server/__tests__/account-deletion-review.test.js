@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   queueEligibleAccountDeletionReview,
@@ -207,4 +208,14 @@ test("source guard: cron is explicitly opted-in, owner inbox only and composite 
     i.collectionGroup === "account_deletion_requests" &&
     i.fields[0].fieldPath === "status" &&
     i.fields[1].fieldPath === "eligibleAt"));
+});
+
+test("external deletion portal inline module remains syntactically valid", () => {
+  const html = readFileSync("web/account-deletion.html", "utf8");
+  const match = html.match(/<script type="module">([\\s\\S]*?)<\\/script>/);
+  assert.ok(match, "external authenticated page should include module script");
+  const check = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+    input: match[1], encoding: "utf8",
+  });
+  assert.equal(check.status, 0, check.stderr || "invalid module syntax");
 });
