@@ -1101,7 +1101,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     // Do not touch the counterpart's messages or gift/settlement records.
     if (_peerProfileLoaded && _peerDeleted &&
         data['senderId'] == widget.otherUid &&
-        <String>{'text', 'voice_note', 'image'}
+        const <String>{'text', 'voice_note', 'image'}
             .contains((data['type'] ?? 'text').toString())) {
       data['type'] = 'deleted';
       data['deletedForEveryone'] = true;
