@@ -4,6 +4,11 @@ import {
   verifyFirebaseIdToken,
 } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
+import {
+  inspectAccountDeletionForOwner,
+  setAccountDeletionReviewHold,
+  AccountDeletionReviewControlError,
+} from "./account-deletion-review-control.js";
 import { generalReportType } from "./general-reports.js";
 import { loadPublicProfilePresentations } from "./public-profile-presentation.js";
 import {
@@ -659,11 +664,36 @@ export async function adminInbox(request, env) {
     if (action === "markVisibleRead") {
       return json(request, env, await markVisibleRead(db, actor));
     }
+    // Reuse the existing admin inbox route; never expose account erasure
+    // controls or retention notes to ordinary moderators.
+    if (["accountDeletionDetails", "accountDeletionHold",
+         "accountDeletionReleaseHold"].includes(action)) {
+      if (!actor.owner) throw new AdminInboxError("forbidden", 403);
+      const targetUid = clean(body.targetUid);
+      if (action === "accountDeletionDetails") {
+        return json(request, env,
+          await inspectAccountDeletionForOwner(db, targetUid));
+      }
+      const age = Math.floor(Date.now() / 1000) -
+        Number(decoded?.auth_time);
+      if (!Number.isFinite(age) || age < -60 || age > 600) {
+        throw new AdminInboxError("recent_auth_required", 401);
+      }
+      return json(request, env,
+        await setAccountDeletionReviewHold(db, {
+          actorUid: actor.uid,
+          targetUid,
+          requestId: body.requestId,
+          action,
+          reason: body.reason,
+        }));
+    }
     throw new AdminInboxError("unsupported_action", 400);
   } catch (error) {
     const quota = firestoreQuotaResponse(request, env, error);
     if (quota) return quota;
-    if (error instanceof AdminInboxError) {
+    if (error instanceof AdminInboxError ||
+        error instanceof AccountDeletionReviewControlError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
     const code = clean(error?.code || error?.message || "admin_inbox_failed");
