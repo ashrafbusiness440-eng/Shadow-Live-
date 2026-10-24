@@ -1009,7 +1009,10 @@ class VoiceRoomSessionController extends ChangeNotifier {
     return user.isAnonymous ? 'ضيف' : 'مستخدم Shadow Live';
   }
 
-  Future<void> join(Map<String, dynamic> arguments) async {
+  Future<void> join(
+    Map<String, dynamic> arguments, {
+    void Function()? onRoomAuthorized,
+  }) async {
     if (_privateCallMediaActive || _privateCallMediaJoining) {
       throw StateError('private_call_audio_active');
     }
@@ -1062,6 +1065,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
         userId: user.uid,
         displayName: displayName.isEmpty ? 'Shadow Live' : displayName,
         accessCode: (arguments['roomPassword'] ?? '').toString(),
+        onRoomAuthorized: onRoomAuthorized,
       );
       _active = true;
       _joining = false;
