@@ -249,6 +249,7 @@ class ZegoVoiceService implements VoiceService {
     required String displayName,
     String? token,
     String? accessCode,
+    void Function()? onRoomAuthorized,
   }) async {
     if (_joined && _roomId == roomId) return;
     if (_joined) await leaveRoom();
@@ -264,6 +265,12 @@ class ZegoVoiceService implements VoiceService {
         roomId,
         roomPassword: _accessCode,
       );
+      // The backend has now admitted this user and validated the password.
+      // Allow one non-blocking UI snapshot to overlap native ZEGO login.
+      // UI prefetch failures must never interrupt audio admission.
+      try {
+        onRoomAuthorized?.call();
+      } catch (_) {}
       await _ensureEngine(session.appId);
 
       _roomId = roomId;

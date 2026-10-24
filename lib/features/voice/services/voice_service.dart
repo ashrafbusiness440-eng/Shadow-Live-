@@ -14,6 +14,9 @@ abstract interface class VoiceService {
     required String displayName,
     String? token,
     String? accessCode,
+    // Invoked only after the backend grants the room's authenticated token.
+    // Never blocks the ZEGO connection; callers may prefetch read-only UI.
+    void Function()? onRoomAuthorized,
   });
 
   Future<void> leaveRoom();

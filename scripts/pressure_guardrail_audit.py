@@ -200,8 +200,18 @@ def main() -> int:
 
     if "RoomBootstrapService _roomBootstrapService" not in app_main:
         failures.append("Step 7 regression: room entry no longer owns one RoomBootstrapService")
-    if "unawaited(_loadRoomBootstrap(roomId))" not in app_main:
+    # The original single-flight call takes only roomId; the authorized
+    # overlap form forwards its in-flight Future. Both must remain non-blocking.
+    if re.search(
+        r"unawaited\(_loadRoomBootstrap\(roomId(?:,\s*authorizedBootstrap)?\)\)",
+        app_main,
+    ) is None:
         failures.append("Step 7 regression: room entry no longer starts the non-blocking bootstrap")
+    if "authorizedBootstrap" in app_main:
+        if "onRoomAuthorized: beginAuthorizedBootstrap" not in app_main:
+            failures.append("Step 7 regression: room bootstrap is no longer gated by authenticated admission")
+        if "authorizedBootstrap ??= fetchAuthorizedBootstrap();" not in app_main:
+            failures.append("Step 7 regression: authorized room bootstrap is no longer single-flight")
     if "_voiceSession.roomStateEvents" not in app_main:
         failures.append("Step 7 regression: seats/moderators are not fed by the shared room snapshot stream")
     for forbidden in (
