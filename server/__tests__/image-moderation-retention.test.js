@@ -14,8 +14,8 @@ const id="b".repeat(32);
 const now=new Date("2026-10-15T12:00:00.000Z");
 const due=new Date(now.getTime()+90*86400000);
 const path="storage_objects/"+id;
-const stage="moderation-staging/users/u1/profile/"+id+".png";
-const publicKey="users/u1/profile/"+id+".png";
+const stage="moderation-staging/users/user_123/profile/"+id+".png";
+const publicKey="users/user_123/profile/"+id+".png";
 class DB {
   constructor(){this.docs=new Map();this.writes=[];this.queries=[];}
   async beginTransaction(){return "tx";}
@@ -49,7 +49,7 @@ class DB {
 function prepare(state="rejected"){
   const db=new DB();
   db.docs.set(path,{
-    objectId:id,ownerUid:"u1",targetId:"u1",scope:"profile_image",
+    objectId:id,ownerUid:"user_123",targetId:"user_123",scope:"profile_image",
     state,storageKey:stage,publicStorageKey:publicKey,
     etag:"etag",sizeBytes:4,evidencePurgeAt:due,
     evidenceRetentionDueAt:due,moderation:{status:"blocked"},
@@ -57,6 +57,27 @@ function prepare(state="rejected"){
   const deletions=[];
   const bucket={delete:async key=>{deletions.push(key);}};
   return {db,bucket,deletions};
+}
+function certifyDeletedImageAccountJob(db,jobId) {
+  const ownerUid="user_123",requestId="certified_r2_request_"+jobId;
+  db.docs.set("storage_account_cleanup_jobs/"+jobId,{
+    ownerUid,requestId,reason:"account_deleted_verified",status:"queued",createdAt:now,
+  });
+  db.docs.set("account_deletion_requests/"+ownerUid,{
+    uid:ownerUid,requestId,status:"processing",
+  });
+  db.docs.set("account_deletion_erasure_checkpoints/"+ownerUid,{
+    requestId,phase:"storage_media",destructiveAllowed:true,
+    storageRetentionApproved:true,sharedMediaOwnershipReviewed:true,
+    legalEvidenceReviewComplete:true,financialSettlementApproved:true,
+    playBillingReviewComplete:true,
+  });
+  db.docs.set("users/"+ownerUid,{
+    role:"user",accountStatus:"deletion_processing",
+  });
+  db.docs.set("admin_audit_logs/r2_deletion_queue_"+requestId,{
+    action:"accountErasureR2QueueCertified",requestId,targetId:ownerUid,
+  });
 }
 test("U6-L3/B final decision starts exactly 90 days, not upload date",()=>{
   assert.equal(finalImageEvidenceDeadline(now).toISOString(),due.toISOString());
@@ -86,7 +107,7 @@ test("U6-L3/B final due evidence is deleted and audit metadata remains",async()=
   assert.equal(db.docs.get(path).state,"evidence_purged");
   assert.equal(db.docs.get(path).storageKey,null);
   assert.equal(db.docs.get(path).etag,null);
-  assert.equal(db.docs.get(path).ownerUid,"u1");
+  assert.equal(db.docs.get(path).ownerUid,"user_123");
   assert.equal(db.docs.get("admin_audit_logs/image_evidence_purge_"+id)
     .action,"purgeFinalImageEvidenceAfter90Days");
 });
@@ -114,7 +135,7 @@ test("U6-L3/B hold defers; owner releases and resumes original deadline",async()
 test("U6-L3/B pending appeal and legal hold preserve private bytes",async()=>{
   const {db,bucket,deletions}=prepare();
   db.docs.set("image_moderation_appeals/"+id,{
-    status:"under_review",ownerUid:"u1",
+    status:"under_review",ownerUid:"user_123",
   });
   assert.equal(await purgeFinalImageEvidence(db,bucket,id,due),"held");
   assert.deepEqual(deletions,[]);
@@ -146,16 +167,14 @@ test("U6-L3/B shared hourly job performs only capped indexed lookups",async()=>{
 });
 test("U6-L3/B deleted account keeps held private evidence off user cleanup",async()=>{
   const {db,bucket,deletions}=prepare("appeal_pending");
-  db.docs.set("storage_account_cleanup_jobs/job1",{
-    ownerUid:"u1",createdAt:now,
-  });
+  certifyDeletedImageAccountJob(db,"job1");
   const res=await runDeletedAccountStorageCleanup(db,bucket,{
     nowMs:now.getTime(),limit:10,
   });
   assert.equal(res.checked,1);
   assert.deepEqual(deletions,[]);
   assert.equal(db.docs.get(path).ownerUid,"image_evidence_archive_"+id);
-  assert.equal(db.docs.get(path).originalOwnerUid,"u1");
+  assert.equal(db.docs.get(path).originalOwnerUid,"user_123");
 });
 test("U6-L3/B deleting account closes open image appeal and sets a due date",async()=>{
   const {db,bucket,deletions}=prepare("appeal_pending");
@@ -164,11 +183,9 @@ test("U6-L3/B deleting account closes open image appeal and sets a due date",asy
     evidenceRetentionDueAt:null,
   });
   db.docs.set("image_moderation_appeals/"+id,{
-    ownerUid:"u1",status:"under_review",explanation:"راجِع الصورة",
+    ownerUid:"user_123",status:"under_review",explanation:"راجِع الصورة",
   });
-  db.docs.set("storage_account_cleanup_jobs/job2",{
-    ownerUid:"u1",createdAt:now,
-  });
+  certifyDeletedImageAccountJob(db,"job2");
   const out=await runDeletedAccountStorageCleanup(db,bucket,{
     nowMs:now.getTime(),limit:10,
   });
@@ -184,9 +201,7 @@ test("U6-L3/B deleting account closes open image appeal and sets a due date",asy
 });
 test("U6-L3/B finalized expiry does not reset when account is deleted",async()=>{
   const {db,bucket}=prepare("rejected");
-  db.docs.set("storage_account_cleanup_jobs/job3",{
-    ownerUid:"u1",createdAt:now,
-  });
+  certifyDeletedImageAccountJob(db,"job3");
   const res=await runDeletedAccountStorageCleanup(db,bucket,{
     nowMs:now.getTime(),limit:10,
   });
@@ -196,11 +211,11 @@ test("U6-L3/B finalized expiry does not reset when account is deleted",async()=>
 });
 test("U6-L4/A preserved diary approval purges its guarded orphan copy",async()=>{
   const {db,bucket,deletions}=prepare();
-  const original="users/u1/diaries/"+id+".png";
+  const original="users/user_123/diaries/"+id+".png";
   db.docs.set(path,{
     ...db.docs.get(path),scope:"diary_image",
     ownerUid:"image_evidence_archive_"+id,
-    originalOwnerUid:"u1",
+    originalOwnerUid:"user_123",
     publicStorageKey:original,
     storageKey:"moderation-staging/"+original,
   });
