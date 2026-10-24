@@ -29,7 +29,8 @@ Results contain IDs and limited classification only. They never
 include message text, preview, counterpart UID or name, media URL,
 voice-object key, financial payload or report evidence. Text and
 animated emoji are `text_candidate` **not automatically approved
-for erasure**; voice, image, gift, deleted/tombstone and unknown
+for erasure**; wrong-receiver routing or unrecognized legacy text
+fields are explicitly flagged for separate review; voice, image, gift, deleted/tombstone and unknown
 message types require independent review. Content-filter evidence
 flags and per-record holds force `needsReview`.
 
