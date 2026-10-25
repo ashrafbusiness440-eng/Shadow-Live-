@@ -18,6 +18,8 @@ import {reserveAccountErasureExternalIo as reserve,
   recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt,
   recordAccountErasureExternalIoReadOnlyProbe as recordProbe}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
+import {openAccountErasureExternalIoReconciliationCase as openReconciliation}
+  from "../../cloudflare-worker/src/account-deletion-external-io-reconciliation.js";
 import {rehearseAccountErasureR2Dispatch as dispatchFixture}
   from "../../cloudflare-worker/src/account-deletion-r2-external-interlock.js";
 import {withdrawAccountErasureDomainWithExternalIoStop as withdrawDomain}
@@ -250,6 +252,40 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     assert.equal(evidenceAfterStop.stopObservedAtCommit,true);
     assert.equal(evidenceAfterStop.completionVerified,false);
     assert.equal((await probeTwo.get()).data().revocationEffective,false);
+    // A separate post-stop HEAD at a later instant is required for an
+    // immutable reconciliation CASE; neither probe can certify a delete.
+    const probeThree=doc("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__rest_probe_three_123456");
+    const caseDoc=doc("account_erasure_external_io_reconciliation_cases/"+
+      uid+"__"+requestId);
+    const caseAudit=doc("admin_audit_logs/erasure_external_io_reconciliation_case_"+
+      requestId);
+    refs.push(probeThree,caseDoc,caseAudit);
+    const later=await recordProbe(firestoreClient(env),mockBucket,{
+      ...args(stored.data().operationToken),objectId,
+      probeId:"rest_probe_three_123456",nowMs:nowMs+1000,
+    });
+    assert.equal(later.presenceAtProbe,"absent_at_probe");
+    const caseResult=await openReconciliation(firestoreClient(env),{
+      ...args(stored.data().operationToken),objectId,
+      firstProbeId:"rest_probe_two_123456",
+      secondProbeId:"rest_probe_three_123456",
+      nowMs:nowMs+2000,
+    });
+    assert.equal(caseResult.classification,
+      "absence_does_not_prove_historical_deletion");
+    assert.equal(caseResult.pendingIndependentReview,true);
+    assert.equal(caseResult.completionVerified,false);
+    assert.equal((await caseDoc.get()).data().retryAllowed,false);
+    assert.equal((await caseDoc.get()).data().ownerStopObserved,true);
+    assert.equal((await caseAudit.get()).data().completionVerified,false);
+    await assert.rejects(openReconciliation(firestoreClient(env),{
+      ...args(stored.data().operationToken),objectId,
+      firstProbeId:"rest_probe_two_123456",
+      secondProbeId:"rest_probe_three_123456",
+      nowMs:nowMs+2000,
+    }),e=>e.code==="external_io_reconciliation_case_already_open");
+    assert.equal(probeHeads,3);
     assert.equal((await intent.get()).data().revocationEffective,false);
     await assert.rejects(recordUncertainAttempt(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,

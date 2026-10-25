@@ -7,6 +7,8 @@ import {reserveAccountErasureExternalIo as reserve,
   recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt,
   recordAccountErasureExternalIoReadOnlyProbe as recordProbe}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
+import {openAccountErasureExternalIoReconciliationCase as openCase}
+  from "../../cloudflare-worker/src/account-deletion-external-io-reconciliation.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
@@ -584,4 +586,107 @@ test("uncertain journal truncated Firestore snapshots fail closed",async()=>{
   await assert.rejects(recordUncertainAttempt(db,opts()),
     e=>e.code==="external_io_transaction_read_failed");
   assert.equal(db.commits.length,before);
+});
+
+const manualCaseOpts=(patch={})=>({...opts(),firstProbeId:
+  "reconcile_probe_first_123456",secondProbeId:
+  "reconcile_probe_second_123456",nowMs:nowMs+2000,...patch});
+async function prepareManualCase(db,heads=[{etag:"still-present",size:17},null]){
+  await reserve(db,opts());
+  await recordHold(db,opts());
+  await recordUncertainAttempt(db,opts());
+  await requestStop(db,{uid,requestId,actor:{uid:owner,owner:true},nowMs});
+  for(const [i,head] of heads.entries()){
+    await recordProbe(db,{async head(key){
+      assert.equal(key,"chats/synthetic-account/test-photo.webp");
+      return head;
+    },async delete(){throw Error("no_reconciliation_delete");}},{
+      ...opts(),
+      nowMs:nowMs+i*1000,
+      probeId:i===0?"reconcile_probe_first_123456":
+        "reconcile_probe_second_123456",
+    });
+  }
+}
+test("two ordered post-stop observations produce a durable non-permissive manual case",async()=>{
+  const db=new Db();
+  await prepareManualCase(db);
+  const result=await openCase(db,manualCaseOpts());
+  assert.deepEqual(result,{
+    ok:true,caseOpened:true,
+    classification:"absence_does_not_prove_historical_deletion",
+    pendingIndependentReview:true,requiresProviderEvidence:true,
+    retryAllowed:false,externalIoAllowed:false,
+    completionVerified:false,revocationEffective:false,
+  });
+  const casePath="account_erasure_external_io_reconciliation_cases/"+
+    uid+"__"+requestId;
+  const evidence=db.docs.get(casePath);
+  assert.equal(evidence.observations.length,2);
+  assert.equal(evidence.observations[0].presenceAtProbe,"present_at_probe");
+  assert.equal(evidence.observations[1].presenceAtProbe,"absent_at_probe");
+  assert.equal(evidence.status,"awaiting_independent_evidence_review");
+  assert.equal(evidence.retryAllowed,false);
+  assert.equal(evidence.completionVerified,false);
+  assert.equal(db.docs.get("admin_audit_logs/erasure_external_io_reconciliation_case_"+
+    requestId).completionVerified,false);
+  await assert.rejects(openCase(db,manualCaseOpts()),
+    e=>e.code==="external_io_reconciliation_case_already_open");
+  assert.equal(db.docs.get(casePath),evidence);
+});
+test("still-present two-probe result stays blocked; missing metadata cannot rewrite pinned key",async()=>{
+  const db=new Db();
+  await prepareManualCase(db,[{etag:"same-object",size:17},
+    {etag:"same-object",size:17}]);
+  db.docs.delete("storage_objects/"+objectId);
+  const result=await openCase(db,manualCaseOpts());
+  assert.equal(result.classification,
+    "object_present_requires_non_destructive_resolution");
+  assert.equal(result.externalIoAllowed,false);
+  assert.equal(result.completionVerified,false);
+  assert.equal(db.docs.get("account_erasure_external_io_uncertain_attempts/"+
+    uid+"__"+requestId).retryAllowed,false);
+});
+test("out-of-order, missing, tampered and pre-stop observations cannot open a case",async()=>{
+  const cases=[
+    db=>db.docs.delete("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_second_123456"),
+    db=>db.docs.get("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_second_123456").
+      storageKey="a/replaced-key",
+    db=>db.docs.get("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_first_123456").
+      stopObservedAtCommit=false,
+    db=>db.docs.get("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_first_123456").
+      completionVerified=true,
+    db=>db.docs.get("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_first_123456").
+      observedAt=new Date(nowMs+1500),
+    db=>db.docs.get("account_erasure_external_io_revocation_intents/"+
+      uid+"__"+requestId).revocationEffective=true,
+    db=>db.docs.get("storage_objects/"+objectId).
+      storageKey="a/replaced-key",
+  ];
+  for(const corrupt of cases){
+    const db=new Db();await prepareManualCase(db);
+    corrupt(db);
+    await assert.rejects(openCase(db,manualCaseOpts()));
+    assert.equal(db.docs.has("account_erasure_external_io_reconciliation_cases/"+
+      uid+"__"+requestId),false);
+    assert.equal(db.docs.has("admin_audit_logs/erasure_external_io_reconciliation_case_"+
+      requestId),false);
+  }
+});
+test("withdrawn approval never blocks emergency reconciliation but never grants R2 retry",async()=>{
+  const db=new Db();await prepareManualCase(db);
+  db.docs.get("account_deletion_erasure_approvals/"+
+    requestId+"__play_billing").decision="revoked";
+  const result=await openCase(db,manualCaseOpts());
+  assert.equal(result.ok,true);
+  assert.equal(result.retryAllowed,false);
+  assert.equal(result.revocationEffective,false);
+  await assert.rejects(openCase(db,manualCaseOpts({
+    actor:{uid:owner,owner:false},
+  })),e=>e.code==="owner_required");
 });

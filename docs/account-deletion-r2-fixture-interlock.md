@@ -75,3 +75,51 @@ evidence-based post-crash reconciliation mechanism and all legal, finance,
 Play Billing, and shared-media gate approvals remain missing. The observed
 `head` presence/absence or fixture call acknowledgment alone can never
 close an R2 outcome or certify account deletion.
+
+
+## Non-destructive post-interruption reconciliation CASE (25 October 2026)
+
+`openAccountErasureExternalIoReconciliationCase` introduces the first
+bounded, immutable *operational reconciliation classification* from the
+existing stop + unknown-outcome journal + two persisted R2 read-only HEAD
+observations. It is internal-only, unexposed and not invoked by the R2
+scheduler or finalizer. Unlike treating a HEAD result as a receipt, this
+function requires a recorded Owner stop first and **two distinct observations
+after the stop in chronological order**, checks the unchanged pinned key and
+request/object/token/reservation/hold/stop identity, and writes one case plus
+a separate audit in a single Firestore transaction. A missing metadata row
+does not lose the pinned R2 identity; a *changed* metadata key fails closed.
+
+The case branches on the **most recent observed state**, NOT on a presumed
+historical outcome:
+
+- `object_present_requires_non_destructive_resolution`: the key was
+  observed present at the second HEAD; manual review must decide a safe
+  disposition without automatically deleting it.
+- `absence_does_not_prove_historical_deletion`: the key was observed absent
+  at the second HEAD; this does not prove an earlier delete succeeded,
+  exclude replacement/re-creation or complete any account inventory.
+
+The case is always `awaiting_independent_evidence_review` with
+`retryAllowed:false`, `externalIoAllowed:false`,
+`completionVerified:false`, and `revocationEffective:false`. Opening
+the case never marks the original attempt, queue job, or Owner stop as
+complete. It never calls R2, never reinstates signoffs and never triggers
+Firebase Auth deletion. The Owner can open a case after a signoff was
+withdrawn; expired/revoked certificates must not block *non-destructive*
+incident response. Duplicates and mismatched request, key, stop, token,
+probe ID or observation ordering fail closed.
+
+Unit and **actual Cloudflare REST adapter + disposable Firestore Emulator**
+tests exercise post-stop HEAD evidence, immutable case and audit creation,
+duplicate rejection, changed key and failed/altered probe evidence.
+No production reviewer decisions, provider audit evidence, R2 test-bucket
+delete or final deletion proofs were fabricated.
+
+**Gate 1 remains OPEN.** Before any independent reviewer can ever
+declare a previously ambiguous R2 side effect resolved, they must establish
+provider-side operation history/object generation and ownership/retention
+evidence; a two-HEAD case alone is not a completion certificate, permission
+to retry, or grounds for declaring a stop effective. All real financial,
+Google Play, shared assets, legal/90-day retention reviews and signoff writer
+coordination remain separate release blockers. No production switch changed.
