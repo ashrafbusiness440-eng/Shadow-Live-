@@ -170,3 +170,23 @@ stage remains unchanged; no route, cron, live destructive checkpoint, R2
 delete, Firebase Auth delete, financial settlement or production activation.
 The existing independently reviewed approvals and real concurrent conflict
 acceptance are still required for release.
+
+## Additional batch-one per-record guards (profile, relationships, supporter snapshots)
+
+The public profile, exact social-pair and exact supporter-snapshot stage
+adapters now each require an independently validated six-domain certificate
+and audit-pair check *within their own Firestore write transaction*. They
+retain existing account/current-request/checkpoint/role/record-hold checks,
+owner/counterparty matching, idempotence and historical support points.
+No financial or counterparty history is erased by this extension.
+
+Unit and isolated Firestore Emulator fixtures use synthetic test-only
+approvals and verify existing privacy/hold behavior; revoked certificates
+are checked before any stage mutation. The test-only fixture must never
+be used to issue real approvals.
+
+These safeguards DO NOT automatically admit or execute deletion. The private
+text stage remains outside the new stage-level recheck, and real concurrent
+revocation conflict acceptance, live independent financial/Play/legal/shared
+asset/storage/retention evidence, durable phase leasing, exhaustive inventory
+and final Auth deletion remain blocking. Keep production deletion disabled.
