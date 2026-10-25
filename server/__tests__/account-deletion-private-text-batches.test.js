@@ -218,3 +218,27 @@ test("code cannot scan, automatically schedule, erase Auth/R2 or certify deletio
   assert.match(code,/completionVerified: false/);
   assert.match(code,/orderBy: \[\{ field: "__name__"/);
 });
+
+test("private text preflight refuses to enumerate before admission and grace",async()=>{
+ const audit="admin_audit_logs/erasure_processing_start_"+requestId;
+ const changes=[
+  db=>db.docs.delete(audit),
+  db=>db.docs.get(audit).targetId="not_this_account",
+  db=>db.docs.get(audit).certifiedDomains=["retention_policy"],
+  db=>db.docs.get(audit).legalHold=true,
+  db=>db.docs.get(rp).eligibleAt=new Date(Date.now()+86400_000),
+  db=>db.docs.get(rp).requestedAt=new Date(Date.now()-86400_000),
+  db=>db.docs.get(cp).uid="someone_else",
+ ];
+ for(const change of changes){
+  const db=new Db();db.add(2);change(db);
+  await assert.rejects(run(db),e=>[
+    "private_text_batch_not_authorized",
+    "private_text_batch_grace_not_elapsed",
+  ].includes(e.code));
+  assert.equal(db.queries.length,0);
+  assert.equal(db.commits.length,0);
+  assert.equal(db.docs.get(msgPath+msgId(0)).text,"secret 0");
+  assert.equal(db.docs.get(msgPath+"counterparty_msg_9999").text,"theirs");
+ }
+});
