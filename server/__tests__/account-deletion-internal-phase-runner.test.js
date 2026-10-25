@@ -241,6 +241,8 @@ test("transaction certification helper stays unexposed and does not write or del
     "cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js","utf8");
   const route=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
   assert.doesNotMatch(route,/account-deletion-erasure-transactional-cert-gate/);
-  assert.doesNotMatch(src,/db\\.commit\\(|db\\.writeDelete\\(|bucket\\.delete\\(|deleteAuthUser\\(/);
+  for (const write of ["db.commit(", "db.writeDelete(", "bucket.delete(", "deleteAuthUser("]) {
+    assert.equal(src.includes(write), false);
+  }
   assert.match(src,/destructiveAllowed: false/);
 });
