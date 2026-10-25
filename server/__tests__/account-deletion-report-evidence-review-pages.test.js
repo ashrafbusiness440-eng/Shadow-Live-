@@ -105,6 +105,30 @@ test("pending, reopened and legacy uncertain reports never receive retention cer
   assert.deepEqual(page.items.map(x=>x.finalReportStatus),[false,false,true]);
   assert.equal(page.retentionCertified,false);
 });
+test("reopened report or diary mirror appeal remains a retention blocker",async()=>{
+  for(const target of ["report","mirror"]){
+    for(const patch of [{appealPending:true},{appealStatus:" Open "}]){
+      const db=new Db();
+      db.docs.set("reports/"+id(9),{
+        reporterUid:uid,targetUid:other,targetType:"diary",
+        status:"closed",evidencePurgeAt:new Date(nowMs-86400_000),
+        evidence:{secretText:"keep legally protected"},
+      });
+      db.docs.set("diary_reports/"+id(9),{});
+      const path=target==="report"?"reports/"+id(9):"diary_reports/"+id(9);
+      Object.assign(db.docs.get(path),patch);
+      const page=await run(db);
+      assert.equal(page.items[0].holdOrAppealPresent,true);
+      assert.equal(page.items[0].purgeDeadlinePassed,true);
+      assert.equal(page.items[0].deletionAuthorized,false);
+      assert.equal(page.retentionCertified,false);
+      assert.equal(page.evidenceErased,false);
+      assert.equal(JSON.stringify(page).includes("keep legally protected"),false);
+      assert.equal(db.docs.get(user).coins,250);
+      assert.equal(db.writes,0);
+    }
+  }
+});
 test("four scopes contain no other user data and honor legacy aliases",async()=>{
   for(const [scope,field] of [
     ["reporter","reporterUid"],["target","targetUid"],
@@ -124,6 +148,9 @@ test("account holds, request rotation, forged query ownership fail closed",async
     d=>d.docs.get(req).requestId="changed_request_123456",
     d=>d.docs.get(cp).requestId="old_request_12345678",
     d=>d.docs.get(cp).investigationHold=true,
+    d=>d.docs.get(req).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="Under_Review",
+    d=>d.docs.get(user).appealStatus="OPEN",
     d=>d.docs.get(user).role="owner",
     d=>d.docs.get(user).authDeleted=true,
     d=>d.docs.get(user).legalHold=true,

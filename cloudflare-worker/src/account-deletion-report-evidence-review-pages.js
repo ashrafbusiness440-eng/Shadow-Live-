@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as holds } from "./account-deletion-active-holds.js";
 // INTERNAL only: scoped review of report retention obligations. No report
 // deletion, evidence retrieval, R2, cron, Auth changes or clearance issuer.
 // Existing report-evidence-retention.js owns the 90-day cleanup lifecycle.
@@ -5,13 +6,6 @@ const clean=v=>String(v??"").trim();
 const uidOk=v=>/^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const reqOk=v=>/^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const reportIdOk=v=>/^[A-Za-z0-9_-]{1,512}$/.test(clean(v));
-const holds=d=>[
-  d?.legalHold,d?.retentionHold,d?.deletionHold,d?.reviewHold,
-  d?.evidenceHold,d?.investigationHold,d?.reported,
-  d?.appealPending,
-].some(value=>value===true) ||
-  ["pending","open","under_review"].includes(
-    clean(d?.appealStatus).toLowerCase());
 const finalStatuses=new Set(["rejected","actioned","closed","reviewed"]);
 export const MAX_REPORT_EVIDENCE_REVIEW_PAGE=5;
 export const REPORT_EVIDENCE_REVIEW_SCOPES=Object.freeze({

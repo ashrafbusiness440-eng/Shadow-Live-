@@ -61,6 +61,24 @@ test("emulator: page reports with legal mirror holds, preserve counterparty and 
       "retained diary evidence");
     assert.equal((await reports[0].get()).data().status,"under_review");
     assert.equal((await user.get()).data().coins,200);
+    // A dispute reopening after the first read must be reflected on retry;
+    // elapsed evidence-purge deadlines never authorize destruction.
+    await reports[1].update({appealStatus:" Under_Review "});
+    const reopened=await inspect(db,{...opts,limit:2});
+    assert.equal(reopened.items[1].holdOrAppealPresent,true);
+    assert.equal(reopened.items[1].deletionAuthorized,false);
+    assert.equal(reopened.retentionCertified,false);
+    await mirror.update({legalHold:false,appealPending:true});
+    const mirrored=await inspect(db,{...opts,limit:1});
+    assert.equal(mirrored.items[0].holdOrAppealPresent,true);
+    assert.equal((await foreign.get()).data().evidence.privateText,
+      "other person's complaint");
+    assert.equal((await mirror.get()).data().evidence.text,
+      "retained diary evidence");
+    await req.update({appealPending:true});
+    await assert.rejects(inspect(db,opts),
+      e=>e.code==="report_evidence_review_blocked");
+    await req.update({appealPending:false});
     await req.update({investigationHold:true});
     await assert.rejects(inspect(db,opts),
       e=>e.code==="report_evidence_review_blocked");
