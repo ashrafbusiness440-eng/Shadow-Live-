@@ -435,6 +435,8 @@ export async function recordAccountErasureExternalIoUncertainAttempt(db,{
        clean(user.data?.role)==="owner"||
        user.data?.authDeleted===true||
        clean(object.data?.ownerUid)!==uid||
+       !clean(object.data?.storageKey)||
+       clean(object.data?.storageKey).length>1024||
        clean(reservation.data?.uid)!==uid||
        clean(reservation.data?.requestId)!==requestId||
        clean(reservation.data?.objectId)!==objectId||
@@ -474,6 +476,9 @@ export async function recordAccountErasureExternalIoUncertainAttempt(db,{
     });
     await db.commit(tx,[db.writeCreate(journalPath,{
       uid,requestId,objectId,operationToken:token,
+      // Pin the exact candidate R2 key BEFORE an ambiguous outcome. It must
+      // remain knowable even if Firestore storage metadata later disappears.
+      storageKey:clean(object.data.storageKey),
       state:"outcome_unknown_requires_reconciliation",
       // An attempted/uncertain operation MUST never be retried just
       // because the worker did not record a success acknowledgement.
