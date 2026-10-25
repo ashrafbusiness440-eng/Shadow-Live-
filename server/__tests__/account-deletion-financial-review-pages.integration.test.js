@@ -71,6 +71,16 @@ test("emulator: indexed Play purchase review preserves counterpart, balances and
     await req.update({investigationHold:true});
     await assert.rejects(inspect(db,{...opts,scope:"purchase"}),
       e=>e.code==="financial_review_blocked");
+    await req.update({investigationHold:false,appealStatus:"under_review"});
+    await assert.rejects(inspect(db,{...opts,scope:"purchase"}),
+      e=>e.code==="financial_review_blocked");
+    await req.update({appealStatus:"closed"});
+    await ledger[0].update({appealPending:true});
+    const pending=await inspect(db,{...opts,scope:"purchase",limit:1});
+    assert.equal(pending.items[0].legalHoldPresent,true);
+    assert.equal(pending.items[0].ledgerLinked,false);
+    assert.equal(pending.financialSettlementVerified,false);
+    assert.equal((await user.get()).data().coins,5000);
   } finally {
     await Promise.all(refs.map(ref=>ref.delete()));
   }
