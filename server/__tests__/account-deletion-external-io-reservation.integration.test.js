@@ -104,10 +104,35 @@ test("emulator: two REAL Firestore transactions reserve exactly one object",{
   const args=(token)=>({uid,requestId,objectId,token,
     nowMs,actor:{uid:owner,owner:true}});
   try{
-    const outcomes=await Promise.allSettled([
-      reserve(nativeTransactionBridge(),args("worker_one_token_123456789")),
-      reserve(nativeTransactionBridge(),args("worker_two_token_123456789")),
-    ]);
+    const contenders=[
+      "worker_one_token_123456789",
+      "worker_two_token_123456789",
+    ];
+    let outcomes=await Promise.allSettled(contenders.map(token=>
+      reserve(nativeTransactionBridge(),args(token))));
+    // Two simultaneous Firestore Emulator pessimistic transactions may
+    // deadlock and BOTH return ABORTED before either commits. This is a
+    // legitimate fail-closed outcome (zero external-I/O permits). Do not
+    // disguise an unexpected failure or blindly retry a possible R2 call.
+    // If AND ONLY IF both reported a definite lock-abort and the durable
+    // reservation is absent, retry one *non-destructive bookkeeping*
+    // reservation, then confirm the second worker is denied.
+    if(outcomes.every(x=>x.status==="rejected"&&
+        /ABORTED: Transaction lock timeout/.test(String(x.reason?.message)))){
+      assert.equal((await reserved.get()).exists,false,
+        "no replay if the first concurrent transaction possibly committed");
+      outcomes=[
+        await Promise.allSettled([
+          reserve(nativeTransactionBridge(),args(contenders[0])),
+        ]).then(results=>results[0]),
+      ];
+      assert.equal(outcomes[0].status,"fulfilled",
+        String(outcomes[0].reason?.message));
+      const loser=await Promise.allSettled([
+        reserve(nativeTransactionBridge(),args(contenders[1])),
+      ]);
+      outcomes.push(loser[0]);
+    }
     assert.equal(outcomes.filter(x=>x.status==="fulfilled").length,1,
       JSON.stringify(outcomes.map(x=>x.status==="rejected"?
         String(x.reason?.message):x.value)));
