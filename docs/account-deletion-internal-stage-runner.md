@@ -211,3 +211,19 @@ production, especially across retries and ambiguous commits. Other system
 gates (finance, billing, shared assets, legal/retention, inventory,
 phase leasing, private text, Auth-last) remain unresolved. No production
 deletion activation is authorized by this test.
+
+## R2 cleanup queue — revoke-safe enqueue only (not object deletion)
+
+The existing `storage_media` queue adapter now checks the same six approval
+and immutable-audit pairs inside its own Firestore transaction before
+writing the cleanup job plus audit. A late revocation must reject the enqueue.
+Existing job deduplication, content holds, shared ownership, financial and
+Play checkpoint checks remain unchanged. The actual R2 object deletion
+belongs to another storage worker and is **NOT** made safe or authorized by
+this enqueue guard. Recheck approval/retention/ownership in that worker before
+any object delete, and prove exact-inventory coverage first.
+
+The fixed seven-stage source audit is executed by Flutter CI and intentionally
+records the private-text stage as a remaining exception. CI also runs
+disposable queue unit and Firestore Emulator tests. No production deletion
+switch is enabled; the completed-account receipt is still not written.
