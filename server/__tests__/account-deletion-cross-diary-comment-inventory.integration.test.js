@@ -61,7 +61,15 @@ test("emulator: bounded discovery finds cross-owner comments and respects cancel
     assert.equal((await commentRefs[0].get()).data().text,
       "private comment data");
     assert.equal((await user.get()).data().coins,700);
-    await request.update({status:"cancelled"});
+    await commentRefs[1].update({appealStatus:"open"});
+    const appealed=await inspect(db,{uid,requestId,actor,limit:2});
+    assert.equal(appealed.comments[1].needsReview,true);
+    assert.equal(appealed.erasureAllowed,false);
+    assert.equal((await diary.get()).data().text,"original other author");
+    await request.update({appealPending:true});
+    await assert.rejects(inspect(db,{uid,requestId,actor}),
+      e=>e.code==="cross_diary_inventory_review_blocked");
+    await request.update({appealPending:false,status:"cancelled"});
     await assert.rejects(inspect(db,{uid,requestId,actor}),
       e=>e.code==="cross_diary_inventory_review_blocked");
   }finally{

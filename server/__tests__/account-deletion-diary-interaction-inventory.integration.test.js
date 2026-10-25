@@ -58,7 +58,15 @@ test("emulator: indexed likes and views pages keep other user's diary intact",as
     assert.equal((await diaries[0].get()).data().likeCount,99);
     assert.equal((await diaries[0].get()).data().viewCount,501);
     assert.equal((await user.get()).data().coins,345);
-    await request.update({status:"cancelled"});
+    await likes[0].update({appealStatus:"open"});
+    const appealed=await inspect(db,{uid,requestId,actor,limit:3});
+    assert.equal(appealed.items[0].needsReview,true);
+    assert.equal(appealed.erasureAllowed,false);
+    assert.equal((await diaries[0].get()).data().likeCount,99);
+    await request.update({appealPending:true});
+    await assert.rejects(inspect(db,{uid,requestId,actor}),
+      e=>e.code==="diary_interaction_inventory_blocked");
+    await request.update({appealPending:false,status:"cancelled"});
     await assert.rejects(inspect(db,{uid,requestId,actor}),
       e=>e.code==="diary_interaction_inventory_blocked");
   } finally {
