@@ -22,6 +22,8 @@ const revocationIntentPath = (uid,requestId) =>
   "account_erasure_external_io_revocation_intents/" + uid + "__" + requestId;
 const revocationIntentAuditPath = requestId =>
   "admin_audit_logs/erasure_external_io_revocation_intent_" + requestId;
+const coordinationHoldPath = (uid,requestId) =>
+  "account_erasure_external_io_coordination_holds/" + uid + "__" + requestId;
 
 export class AccountErasureIoReservationError extends Error {
   constructor(code,status=409){super(code);this.code=code;this.status=status;}
@@ -68,15 +70,24 @@ export async function requestAccountErasureExternalIoRevocationIntent(db, {
   const auditPath=revocationIntentAuditPath(requestId);
   const tx=await db.beginTransaction();
   try {
-    const paths=[requestPath,checkpointPath,intentPath,auditPath];
+    // Both a future holder and a stop writer read/write the SAME
+    // transaction-scoped coordination and stop documents. Even when no
+    // holder has been recorded, a prior legacy operation remains unknown.
+    const paths=[requestPath,checkpointPath,intentPath,auditPath,
+      coordinationHoldPath(uid,requestId)];
     const docs=typeof db.getMany==="function"
       ? await db.getMany(paths,tx)
       : await Promise.all(paths.map(p=>db.get(p,tx)));
-    if (!Array.isArray(docs) || docs.length!==4 ||
+    if (!Array.isArray(docs) || docs.length!==paths.length ||
         docs.some(d=>!d || typeof d.exists!=="boolean")) {
       reject("external_io_transaction_read_failed",503);
     }
-    const [request,checkpoint,existing,audit]=docs;
+    const [request,checkpoint,existing,audit,hold]=docs;
+    if (hold.exists && (clean(hold.data?.uid)!==uid ||
+        clean(hold.data?.requestId)!==requestId ||
+        hold.data?.externalIoAllowed!==false)) {
+      reject("external_io_coordination_hold_malformed",503);
+    }
     if (existing.exists || audit.exists) {
       reject("external_io_revocation_requires_reconciliation");
     }
@@ -94,16 +105,19 @@ export async function requestAccountErasureExternalIoRevocationIntent(db, {
         uid,requestId,status:"pending_reconciliation",
         revocationEffective:false,externalIoAllowed:false,
         requestedAt:at,requestedByUid:by,
+        coordinationHoldObserved:hold.exists,
       }),
       db.writeCreate(auditPath,{
         action:"accountErasureExternalIoRevocationIntent",
         targetType:"user",targetId:uid,requestId,
         actorUid:by,createdAt:at,
         revocationEffective:false,
+        coordinationHoldObserved:hold.exists,
       }),
     ]);
     return {ok:true,revocationIntentCreated:true,
       revocationEffective:false,pendingReconciliation:true,
+      coordinationHoldObserved:hold.exists,
       externalIoAllowed:false};
   } catch(error) {
     await db.rollback(tx).catch(()=>{});
@@ -211,6 +225,121 @@ export async function reserveAccountErasureExternalIo(db, {
     return {ok:true,reserved:true,externalIoAllowed:false,
       completionVerified:false,requiresReconciliation:true};
   } catch (error) {
+    await db.rollback(tx).catch(()=>{});
+    throw error;
+  }
+}
+
+
+/**
+ * Internal-only fail-closed coordination prototype for a FUTURE R2 worker.
+ * It does NOT grant an external I/O permit and can NEVER be auto-reclaimed
+ * by clock expiry. Only an independently audited reconciliation protocol
+ * could later resolve this immutable, request-wide hold. No caller may
+ * interpret its existence as authorizing bucket.delete.
+ *
+ * The Owner stop writer and this holder both transactionally READ the
+ * request-specific stop + hold documents; the holder CREATEs the latter
+ * only after checking the identical prior reserved-object token, current
+ * signoffs and request/asset state. A concurrent stop must win or conflict.
+ * This hold alone does NOT settle revocation of any older external work.
+ */
+export async function recordAccountErasureExternalIoCoordinationHold(db,{
+  uid,requestId,objectId,token,actor,nowMs=Date.now(),
+}={}) {
+  uid=clean(uid);requestId=clean(requestId);objectId=clean(objectId);
+  token=clean(token);
+  if (!actor?.owner || !uidOk(clean(actor?.uid)))reject("owner_required",403);
+  if (!uidOk(uid) || !requestOk(requestId) || !objectOk(objectId) ||
+      !tokenOk(token) || !Number.isSafeInteger(nowMs) || nowMs<=0) {
+    reject("invalid_external_io_coordination_hold",400);
+  }
+  if (typeof db?.beginTransaction!=="function" ||
+      typeof db?.commit!=="function" ||
+      typeof db?.writeCreate!=="function") {
+    reject("external_io_transaction_adapter_missing",503);
+  }
+  const holdPath=coordinationHoldPath(uid,requestId);
+  const tx=await db.beginTransaction();
+  try {
+    const paths=[
+      "account_deletion_requests/"+uid,
+      "account_deletion_erasure_checkpoints/"+uid,
+      "users/"+uid,
+      "storage_objects/"+objectId,
+      "account_erasure_external_io_reservations/"+uid+"__"+objectId,
+      revocationIntentPath(uid,requestId),
+      holdPath,
+      "admin_audit_logs/erasure_processing_start_"+requestId,
+    ];
+    const docs=typeof db.getMany==="function"
+      ? await db.getMany(paths,tx)
+      : await Promise.all(paths.map(p=>db.get(p,tx)));
+    if (!Array.isArray(docs) || docs.length!==paths.length ||
+        docs.some(d=>!d || typeof d.exists!=="boolean")) {
+      reject("external_io_transaction_read_failed",503);
+    }
+    const [request,checkpoint,user,object,reservation,stop,hold,admission]=docs;
+    if (stop.exists)reject("external_io_revocation_intent_pending");
+    if (hold.exists)reject("external_io_coordination_requires_reconciliation");
+    if (!request.exists || !checkpoint.exists || !user.exists ||
+        !object.exists || !reservation.exists || !admission.exists ||
+        clean(request.data?.uid)!==uid ||
+        clean(request.data?.requestId)!==requestId ||
+        clean(request.data?.status)!=="processing" ||
+        clean(checkpoint.data?.uid)!==uid ||
+        clean(checkpoint.data?.requestId)!==requestId ||
+        clean(checkpoint.data?.phase)!=="storage_media" ||
+        checkpoint.data?.destructiveAllowed!==true ||
+        checkpoint.data?.storageRetentionApproved!==true ||
+        checkpoint.data?.sharedMediaOwnershipReviewed!==true ||
+        checkpoint.data?.legalEvidenceReviewComplete!==true ||
+        checkpoint.data?.financialSettlementApproved!==true ||
+        checkpoint.data?.playBillingReviewComplete!==true ||
+        clean(user.data?.accountStatus)!=="deletion_processing" ||
+        clean(user.data?.role)==="owner" ||
+        clean(object.data?.ownerUid)!==uid ||
+        clean(reservation.data?.uid)!==uid ||
+        clean(reservation.data?.requestId)!==requestId ||
+        clean(reservation.data?.objectId)!==objectId ||
+        clean(reservation.data?.operationToken)!==token ||
+        clean(reservation.data?.state)!=="reserved_requires_external_interlock" ||
+        reservation.data?.externalIoAllowed!==false ||
+        reservation.data?.completionVerified!==false ||
+        clean(admission.data?.action)!=="accountErasureProcessingAdmitted" ||
+        clean(admission.data?.targetId)!==uid ||
+        clean(admission.data?.requestId)!==requestId ||
+        !Array.isArray(admission.data?.certifiedDomains) ||
+        admission.data.certifiedDomains.length!==REQUIRED_ERASURE_ADMISSION_DOMAINS.length ||
+        !REQUIRED_ERASURE_ADMISSION_DOMAINS.every(d=>
+          admission.data.certifiedDomains.includes(d)) ||
+        held(request.data) || held(checkpoint.data) ||
+        held(user.data) || held(object.data)) {
+      reject("external_io_coordination_not_authorized");
+    }
+    const requestedAtMs=dateMs(request.data?.requestedAt);
+    const eligibleAtMs=dateMs(request.data?.eligibleAt);
+    if (!Number.isSafeInteger(requestedAtMs) ||
+        !Number.isSafeInteger(eligibleAtMs) ||
+        eligibleAtMs<requestedAtMs+GRACE_MS ||
+        nowMs<eligibleAtMs || nowMs<requestedAtMs+GRACE_MS) {
+      reject("external_io_coordination_grace_not_elapsed");
+    }
+    await recheckErasureCertificatesInTransaction(db,tx,{
+      uid,requestId,requestedAtMs,nowMs,
+    });
+    // Non-permissive, create-only and NOT an actual external operation.
+    // Crash/timeout never causes this to become available for automatic retry.
+    await db.commit(tx,[db.writeCreate(holdPath,{
+      uid,requestId,objectId,operationToken:token,
+      state:"claimed_requires_external_interlock",
+      externalIoAllowed:false,revocationEffective:false,
+      completionVerified:false,
+      createdAt:new Date(nowMs),createdByUid:clean(actor.uid),
+    })]);
+    return {ok:true,holdRecorded:true,externalIoAllowed:false,
+      revocationEffective:false,pendingReconciliation:true};
+  }catch(error){
     await db.rollback(tx).catch(()=>{});
     throw error;
   }
