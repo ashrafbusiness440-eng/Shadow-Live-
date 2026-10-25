@@ -5,6 +5,8 @@ import {
   checkErasureStartEligibility,
   recordErasurePreflightCheckpoint,
 } from "../../cloudflare-worker/src/account-deletion-erasure-checkpoint.js";
+import { REQUIRED_ERASURE_ADMISSION_DOMAINS }
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 
 const nowMs = Date.parse("2026-11-25T00:00:00Z");
 const uid = "testUser_123";
@@ -49,6 +51,8 @@ test("records a fail-closed checkpoint without deleting accounts or money", asyn
   assert.equal(db.docs.get("users/" + uid).diamonds, 5);
   assert.equal(db.docs.get("account_deletion_requests/" + uid).status, "review_ready");
   assert.equal(db.docs.get("account_deletion_erasure_checkpoints/" + uid).phase, "preflight_blocked");
+  assert.deepEqual(db.docs.get("account_deletion_erasure_checkpoints/" + uid).requiredReviews,
+    REQUIRED_ERASURE_ADMISSION_DOMAINS);
   assert.equal(db.writes.some(w => w.kind === "delete"), false);
   assert.equal((await start(db)).duplicate, true);
   assert.equal(db.writes.length, 2);
@@ -57,9 +61,22 @@ test("rejects cancelled, held, stale or future requests", async () => {
   for (const mutate of [
     d => { d.docs.get("account_deletion_requests/" + uid).status = "cancelled"; },
     d => { d.docs.get("account_deletion_requests/" + uid).reviewHold = true; },
+    d => { d.docs.get("account_deletion_requests/" + uid).legalHold = true; },
+    d => { d.docs.get("account_deletion_requests/" + uid).evidenceHold = true; },
+    d => { d.docs.get("account_deletion_requests/" + uid).investigationHold = true; },
+    d => { d.docs.get("account_deletion_requests/" + uid).reported = true; },
+    d => { d.docs.get("account_deletion_requests/" + uid).appealPending = true; },
+    d => { d.docs.get("account_deletion_requests/" + uid).appealStatus = "Under_Review"; },
     d => { d.docs.get("account_deletion_requests/" + uid).requestId = "new-request-id-987654321"; },
     d => { d.docs.get("account_deletion_requests/" + uid).eligibleAt = new Date(nowMs + 1); },
     d => { d.docs.get("users/" + uid).legalHold = true; },
+    d => { d.docs.get("users/" + uid).reviewHold = true; },
+    d => { d.docs.get("users/" + uid).retentionHold = true; },
+    d => { d.docs.get("users/" + uid).evidenceHold = true; },
+    d => { d.docs.get("users/" + uid).investigationHold = true; },
+    d => { d.docs.get("users/" + uid).reported = true; },
+    d => { d.docs.get("users/" + uid).appealPending = true; },
+    d => { d.docs.get("users/" + uid).appealStatus = "open"; },
     d => { d.docs.get("users/" + uid).authDeleted = true; },
     d => { d.docs.get("users/" + uid).role = "owner"; },
   ]) {
@@ -68,6 +85,23 @@ test("rejects cancelled, held, stale or future requests", async () => {
     await assert.rejects(start(db));
     assert.equal(db.writes.length, 0);
   }
+});
+test("held existing checkpoint cannot return duplicate or be rotated", async () => {
+  for (const field of ["legalHold","evidenceHold","investigationHold",
+    "reported","appealPending"]) {
+    const db = new MockDb();
+    db.docs.set("account_deletion_erasure_checkpoints/" + uid,
+      { uid, requestId, phase: "preflight_blocked",
+        destructiveAllowed: false, [field]: true });
+    await assert.rejects(start(db), e=>e.code==="erasure_legal_hold");
+    assert.equal(db.writes.length,0);
+  }
+  const db = new MockDb();
+  db.docs.set("account_deletion_erasure_checkpoints/" + uid,
+    { uid, requestId, phase: "preflight_blocked",
+      destructiveAllowed: false, appealStatus: "pending" });
+  await assert.rejects(start(db), e=>e.code==="erasure_legal_hold");
+  assert.equal(db.writes.length,0);
 });
 test("requires valid actor and refuses contradictory checkpoint", async () => {
   const db = new MockDb();
