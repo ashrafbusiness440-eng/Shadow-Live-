@@ -175,7 +175,7 @@ test("unverified prior admission or financial clearance cannot create a reservat
   }
 });
 
-test("reservation groups six current-state and twelve audited-signoff reads into only two transaction-scoped batchGets",async()=>{
+test("reservation groups seven current-state and twelve audited-signoff reads into only two transaction-scoped batchGets",async()=>{
   const db=new Db(),calls=[];
   const real=db.getMany.bind(db);
   db.getMany=async(paths,tx)=>{
@@ -253,4 +253,21 @@ test("revocation-intent invalid targets and actors cannot write",async()=>{
   }
   assert.equal(db.reads.length,0);
   assert.equal(db.commits.length,0);
+});
+
+test("revocation requested after an existing reservation remains pending, never effective",async()=>{
+  const db=new Db();
+  await reserve(db,opts());
+  const stateBefore={...db.docs.get(resPath)};
+  const outcome=await requestStop(db,{
+    uid,requestId,actor:{uid:owner,owner:true},nowMs,
+  });
+  assert.equal(outcome.revocationEffective,false);
+  assert.equal(outcome.pendingReconciliation,true);
+  assert.deepEqual(db.docs.get(resPath),stateBefore);
+  assert.equal(db.docs.get(resPath).externalIoAllowed,false);
+  await assert.rejects(reserve(db,opts({
+    token:"another_operation_token_987654",
+  })),e=>e.code==="external_io_revocation_intent_pending");
+  assert.equal(db.commits.length,3);
 });
