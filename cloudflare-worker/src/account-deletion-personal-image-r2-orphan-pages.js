@@ -83,6 +83,7 @@ export async function inspectPersonalImageR2OrphanPage(db,bucket,{
     reject("personal_image_orphan_invalid_listing",503);
   }
   const seen=new Set();
+  const seenIds=new Set();
   const selected=listing.objects.map(entry=>{
     const key=clean(entry?.key);
     if(!key.startsWith(prefix))reject("personal_image_orphan_prefix_violation",503);
@@ -92,6 +93,10 @@ export async function inspectPersonalImageR2OrphanPage(db,bucket,{
     const match=/^([a-f0-9]{32})\.(jpg|png|webp|gif)$/.exec(file);
     const formatValid=Boolean(match)&&
       (folder==="profile-animation"?match[2]==="gif":match[2]!=="gif");
+    if(formatValid){
+      if(seenIds.has(match[1]))reject("personal_image_orphan_duplicate_id",503);
+      seenIds.add(match[1]);
+    }
     return {key,id:formatValid?match[1]:null,
       ext:formatValid?match[2]:null};
   });
