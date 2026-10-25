@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {readFileSync} from "node:fs";
+import {seedSyntheticErasureCertificates}
+  from "./helpers/account-erasure-synthetic-certificates.js";
 import {redactDeletedPrivateTextMessage} from "../../cloudflare-worker/src/account-deletion-private-text-stage.js";
 
 const uid="deleted_member_123", other="other_member_456";
@@ -13,7 +15,8 @@ const messagePath=conversationPath+"/messages/"+messageId;
 class Db{
  constructor(){
    this.docs=new Map([
-     [requestPath,{uid,requestId,status:"processing"}],
+     [requestPath,{uid,requestId,status:"processing",
+       requestedAt:new Date(Date.now()-40*86400_000)}],
      [checkpointPath,{requestId,phase:"private_text",destructiveAllowed:true,
        privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}],
      [userPath,{role:"user",accountStatus:"deletion_processing",coins:700}],
@@ -23,6 +26,8 @@ class Db{
        vipLevel:1,createdAt:new Date("2026-10-01T12:00:00Z")}],
      [conversationPath+"/messages/their_message_012345",{senderId:other,receiverId:uid,text:"Their text"}],
    ]);
+   // Disposable synthetic fixtures are not production certification.
+   seedSyntheticErasureCertificates(this.docs,{uid,requestId,nowMs:Date.now()});
    this.commits=[];this.rollbacks=0;
  }
  async beginTransaction(){return "tx";}
@@ -116,6 +121,55 @@ test("invalid target or failed transaction does not erase",async()=>{
  await assert.rejects(run(db),/transaction_commit_failure/);
  assert.equal(db.docs.get(messagePath).text,"Private contents");
 });
+test("revoked or missing independent approval prevents private-text writes",async()=>{
+ for(const edit of [
+   db=>db.docs.delete("admin_audit_logs/erasure_domain_cert_"+requestId+"__play_billing"),
+   db=>db.docs.get("account_deletion_erasure_approvals/"+requestId+
+      "__financial_settlement").decision="revoked",
+   db=>db.docs.get("account_deletion_erasure_approvals/"+requestId+
+      "__moderation_legal").appealPending=true,
+   db=>db.docs.get("account_deletion_erasure_approvals/"+requestId+
+      "__retention_policy").expiresAt=new Date(Date.now()-1000),
+ ]) {
+   const db=new Db();edit(db);
+   await assert.rejects(run(db),e=>
+     e.code==="erasure_transactional_certification_blocked");
+   assert.equal(db.commits.length,0);
+   assert.equal(db.docs.get(messagePath).text,"Private contents");
+   assert.equal(db.docs.get(conversationPath).lastMessage,"Sensitive preview");
+ }
+});
+
+test("approval withdrawn between primary snapshot and certificate read blocks commit",async()=>{
+ const db=new Db(),real=db.get.bind(db);
+ let mutated=false;
+ db.get=async(path,tx)=>{
+   if(!mutated && path.includes("account_deletion_erasure_approvals/") &&
+       path.endsWith("__play_billing")){
+     db.docs.get(path).decision="revoked";
+     mutated=true;
+   }
+   return real(path,tx);
+ };
+ await assert.rejects(run(db),e=>
+   e.code==="erasure_transactional_certification_blocked");
+ assert.equal(mutated,true);
+ assert.equal(db.commits.length,0);
+ assert.equal(db.docs.get(messagePath).text,"Private contents");
+});
+
+test("truncated private-message primary transaction snapshot fails closed",async()=>{
+ const db=new Db();
+ db.getMany=async(paths,tx)=>{
+   const docs=await Promise.all(paths.map(path=>db.get(path,tx)));
+   return paths.length===6 ? docs.slice(0,5) : docs;
+ };
+ await assert.rejects(run(db),e=>
+   e.code==="private_text_transaction_read_failed");
+ assert.equal(db.commits.length,0);
+ assert.equal(db.docs.get(messagePath).text,"Private contents");
+});
+
 test("stage cannot enumerate chats, call Auth/R2 or delete counterpart",()=>{
  const source=readFileSync("cloudflare-worker/src/account-deletion-private-text-stage.js","utf8");
  assert.doesNotMatch(source,/runQuery\(|\.list\(|deleteAuthUser\(|writeDelete\(/);
