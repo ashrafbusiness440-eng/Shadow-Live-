@@ -171,3 +171,65 @@ test("emulator: withdrawn financial approval is rejected inside an actual Firest
     await Promise.all([note,...signoffs].map(ref=>ref.delete()));
   }
 });
+
+test("emulator: concurrent signoff revocation after transactional read conflicts, retries and forbids deletion",
+  {timeout:25000},async()=>{
+  const suffix=sid();
+  const uid="race_erasure_"+suffix,requestId="race_request_"+suffix;
+  const ownerUid="owner_erasure_test_123";
+  const nowMs=Date.parse("2026-10-25T12:00:00Z");
+  const requestedAtMs=nowMs-50*86400_000;
+  const notice=store.doc("notifications/race_owned_"+suffix);
+  const signoffs=domains.flatMap(domain=>[
+    store.doc("account_deletion_erasure_approvals/"+requestId+"__"+domain),
+    store.doc("admin_audit_logs/erasure_domain_cert_"+requestId+"__"+domain),
+  ]);
+  let resumeFirst;
+  let reachedFirstRead;
+  const firstRead=new Promise(resolve=>{reachedFirstRead=resolve;});
+  const proceed=new Promise(resolve=>{resumeFirst=resolve;});
+  let attempts=0;
+  try {
+    await Promise.all([
+      notice.set({userId:uid,body:"must never be erased"}),
+      ...domains.flatMap((domain,i)=>[
+        signoffs[i*2].set({uid,requestId,domain,decision:"approved",
+          signedByUid:ownerUid,signedAt:new Date(nowMs-10000),
+          expiresAt:new Date(nowMs+86400_000)}),
+        signoffs[i*2+1].set({action:"accountErasureDomainCertified",
+          actorUid:ownerUid,targetId:uid,requestId,domain,
+          createdAt:new Date(nowMs-10000)}),
+      ]),
+    ]);
+    const txDb={async get(path,tx){
+      const snapshot=await tx.get(store.doc(path));
+      return {exists:snapshot.exists,data:snapshot.exists?snapshot.data():null};
+    }};
+    const transaction=store.runTransaction(async tx=>{
+      attempts++;
+      await recheckTransactional(txDb,tx,{
+        uid,requestId,requestedAtMs,nowMs,
+      });
+      if(attempts===1){
+        // Pause AFTER all six approvals were read INSIDE tx.
+        reachedFirstRead();
+        await proceed;
+      }
+      tx.delete(notice);
+    },{maxAttempts:4});
+    await firstRead;
+    // Revocation commits OUTSIDE the in-flight transaction while it is paused.
+    await signoffs[0].update({decision:"revoked"});
+    resumeFirst();
+    await assert.rejects(transaction,
+      e=>e.code==="erasure_transactional_certification_blocked");
+    // Firestore must NOT commit the stale transaction: its read-set conflicted
+    // with the revoked approval, then the retry saw the revoked state.
+    assert.ok(attempts>=2,"Firestore must retry after the changed read");
+    assert.equal((await notice.get()).exists,true);
+    assert.equal((await signoffs[0].get()).data().decision,"revoked");
+  } finally {
+    resumeFirst?.();
+    await Promise.all([notice,...signoffs].map(ref=>ref.delete()));
+  }
+});
