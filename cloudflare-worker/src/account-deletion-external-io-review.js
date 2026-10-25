@@ -44,15 +44,17 @@ const path=(collection,uid,requestId)=>
  * R2 retry, completion and stop revocation always remain prohibited.
  */
 export async function recordAccountErasureExternalIoIndependentReview(db,{
-  uid,requestId,objectId,token,assessment,evidenceDigestSha256,actor,
-  nowMs=Date.now(),
+  uid,requestId,objectId,token,grantIssuerUid,assessment,
+  evidenceDigestSha256,actor,nowMs=Date.now(),
 }={}){
   uid=clean(uid);requestId=clean(requestId);objectId=clean(objectId);
   token=clean(token);assessment=clean(assessment);
+  grantIssuerUid=clean(grantIssuerUid);
   const reviewer=clean(actor?.uid);
   if(actor?.evidenceReviewer!==true||!uidOk(reviewer))
     fail("independent_evidence_reviewer_required",403);
   if(!uidOk(uid)||!requestOk(requestId)||!requestOk(objectId)||
+    !uidOk(grantIssuerUid)||grantIssuerUid===reviewer||
     !tokenOk(token)||!permittedAssessments.includes(assessment)||
     !/^[0-9a-f]{64}$/.test(evidenceDigestSha256??"")||
     !Number.isSafeInteger(nowMs)||nowMs<=0){
@@ -89,6 +91,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     "account_deletion_erasure_checkpoints/"+uid,
     reviewPath,reviewAuditPath,
     reviewerProfilePath,grantPath,grantAuditPath,
+    "users/"+grantIssuerUid,
   ];
   const tx=await db.beginTransaction();
   try{
@@ -101,7 +104,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     }
     const [caseDoc,caseAudit,stop,stopAudit,journal,hold,reservation,
       request,checkpoint,previousReview,previousAudit,
-      reviewerProfile,grant,grantAudit]=rows;
+      reviewerProfile,grant,grantAudit,issuerRow]=rows;
     if(previousReview.exists||previousAudit.exists)
       fail("independent_external_io_review_already_recorded");
     const c=caseDoc.data||{},s=stop.data||{},j=journal.data||{};
@@ -127,7 +130,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
       clean(g.reviewerUid)!==reviewer||
       clean(g.scope)!=="account_erasure_r2_reconciliation"||
       clean(g.status)!=="active"||g.revoked!==false||
-      !uidOk(g.grantedByUid)||g.grantedByUid===reviewer||
+      clean(g.grantedByUid)!==grantIssuerUid||
       !Number.isSafeInteger(grantedAt)||grantedAt<=0||
       !Number.isSafeInteger(expiresAt)||expiresAt<=grantedAt||
       expiresAt-grantedAt>GRANT_LIFETIME_MS||
@@ -142,11 +145,12 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
       auditorAt!==grantedAt){
       fail("independent_external_io_review_grant_invalid",403);
     }
-    // The grant issuer's current Owner role must also be independently
-    // established from Firestore; a forged audit actor UID is not a grant.
-    const issuerRow=await db.get("users/"+clean(g.grantedByUid),tx);
-    if(!rowOk(issuerRow)||!issuerRow.exists||
-      clean(issuerRow.data?.uid)!==clean(g.grantedByUid)||
+    // The grant issuer's identity is a REQUIRED exact locator provided by
+    // the trusted server caller and independently matched to the audited
+    // grant. Reading the Owner profile in the INITIAL bounded batchGet
+    // avoids a separate REST GET with a held transaction/lock.
+    if(!issuerRow.exists||
+      clean(issuerRow.data?.uid)!==grantIssuerUid||
       clean(issuerRow.data?.role)!=="owner"||
       issuerRow.data?.authDeleted===true||
       clean(issuerRow.data?.accountStatus)!=="active"){

@@ -229,3 +229,27 @@ then issue grants only through independently authorized Owner actions with
 create-only audits. Existing private test grants are synthetic. **No external
 evidence or account erasure is certified here**, and no public HTTP route,
 cron, production R2 operation or Firebase Auth deletion was added.
+
+
+### Bounded REST reviewer grant verification and deadlock-safe tests
+
+The independent reviewer now supplies an **exact expected Owner issuer UID**
+to its internal call. The current issuer profile is included in the SAME
+initial transactional Firestore REST `batchGet` as the signed grant,
+immutable grant audit, current reviewer profile, request and stop.
+`grantIssuerUid` is not trusted as authority: it MUST match the
+per-case grant's `grantedByUid`, the grant audit actor and a currently
+active Owner's existing server profile. Invalid/missing issuer rows fail
+closed. This eliminates the additional single-document REST read taken
+while holding the transaction. Actual Firebase ID-token authentication
+and secure grant issuing remain future release requirements.
+
+The disposable REST Emulator suite also tests a first durable
+create-only reservation followed by an independently instantiated
+second REST worker which MUST reject a replay. The unbounded direct
+dual-REST lock race was isolated away from the multipurpose REST test
+because this Emulator can deadlock and spend 85 seconds timing out
+without a bucket operation. Actual simultaneous worker conflicts
+remain tested by a dedicated native Firestore Emulator race; real REST
+stop-first vs dispatch-first ordering remains tested with the synthetic
+R2 fixture. No user data, R2 bucket deletion or production switch changed.

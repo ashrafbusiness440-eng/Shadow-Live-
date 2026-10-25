@@ -705,7 +705,7 @@ test("historical withdrawal audit defeats an approved decision resurrected later
 
 const independentReviewer="independent_reviewer_user_456789";
 const externalReviewOpts=(patch={})=>({
-  uid,requestId,objectId,token,
+  uid,requestId,objectId,token,grantIssuerUid:owner,
   actor:{uid:independentReviewer,evidenceReviewer:true},
   assessment:"provider_evidence_submitted_unverified",
   evidenceDigestSha256:"a".repeat(64),
@@ -783,6 +783,7 @@ test("independent review rejects raw evidence/URL payloads and permits only opaq
     {assessment:"external_proof_complete"},
     {nowMs:-1},
     {requestId:"other"},
+    {grantIssuerUid:"wrong_issuer_123456"},
   ]){
     await assert.rejects(reviewCase(db,externalReviewOpts(patch)));
   }

@@ -84,7 +84,7 @@ after(async()=>{
 const sid=()=>randomUUID().replaceAll("-","").slice(0,18);
 const days=n=>n*86400_000;
 
-test("emulator: actual Cloudflare REST transactions admit at most one I/O reservation",{
+test("emulator: REST durable reservation rejects duplicate after first commit",{
   timeout:85000,
 },async()=>{
   const suffix=sid(),uid="rest_io_user_"+suffix,
@@ -120,54 +120,19 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     const args=token=>({uid,requestId,objectId,actor:{
       uid:owner,owner:true,
     },token,nowMs});
-    // The two real REST clients still overlap, but only AFTER the first
-    // has finished its snapshot and reached the commit boundary. Without
-    // bounded orchestration, two independently locked Emulator REST reads
-    // sometimes deadlock until Firestore's 85-second test timeout. We do
-    // NOT retry a delete, waive a fence, or fake any Firestore response.
-    let beginCommit,releaseCommit;
-    const firstAtCommit=new Promise(resolve=>{beginCommit=resolve;});
-    const commitBarrier=new Promise(resolve=>{releaseCommit=resolve;});
-    const firstAdapter=firestoreClient(env);
-    const winningAdapter={...firstAdapter,
-      async commit(...params){
-        beginCommit();
-        await commitBarrier;
-        return firstAdapter.commit(...params);
-      },
-    };
-    const first=reserve(winningAdapter,args("rest_worker_one_token_123456"));
-    const watched=first.then(value=>({ok:true,value}),
-      error=>({ok:false,error}));
-    let second;
-    let outcomes;
-    try{
-      await Promise.race([
-        firstAtCommit,
-        watched.then(result=>{
-          if(!result.ok)throw result.error;
-          throw Error("first_reservation_finished_before_commit_boundary");
-        }),
-      ]);
-      // Start the other independent client while the first real Firestore
-      // transaction is still open, then release immediately to avoid the
-      // Emulator's pathological pair of mutually blocked lock waits.
-      second=reserve(firestoreClient(env),
-        args("rest_worker_two_token_123456"));
-      releaseCommit();
-      outcomes=await Promise.allSettled([first,second]);
-    }finally{
-      releaseCommit();
-      await Promise.allSettled([first,...(second?[second]:[])]);
-    }
-    const approved=outcomes.filter(x=>x.status==="fulfilled");
-    assert.equal(approved.length,1,
-      JSON.stringify(outcomes.map(x=>x.status==="rejected"?{
-        message:x.reason?.message,status:x.reason?.status,
-        code:x.reason?.code,details:x.reason?.details,
-      }:x.value)));
-    assert.equal(outcomes.filter(x=>x.status==="rejected").length,1);
-    assert.equal(approved[0].value.externalIoAllowed,false);
+    // Native Firestore Emulator race and the separate stop-first REST
+    // interleaving tests prove concurrent conflict ordering. This REST
+    // end-to-end test instead verifies a SUCCESSFUL durable write followed
+    // by a separate worker's immediate fail-closed replay. Launching two
+    // independent Firestore REST transactions into the same Emulator key
+    // here could hit pathological 85-second lock waits unrelated to any
+    // bucket action. No deletion, special permit or retry is added.
+    const approved=await reserve(firestoreClient(env),
+      args("rest_worker_one_token_123456"));
+    assert.equal(approved.externalIoAllowed,false);
+    await assert.rejects(reserve(firestoreClient(env),
+      args("rest_worker_two_token_123456")),
+      error=>error.code==="external_io_reservation_requires_reconciliation");
     const stored=await reservation.get();
     assert.equal(stored.exists,true);
     assert.equal(stored.data().externalIoAllowed,false);
@@ -349,6 +314,7 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     ]);
     const reviewerArgs={
       uid,requestId,objectId,token:stored.data().operationToken,
+      grantIssuerUid:owner,
       actor:{uid:reviewerUid,evidenceReviewer:true},
       assessment:"provider_evidence_submitted_unverified",
       evidenceDigestSha256:"b".repeat(64),nowMs:nowMs+3000,
