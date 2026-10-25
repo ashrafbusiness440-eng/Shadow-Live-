@@ -3,6 +3,8 @@ import {test} from "node:test";
 import {readFileSync} from "node:fs";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
+import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 import {
   drainAccountPrivateTextPage as drain,
   MAX_PRIVATE_TEXT_ERASURE_BATCH_ITEMS,
@@ -22,10 +24,15 @@ class Db {
   constructor(){
     this.docs=new Map([
       [rp,{uid,requestId,status:"processing",
-        requestedAt:new Date(Date.now()-40*86400_000)}],
-      [cp,{requestId,phase:"private_text",destructiveAllowed:true,
+        requestedAt:new Date(Date.now()-40*86400_000),
+        eligibleAt:new Date(Date.now()-10*86400_000)}],
+      [cp,{uid,requestId,phase:"private_text",destructiveAllowed:true,
         privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}],
       [up,{role:"user",accountStatus:"deletion_processing",coins:500}],
+      ["admin_audit_logs/erasure_processing_start_"+requestId,{
+        action:"accountErasureProcessingAdmitted",targetId:uid,requestId,
+        certifiedDomains:[...domains],
+      }],
       [chat,{participants:[uid,other],lastSenderId:uid,
         lastMessage:"Private last preview",unreadCounts:{[other]:4}}],
     ]);
