@@ -1965,6 +1965,24 @@ export async function cleanupQueuedStorageObject(
   return { status: "deleted", objectId };
 }
 
+// Account-erasure R2 side effects MUST remain disconnected from the live
+// hourly cleanup until revocation and in-flight external I/O share a proven
+// durable fence. A signed checkpoint alone cannot protect bucket.delete.
+// Ordinary replacement/expiry cleanup remains unaffected by this guard.
+export const ACCOUNT_ERASURE_R2_FENCE_READY = false;
+
+export async function runFencedDeletedAccountStorageCleanup(
+  db, bucket, options = {},
+) {
+  if (!ACCOUNT_ERASURE_R2_FENCE_READY) {
+    return {
+      jobsChecked: 0, checked: 0, deleted: 0, transferred: 0,
+      failed: 0, blocked: true, reason: "external_io_fence_not_ready",
+    };
+  }
+  return runDeletedAccountStorageCleanup(db, bucket, options);
+}
+
 export async function runDueStorageCleanup(
   env,
   {
@@ -1983,7 +2001,7 @@ export async function runDueStorageCleanup(
   );
   let remainingBudget = maxBatch;
 
-  const accountCleanup = await runDeletedAccountStorageCleanup(
+  const accountCleanup = await runFencedDeletedAccountStorageCleanup(
     db,
     bucket,
     { nowMs, limit: remainingBudget },
