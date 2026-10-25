@@ -8,7 +8,8 @@ import {randomUUID,generateKeyPairSync} from "node:crypto";
 import {getApps,initializeApp,deleteApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {firestoreClient} from "../../cloudflare-worker/src/firestore.js";
-import {reserveAccountErasureExternalIo as reserve}
+import {reserveAccountErasureExternalIo as reserve,
+  requestAccountErasureExternalIoRevocationIntent as requestStop}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
   from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
@@ -134,7 +135,7 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
 });
 
 test("emulator: REST transactional batchGet blocks revoked approval before any reservation",{
-  timeout:25000,
+  timeout:45000,
 },async()=>{
   const suffix=sid(),uid="rest_revoke_user_"+suffix,
     requestId="rest_revoke_request_"+suffix,
@@ -147,6 +148,8 @@ test("emulator: REST transactional batchGet blocks revoked approval before any r
     "admin_audit_logs/erasure_processing_start_"+requestId,
     "storage_objects/"+objectId,
     "account_erasure_external_io_reservations/"+uid+"__"+objectId,
+    "account_erasure_external_io_revocation_intents/"+uid+"__"+requestId,
+    "admin_audit_logs/erasure_external_io_revocation_intent_"+requestId,
   ];
   const docs=paths.map(path=>store.doc(path));
   const certificates=await seedEmulatorErasureCertificates(store,{
@@ -176,6 +179,26 @@ test("emulator: REST transactional batchGet blocks revoked approval before any r
           details:e.details}));
       return true;
     });
+    assert.equal((await docs[5].get()).exists,false);
+    // Genuine Cloudflare REST Firestore transaction creates a durable
+    // revocation INTENT, not an effective approval revocation. Subsequent
+    // attempts remain blocked even if the synthetic signoff is restored.
+    const stop=await requestStop(firestoreClient(env),{
+      uid,requestId,nowMs,actor:{
+        owner:true,uid:"test_owner_rest_123456",
+      },
+    });
+    assert.equal(stop.revocationIntentCreated,true);
+    assert.equal(stop.revocationEffective,false);
+    assert.equal((await docs[6].get()).data().revocationEffective,false);
+    assert.equal((await docs[7].get()).data().action,
+      "accountErasureExternalIoRevocationIntent");
+    await certificates[0].update({decision:"approved"});
+    await assert.rejects(reserve(firestoreClient(env),{
+      uid,requestId,objectId,nowMs,actor:{
+        owner:true,uid:"test_owner_rest_123456",
+      },token:"rest_revoke_after_stop_token_123456",
+    }),e=>e.code==="external_io_revocation_intent_pending");
     assert.equal((await docs[5].get()).exists,false);
   }finally{
     await Promise.all([...docs,...certificates].map(ref=>ref.delete()));
