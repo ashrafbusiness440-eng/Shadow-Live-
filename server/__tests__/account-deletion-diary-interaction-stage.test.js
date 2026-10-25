@@ -69,6 +69,9 @@ test("old, cancelled, held and uncertified request fails closed",async()=>{
     d=>d.docs.get(req).status="cancelled",
     d=>d.docs.get(req).requestId="stale_request_12345",
     d=>d.docs.get(req).legalHold=true,
+    d=>d.docs.get(req).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="Under_Review",
+    d=>d.docs.get(user).appealStatus="open",
     d=>d.docs.get(cp).requestId="stale_request_12345",
     d=>d.docs.get(cp).uid="different_user_123",
     d=>d.docs.get(cp).phase="notifications",
@@ -92,7 +95,7 @@ test("old, cancelled, held and uncertified request fails closed",async()=>{
 test("held source diary or interaction blocks even after other stage approval",async()=>{
   for(const path of [like,view,diary]){
     for(const flag of ["legalHold","retentionHold","evidenceHold",
-      "investigationHold","reported"]){
+      "investigationHold","reported","appealPending"]){
       const db=new Db();db.docs.get(path)[flag]=true;
       const kind=path===view?"views":"likes";
       await assert.rejects(run(db,kind),
@@ -100,6 +103,16 @@ test("held source diary or interaction blocks even after other stage approval",a
       assert.equal(db.commits.length,0);
       assert.equal(db.docs.has(path),true);
     }
+  }
+});
+test("open appeal on diary interaction or original diary blocks destructive write",async()=>{
+  for(const path of [like,view,diary]){
+    const db=new Db();
+    db.docs.get(path).appealStatus=" OPEN ";
+    await assert.rejects(run(db,path===view?"views":"likes"),
+      e=>e.code==="diary_interaction_source_requires_review");
+    assert.equal(db.commits.length,0);
+    assert.equal(db.docs.has(path),true);
   }
 });
 test("incorrect owner and unexpected extra fields fail before deletion",async()=>{
