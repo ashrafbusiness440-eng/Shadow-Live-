@@ -116,7 +116,7 @@ test("live-shaped keys and revoked synthetic certificates never dispatch",async(
     if(!live){
       const entries=[...db.docs.entries()];
       const approval=entries.find(([path])=>
-        path.startsWith("account_deletion_") && path.includes("cert"));
+        path.startsWith("account_deletion_erasure_approvals/"));
       // Revocation by a participating domain, not checkpoint flags.
       assert.ok(approval,"synthetic approval should exist");
       approval[1].decision="revoked";
