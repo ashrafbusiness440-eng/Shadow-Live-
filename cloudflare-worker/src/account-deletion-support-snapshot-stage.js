@@ -1,13 +1,10 @@
+import { accountDeletionHasActiveHold as protectedHold } from "./account-deletion-active-holds.js";
 // Bounded, independently gated erasure stage for pre-enumerated support pairs.
 // NOT routed to API/cron. Existing support points and gift counts are immutable.
 const clean = value => String(value ?? "").trim();
 const validUid = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const validRequestId = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
-const protectedHold = record => [
-  record?.legalHold, record?.retentionHold, record?.deletionHold,
-  record?.reviewHold, record?.evidenceHold,
-  record?.investigationHold,
-].some(value => value === true);
+
 const REDACTED_NAME = "حساب محذوف";
 
 export class SupportSnapshotStageError extends Error {
