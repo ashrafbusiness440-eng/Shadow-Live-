@@ -54,14 +54,25 @@ export async function reserveAccountErasureExternalIo(db, {
   const path = "account_erasure_external_io_reservations/" + uid + "__" + objectId;
   const tx = await db.beginTransaction();
   try {
-    const [request,checkpoint,user,existing,storageObject,admission] = await Promise.all([
-      db.get("account_deletion_requests/"+uid,tx),
-      db.get("account_deletion_erasure_checkpoints/"+uid,tx),
-      db.get("users/"+uid,tx),
-      db.get(path,tx),
-      db.get("storage_objects/"+objectId,tx),
-      db.get("admin_audit_logs/erasure_processing_start_"+requestId,tx),
-    ]);
+    // Six bounded exact reads in ONE Firestore transaction-scoped batchGet
+    // (instead of parallel REST GETs contending for the same transaction).
+    // Test adapters without getMany retain the identical transaction-scoped
+    // exact-read fallback. All writes still use this same transaction.
+    const basePaths=[
+      "account_deletion_requests/"+uid,
+      "account_deletion_erasure_checkpoints/"+uid,
+      "users/"+uid,
+      path,
+      "storage_objects/"+objectId,
+      "admin_audit_logs/erasure_processing_start_"+requestId,
+    ];
+    const base=typeof db.getMany==="function"
+      ? await db.getMany(basePaths,tx)
+      : await Promise.all(basePaths.map(p=>db.get(p,tx)));
+    if (!Array.isArray(base)||base.length!==basePaths.length) {
+      reject("external_io_transaction_read_failed",503);
+    }
+    const [request,checkpoint,user,existing,storageObject,admission]=base;
     if (existing.exists) reject("external_io_reservation_requires_reconciliation");
     if (!request.exists || !checkpoint.exists || !user.exists ||
         !storageObject.exists || !admission.exists ||
