@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import { syntheticErasureCertificateRows }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 import {
   finalImageEvidenceDeadline, finalImageEvidenceFields,
   purgeFinalImageEvidence, runDueImageEvidenceCleanup,
@@ -65,6 +67,7 @@ function certifyDeletedImageAccountJob(db,jobId) {
   });
   db.docs.set("account_deletion_requests/"+ownerUid,{
     uid:ownerUid,requestId,status:"processing",
+    requestedAt:new Date(Date.now()-40*86400_000),
   });
   db.docs.set("account_deletion_erasure_checkpoints/"+ownerUid,{
     requestId,phase:"storage_media",destructiveAllowed:true,
@@ -78,6 +81,9 @@ function certifyDeletedImageAccountJob(db,jobId) {
   db.docs.set("admin_audit_logs/r2_deletion_queue_"+requestId,{
     action:"accountErasureR2QueueCertified",requestId,targetId:ownerUid,
   });
+  for(const [path,record] of syntheticErasureCertificateRows({
+    uid:ownerUid,requestId,nowMs:Date.now(),
+  })) db.docs.set(path,record);
 }
 test("U6-L3/B final decision starts exactly 90 days, not upload date",()=>{
   assert.equal(finalImageEvidenceDeadline(now).toISOString(),due.toISOString());
