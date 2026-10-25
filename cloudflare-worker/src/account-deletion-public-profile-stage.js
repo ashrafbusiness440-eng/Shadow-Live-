@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // A single-document public identity cleanup primitive for the verified
 // erasure finalizer. NOT connected to HTTP, cron, or a production feature flag.
 // Never deletes users/{uid}, Auth, reports, wallets, financial ledgers or R2.
@@ -17,10 +19,11 @@ export class PublicProfileErasureError extends Error {
 
 // Transactionally recheck the CURRENT request and active checkpoint before
 // touching a profile. A successful preflight does NOT satisfy these conditions.
-export async function erasePublicProfileStage(db, {uid, requestId} = {}) {
+export async function erasePublicProfileStage(db, {uid, requestId, nowMs = Date.now()} = {}) {
   uid = clean(uid);
   requestId = clean(requestId);
-  if (!uidPattern.test(uid) || !requestIdPattern.test(requestId)) {
+  if (!uidPattern.test(uid) || !requestIdPattern.test(requestId) ||
+      !Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new PublicProfileErasureError("invalid_public_profile_erasure", 400);
   }
   const tx = await db.beginTransaction();
@@ -53,6 +56,9 @@ export async function erasePublicProfileStage(db, {uid, requestId} = {}) {
     }
     // Financial/purchase/legal retention approvals must already be certified
     // by the finalizer before it sets destructiveAllowed=true in this phase.
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt, nowMs,
+    });
     await db.commit(tx, [db.writeDelete("public_profiles/" + uid)]);
     return {ok:true,removed:true,duplicate:false};
   } catch (error) {
