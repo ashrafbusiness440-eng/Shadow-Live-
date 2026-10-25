@@ -197,6 +197,34 @@ safe storage/agency disposition; authorized reviewer evidence; plus verified
 private-text transactional concurrency and release evidence. **No live R2 delete,
 approval release, Firebase Auth deletion or final completion receipt.**
 
+### Gate 1: private-message direct mutation guard now implemented — dispatcher OFF
+
+The internal, **UNROUTED** `redactDeletedPrivateTextMessage` now requires in
+its very own Firestore write transaction: exact matching request and
+checkpoint/account identity, an immutable original
+`accountErasureProcessingAdmitted` audit for this UID/request with all six
+independent certified domains, the valid 30-day grace and eligibility time,
+a clear held-status check, the message/conversation/evidence snapshots,
+and twelve current signoff + immutable audit documents via the existing
+shared certification helper. All seven primary rows must be returned
+explicitly by one transaction-scoped `batchGet`; truncated results fail
+closed. The stage refuses to touch any message when the admission
+record is absent, mismatched, held, or the grace period has not elapsed,
+even if an old checkpoint was forged `destructiveAllowed:true`.
+A disposable Cloudflare REST + Firestore Emulator test proves absence of
+the original admission blocks text modification and that revoking Play
+billing approval after a first synthetic tombstone stops a second
+message without changing the counterparty's text or wallet. Existing
+native Emulator and paginated tests use disposable, fully synthetic
+admissions and certificates, not real reviewer authorizations.
+
+This is a concrete guarded code path, **NOT release approval**. The internal
+phase dispatcher still rejects `private_text` unconditionally; no new
+API, scheduler, actual account deletion, certificate issuer, Auth removal,
+or false completion receipt is introduced. Real reviewer evidence, a
+durable resumable stage mechanism and full reconciliation remain blockers
+under fixed gates 1/2/3/5.
+
 ### Gate 1: batchGet transport-row completeness (not a go-live signal)
 
 The actual Cloudflare Firestore REST `getMany` previously synthesized
