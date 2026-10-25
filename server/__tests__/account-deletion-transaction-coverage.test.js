@@ -13,11 +13,12 @@ const guarded = [
   "social-pair",
   "support-snapshot",
   "r2-queue",
+  "private-text",
 ];
 const source = stage => readFileSync(
   "cloudflare-worker/src/account-deletion-" + stage + "-stage.js","utf8");
 
-test("seven erasure write stages share one transaction-scoped six-domain gate",()=>{
+test("eight erasure write stages share one transaction-scoped six-domain gate",()=>{
   for(const stage of guarded){
     const src=source(stage);
     const check=src.indexOf("await recheckErasureCertificatesInTransaction(");
@@ -29,12 +30,16 @@ test("seven erasure write stages share one transaction-scoped six-domain gate",(
   }
 });
 
-test("private text remains an explicit release blocker, not falsely certified",()=>{
+test("private-text write is transactionally certified but the release remains disabled",()=>{
   const src=source("private-text");
-  assert.equal(src.includes("recheckErasureCertificatesInTransaction"),false);
-  // NEVER flip this to true by removing private text from the inventory.
-  // First wire a recheck in the actual same transaction and add emulator
-  // race tests, then replace this intentional known-gap assertion.
+  const checked=src.indexOf("await recheckErasureCertificatesInTransaction(");
+  const wrote=src.indexOf("await db.commit(");
+  assert.ok(checked>=0 && wrote>checked);
+  const runner=readFileSync(
+    "cloudflare-worker/src/account-deletion-internal-phase-runner.js","utf8");
+  // Do not unlock until an actual REST/Emulator signoff-revocation race
+  // and independently approved financial/legal retention evidence exist.
+  assert.match(runner,/private_text_erasure_transaction_guard_missing/);
 });
 
 test("production dispatcher never exposes guarded stages as a route or cron",()=>{
@@ -69,8 +74,8 @@ test("unguarded private-text erasure is explicitly disabled at the internal disp
   const reads=runner.indexOf('db.get(requestPath)');
   assert.ok(check>=0 && reads>check);
   assert.match(runner,/private_text_erasure_transaction_guard_missing/);
-  // The original primitive is intentionally still unrouted. This safeguard
-  // must never be misreported as a completed private-message cleanup stage.
+  // The direct primitive is now same-transaction certified and remains
+  // unrouted and dispatcher-blocked until release evidence is complete.
   const module=source("private-text");
-  assert.equal(module.includes("recheckErasureCertificatesInTransaction"),false);
+  assert.match(module,/recheckErasureCertificatesInTransaction/);
 });
