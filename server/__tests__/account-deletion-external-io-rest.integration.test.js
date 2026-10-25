@@ -141,11 +141,25 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     await assert.rejects(recordHold(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
     }),e=>e.code==="external_io_coordination_requires_reconciliation");
+    // A held request must block a SECOND object even before the Owner
+    // requests revocation. This is the actual REST Firestore transaction path.
+    const heldObjectId="rest_io_held_"+suffix;
+    const heldAsset=doc("storage_objects/"+heldObjectId);
+    const heldReservation=doc("account_erasure_external_io_reservations/"+
+      uid+"__"+heldObjectId);
+    refs.push(heldAsset,heldReservation);
+    await heldAsset.set({objectId:heldObjectId,ownerUid:uid,
+      scope:"chat_image"});
+    await assert.rejects(reserve(firestoreClient(env),{
+      ...args("rest_worker_held_other_token_123456"),
+      objectId:heldObjectId,
+    }),e=>e.code==="external_io_coordination_requires_reconciliation");
+    assert.equal((await heldReservation.get()).exists,false);
     // Revocation after a reservation must never permit a fresh reservation.
     await certificates[0].update({decision:"revoked"});
     await assert.rejects(reserve(firestoreClient(env),args(
       "rest_worker_three_token_123456")),
-      e=>e.code==="external_io_reservation_requires_reconciliation"||
+      e=>e.code==="external_io_coordination_requires_reconciliation"||
         e.code==="erasure_transactional_certification_blocked");
     assert.equal((await reservation.get()).data().externalIoAllowed,false);
     // A stop requested AFTER a prior immutable reservation must prevent
