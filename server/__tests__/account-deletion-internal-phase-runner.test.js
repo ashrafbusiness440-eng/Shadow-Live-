@@ -205,7 +205,7 @@ test("transaction certificate guard reuses all six approvals in the supplied tx,
     validAtTransactionRead:true,validatedDomains:6,
     destructiveAllowed:false,completionVerified:false,
   });
-  assert.equal(checked.length,12);
+  assert.equal(checked.length,18);
   assert.equal(db.queries.length,0);
   assert.equal(db.commits,0);
 });
@@ -262,8 +262,8 @@ test("production-style bounded batchGet reads all signoffs in the exact write tr
   assert.equal(result.validatedDomains,6);
   assert.equal(calls.length,1);
   assert.equal(calls[0].transaction,"tx");
-  assert.equal(calls[0].paths.length,12);
-  assert.equal(new Set(calls[0].paths).size,12);
+  assert.equal(calls[0].paths.length,18);
+  assert.equal(new Set(calls[0].paths).size,18);
   assert.equal(db.getCalls.length,0);
   assert.equal(db.commits,0);
 });
@@ -294,4 +294,30 @@ test("even fully certified processing state cannot dispatch unguarded private te
   assert.equal(db.commits,0);
   assert.equal(db.docs.get("conversations/"+conversationId).participants[1],other);
   assert.equal(db.docs.get(userPath).diamonds,12);
+});
+
+test("immutable withdrawal tombstone blocks all six stage signoffs even if approved field is restored",async()=>{
+  for(const domain of domains){
+    const db=new Db();
+    const path="admin_audit_logs/erasure_domain_withdrawal_"+
+      requestId+"__"+domain;
+    db.docs.set(path,{action:"accountErasureDomainWithdrawnWithExternalIoStop",
+      targetId:uid,requestId,domain,createdAt:new Date(nowMs)});
+    // The original certificate and its original certification audit remain
+    // valid/approved: only a durable withdrawal tombstone denies mutation.
+    assert.equal(db.docs.get(certPath(domain)).decision,"approved");
+    await assert.rejects(recheckTransaction(db,"tx",{
+      uid,requestId,requestedAtMs,nowMs,
+    }),e=>e.code==="erasure_transactional_certification_blocked");
+    assert.equal(db.commits,0);
+  }
+});
+test("missing tombstone batchGet slot never masquerades as no withdrawal",async()=>{
+  const db=new Db();
+  db.getMany=async(paths,tx)=>paths.map((p,i)=>
+    i===2?null:{exists:db.docs.has(p),data:db.docs.get(p)||null});
+  await assert.rejects(recheckTransaction(db,"tx",{
+    uid,requestId,requestedAtMs,nowMs,
+  }),e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.commits,0);
 });

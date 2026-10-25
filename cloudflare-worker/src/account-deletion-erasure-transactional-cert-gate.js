@@ -6,6 +6,7 @@
 import {
   REQUIRED_ERASURE_ADMISSION_DOMAINS,
   validateErasureDomainSignoff,
+  erasureDomainWithdrawalAuditPath,
 } from "./account-deletion-processing-admission.js";
 
 // Accept Firestore Timestamp, ISO string or Date without trusting a client clock.
@@ -59,18 +60,20 @@ export async function recheckErasureCertificatesInTransaction(db, tx, {
   const paths = REQUIRED_ERASURE_ADMISSION_DOMAINS.flatMap(domain => [
     "account_deletion_erasure_approvals/" + requestId + "__" + domain,
     "admin_audit_logs/erasure_domain_cert_" + requestId + "__" + domain,
+    erasureDomainWithdrawalAuditPath(requestId, domain),
   ]);
   // Production adapter supports transactional batchGet; one RPC instead of
   // twelve serial remote calls. Mocks fall back to the identical exact reads.
   const records = typeof db.getMany === "function"
     ? await db.getMany(paths, tx)
     : await Promise.all(paths.map(path => db.get(path, tx)));
-  if (!Array.isArray(records) || records.length !== paths.length) blocked();
+  if (!Array.isArray(records) || records.length !== paths.length ||
+      records.some(row => !row || typeof row.exists !== "boolean")) blocked();
   for (let i = 0; i < REQUIRED_ERASURE_ADMISSION_DOMAINS.length; i++) {
     try {
-      validateErasureDomainSignoff(records[2 * i], records[2 * i + 1], {
+      validateErasureDomainSignoff(records[3 * i], records[3 * i + 1], {
         uid, requestId, domain: REQUIRED_ERASURE_ADMISSION_DOMAINS[i],
-        requestedAtMs, nowMs,
+        requestedAtMs, nowMs, withdrawal: records[3 * i + 2],
       });
     } catch {
       blocked();

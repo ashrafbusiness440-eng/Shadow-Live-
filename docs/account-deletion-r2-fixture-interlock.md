@@ -123,3 +123,22 @@ evidence; a two-HEAD case alone is not a completion certificate, permission
 to retry, or grounds for declaring a stop effective. All real financial,
 Google Play, shared assets, legal/90-day retention reviews and signoff writer
 coordination remain separate release blockers. No production switch changed.
+
+
+## Immutable withdrawal tombstone enforcement
+
+Every one of the six certificate checks now reads THREE exact transaction
+documents: original signed approval, signed certification audit, and the
+`admin_audit_logs/erasure_domain_withdrawal_<requestId>__<domain>`
+**immutable withdrawal tombstone**. A missing tombstone must be explicitly
+observed as `exists:false`, rather than silently skipped or treated as
+missing data. Its existence permanently blocks re-use of that domain
+certification for the same deletion request even if a separate actor
+incorrectly edits `decision` back to `approved` and original audit remains.
+The owner-only admission transaction, destructive stage transaction guard,
+and non-destructive closure checklist now enforce the SAME boundary.
+
+This prevents silent approval resurrection; it does not replace authorized
+independent signoff issuance, emergency stop writers, real provider evidence,
+or production release gates. Existing request-wide stop still blocks R2
+dispatch, and no production R2/Auth deletion is enabled.

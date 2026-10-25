@@ -7,6 +7,7 @@ import {
   REQUIRED_ERASURE_ADMISSION_DOMAINS,
   validateErasureDomainSignoff,
   AccountErasureAdmissionError,
+  erasureDomainWithdrawalAuditPath,
 } from "./account-deletion-processing-admission.js";
 
 const clean = value => String(value ?? "").trim();
@@ -36,7 +37,7 @@ const auditPath = (requestId, domain) =>
   "admin_audit_logs/erasure_domain_cert_" + requestId + "__" + domain;
 
 /**
- * 3 exact account reads + at most 12 exact independent certificate/audit
+ * 3 exact account reads + at most 18 exact certificate/audit/withdrawal
  * reads; never scans or leaks signer UIDs, evidence, ledger or customer data.
  * Only a CURRENT, due, non-held review_ready / preflight_blocked request
  * can have domain documents checked. Empty/inaccessible documents are blockers.
@@ -86,16 +87,18 @@ export async function inspectAccountDeletionClosureReadiness(db, {
     domain => [
       db.get(approvalPath(requestId, domain)),
       db.get(auditPath(requestId, domain)),
+      db.get(erasureDomainWithdrawalAuditPath(requestId, domain)),
     ],
   ));
   const domains = REQUIRED_ERASURE_ADMISSION_DOMAINS.map((domain, i) => {
-    const approval = documents[i * 2];
-    const audit = documents[i * 2 + 1];
+    const approval = documents[i * 3];
+    const audit = documents[i * 3 + 1];
+    const withdrawal = documents[i * 3 + 2];
     let certificateDocumentsValid = false;
     if (approval?.exists && audit?.exists) {
       try {
         validateErasureDomainSignoff(approval, audit, {
-          uid, requestId, domain, requestedAtMs, nowMs,
+          uid, requestId, domain, requestedAtMs, nowMs, withdrawal,
         });
         certificateDocumentsValid = true;
       } catch (error) {

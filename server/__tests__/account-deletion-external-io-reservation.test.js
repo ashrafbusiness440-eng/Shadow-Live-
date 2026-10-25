@@ -84,7 +84,7 @@ test("reservation is an exact one-record Firestore transaction and NEVER R2 dele
   assert.equal(db.commits[0].path,resPath);
   assert.equal(db.docs.get(resPath).state,"reserved_requires_external_interlock");
   assert.equal(db.docs.get(resPath).externalIoAllowed,false);
-  assert.equal(db.reads.length,20);
+  assert.equal(db.reads.length,26);
   assert.equal(new Set(db.reads).size,20);
   assert.equal(db.reads.filter(x=>x.startsWith("account_deletion_erasure_approvals/")).length,6);
 });
@@ -190,7 +190,7 @@ test("reservation groups eight current-state and twelve audited-signoff reads in
   };
   const result=await reserve(db,opts());
   assert.equal(result.externalIoAllowed,false);
-  assert.deepEqual(calls.map(c=>c.count),[8,12]);
+  assert.deepEqual(calls.map(c=>c.count),[8,18]);
   assert.ok(calls.every(c=>c.tx==="tx_123"));
   assert.equal(db.commits.length,1);
 });
@@ -689,4 +689,14 @@ test("withdrawn approval never blocks emergency reconciliation but never grants 
   await assert.rejects(openCase(db,manualCaseOpts({
     actor:{uid:owner,owner:false},
   })),e=>e.code==="owner_required");
+});
+
+test("historical withdrawal audit defeats an approved decision resurrected later",async()=>{
+  const db=new Db();
+  db.docs.set("admin_audit_logs/erasure_domain_withdrawal_"+
+    requestId+"__play_billing",{action:"accountErasureDomainWithdrawnWithExternalIoStop",
+      targetId:uid,requestId,domain:"play_billing"});
+  await assert.rejects(reserve(db,opts()),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.docs.has(resPath),false);
 });

@@ -199,3 +199,18 @@ test("stale, invalid or malformed withdrawal cannot rewrite signoff or stop",asy
   await assert.rejects(withdraw(db,{...stopOpts(),
     domain:"play_billing",actor:{uid:owner,owner:false}}),/owner_required/);
 });
+
+test("fixture R2 dispatch cannot run with immutable withdrawal tombstone and restored approval",async()=>{
+  const db=new Db();await prepared(db);
+  db.docs.set("admin_audit_logs/erasure_domain_withdrawal_"+
+    requestId+"__financial_settlement",{
+      action:"accountErasureDomainWithdrawnWithExternalIoStop",
+      targetId:uid,requestId,domain:"financial_settlement",
+    });
+  let deletes=0;
+  await assert.rejects(dispatch(db,{async delete(){deletes++;}},opts()),
+    /erasure_transactional_certification_blocked/);
+  assert.equal(deletes,0);
+  assert.equal(db.docs.has("account_erasure_external_io_fixture_dispatches/"+
+    uid+"__"+requestId),false);
+});
