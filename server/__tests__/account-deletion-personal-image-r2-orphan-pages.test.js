@@ -169,6 +169,9 @@ test("duplicate names, invalid truncation and provider errors fail closed",async
  const db=new Db();
  await assert.rejects(inspect(db,new R2([key(1),key(1)]),opts),
   e=>e.code==="personal_image_orphan_duplicate_object");
+ const sameIdTwoExtensions=new R2([key(1),key(1,"profile","png")]);
+ await assert.rejects(inspect(db,sameIdTwoExtensions,opts),
+  e=>e.code==="personal_image_orphan_duplicate_id");
  const missingCursor=new R2([key(1)]);
  missingCursor.list=async()=>({objects:[{key:key(1)}],truncated:true});
  await assert.rejects(inspect(db,missingCursor,opts),
