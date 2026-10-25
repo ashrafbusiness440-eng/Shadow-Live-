@@ -3,7 +3,8 @@ import test from "node:test";
 import {readFileSync} from "node:fs";
 import {reserveAccountErasureExternalIo as reserve,
   requestAccountErasureExternalIoRevocationIntent as requestStop,
-  recordAccountErasureExternalIoCoordinationHold as recordHold}
+  recordAccountErasureExternalIoCoordinationHold as recordHold,
+  recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
@@ -213,7 +214,7 @@ test("Owner revocation intent is immutable, audited and blocks any NEW reservati
   assert.deepEqual(stopped,{
     ok:true,revocationIntentCreated:true,revocationEffective:false,
     pendingReconciliation:true,coordinationHoldObserved:false,
-    externalIoAllowed:false,
+    uncertainAttemptObserved:false,externalIoAllowed:false,
   });
   assert.equal(db.docs.get(intentPath).status,"pending_reconciliation");
   assert.equal(db.docs.get(intentPath).revocationEffective,false);
@@ -392,7 +393,7 @@ test("incomplete coordination or stop transaction snapshot never writes a hold o
     const commits=db.commits.length,read=db.getMany.bind(db);
     db.getMany=async(paths,tx)=>{
       const docs=await read(paths,tx);
-      if(paths.length===(fn==="holder"?8:5))
+      if(paths.length===(fn==="holder"?8:6))
         docs[docs.length-1]=undefined;
       return docs;
     };
@@ -401,4 +402,80 @@ test("incomplete coordination or stop transaction snapshot never writes a hold o
       e=>e.code==="external_io_transaction_read_failed");
     assert.equal(db.commits.length,commits);
   }
+});
+
+test("uncertain R2 attempt journal is immutable, non-permissive and never retryable",async()=>{
+  const db=new Db();
+  await reserve(db,opts());
+  await recordHold(db,opts());
+  const recorded=await recordUncertainAttempt(db,opts());
+  assert.deepEqual(recorded,{
+    ok:true,uncertainAttemptRecorded:true,
+    outcomeUnknown:true,retryAllowed:false,externalIoAllowed:false,
+    completionVerified:false,pendingReconciliation:true,
+  });
+  const path="account_erasure_external_io_uncertain_attempts/"+
+    uid+"__"+requestId;
+  const journal={...db.docs.get(path)};
+  assert.equal(journal.state,"outcome_unknown_requires_reconciliation");
+  assert.equal(journal.retryAllowed,false);
+  await assert.rejects(recordUncertainAttempt(db,opts()),
+    e=>e.code==="external_io_uncertain_attempt_requires_reconciliation");
+  assert.deepEqual(db.docs.get(path),journal);
+  const stop=await requestStop(db,{
+    uid,requestId,actor:{uid:owner,owner:true},nowMs,
+  });
+  assert.equal(stop.uncertainAttemptObserved,true);
+  assert.equal(stop.coordinationHoldObserved,true);
+  assert.equal(stop.revocationEffective,false);
+  assert.equal(db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId).uncertainAttemptObserved,true);
+  assert.deepEqual(db.docs.get(path),journal);
+  await assert.rejects(recordUncertainAttempt(db,opts()),
+    e=>e.code==="external_io_revocation_intent_pending");
+});
+
+test("Owner stop before unknown-outcome journal blocks record without new writes",async()=>{
+  const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+  await requestStop(db,{uid,requestId,actor:{uid:owner,owner:true},nowMs});
+  const count=db.commits.length;
+  await assert.rejects(recordUncertainAttempt(db,opts()),
+    e=>e.code==="external_io_revocation_intent_pending");
+  assert.equal(db.commits.length,count);
+  assert.equal([...db.docs.keys()].some(path=>
+    path.startsWith("account_erasure_external_io_uncertain_attempts/")),false);
+});
+
+test("unknown-outcome journal requires matching claimed hold, token, and fresh approvals",async()=>{
+  const cases=[
+    db=>db.docs.delete("account_erasure_external_io_coordination_holds/"+
+      uid+"__"+requestId),
+    db=>db.docs.get("account_erasure_external_io_coordination_holds/"+
+      uid+"__"+requestId).operationToken="another_operation_token_123456",
+    db=>db.docs.get("account_erasure_external_io_reservations/"+
+      uid+"__"+objectId).externalIoAllowed=true,
+    db=>db.docs.get("account_deletion_erasure_approvals/"+
+      requestId+"__play_billing").decision="revoked",
+    db=>db.docs.get("account_deletion_requests/"+uid).legalHold=true,
+  ];
+  for(const mutate of cases){
+    const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+    mutate(db);const count=db.commits.length;
+    await assert.rejects(recordUncertainAttempt(db,opts()));
+    assert.equal(db.commits.length,count);
+    assert.equal([...db.docs.keys()].some(path=>
+      path.startsWith("account_erasure_external_io_uncertain_attempts/")),false);
+  }
+});
+
+test("uncertain journal truncated Firestore snapshots fail closed",async()=>{
+  const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+  const before=db.commits.length,read=db.getMany.bind(db);
+  db.getMany=async(paths,tx)=>{
+    const rows=await read(paths,tx);
+    return paths.length===9?rows.slice(0,8):rows;
+  };
+  await assert.rejects(recordUncertainAttempt(db,opts()),
+    e=>e.code==="external_io_transaction_read_failed");
+  assert.equal(db.commits.length,before);
 });
