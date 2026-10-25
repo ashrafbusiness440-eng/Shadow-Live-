@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { syntheticErasureCertificateRows }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 import test from "node:test";
 
 import {
@@ -33,6 +35,7 @@ import {
 // production-equivalent certified request + immutable queue audit gate.
 function certifiedCleanupDb(baseDb, {hold=false}={}) {
   let ownerUid="",requestId="";
+  const certificates=new Map();
   return {
     ...baseDb,
     async runQuery(path,options) {
@@ -41,15 +44,26 @@ function certifiedCleanupDb(baseDb, {hold=false}={}) {
       const job=items[0];
       ownerUid=job.data.ownerUid;
       requestId="certified_cleanup_"+job.id;
+      const signoffs=syntheticErasureCertificateRows({
+        uid:ownerUid,requestId,nowMs:Date.now(),
+      });
+      for(const [path,record] of signoffs)certificates.set(path,record);
       return [{
         ...job,
         data:{...job.data,requestId,reason:"account_deleted_verified",status:"queued"},
       }];
     },
+    // Test-only fake transaction: production uses Firestore read-write tx.
+    async beginTransaction(){return "synthetic_cleanup_tx";},
+    async rollback(){},
     async get(path,...rest) {
+      if(certificates.has(path))return {
+        exists:true,data:certificates.get(path),
+      };
       if(ownerUid && requestId) {
         if(path==="account_deletion_requests/"+ownerUid) return {
-          exists:true,data:{uid:ownerUid,requestId,status:"processing",reviewHold:hold},
+          exists:true,data:{uid:ownerUid,requestId,status:"processing",reviewHold:hold,
+            requestedAt:new Date(Date.now()-40*86400_000)},
         };
         if(path==="account_deletion_erasure_checkpoints/"+ownerUid) return {
           exists:true,data:{
