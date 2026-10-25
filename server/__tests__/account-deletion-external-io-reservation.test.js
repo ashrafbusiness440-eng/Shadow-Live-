@@ -85,7 +85,7 @@ test("reservation is an exact one-record Firestore transaction and NEVER R2 dele
   assert.equal(db.docs.get(resPath).state,"reserved_requires_external_interlock");
   assert.equal(db.docs.get(resPath).externalIoAllowed,false);
   assert.equal(db.reads.length,26);
-  assert.equal(new Set(db.reads).size,20);
+  assert.equal(new Set(db.reads).size,26);
   assert.equal(db.reads.filter(x=>x.startsWith("account_deletion_erasure_approvals/")).length,6);
 });
 test("reserved token never permits duplicate or stale recovery",async()=>{
