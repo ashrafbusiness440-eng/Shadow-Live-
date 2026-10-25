@@ -8,6 +8,8 @@ import {randomUUID,generateKeyPairSync} from "node:crypto";
 import {getApps,initializeApp,deleteApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {firestoreClient} from "../../cloudflare-worker/src/firestore.js";
+import {verifyAccountStorageCleanupJob}
+  from "../../cloudflare-worker/src/user-storage.js";
 import {reserveAccountErasureExternalIo as reserve,
   requestAccountErasureExternalIoRevocationIntent as requestStop}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
@@ -226,5 +228,61 @@ test("emulator: REST transactional batchGet blocks revoked approval before any r
     assert.equal((await docs[5].get()).exists,false);
   }finally{
     await Promise.all([...docs,...certificates].map(ref=>ref.delete()));
+  }
+});
+
+test("emulator: R2 queue verification honors pending external-I/O stop",{
+  timeout:65000,
+},async()=>{
+  const suffix=sid(),uid="rest_queue_user_"+suffix,
+    requestId="rest_queue_request_"+suffix;
+  const nowMs=Date.now(),requestedAt=new Date(nowMs-days(40));
+  const owner="test_owner_rest_123456";
+  const paths=[
+    "account_deletion_requests/"+uid,
+    "account_deletion_erasure_checkpoints/"+uid,
+    "users/"+uid,
+    "admin_audit_logs/r2_deletion_queue_"+requestId,
+    "account_erasure_external_io_revocation_intents/"+uid+"__"+requestId,
+    "admin_audit_logs/erasure_external_io_revocation_intent_"+requestId,
+  ];
+  const refs=paths.map(path=>store.doc(path));
+  const certificates=await seedEmulatorErasureCertificates(store,{
+    uid,requestId,nowMs,
+  });
+  const job={id:"disposable_pending_erasure_job_"+suffix,data:{
+    ownerUid:uid,requestId,reason:"account_deleted_verified",
+    status:"queued",
+  }};
+  try{
+    await Promise.all([
+      refs[0].set({uid,requestId,status:"processing",requestedAt,
+        eligibleAt:new Date(requestedAt.getTime()+days(30))}),
+      refs[1].set({uid,requestId,phase:"storage_media",
+        destructiveAllowed:true,storageRetentionApproved:true,
+        sharedMediaOwnershipReviewed:true,legalEvidenceReviewComplete:true,
+        financialSettlementApproved:true,playBillingReviewComplete:true}),
+      refs[2].set({accountStatus:"deletion_processing",role:"user"}),
+      refs[3].set({targetId:uid,requestId,
+        action:"accountErasureR2QueueCertified"}),
+    ]);
+    // The actual Cloudflare REST adapter and disposable Emulator transaction
+    // accept a valid read-only queue validation BEFORE the stop.
+    assert.equal(await verifyAccountStorageCleanupJob(
+      firestoreClient(env),job),true);
+    const result=await requestStop(firestoreClient(env),{
+      uid,requestId,actor:{uid:owner,owner:true},nowMs,
+    });
+    assert.equal(result.revocationEffective,false);
+    assert.equal((await refs[4].get()).data().status,
+      "pending_reconciliation");
+    // The same still-approved independent certificates cannot override a
+    // durable stop request; no bucket or actual storage data is involved.
+    assert.equal(await verifyAccountStorageCleanupJob(
+      firestoreClient(env),job),false);
+    assert.equal((await refs[3].get()).data().action,
+      "accountErasureR2QueueCertified");
+  }finally{
+    await Promise.all([...refs,...certificates].map(ref=>ref.delete()));
   }
 });
