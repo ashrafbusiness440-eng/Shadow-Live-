@@ -193,16 +193,18 @@ and final Auth deletion remain blocking. Keep production deletion disabled.
 
 ## Emulator conflict acceptance — transactional signoff revocation
 
-A separate disposable Firestore Emulator test now creates six synthetic signed
-domain approvals and holds an actual Firestore SDK write transaction **after**
-its twelve approval/audit reads. A second independent Firestore operation then
-commits a revocation before that transaction attempts its owned-notification
-delete. The transaction must abort/retry, and on retry the shared validator
-must reject the revoked approval. The notification must survive. This
-specifically checks the read/write race not covered by merely revoking a
-certificate before an initial read. A second unit test confirms one bounded
-12-document `getMany(paths, tx)` RPC and that an absent audit fails closed
-without a non-transactional fallback.
+A separate disposable Firestore Emulator test creates six synthetic signed
+domain approvals, pauses a real Firestore SDK write transaction **after**
+its twelve approval/audit reads, and starts an independent revocation before
+releasing the transaction. Firestore server-side reads may use **pessimistic
+locks**: the revoke writer can be serialized *after* the erasure commit.
+The test therefore validates either safe outcome using Firestore commit time:
+if erasure commits, its server updateTime must be no later than the
+revocation's writeTime; if revocation wins, the erasure transaction must
+abort/retry and the notification must survive. The test deliberately does not
+deadlock by awaiting a locked revocation while holding the first transaction
+open. Separate unit coverage confirms one bounded 12-document transactional
+`getMany(paths, tx)` RPC and that absent audits fail closed.
 
 **Scope:** test-only Firestore SDK/emulator concurrency contract. Deployment
 still uses Cloudflare's REST Firestore adapter and its own transactional
