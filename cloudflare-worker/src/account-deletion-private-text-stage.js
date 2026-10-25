@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // Internal, intentionally unrouted erasure primitive for ONE already-enumerated
 // private text message. This cannot perform financial, media or R2 deletion.
 // The production preflight always has destructiveAllowed=false.
@@ -42,15 +44,24 @@ export async function redactDeletedPrivateTextMessage(db, {
   const messagePath=conversationPath+"/messages/"+messageId;
   const tx=await db.beginTransaction();
   try {
-    const [request,checkpoint,user,conversation,message,filterFlag] =
-      await Promise.all([
-        db.get("account_deletion_requests/"+uid,tx),
-        db.get("account_deletion_erasure_checkpoints/"+uid,tx),
-        db.get("users/"+uid,tx),
-        db.get(conversationPath,tx),
-        db.get(messagePath,tx),
-        db.get("content_filter_flags/"+messageId,tx),
-      ]);
+    // One bounded, transaction-scoped batchGet. Do not turn missing or
+    // truncated Firestore REST rows into seemingly absent moderation evidence.
+    const paths=[
+      "account_deletion_requests/"+uid,
+      "account_deletion_erasure_checkpoints/"+uid,
+      "users/"+uid,
+      conversationPath,
+      messagePath,
+      "content_filter_flags/"+messageId,
+    ];
+    const snapshots=typeof db.getMany==="function"
+      ? await db.getMany(paths,tx)
+      : await Promise.all(paths.map(path=>db.get(path,tx)));
+    if (!Array.isArray(snapshots) || snapshots.length!==paths.length ||
+        snapshots.some(doc=>!doc || typeof doc.exists!=="boolean")) {
+      throw new PrivateTextErasureError("private_text_transaction_read_failed",503);
+    }
+    const [request,checkpoint,user,conversation,message,filterFlag]=snapshots;
     if (!request.exists || !checkpoint.exists || !user.exists ||
         clean(request.data?.uid)!==uid ||
         clean(request.data?.requestId)!==requestId ||
@@ -61,10 +72,17 @@ export async function redactDeletedPrivateTextMessage(db, {
         checkpoint.data?.privateMessageRetentionCleared!==true ||
         checkpoint.data?.legalEvidenceReviewComplete!==true ||
         clean(user.data?.accountStatus)!=="deletion_processing" ||
-        clean(user.data?.role)==="owner" ||
+        clean(user.data?.role)==="owner" || user.data?.authDeleted===true ||
         held(request.data)||held(checkpoint.data)||held(user.data)) {
       throw new PrivateTextErasureError("private_text_erasure_blocked");
     }
+    // This same transaction contains the six approval+immutable-audit
+    // reads AND any masked text/preview writes. A revoked financial, Play,
+    // legal, media or retention signoff cannot be hidden by the earlier
+    // nontransactional batch preflight, or by a duplicate tombstone.
+    await recheckErasureCertificatesInTransaction(db,tx,{
+      uid,requestId,requestedAt:request.data?.requestedAt,nowMs:now.getTime(),
+    });
     if (!conversation.exists || held(conversation.data) ||
         !Array.isArray(conversation.data?.participants) ||
         conversation.data.participants.length!==2 ||
