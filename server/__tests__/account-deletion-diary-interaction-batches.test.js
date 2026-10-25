@@ -5,6 +5,8 @@ import {
   drainAccountDiaryInteractions as drain,
   MAX_DIARY_ERASURE_BATCH_ITEMS,
 } from "../../cloudflare-worker/src/account-deletion-diary-interaction-batches.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const uid="erased_diarist_123", other="other_diarist_999";
 const requestId="diary_erasure_request_123456";
@@ -16,13 +18,15 @@ const hx=u=>Buffer.from(u,"utf8").toString("hex");
 class Db {
   constructor(){
     this.docs=new Map([
-      [req,{uid,requestId,status:"processing"}],
+      [req,{uid,requestId,status:"processing",
+        requestedAt:new Date(Date.now()-40*86400_000)}],
       [cp,{uid,requestId,phase:"diary_interactions",
         destructiveAllowed:true,diaryInteractionRetentionCleared:true,
         legalEvidenceReviewComplete:true,historicalDiaryCountersReviewed:true}],
       [user,{role:"user",accountStatus:"deletion_processing",
         coins:99,diamonds:1}],
     ]);
+    seedSyntheticErasureCertificates(this.docs,{uid,requestId});
     this.queries=[];this.commits=[];this.failAt=0;
   }
   add(kind,count){
