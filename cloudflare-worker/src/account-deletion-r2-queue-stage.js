@@ -6,7 +6,10 @@ const validUid=v=>/^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const validRequestId=v=>/^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const held=d=>[
   d?.legalHold,d?.retentionHold,d?.deletionHold,d?.reviewHold,
-].some(v=>v===true);
+  d?.evidenceHold,d?.investigationHold,d?.reported,d?.appealPending,
+].some(v=>v===true) ||
+  ["pending","open","under_review"].includes(
+    clean(d?.appealStatus).toLowerCase());
 export class AccountStorageQueueError extends Error{
   constructor(code,status=409){super(code);this.code=code;this.status=status;}
 }
