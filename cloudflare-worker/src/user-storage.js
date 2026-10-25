@@ -1608,20 +1608,27 @@ export async function verifyAccountStorageCleanupJob(db, job) {
   // valid financial, Play, shared-asset, legal or retention signoffs.
   const tx = await db.beginTransaction();
   try {
-    const [request, checkpoint, user, audit] = await Promise.all([
-      db.get("account_deletion_requests/" + uid, tx),
-      db.get("account_deletion_erasure_checkpoints/" + uid, tx),
-      db.get("users/" + uid, tx),
-      db.get("admin_audit_logs/r2_deletion_queue_" + requestId, tx),
-    ]);
+    const [request, checkpoint, user, audit, revocationIntent] =
+      await Promise.all([
+        db.get("account_deletion_requests/" + uid, tx),
+        db.get("account_deletion_erasure_checkpoints/" + uid, tx),
+        db.get("users/" + uid, tx),
+        db.get("admin_audit_logs/r2_deletion_queue_" + requestId, tx),
+        db.get("account_erasure_external_io_revocation_intents/" +
+          uid + "__" + requestId, tx),
+      ]);
     const held = d => [d?.legalHold, d?.retentionHold,
       d?.deletionHold, d?.reviewHold, d?.evidenceHold,
       d?.investigationHold, d?.reported, d?.appealPending,
     ].some(x => x === true) ||
       ["pending", "open", "under_review"].includes(
         clean(d?.appealStatus).toLowerCase());
-    const valid = request.exists && checkpoint.exists && user.exists &&
-      audit.exists &&
+    // A durable pending stop request is independently authoritative even if
+    // certificates remain approved. This also rejects missing/malformed reads.
+    // It does NOT make the external bucket side effect atomic with Firestore.
+    const valid = revocationIntent?.exists === false &&
+      request?.exists === true && checkpoint?.exists === true &&
+      user?.exists === true && audit?.exists === true &&
       clean(request.data?.uid) === uid &&
       clean(request.data?.requestId) === requestId &&
       clean(checkpoint.data?.requestId) === requestId &&
