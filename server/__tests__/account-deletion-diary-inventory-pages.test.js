@@ -84,6 +84,25 @@ test("nested page preserves other authors and flags protected evidence",async()=
   assert.equal(result.hasMore,false);
   assert.equal(db.queries[0].collection,"diaries/"+diaryId+"/comments");
 });
+test("open appeals on diary original, mirror and other user's comment require review",async()=>{
+  for(const path of ["diaries/"+diaryId,
+    "users/"+uid+"/diaries/"+diaryId]) {
+    const db=new FakeDb();db.addDiary(diaryId,100);
+    db.docs.get(path).appealStatus="OPEN";
+    const page=await inspect(db,{uid,requestId,actor});
+    assert.equal(page.items[0].needsReview,true);
+    assert.equal(page.erasureAllowed,false);
+    await assert.rejects(inspect(db,{uid,requestId,actor,
+      kind:"comments",diaryId}),e=>
+      e.code==="diary_inventory_owner_or_evidence_conflict");
+  }
+  const db=new FakeDb();db.addDiary(diaryId,100);
+  db.addComment(diaryId,"comment_001",other,70,{appealPending:true});
+  const page=await inspect(db,{uid,requestId,actor,kind:"comments",diaryId});
+  assert.equal(page.items[0].authoredByDeleted,false);
+  assert.equal(page.items[0].needsReview,true);
+  assert.equal(db.docs.get("users/"+uid).coins,900);
+});
 test("missing original diary is flagged, never certified as absent",async()=>{
   const db=new FakeDb();db.addDiary(diaryId,50);
   db.docs.delete("diaries/"+diaryId);
@@ -115,6 +134,10 @@ test("request rotation, holds and mismatched diary block read inventory",async()
     db=>db.docs.get("account_deletion_requests/"+uid).status="cancelled",
     db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).requestId="stale",
     db=>db.docs.get("account_deletion_requests/"+uid).legalHold=true,
+    db=>db.docs.get("account_deletion_requests/"+uid).appealPending=true,
+    db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).appealStatus="Under_Review",
+    db=>db.docs.get("users/"+uid).appealStatus="open",
+    db=>db.docs.get("diaries/"+diaryId).appealPending=true,
     db=>db.docs.get("users/"+uid).role="owner",
     db=>db.docs.get("diaries/"+diaryId).ownerUid=other,
   ];
