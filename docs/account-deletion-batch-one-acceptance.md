@@ -119,3 +119,20 @@ fence, plus require operator reconciliation of ambiguous external outcomes
 before any retry or lease release. **No production R2 deletion may rely on
 this prototype.** The live R2 worker has NOT been connected to it, so this
 addition cannot be misinterpreted as solving the external side-effect race.
+
+## Extra acceptance: exact R2 queue retry and native reservation competition
+
+All retries of the R2 cleanup-job enqueue now revalidate the **current**
+six independent approval/audit pairs before returning duplicate success,
+even when the prior job was consumed. Unit and Firestore Emulator tests
+cover a late revoked Play/other domain approval without creating another job
+or emitting a misleading success.
+
+The disposable native Admin Firestore transaction tests use a test-only
+adapter to call the actual `reserveAccountErasureExternalIo` function
+through `runTransaction` with Firestore read locks and create-only
+preconditions. They prove no more than one of two competing workers can
+reserve the same object and that a pre-revoked approval blocks reservation.
+The test bridge is never used in Cloudflare production. The live REST
+Firestore transaction semantics, dual-writer revocation interlock and
+external bucket deletion remain separate unpassed acceptance gates.
