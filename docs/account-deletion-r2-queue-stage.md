@@ -16,8 +16,8 @@ deletion request when all these server-owned conditions are true:
   `sharedMediaOwnershipReviewed`,
   `legalEvidenceReviewComplete`, `financialSettlementApproved`,
   and `playBillingReviewComplete` all exactly `true`.
-- No legal, deletion, review, or retention holds on request, checkpoint,
-  or account.
+- No legal, deletion, review, retention, evidence, investigation, report,
+  or pending-appeal holds on request, checkpoint, or account.
 
 The adapter writes `storage_account_cleanup_jobs/{uid}` and an immutable
 `admin_audit_logs/r2_deletion_queue_{requestId}` certificate in one
@@ -46,7 +46,8 @@ checks the job's reason, request ID, and queued status, then makes exactly
 four direct Firestore reads for the current deletion request, checkpoint,
 user, and immutable audit certificate. It rechecks the current processing
 request, Owner protection, five required financial/media/legal reviews,
-and all deletion/legal/review/retention holds **before** querying
+and all deletion/legal/review/retention/evidence/report/investigation/
+appeal holds **before** querying
 `storage_objects` or touching R2 bytes.
 
 A legacy `account_deleted` job without certification is blocked.
@@ -62,3 +63,4 @@ that a hold cannot change during a long external bucket operation.
 The verified finalizer must keep the account in its storage-media phase
 until cleanup has completed, avoid concurrent release of review holds,
 and validate the completion record before proceeding to Auth deletion.
+\n## Additional legal hold gates (25 October 2026)\n\nBoth the internal queue-stage transaction and the hourly worker now block\n`evidenceHold`, `investigationHold`, `reported`, `appealPending` and\n`appealStatus` in `pending`, `open` or `under_review` on the current\nrequest, checkpoint or user. This also applies to queue retries if the\nhold appears after an earlier administrative approval. No R2 media query,\ndelete, or removal of a consumed queue certificate is permitted during\nthese holds. Unit and Emulator tests cover stale/late holds. The adapter\nstill has **no production entry point**; `destructiveAllowed` remains\nfalse in the live lifecycle.\n
