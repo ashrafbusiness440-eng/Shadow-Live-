@@ -41,6 +41,21 @@ test("emulator: one certified cleanup job despite concurrent retries and consume
   await request.update({reviewHold:true});
   await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
     e=>e.code==="storage_queue_not_authorized");
+  await request.update({reviewHold:false,investigationHold:true});
+  await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
+    e=>e.code==="storage_queue_not_authorized");
+  await request.update({investigationHold:false,reported:true});
+  await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
+    e=>e.code==="storage_queue_not_authorized");
+  await request.update({reported:false});
+  await checkpoint.update({evidenceHold:true});
+  await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
+    e=>e.code==="storage_queue_not_authorized");
+  await checkpoint.update({evidenceHold:false});
+  await user.update({appealStatus:"under_review"});
+  await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
+    e=>e.code==="storage_queue_not_authorized");
+  assert.equal((await job.get()).exists,false);
   assert.equal((await user.get()).data().coins,50);
  } finally {
   await Promise.all([request,checkpoint,user,job,audit].map(ref=>ref.delete()));

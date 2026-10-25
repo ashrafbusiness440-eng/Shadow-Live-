@@ -1235,3 +1235,64 @@ test("verified queued R2 job is blocked again when Owner adds a review hold", as
   assert.equal(result.checked,0);
   assert.equal(result.deleted,0);
 });
+
+test("queued R2 cleanup refuses new report, evidence and appeal holds before any media query", async () => {
+  const uid="deleted_member_123",requestId="verified_req_123456";
+  const scenarios=[
+    {location:"request",hold:{investigationHold:true}},
+    {location:"request",hold:{reported:true}},
+    {location:"request",hold:{appealPending:true}},
+    {location:"checkpoint",hold:{evidenceHold:true}},
+    {location:"checkpoint",hold:{investigationHold:true}},
+    {location:"user",hold:{reported:true}},
+    {location:"user",hold:{appealStatus:"under_review"}},
+  ];
+  for(const scenario of scenarios){
+    const queries=[];
+    const db={
+      async runQuery(collection){
+        queries.push(collection);
+        if(collection==="storage_account_cleanup_jobs")return [{
+          id:"verified_job_123",data:{ownerUid:uid,requestId,
+            reason:"account_deleted_verified",status:"queued"},
+        }];
+        throw Error("media_objects_must_not_be_scanned");
+      },
+      async get(path){
+        if(path==="account_deletion_requests/"+uid)return {
+          exists:true,data:{uid,requestId,status:"processing",
+            ...(scenario.location==="request"?scenario.hold:{})},
+        };
+        if(path==="account_deletion_erasure_checkpoints/"+uid)return {
+          exists:true,data:{requestId,phase:"storage_media",
+            destructiveAllowed:true,storageRetentionApproved:true,
+            sharedMediaOwnershipReviewed:true,
+            legalEvidenceReviewComplete:true,
+            financialSettlementApproved:true,
+            playBillingReviewComplete:true,
+            ...(scenario.location==="checkpoint"?scenario.hold:{})},
+        };
+        if(path==="users/"+uid)return {
+          exists:true,data:{role:"user",
+            accountStatus:"deletion_processing",
+            ...(scenario.location==="user"?scenario.hold:{})},
+        };
+        if(path==="admin_audit_logs/r2_deletion_queue_"+requestId)return {
+          exists:true,data:{requestId,targetId:uid,
+            action:"accountErasureR2QueueCertified"},
+        };
+        throw Error("unexpected_ref_"+path);
+      },
+      async commit(){throw Error("must_never_commit");},
+    };
+    let deletions=0;
+    const result=await runDeletedAccountStorageCleanup(db,{
+      async delete(){deletions++;},
+    },{limit:5});
+    assert.equal(result.blocked,true);
+    assert.equal(result.checked,0);
+    assert.equal(result.deleted,0);
+    assert.equal(deletions,0);
+    assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
+  }
+});
