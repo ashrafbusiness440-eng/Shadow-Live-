@@ -1426,3 +1426,39 @@ test("live scheduled account-erasure R2 requires an unimplemented external revoc
   assert.match(live,/await runFencedDeletedAccountStorageCleanup\(/);
   assert.doesNotMatch(live,/await runDeletedAccountStorageCleanup\(/);
 });
+
+test("queued R2 job stops on pending external-I/O revocation intent BEFORE media reads",async()=>{
+  const uid="owner_stop_intent_123",requestId="certified_cleanup_stop_intent_job";
+  for(const forged of [
+    {exists:true,data:{uid,requestId,status:"pending_reconciliation"}},
+    null,
+    {exists:"false",data:null},
+  ]){
+    const queries=[],base={
+      async runQuery(path){
+        queries.push(path);
+        if(path==="storage_account_cleanup_jobs")return [{
+          id:"stop_intent_job",data:{ownerUid:uid,reason:"account_deleted"},
+        }];
+        throw Error("must_not_enumerate_storage_on_pending_stop");
+      },
+      async get(){return {exists:false,data:null};},
+      async commit(){throw Error("no_commit_allowed");},
+    };
+    const db=certifiedCleanupDb(base);
+    const read=db.get.bind(db);
+    db.get=async (path,tx)=>{
+      if(path==="account_erasure_external_io_revocation_intents/"+
+          uid+"__"+requestId)return forged;
+      return read(path,tx);
+    };
+    let deletes=0;
+    const result=await runDeletedAccountStorageCleanup(db,{
+      async delete(){deletes++;throw Error("bucket_delete_forbidden");},
+    },{limit:5});
+    assert.equal(result.blocked,true);
+    assert.equal(result.deleted,0);
+    assert.equal(deletes,0);
+    assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
+  }
+});
