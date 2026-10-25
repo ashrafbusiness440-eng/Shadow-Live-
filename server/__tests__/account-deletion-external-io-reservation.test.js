@@ -4,7 +4,8 @@ import {readFileSync} from "node:fs";
 import {reserveAccountErasureExternalIo as reserve,
   requestAccountErasureExternalIoRevocationIntent as requestStop,
   recordAccountErasureExternalIoCoordinationHold as recordHold,
-  recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt}
+  recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt,
+  recordAccountErasureExternalIoReadOnlyProbe as recordProbe}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
@@ -36,7 +37,8 @@ class Db {
         playBillingReviewComplete:true,
       }],
       ["users/"+uid,{role:"user",accountStatus:"deletion_processing"}],
-      ["storage_objects/"+objectId,{ownerUid:uid,scope:"chat_image"}],
+      ["storage_objects/"+objectId,{ownerUid:uid,scope:"chat_image",
+        storageKey:"chats/synthetic-account/test-photo.webp"}],
       ["admin_audit_logs/erasure_processing_start_"+requestId,{
         targetId:uid,requestId,action:"accountErasureProcessingAdmitted",
         certifiedDomains:[...domains],
@@ -466,6 +468,110 @@ test("unknown-outcome journal requires matching claimed hold, token, and fresh a
     assert.equal([...db.docs.keys()].some(path=>
       path.startsWith("account_erasure_external_io_uncertain_attempts/")),false);
   }
+});
+
+test("read-only R2 head records immutable PRESENT evidence without allowing delete or retry",async()=>{
+  const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+  await recordUncertainAttempt(db,opts());
+  let heads=0,deletes=0;
+  const result=await recordProbe(db,{
+    async head(key){
+      heads++;
+      assert.equal(key,"chats/synthetic-account/test-photo.webp");
+      return {etag:"fake-etag-one",size:172};
+    },
+    async delete(){deletes++;throw Error("delete_is_forbidden");},
+  },{...opts(),probeId:"probe_first_observation_123456"});
+  assert.deepEqual(result,{
+    ok:true,observationRecorded:true,
+    presenceAtProbe:"present_at_probe",stopObservedAtCommit:false,
+    retryAllowed:false,externalIoAllowed:false,
+    completionVerified:false,pendingReconciliation:true,
+  });
+  assert.equal(heads,1);assert.equal(deletes,0);
+  const path="account_erasure_external_io_probe_observations/"+
+    uid+"__"+requestId+"__probe_first_observation_123456";
+  const doc={...db.docs.get(path)};
+  assert.equal(doc.observedEtag,"fake-etag-one");
+  assert.equal(doc.observedSizeBytes,172);
+  assert.equal(doc.completionVerified,false);
+  await assert.rejects(recordProbe(db,{
+    async head(){heads++;throw Error("duplicate_must_not_call_head");},
+  },{...opts(),probeId:"probe_first_observation_123456"}),
+    e=>e.code==="external_io_probe_already_recorded");
+  assert.equal(heads,1);
+  assert.deepEqual(db.docs.get(path),doc);
+});
+
+test("read-only R2 head absence cannot certify an earlier delete or effective stop",async()=>{
+  const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+  await recordUncertainAttempt(db,opts());
+  const stopped=await requestStop(db,{
+    uid,requestId,actor:{uid:owner,owner:true},nowMs,
+  });
+  assert.equal(stopped.revocationEffective,false);
+  const found=await recordProbe(db,{
+    async head(){return null;},
+    async delete(){throw Error("forbidden");},
+  },{...opts(),probeId:"probe_after_stop_observation_123456"});
+  assert.equal(found.presenceAtProbe,"absent_at_probe");
+  assert.equal(found.stopObservedAtCommit,true);
+  assert.equal(found.completionVerified,false);
+  assert.equal(found.retryAllowed,false);
+  assert.equal(db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId).revocationEffective,false);
+  assert.equal(db.docs.get("account_erasure_external_io_uncertain_attempts/"+
+    uid+"__"+requestId).retryAllowed,false);
+});
+
+test("R2 probe error and object metadata replacement leave no false evidence",async()=>{
+  const cases=[
+    async(db)=>({
+      async head(){throw Error("R2_TIMEOUT");},
+    }),
+    async(db)=>({
+      async head(){return undefined;},
+    }),
+    async(db)=>({
+      async head(){
+        db.docs.get("storage_objects/"+objectId).storageKey=
+          "other/key/possibly-reused.webp";
+        return {etag:"fake"};
+      },
+    }),
+  ];
+  for(const setup of cases){
+    const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+    await recordUncertainAttempt(db,opts());
+    const bucket=await setup(db);
+    const count=db.commits.length;
+    await assert.rejects(recordProbe(db,bucket,{
+      ...opts(),probeId:"probe_error_guard_123456789",
+    }));
+    assert.equal(db.commits.length,count);
+    assert.equal([...db.docs.keys()].some(path=>
+      path.startsWith("account_erasure_external_io_probe_observations/")),false);
+  }
+});
+
+test("a stop arriving DURING read-only R2 head remains pending and appears in evidence",async()=>{
+  const db=new Db();await reserve(db,opts());await recordHold(db,opts());
+  await recordUncertainAttempt(db,opts());
+  let headCount=0;
+  const result=await recordProbe(db,{
+    async head(){
+      headCount++;
+      const stop=await requestStop(db,{
+        uid,requestId,actor:{uid:owner,owner:true},nowMs,
+      });
+      assert.equal(stop.revocationEffective,false);
+      return {etag:"inflight-probe"};
+    },
+    async delete(){throw Error("forbidden");},
+  },{...opts(),probeId:"probe_concurrent_stop_123456789"});
+  assert.equal(headCount,1);
+  assert.equal(result.stopObservedAtCommit,true);
+  assert.equal(result.completionVerified,false);
 });
 
 test("uncertain journal truncated Firestore snapshots fail closed",async()=>{
