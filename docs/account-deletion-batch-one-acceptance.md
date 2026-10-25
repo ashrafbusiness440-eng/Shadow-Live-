@@ -37,6 +37,30 @@ Never infer a successful review from fixture approvals or a green CI run.
 - **Production remains OFF:** no new delete route, cron, mobile APK or
   destructiveAllowed=true is permitted by this record.
 
+### Gate 1: no premature R2 job completion or holder bypass
+
+The existing test-only account R2 consumer previously deleted a queue job and
+wrote `completeDeletedAccountStorageCleanup` after seeing a single indexed
+page shorter than the batch limit. Page exhaustion is **not** an account-wide
+inventory certificate: shared room/agency ownership, legacy references,
+concurrent creations and unknown external outcomes may remain. That
+unsound completion path has been removed. Even after a successful final
+short or empty page, the job is preserved, no `complete...` audit is
+minted, and the call returns `pendingReconciliation:true`,
+`completionVerified:false` and a blocked reason. This does NOT
+claim that the earlier test-only object deletion path is externally safe.
+
+The low-level queue verifier also re-reads the non-permissive
+request-wide coordination-hold document in the **same Firestore
+transaction** as the stop intent, queue audit and current six
+approval certificates. If the hold exists, the worker refuses to
+enumerate objects at all: a bookkeeping hold is not a bucket-delete
+permit. Tests verify both the short-page/empty-page false-completion
+regression and holder-blocks-before-R2 behavior. This protection does
+not implement a release of the held operation, a trusted execution
+lease, or a verified recovery path. Production scheduled account-R2
+cleanup remains HARD OFF.
+
 ## Gate 2 — financial settlement and Google Play Billing
 
 Review **all pages** of the already implemented eight exact indexed financial
