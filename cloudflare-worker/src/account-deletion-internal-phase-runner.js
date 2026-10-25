@@ -145,10 +145,10 @@ export async function runCertifiedInternalAccountErasurePage(db, {
   if (step === "notifications") {
     result = await drainAccountOwnedNotifications(db, { ...args, nowMs });
   } else if (step === "push_devices") {
-    result = await drainAccountPrivateCallPushDevices(db, args);
+    result = await drainAccountPrivateCallPushDevices(db, { ...args, nowMs });
   } else if (step === "diary_likes" || step === "diary_views") {
     result = await drainAccountDiaryInteractions(db, {
-      ...args, kind: step === "diary_likes" ? "likes" : "views",
+      ...args, kind: step === "diary_likes" ? "likes" : "views", nowMs,
     });
   } else {
     result = await drainAccountPrivateTextPage(db, {
