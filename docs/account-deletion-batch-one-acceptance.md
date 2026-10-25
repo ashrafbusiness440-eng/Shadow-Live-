@@ -136,3 +136,30 @@ reserve the same object and that a pre-revoked approval blocks reservation.
 The test bridge is never used in Cloudflare production. The live REST
 Firestore transaction semantics, dual-writer revocation interlock and
 external bucket deletion remain separate unpassed acceptance gates.
+
+## 25 October 2026 — fail-closed live R2 scheduler and revocation intent
+
+On pending PR #527 (NOT merged/deployed), the existing live scheduled
+`runDueStorageCleanup` now invokes an explicitly fenced account-erasure
+cleanup wrapper. `ACCOUNT_ERASURE_R2_FENCE_READY=false` makes the entire
+account-erasure storage queue non-destructive even if a forged/old checkpoint
+has `destructiveAllowed=true`. Normal replacement/expired-ticket cleanup
+does not consume this new account-erasure switch. Node source/runtime tests
+assert zero account-erasure reads, writes or bucket deletes.
+
+The existing UNROUTED external-I/O reservation now transactionally reads
+**seven exact current-state documents** (including a request-specific,
+immutable revocation-intent marker) followed by the same twelve audit and
+approval records. When an Owner-only internal stop intent is created via
+`requestAccountErasureExternalIoRevocationIntent`, it and its immutable
+audit are written atomically. It blocks **NEW** reservations even when a
+synthetic signoff is subsequently restored. REST/Emulator and Node coverage
+exercise this marker without external R2 access.
+
+CRITICAL: the intent's `revocationEffective` is **always false**. It is
+NOT an approval revocation, does NOT cancel in-flight `bucket.delete`,
+does NOT automatically release timed-out/ambiguous work, and has no live
+admin route. Real revocation writers, an in-flight holder protocol and
+explicit reconciliation still must be integrated and proven. No one may
+flip `ACCOUNT_ERASURE_R2_FENCE_READY` or `destructiveAllowed` on the
+strength of these tests. First-batch gates **1/2/3/5 remain open**.
