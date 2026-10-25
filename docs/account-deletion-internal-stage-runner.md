@@ -190,3 +190,24 @@ text stage remains outside the new stage-level recheck, and real concurrent
 revocation conflict acceptance, live independent financial/Play/legal/shared
 asset/storage/retention evidence, durable phase leasing, exhaustive inventory
 and final Auth deletion remain blocking. Keep production deletion disabled.
+
+## Emulator conflict acceptance — transactional signoff revocation
+
+A separate disposable Firestore Emulator test now creates six synthetic signed
+domain approvals and holds an actual Firestore SDK write transaction **after**
+its twelve approval/audit reads. A second independent Firestore operation then
+commits a revocation before that transaction attempts its owned-notification
+delete. The transaction must abort/retry, and on retry the shared validator
+must reject the revoked approval. The notification must survive. This
+specifically checks the read/write race not covered by merely revoking a
+certificate before an initial read. A second unit test confirms one bounded
+12-document `getMany(paths, tx)` RPC and that an absent audit fails closed
+without a non-transactional fallback.
+
+**Scope:** test-only Firestore SDK/emulator concurrency contract. Deployment
+still uses Cloudflare's REST Firestore adapter and its own transactional
+batchGet; compare and independently exercise its conflict behavior before
+production, especially across retries and ambiguous commits. Other system
+gates (finance, billing, shared assets, legal/retention, inventory,
+phase leasing, private text, Auth-last) remain unresolved. No production
+deletion activation is authorized by this test.
