@@ -14,11 +14,16 @@ Never infer a successful review from fixture approvals or a green CI run.
   audited-signoff recheck in their own Firestore transactions. The existing
   bounded R2 job consumer independently verifies current state/approvals
   before querying records, before each object and before claiming completion.
-- **Still blocking**: the direct private-text redaction primitive is not
-  guarded within its transaction. The *internal dispatcher now rejects this
-  step unconditionally*, even with otherwise valid synthetic approvals;
-  no completion credit for text erasure. A targeted guarded change plus
-  Node and Firestore Emulator conflict tests must precede re-enabling it.
+- **Still blocking**: the direct private-text redaction primitive now
+  rechecks all six independently audited signoffs in the **same Firestore
+  transaction** as its masked text/preview write, and rejects incomplete
+  transactional reads. Node and disposable Emulator positive/negative tests
+  are required, but this is **not** authorization to run the phase.
+  The *internal dispatcher still rejects this step unconditionally*, even
+  with otherwise valid synthetic approvals. A production-equivalent
+  simultaneous approval-revocation conflict, independent retention/legal
+  evidence clearance, stage lease/recovery and operator acceptance remain
+  required before any release or completion credit.
 - **Still blocking**: R2 `bucket.delete`/room-asset transfer is external to
   a Firestore transaction. The approving/revoking administrator and the
   cleanup executor must share a durable lease/fencing interlock (including
@@ -188,8 +193,8 @@ maintenance remains unaffected.
 
 Still missing: an independent actual approval-revocation writer; a durable
 in-flight holder barrier with cancellation and crash/timeout reconciliation;
-safe storage/agency disposition; authorized reviewer evidence; and the
-private-text same-transaction certification guard. **No live R2 delete,
+safe storage/agency disposition; authorized reviewer evidence; plus verified
+private-text transactional concurrency and release evidence. **No live R2 delete,
 approval release, Firebase Auth deletion or final completion receipt.**
 
 ### Gate 1: batchGet transport-row completeness (not a go-live signal)
@@ -251,3 +256,25 @@ verification on two independent workers, disposable real-bucket
 acceptance and human-audited reconciliation. Until all of that and
 the other gate evidence is satisfied, production account deletion
 and R2 erasure remain OFF, all four gates remain OPEN.
+
+### Gate 1: private-text record transactional signoff gate (still NOT accepted)
+
+On unmerged PR #527 the **unrouted direct** private-message text tombstone
+primitive now fetches six exact request/checkpoint/user/chat/message/
+moderation-flag snapshots in a single transaction-scoped `getMany` when
+available, rejects truncated/malformed reads, and reuses the shared
+six-domain, twelve-record audited-certification checker **inside the same
+transaction** as the masked message/preview write. An independently revoked,
+missing, expired or appealed approval blocks both a new redaction and
+a tombstone retry. Bounded paginated message tests use disposable synthetic
+approval fixtures; no actual reviewer decision or production signoff is
+generated. Counterparty messages, balances, content-filter evidence and
+media remain untouched by this text-only primitive.
+
+**The internal phase runner stays hard-blocked** with
+`private_text_erasure_transaction_guard_missing` (legacy conservative
+release-blocker identifier), because a passing primitive test alone does
+NOT establish legal release, production transaction conflict safety, stage
+leases, all legacy text schema reconciliation or Auth-last completion.
+Do not remove this hard block or report private-text erasure ready.
+This is additional defense and test preparation, not a go-live signal.
