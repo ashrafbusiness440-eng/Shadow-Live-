@@ -113,6 +113,10 @@ test("stale request, legal hold, protected owner and missing checkpoint stop bef
     d=>d.docs.get(req).requestId="old_request_12345678",
     d=>d.docs.get(cp).requestId="old_request_12345678",
     d=>d.docs.get(cp).investigationHold=true,
+    d=>d.docs.get(req).appealPending=true,
+    d=>d.docs.get(req).appealStatus="Open",
+    d=>d.docs.get(cp).appealStatus="under_review",
+    d=>d.docs.get(user).appealPending=true,
     d=>d.docs.get(user).role="owner",
     d=>d.docs.get(user).authDeleted=true,
     d=>d.docs.delete(cp),
@@ -122,6 +126,31 @@ test("stale request, legal hold, protected owner and missing checkpoint stop bef
     await assert.rejects(run(db),e=>e.code==="shared_asset_inventory_review_blocked");
     assert.equal(db.queries.length,0);
   }
+});
+test("open appeal on shared room, agency or memberships remains unresolved",async()=>{
+  const db=new Db();db.addRooms(2);db.addAgency();
+  db.docs.get("rooms/"+roomId(0)).appealPending=true;
+  db.docs.get("rooms/"+roomId(1)).appealStatus=" Under_Review ";
+  const rooms=await run(db);
+  assert.equal(rooms.items.length,2);
+  assert.deepEqual(rooms.items.map(item=>item.held),[true,true]);
+  assert.equal(rooms.erasureAllowed,false);
+  for(const key of [
+    "agencies/"+agencyId,
+    "agency_memberships/"+agencyId+"__"+uid,
+    "agency_user_memberships/"+uid,
+  ]) {
+    const data=db.docs.get(key);
+    data.appealStatus="OPEN";
+    const page=await run(db,{kind:"agencies_owned"});
+    assert.equal(page.items.length,1);
+    assert.equal(page.items[0].held,true);
+    assert.equal(page.items[0].membershipConsistent,false);
+    assert.equal(page.ownershipTransferred,false);
+    delete data.appealStatus;
+  }
+  assert.equal(db.commits,0);
+  assert.equal(db.docs.get(user).coins,300);
 });
 test("indexed foreign owner conflict and invalid query rows fail closed",async()=>{
   const db=new Db();db.addRooms(1);
