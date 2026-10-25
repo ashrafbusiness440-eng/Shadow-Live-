@@ -197,6 +197,15 @@ safe storage/agency disposition; authorized reviewer evidence; plus verified
 private-text transactional concurrency and release evidence. **No live R2 delete,
 approval release, Firebase Auth deletion or final completion receipt.**
 
+The *unrouted* paginated private-text page preflight also validates the
+same request-specific original admission audit, checkpoint/account identity,
+and the 30-day grace and eligibility dates **before scanning even one private
+message**. Its inner message mutation independently rechecks all six current
+approval/audit pairs transactionally, so a subsequent revocation still
+stops writes. Fail-closed unit tests assert malformed or missing admission
+and an unelapsed grace cause zero private-message query or mutation.
+The dispatcher remains disabled and cannot issue a completion certificate.
+
 ### Gate 1: private-message direct mutation guard now implemented — dispatcher OFF
 
 The internal, **UNROUTED** `redactDeletedPrivateTextMessage` now requires in
@@ -288,8 +297,8 @@ and R2 erasure remain OFF, all four gates remain OPEN.
 ### Gate 1: private-text record transactional signoff gate (still NOT accepted)
 
 On unmerged PR #527 the **unrouted direct** private-message text tombstone
-primitive now fetches six exact request/checkpoint/user/chat/message/
-moderation-flag snapshots in a single transaction-scoped `getMany` when
+primitive now fetches seven exact request/checkpoint/user/chat/message/
+moderation-flag/original-admission-audit snapshots in a single transaction-scoped `getMany` when
 available, rejects truncated/malformed reads, and reuses the shared
 six-domain, twelve-record audited-certification checker **inside the same
 transaction** as the masked message/preview write. An independently revoked,
