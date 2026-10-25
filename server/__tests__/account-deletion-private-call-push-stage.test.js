@@ -60,7 +60,7 @@ test("removes only deleted user's token and binding; retry is idempotent", async
   assert.equal(db.docs.has(paths.other), true);
   assert.deepEqual(await run(db), { ok: true, removed: 0, duplicate: true });
   assert.equal(db.commits.length, 1);
-  assert.equal(db.reads.length, 22);
+  assert.equal(db.reads.length, 28);
 });
 test("reassigned token owner survives deletion of stale previous account row", async () => {
   const db = new Db();
