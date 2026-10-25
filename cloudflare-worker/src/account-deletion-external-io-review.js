@@ -15,6 +15,12 @@ const fail = (code,status=409) => {
   const e=new Error(code);e.code=code;e.status=status;throw e;
 };
 const rowOk=row=>row&&typeof row.exists==="boolean";
+const REVIEW_CAPABILITY="reviewAccountErasureR2Evidence";
+const GRANT_LIFETIME_MS=60*60_000;
+const timeMs=value=>value instanceof Date?value.getTime()
+  :typeof value?.toDate==="function"?value.toDate().getTime()
+  :typeof value==="string"?Date.parse(value)
+  :Number.isFinite(value?.seconds)?value.seconds*1000:NaN;
 const path=(collection,uid,requestId)=>
   collection+"/"+uid+"__"+requestId;
 
@@ -24,8 +30,14 @@ const path=(collection,uid,requestId)=>
  * separately access-controlled vault. No evidence bytes, R2 object keys,
  * free text, direct provider URLs or credentials are stored by this writer.
  *
- * A distinct, server-authorized evidenceReviewer must differ from the
- * case creator, Owner stop requester and both HEAD observers. The review
+ * A distinct reviewer must also have a CURRENT admin profile with an
+ * explicit narrowly-scoped capability, and a per-request active grant,
+ * matching immutable Owner-issued grant audit and unexpired one-hour
+ * lifetime checked in the SAME transaction. actor.evidenceReviewer is
+ * never sufficient by itself. A future route MUST authenticate the
+ * session and verify claims server-side before this internal primitive.
+ * The reviewer must differ from the case creator, Owner stop requester
+ * and both HEAD observers. The review
  * is immutable and records one of three deliberately UNRESOLVED outcomes.
  * Even the "provider evidence submitted" state is NOT external proof:
  * the reader cannot infer authenticity, object generation or deletion.
@@ -38,7 +50,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
   uid=clean(uid);requestId=clean(requestId);objectId=clean(objectId);
   token=clean(token);assessment=clean(assessment);
   const reviewer=clean(actor?.uid);
-  if(!actor?.evidenceReviewer||!uidOk(reviewer))
+  if(actor?.evidenceReviewer!==true||!uidOk(reviewer))
     fail("independent_evidence_reviewer_required",403);
   if(!uidOk(uid)||!requestOk(requestId)||!requestOk(objectId)||
     !tokenOk(token)||!permittedAssessments.includes(assessment)||
@@ -61,6 +73,11 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     requestId;
   const reviewAuditPath="admin_audit_logs/erasure_external_io_independent_review_"+
     requestId;
+  const reviewerProfilePath="users/"+reviewer;
+  const grantPath="account_erasure_external_io_reviewer_grants/"+
+    uid+"__"+requestId+"__"+reviewer;
+  const grantAuditPath="admin_audit_logs/erasure_external_io_reviewer_grant_"+
+    requestId+"__"+reviewer;
   const paths=[
     casePath,caseAuditPath,
     path("account_erasure_external_io_revocation_intents",uid,requestId),
@@ -71,6 +88,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     "account_deletion_requests/"+uid,
     "account_deletion_erasure_checkpoints/"+uid,
     reviewPath,reviewAuditPath,
+    reviewerProfilePath,grantPath,grantAuditPath,
   ];
   const tx=await db.beginTransaction();
   try{
@@ -82,11 +100,58 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
       fail("independent_external_io_review_snapshot_incomplete",503);
     }
     const [caseDoc,caseAudit,stop,stopAudit,journal,hold,reservation,
-      request,checkpoint,previousReview,previousAudit]=rows;
+      request,checkpoint,previousReview,previousAudit,
+      reviewerProfile,grant,grantAudit]=rows;
     if(previousReview.exists||previousAudit.exists)
       fail("independent_external_io_review_already_recorded");
     const c=caseDoc.data||{},s=stop.data||{},j=journal.data||{};
-    const h=hold.data||{},r=reservation.data||{};
+    const h=hold.data||{},r=reservation.data||{},g=grant.data||{};
+    const currentReviewer=reviewerProfile.data||{};
+    const ga=grantAudit.data||{};
+    const grantedAt=timeMs(g.grantedAt),expiresAt=timeMs(g.expiresAt);
+    const auditorAt=timeMs(ga.createdAt);
+    // A flag from a caller cannot grant reviewer authority. A real,
+    // current, non-deleted admin profile PLUS explicit capability PLUS
+    // per-case Owner grant and matching immutable audit are required.
+    if(!reviewerProfile.exists||!grant.exists||!grantAudit.exists||
+      clean(currentReviewer.uid)!==reviewer||
+      currentReviewer.adminEnabled!==true||
+      !Array.isArray(currentReviewer.capabilities)||
+      !currentReviewer.capabilities.includes(REVIEW_CAPABILITY)||
+      ["deleted","deletion_processing","banned"].includes(
+        clean(currentReviewer.accountStatus))||
+      currentReviewer.authDeleted===true||
+      clean(currentReviewer.accountStatus)!=="active"||
+      clean(g.uid)!==uid||clean(g.requestId)!==requestId||
+      clean(g.objectId)!==objectId||
+      clean(g.reviewerUid)!==reviewer||
+      clean(g.scope)!=="account_erasure_r2_reconciliation"||
+      clean(g.status)!=="active"||g.revoked!==false||
+      !uidOk(g.grantedByUid)||g.grantedByUid===reviewer||
+      !Number.isSafeInteger(grantedAt)||grantedAt<=0||
+      !Number.isSafeInteger(expiresAt)||expiresAt<=grantedAt||
+      expiresAt-grantedAt>GRANT_LIFETIME_MS||
+      nowMs<grantedAt||nowMs>=expiresAt||
+      clean(ga.action)!=="accountErasureExternalIoReviewerGrantRecorded"||
+      clean(ga.targetId)!==uid||
+      clean(ga.requestId)!==requestId||
+      clean(ga.objectId)!==objectId||
+      clean(ga.reviewerUid)!==reviewer||
+      clean(ga.actorUid)!==clean(g.grantedByUid)||
+      !Number.isSafeInteger(auditorAt)||
+      auditorAt!==grantedAt){
+      fail("independent_external_io_review_grant_invalid",403);
+    }
+    // The grant issuer's current Owner role must also be independently
+    // established from Firestore; a forged audit actor UID is not a grant.
+    const issuerRow=await db.get("users/"+clean(g.grantedByUid),tx);
+    if(!rowOk(issuerRow)||!issuerRow.exists||
+      clean(issuerRow.data?.uid)!==clean(g.grantedByUid)||
+      clean(issuerRow.data?.role)!=="owner"||
+      issuerRow.data?.authDeleted===true||
+      clean(issuerRow.data?.accountStatus)!=="active"){
+      fail("independent_external_io_review_grant_issuer_invalid",403);
+    }
     if(!caseDoc.exists||!caseAudit.exists||!stop.exists||
       !stopAudit.exists||!journal.exists||!hold.exists||
       !reservation.exists||!request.exists||!checkpoint.exists||
@@ -174,6 +239,8 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
       evidenceAuthenticityVerified:false,
       reviewerUid:reviewer,reviewedAt:at,
       originalCaseClassification:clean(c.classification),
+      reviewerGrantIssuerUid:clean(g.grantedByUid),
+      reviewerGrantAuditId:grantAuditPath.split("/")[1],
       providerHistoryVerified:false,requiresIndependentProviderEvidence:true,
       independentReviewRecorded:true,
       canCertifyErasure:false,
@@ -186,6 +253,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
         action:"accountErasureExternalIoIndependentAssessmentRecorded",
         targetType:"user",targetId:uid,requestId,objectId,
         actorUid:reviewer,createdAt:at,assessment,
+        reviewerGrantAuditId:grantAuditPath.split("/")[1],
         claimedEvidenceDigestSha256:evidenceDigestSha256,
         completionVerified:false,revocationEffective:false,
       }),
