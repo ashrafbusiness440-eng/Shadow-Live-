@@ -1,8 +1,17 @@
+import { REQUIRED_ERASURE_ADMISSION_DOMAINS }
+  from "./account-deletion-processing-admission.js";
 // First lifecycle checkpoint only. No destructive operations are exposed here.
 // A review_ready request is NOT authorization to erase personal or financial data.
 const clean = value => String(value ?? "").trim();
 const validUid = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const validId = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
+const held = data => [
+  data?.legalHold, data?.retentionHold, data?.deletionHold,
+  data?.reviewHold, data?.evidenceHold, data?.investigationHold,
+  data?.reported, data?.appealPending,
+].some(value => value === true) ||
+  ["pending", "open", "under_review"].includes(
+    clean(data?.appealStatus).toLowerCase());
 const timeMs = value => {
   if (value instanceof Date) return value.getTime();
   if (typeof value?.toDate === "function") return value.toDate().getTime();
@@ -29,7 +38,6 @@ export function checkErasureStartEligibility({ uid, requestId, request, user, no
       clean(request.data?.uid) !== uid ||
       clean(request.data?.requestId) !== requestId ||
       clean(request.data?.status) !== "review_ready" ||
-      request.data?.reviewHold === true ||
       user.data?.authDeleted === true ||
       clean(user.data?.accountStatus) === "deleted" ||
       clean(user.data?.role) === "owner") {
@@ -39,8 +47,7 @@ export function checkErasureStartEligibility({ uid, requestId, request, user, no
   if (!Number.isFinite(dueMs) || dueMs <= 0 || dueMs > nowMs) {
     throw new AccountErasureCheckpointError("erasure_not_due");
   }
-  if ([user.data?.legalHold, user.data?.retentionHold,
-       user.data?.deletionHold].some(flag => flag === true)) {
+  if (held(request.data) || held(user.data)) {
     throw new AccountErasureCheckpointError("erasure_legal_hold");
   }
   return { uid, requestId, phase: "preflight_blocked", destructiveAllowed: false };
@@ -73,6 +80,9 @@ export async function recordErasurePreflightCheckpoint(db, {
       uid, requestId, request, user, nowMs,
     });
     if (previous.exists) {
+      if (held(previous.data)) {
+        throw new AccountErasureCheckpointError("erasure_legal_hold");
+      }
       // A new request after a cancelled lifecycle may replace ONLY a
       // non-destructive preflight. Never reset active or completed progress.
       if (previous.data?.phase !== "preflight_blocked" ||
@@ -88,11 +98,7 @@ export async function recordErasurePreflightCheckpoint(db, {
       ...eligible,
       createdAt: new Date(nowMs),
       actorUid: actor.uid,
-      requiredReviews: [
-        "financial_settlement", "play_billing",
-        "reports_and_legal_holds", "shared_rooms_and_agencies",
-        "content_and_storage_inventory", "retention_policy",
-      ],
+      requiredReviews: [...REQUIRED_ERASURE_ADMISSION_DOMAINS],
     };
     await db.commit(tx, [
       previous.exists
