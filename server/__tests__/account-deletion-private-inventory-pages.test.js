@@ -104,6 +104,18 @@ test("protected evidence, voice and gifts require review rather than automatic e
   assert.equal(page.items[1].evidenceFlagPresent,true);
   assert.equal(page.needsReview,true);
 });
+test("late appeals on messages and conversations flag review without revealing text",async()=>{
+  const db=new Db();
+  db.addMessage(1,uid,"text",{appealPending:true});
+  db.addMessage(2,uid,"text",{appealStatus:" Open "});
+  const p=await run(db,{kind:"authored_messages",conversationId});
+  assert.deepEqual(p.items.map(x=>x.needsReview),[true,true]);
+  assert.equal(p.erasureAllowed,false);
+  assert.equal(JSON.stringify(p).includes("confidential"),false);
+  assert.equal(db.docs.get(chat).lastMessage,"Secret chat");
+  db.docs.get(chat).appealStatus="under_review";
+  assert.equal((await run(db)).items[0].needsReview,true);
+});
 test("mismatched recipient or unknown text schema is marked for separate review",async()=>{
   const db=new Db();
   db.addMessage(1,uid,"text",{receiverId:"third_party_123"});
@@ -120,6 +132,10 @@ test("holds, cancelled/stale requests and invalid conversation block query",asyn
     d=>d.docs.get(rp).requestId="other_request_12345",
     d=>d.docs.get(cp).requestId="older_request_12345",
     d=>d.docs.get(cp).legalHold=true,
+    d=>d.docs.get(rp).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="Under_Review",
+    d=>d.docs.get(up).appealStatus="OPEN",
+    d=>d.docs.get(chat).appealPending=true,
     d=>d.docs.get(up).role="owner",
     d=>d.docs.get(up).authDeleted=true,
     d=>d.docs.get(chat).participants=[other,"third_user_321"],
