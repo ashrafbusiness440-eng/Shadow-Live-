@@ -50,7 +50,12 @@ globalThis.fetch=async (url,options)=>{
     // This header rewrite NEVER leaves the loopback-only local test bridge.
     const headers=new Headers(options?.headers||{});
     headers.set("Authorization","Bearer owner");
-    return upstreamFetch(local,{...options,headers});
+    // Firestore Emulator can hold pessimistic locks for up to 30 seconds.
+    // Bound test-only REST requests so a broken lock cannot hang CI forever.
+    // Production Cloudflare fetch/authorization remains untouched.
+    return upstreamFetch(local,{
+      ...options,headers,signal:AbortSignal.timeout(35_000),
+    });
   }
   throw Error("REST_EMULATOR_TEST_BLOCKS_EXTERNAL_FETCH");
 };
