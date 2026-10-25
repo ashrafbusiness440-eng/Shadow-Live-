@@ -1528,7 +1528,7 @@ test("queued R2 job stops on pending external-I/O revocation intent BEFORE media
   }
 });
 
-test("queued R2 job verification batches six exact current-state reads before twelve signoffs",async()=>{
+test("queued R2 job verification batches six state reads before eighteen signoff and withdrawal documents",async()=>{
   const uid="bounded_cleanup_member_123",queries=[],sizes=[],transactions=[];
   const base={
     async runQuery(path){
@@ -1549,7 +1549,7 @@ test("queued R2 job verification batches six exact current-state reads before tw
     return Promise.all(paths.map(path=>db.get(path,tx)));
   };
   assert.equal(await verifyAccountStorageCleanupJob(db,job),true);
-  assert.deepEqual(sizes,[6,12]);
+  assert.deepEqual(sizes,[6,18]);
   assert.ok(transactions.every(tx=>tx==="synthetic_cleanup_tx"));
   assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
 });
