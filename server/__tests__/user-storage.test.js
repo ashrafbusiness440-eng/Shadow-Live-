@@ -880,13 +880,17 @@ test("deleted-account cleanup transfers an active shared room cover instead of d
     ),
     true,
   );
+  // A successful shared-asset transfer does not establish account-wide
+  // inventory completion. The cleanup queue remains for reconciliation.
+  assert.equal(result.pendingReconciliation,true);
+  assert.equal(result.completionVerified,false);
   assert.equal(
     writes.some(
       (write) =>
         write.op === "delete" &&
         write.path === "storage_account_cleanup_jobs/delete_shared_room_uploader",
     ),
-    true,
+    false,
   );
 });
 
