@@ -210,3 +210,40 @@ it adds no scans, new external services or background work.
 This is additional fail-closed defense for the *unmerged* branch. It
 does not implement in-flight external-I/O cancellation, authorize deletions
 or override any of the outstanding four gate blockers.
+
+### Gate 1: request-wide non-permissive coordination hold (still NOT a lease)
+
+The unmerged PR #527 adds a **create-only, never-auto-expiring,
+request-specific coordination hold** in
+`account_erasure_external_io_coordination_holds`. An internal-only
+holder may record one such document only after the matching single-object
+reservation exists and the same transaction verifies its immutable token,
+current account/request/checkpoint/asset/admission state, all twelve
+audited signoff documents and the absence of a stop intent. A second
+holder, including a holder for a different object under that request, is
+denied pending human reconciliation. The stop-intent writer atomically
+checks this very same hold path before recording an immutable pending
+stop, and records only whether it observed a hold. The two writers
+coordinate via Firestore transaction read-set conflict plus create-only
+preconditions, with no polling and at most eight exact primary document
+reads followed by twelve signoff reads.
+
+Unit and disposable Cloudflare REST + Firestore Emulator coverage
+verifies repeated holders, invalid tokens, already-pending stops and a
+preexisting hold followed by an Owner stop. The marker is deliberately
+**non-permissive**: `externalIoAllowed:false`,
+`revocationEffective:false`, and `completionVerified:false` are
+immutable. No call to R2 or Firebase Auth, no production caller, no
+scheduled task, no automatic expiry takeover and no automatic release
+are introduced. A missing coordination hold proves nothing about
+possible legacy in-flight external work. An observed hold does not
+certify that an R2 operation started or finished.
+
+**Still NOT passed:** this marker is NOT the external-operation lease.
+A genuine external side-effect worker must coordinate its actual
+`bucket.delete` with the approving/revoking administrator, durable
+acquisition/acknowledgment, crash/unknown-outcome handling, conflict
+verification on two independent workers, disposable real-bucket
+acceptance and human-audited reconciliation. Until all of that and
+the other gate evidence is satisfied, production account deletion
+and R2 erasure remain OFF, all four gates remain OPEN.
