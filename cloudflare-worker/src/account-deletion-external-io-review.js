@@ -54,12 +54,15 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
   if(actor?.evidenceReviewer!==true||!uidOk(reviewer))
     fail("independent_evidence_reviewer_required",403);
   if(!uidOk(uid)||!requestOk(requestId)||!requestOk(objectId)||
-    !uidOk(grantIssuerUid)||grantIssuerUid===reviewer||
+    !uidOk(grantIssuerUid)||
     !tokenOk(token)||!permittedAssessments.includes(assessment)||
     !/^[0-9a-f]{64}$/.test(evidenceDigestSha256??"")||
     !Number.isSafeInteger(nowMs)||nowMs<=0){
     fail("invalid_independent_external_io_review",400);
   }
+  // Self-issued grants are authorization failures, not ordinary bad input.
+  if(grantIssuerUid===reviewer)
+    fail("independent_external_io_review_grant_invalid",403);
   if(typeof db?.beginTransaction!=="function"||
     typeof db?.commit!=="function"||
     typeof db?.rollback!=="function"||
