@@ -8,6 +8,8 @@ import {randomUUID,generateKeyPairSync} from "node:crypto";
 import {getApps,initializeApp,deleteApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {firestoreClient} from "../../cloudflare-worker/src/firestore.js";
+import {redactDeletedPrivateTextMessage}
+  from "../../cloudflare-worker/src/account-deletion-private-text-stage.js";
 import {verifyAccountStorageCleanupJob}
   from "../../cloudflare-worker/src/user-storage.js";
 import {reserveAccountErasureExternalIo as reserve,
@@ -317,5 +319,71 @@ test("emulator: R2 queue verification honors pending external-I/O stop",{
       "accountErasureR2QueueCertified");
   }finally{
     await Promise.all([...refs,...certificates].map(ref=>ref.delete()));
+  }
+});
+
+test("emulator: REST private text redaction rechecks revoked audited approval",{
+  timeout:80000,
+},async()=>{
+  // Disposable local Firestore rows, actual Cloudflare REST transactions.
+  // No account-auth removal, R2, scheduler or real-world data access.
+  const suffix=sid(),uid="rest_text_user_"+suffix,
+    other="rest_text_other_"+suffix,
+    requestId="rest_text_request_"+suffix,
+    conversationId="rest_text_conversation_"+suffix;
+  const nowMs=Date.now(),requestedAt=new Date(nowMs-days(40));
+  const conversation=store.doc("conversations/"+conversationId);
+  const messageOne=conversation.collection("messages").doc("owned_one_"+suffix);
+  const messageTwo=conversation.collection("messages").doc("owned_two_"+suffix);
+  const counterpart=conversation.collection("messages").doc("counterpart_"+suffix);
+  const request=store.doc("account_deletion_requests/"+uid);
+  const checkpoint=store.doc("account_deletion_erasure_checkpoints/"+uid);
+  const user=store.doc("users/"+uid);
+  const certificates=await seedEmulatorErasureCertificates(store,{
+    uid,requestId,nowMs,
+  });
+  const refs=[conversation,messageOne,messageTwo,counterpart,
+    request,checkpoint,user,...certificates];
+  const args=messageId=>({uid,requestId,conversationId,messageId,
+    now:new Date(nowMs)});
+  try{
+    await Promise.all([
+      request.set({uid,requestId,status:"processing",requestedAt,
+        eligibleAt:new Date(requestedAt.getTime()+days(30))}),
+      checkpoint.set({uid,requestId,phase:"private_text",destructiveAllowed:true,
+        privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}),
+      user.set({role:"user",accountStatus:"deletion_processing",coins:470}),
+      conversation.set({participants:[uid,other],lastSenderId:uid,
+        lastMessage:"Confidential old preview"}),
+      messageOne.set({senderId:uid,receiverId:other,type:"text",
+        text:"private one",createdAt:new Date(nowMs-days(39))}),
+      messageTwo.set({senderId:uid,receiverId:other,type:"text",
+        text:"private two",createdAt:new Date(nowMs-days(38))}),
+      counterpart.set({senderId:other,receiverId:uid,type:"text",
+        text:"other user message",createdAt:new Date(nowMs-days(39))}),
+    ]);
+    // The real Cloudflare REST transaction sees all six synthetic current
+    // signoffs; only this first disposable text row may be tombstoned.
+    const initial=await redactDeletedPrivateTextMessage(
+      firestoreClient(env),args(messageOne.id));
+    assert.equal(initial.redacted,true);
+    assert.equal((await messageOne.get()).data().type,"deleted");
+    assert.equal("text" in (await messageOne.get()).data(),false);
+
+    // Approval revocation in Firestore MUST block another text mutation even
+    // though checkpoint flags remain true and the original message is valid.
+    const play=store.doc("account_deletion_erasure_approvals/"+
+      requestId+"__play_billing");
+    await play.update({decision:"revoked"});
+    await assert.rejects(redactDeletedPrivateTextMessage(
+      firestoreClient(env),args(messageTwo.id)),error=>
+      error.code==="erasure_transactional_certification_blocked");
+    assert.equal((await messageTwo.get()).data().text,"private two");
+    assert.equal((await counterpart.get()).data().text,"other user message");
+    assert.equal((await user.get()).data().coins,470);
+    assert.equal((await conversation.get()).data().lastMessage,
+      "رسالة من حساب محذوف");
+  }finally{
+    await Promise.all(refs.map(ref=>ref.delete()));
   }
 });
