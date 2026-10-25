@@ -66,6 +66,8 @@ export async function inspectAccountDeletionClosureReadiness(db, {
       clean(checkpoint.data?.phase) !== "preflight_blocked" ||
       checkpoint.data?.destructiveAllowed !== false ||
       clean(user.data?.role) === "owner" ||
+      !["", "active", "suspended", "banned", "disabled"].includes(
+        clean(user.data?.accountStatus)) ||
       user.data?.authDeleted === true ||
       accountDeletionHasActiveHold(request.data) ||
       accountDeletionHasActiveHold(checkpoint.data) ||
