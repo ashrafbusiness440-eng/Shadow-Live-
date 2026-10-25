@@ -8,8 +8,10 @@ const validDocId = value => /^[A-Za-z0-9_-]{1,240}$/.test(clean(value));
 const held = value => [
   value?.legalHold, value?.retentionHold, value?.deletionHold,
   value?.reviewHold, value?.evidenceHold, value?.investigationHold,
-  value?.reported,
-].some(flag => flag === true);
+  value?.reported, value?.appealPending,
+].some(flag => flag === true) ||
+  ["pending", "open", "under_review"].includes(
+    clean(value?.appealStatus).toLowerCase());
 export const MAX_FINANCIAL_REVIEW_PAGE = 5;
 export const FINANCIAL_REVIEW_SCOPES = Object.freeze({
   purchase: Object.freeze({
