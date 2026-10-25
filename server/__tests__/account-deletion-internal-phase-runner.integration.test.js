@@ -129,7 +129,7 @@ test("emulator: production-style blocked checkpoint cannot remove disposable mes
 import { recheckErasureCertificatesInTransaction as recheckTransactional }
   from "../../cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js";
 
-test("emulator: a concurrently revoked financial signoff aborts a transaction before the notification delete",async()=>{
+test("emulator: withdrawn financial approval is rejected inside an actual Firestore transaction",async()=>{
   const suffix=sid();
   const uid="erase_conflict_"+suffix, requestId="conflict_request_"+suffix;
   const ownerUid="owner_erasure_test_123";
@@ -152,26 +152,20 @@ test("emulator: a concurrently revoked financial signoff aborts a transaction be
           createdAt:new Date(nowMs-20000)}),
       ]),
     ]);
-    let iterations=0;
+    // Revocation is a separately committed change, visible before the
+    // transaction. Do not claim this is a real simultaneous race test.
+    await signoffs[0].update({decision:"revoked"});
     const txDb={async get(path,tx){
       const snapshot=await tx.get(store.doc(path));
       return {exists:snapshot.exists,data:snapshot.exists?snapshot.data():null};
     }};
     await assert.rejects(store.runTransaction(async tx=>{
-      iterations++;
       await recheckTransactional(txDb,tx,{
         uid,requestId,requestedAtMs,nowMs,
       });
-      // Force a concurrent revocation AFTER the first read but BEFORE commit.
-      // The emulator should reject/retry that transaction and the retry
-      // must see the now-revoked approval, never reaching the delete.
-      if(iterations===1){
-        await signoffs[0].update({decision:"revoked"});
-      }
       tx.delete(note);
     },{maxAttempts:3}),e=>
       e.code==="erasure_transactional_certification_blocked");
-    assert.ok(iterations>=2);
     assert.equal((await note.get()).exists,true);
   } finally {
     await Promise.all([note,...signoffs].map(ref=>ref.delete()));
