@@ -1610,7 +1610,7 @@ export async function verifyAccountStorageCleanupJob(db, job) {
   // valid financial, Play, shared-asset, legal or retention signoffs.
   const tx = await db.beginTransaction();
   try {
-    // Five bounded exact snapshots in one transaction-scoped batchGet.
+    // Six bounded exact snapshots in one transaction-scoped batchGet.
     // Parallel REST GETs on one read/write transaction can contend on the
     // Firestore Emulator. The production adapter supports getMany, while
     // legacy unit fixtures retain their transaction-scoped exact fallback.
@@ -1621,6 +1621,11 @@ export async function verifyAccountStorageCleanupJob(db, job) {
       "admin_audit_logs/r2_deletion_queue_" + requestId,
       "account_erasure_external_io_revocation_intents/" +
         uid + "__" + requestId,
+      // This request-wide hold is NON-PERMISSIVE. An existing holder can
+      // never be mistaken for authorization to start or resume an R2
+      // deletion; it first requires independent external-I/O reconciliation.
+      "account_erasure_external_io_coordination_holds/" +
+        uid + "__" + requestId,
     ];
     const rows = typeof db.getMany === "function"
       ? await db.getMany(paths, tx)
@@ -1629,12 +1634,14 @@ export async function verifyAccountStorageCleanupJob(db, job) {
         rows.some(doc => !doc || typeof doc.exists !== "boolean")) {
       throw new Error("account_erasure_queue_transaction_read_failed");
     }
-    const [request, checkpoint, user, audit, revocationIntent] = rows;
+    const [request, checkpoint, user, audit, revocationIntent,
+      coordinationHold] = rows;
 
     // A durable pending stop request is independently authoritative even if
     // certificates remain approved. This also rejects missing/malformed reads.
     // It does NOT make the external bucket side effect atomic with Firestore.
     const valid = revocationIntent?.exists === false &&
+      coordinationHold?.exists === false &&
       request?.exists === true && checkpoint?.exists === true &&
       user?.exists === true && audit?.exists === true &&
       clean(request.data?.uid) === uid &&
