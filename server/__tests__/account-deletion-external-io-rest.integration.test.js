@@ -45,7 +45,12 @@ globalThis.fetch=async (url,options)=>{
     // Never allow this fetch wrapper to talk to Google Firestore.
     const local="http://"+process.env.FIRESTORE_EMULATOR_HOST+
       target.slice(FIRESTORE_ORIGIN.length);
-    return upstreamFetch(local,options);
+    // The Emulator expects its documented local administrator identity,
+    // not a mocked Google OAuth access token (which yields "invalid jwt").
+    // This header rewrite NEVER leaves the loopback-only local test bridge.
+    const headers=new Headers(options?.headers||{});
+    headers.set("Authorization","Bearer owner");
+    return upstreamFetch(local,{...options,headers});
   }
   throw Error("REST_EMULATOR_TEST_BLOCKS_EXTERNAL_FETCH");
 };
