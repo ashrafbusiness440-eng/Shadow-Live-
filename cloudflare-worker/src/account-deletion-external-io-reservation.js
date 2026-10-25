@@ -24,6 +24,10 @@ const revocationIntentAuditPath = requestId =>
   "admin_audit_logs/erasure_external_io_revocation_intent_" + requestId;
 const coordinationHoldPath = (uid,requestId) =>
   "account_erasure_external_io_coordination_holds/" + uid + "__" + requestId;
+// Request-wide, create-only journal. Once created it can never imply that
+// bucket.delete did NOT run: crashes may make the external result unknowable.
+const uncertainAttemptPath = (uid,requestId) =>
+  "account_erasure_external_io_uncertain_attempts/" + uid + "__" + requestId;
 
 export class AccountErasureIoReservationError extends Error {
   constructor(code,status=409){super(code);this.code=code;this.status=status;}
@@ -74,7 +78,7 @@ export async function requestAccountErasureExternalIoRevocationIntent(db, {
     // transaction-scoped coordination and stop documents. Even when no
     // holder has been recorded, a prior legacy operation remains unknown.
     const paths=[requestPath,checkpointPath,intentPath,auditPath,
-      coordinationHoldPath(uid,requestId)];
+      coordinationHoldPath(uid,requestId),uncertainAttemptPath(uid,requestId)];
     const docs=typeof db.getMany==="function"
       ? await db.getMany(paths,tx)
       : await Promise.all(paths.map(p=>db.get(p,tx)));
@@ -82,7 +86,14 @@ export async function requestAccountErasureExternalIoRevocationIntent(db, {
         docs.some(d=>!d || typeof d.exists!=="boolean")) {
       reject("external_io_transaction_read_failed",503);
     }
-    const [request,checkpoint,existing,audit,hold]=docs;
+    const [request,checkpoint,existing,audit,hold,attempt]=docs;
+    if (attempt.exists && (clean(attempt.data?.uid)!==uid ||
+        clean(attempt.data?.requestId)!==requestId ||
+        attempt.data?.externalIoAllowed!==false ||
+        attempt.data?.retryAllowed!==false ||
+        attempt.data?.completionVerified!==false)) {
+      reject("external_io_uncertain_attempt_malformed",503);
+    }
     if (hold.exists && (clean(hold.data?.uid)!==uid ||
         clean(hold.data?.requestId)!==requestId ||
         hold.data?.externalIoAllowed!==false)) {
@@ -106,6 +117,7 @@ export async function requestAccountErasureExternalIoRevocationIntent(db, {
         revocationEffective:false,externalIoAllowed:false,
         requestedAt:at,requestedByUid:by,
         coordinationHoldObserved:hold.exists,
+        uncertainAttemptObserved:attempt.exists,
       }),
       db.writeCreate(auditPath,{
         action:"accountErasureExternalIoRevocationIntent",
@@ -113,11 +125,13 @@ export async function requestAccountErasureExternalIoRevocationIntent(db, {
         actorUid:by,createdAt:at,
         revocationEffective:false,
         coordinationHoldObserved:hold.exists,
+        uncertainAttemptObserved:attempt.exists,
       }),
     ]);
     return {ok:true,revocationIntentCreated:true,
       revocationEffective:false,pendingReconciliation:true,
       coordinationHoldObserved:hold.exists,
+      uncertainAttemptObserved:attempt.exists,
       externalIoAllowed:false};
   } catch(error) {
     await db.rollback(tx).catch(()=>{});
@@ -344,6 +358,132 @@ export async function recordAccountErasureExternalIoCoordinationHold(db,{
     })]);
     return {ok:true,holdRecorded:true,externalIoAllowed:false,
       revocationEffective:false,pendingReconciliation:true};
+  }catch(error){
+    await db.rollback(tx).catch(()=>{});
+    throw error;
+  }
+}
+
+
+/**
+ * INTERNAL ONLY: create a conservative, irreversible "unknown outcome"
+ * journal BEFORE any future external I/O. Creating the journal NEVER gives
+ * permission to call bucket.delete. A crash at ANY point must NOT recycle
+ * this attempt or infer success/failure from absent acknowledgments.
+ *
+ * Two workers cannot create two journals, and Owner stop and journal writer
+ * read the same intent/attempt paths within their respective transactions.
+ * A stop arriving AFTER the journal is only a pending stop, never an
+ * effective revocation of a possibly started external operation.
+ *
+ * No scheduler, API, R2 binding or finalizer invokes this function.
+ */
+export async function recordAccountErasureExternalIoUncertainAttempt(db,{
+  uid,requestId,objectId,token,actor,nowMs=Date.now(),
+}={}){
+  uid=clean(uid);requestId=clean(requestId);objectId=clean(objectId);
+  token=clean(token);
+  if(!actor?.owner || !uidOk(clean(actor?.uid)))reject("owner_required",403);
+  if(!uidOk(uid)||!requestOk(requestId)||!objectOk(objectId)||
+     !tokenOk(token)||!Number.isSafeInteger(nowMs)||nowMs<=0) {
+    reject("invalid_external_io_uncertain_attempt",400);
+  }
+  if(typeof db?.beginTransaction!=="function"||
+     typeof db?.commit!=="function"||
+     typeof db?.writeCreate!=="function"){
+    reject("external_io_transaction_adapter_missing",503);
+  }
+  const journalPath=uncertainAttemptPath(uid,requestId);
+  const tx=await db.beginTransaction();
+  try{
+    const paths=[
+      "account_deletion_requests/"+uid,
+      "account_deletion_erasure_checkpoints/"+uid,
+      "users/"+uid,
+      "storage_objects/"+objectId,
+      "account_erasure_external_io_reservations/"+uid+"__"+objectId,
+      coordinationHoldPath(uid,requestId),
+      revocationIntentPath(uid,requestId),
+      journalPath,
+      "admin_audit_logs/erasure_processing_start_"+requestId,
+    ];
+    const rows=typeof db.getMany==="function"
+      ? await db.getMany(paths,tx)
+      : await Promise.all(paths.map(path=>db.get(path,tx)));
+    if(!Array.isArray(rows)||rows.length!==paths.length||
+       rows.some(row=>!row||typeof row.exists!=="boolean")){
+      reject("external_io_transaction_read_failed",503);
+    }
+    const [request,checkpoint,user,object,reservation,hold,stop,prior,admission]=rows;
+    if(stop.exists)reject("external_io_revocation_intent_pending");
+    if(prior.exists)reject("external_io_uncertain_attempt_requires_reconciliation");
+    if(!request.exists||!checkpoint.exists||!user.exists||
+       !object.exists||!reservation.exists||!hold.exists||!admission.exists||
+       clean(request.data?.uid)!==uid||
+       clean(request.data?.requestId)!==requestId||
+       clean(request.data?.status)!=="processing"||
+       clean(checkpoint.data?.uid)!==uid||
+       clean(checkpoint.data?.requestId)!==requestId||
+       clean(checkpoint.data?.phase)!=="storage_media"||
+       checkpoint.data?.destructiveAllowed!==true||
+       checkpoint.data?.storageRetentionApproved!==true||
+       checkpoint.data?.sharedMediaOwnershipReviewed!==true||
+       checkpoint.data?.legalEvidenceReviewComplete!==true||
+       checkpoint.data?.financialSettlementApproved!==true||
+       checkpoint.data?.playBillingReviewComplete!==true||
+       clean(user.data?.accountStatus)!=="deletion_processing"||
+       clean(user.data?.role)==="owner"||
+       user.data?.authDeleted===true||
+       clean(object.data?.ownerUid)!==uid||
+       clean(reservation.data?.uid)!==uid||
+       clean(reservation.data?.requestId)!==requestId||
+       clean(reservation.data?.objectId)!==objectId||
+       clean(reservation.data?.operationToken)!==token||
+       clean(reservation.data?.state)!=="reserved_requires_external_interlock"||
+       reservation.data?.externalIoAllowed!==false||
+       reservation.data?.completionVerified!==false||
+       clean(hold.data?.uid)!==uid||
+       clean(hold.data?.requestId)!==requestId||
+       clean(hold.data?.objectId)!==objectId||
+       clean(hold.data?.operationToken)!==token||
+       clean(hold.data?.state)!=="claimed_requires_external_interlock"||
+       hold.data?.externalIoAllowed!==false||
+       hold.data?.revocationEffective!==false||
+       hold.data?.completionVerified!==false||
+       clean(admission.data?.action)!=="accountErasureProcessingAdmitted"||
+       clean(admission.data?.targetId)!==uid||
+       clean(admission.data?.requestId)!==requestId||
+       !Array.isArray(admission.data?.certifiedDomains)||
+       admission.data.certifiedDomains.length!==REQUIRED_ERASURE_ADMISSION_DOMAINS.length||
+       !REQUIRED_ERASURE_ADMISSION_DOMAINS.every(d=>
+         admission.data.certifiedDomains.includes(d))||
+       held(request.data)||held(checkpoint.data)||
+       held(user.data)||held(object.data)||held(admission.data)){
+      reject("external_io_uncertain_attempt_not_authorized");
+    }
+    const requestedAtMs=dateMs(request.data?.requestedAt);
+    const eligibleAtMs=dateMs(request.data?.eligibleAt);
+    if(!Number.isSafeInteger(requestedAtMs)||
+       !Number.isSafeInteger(eligibleAtMs)||
+       requestedAtMs<=0||eligibleAtMs<requestedAtMs+GRACE_MS||
+       nowMs<eligibleAtMs||nowMs<requestedAtMs+GRACE_MS){
+      reject("external_io_uncertain_attempt_grace_not_elapsed");
+    }
+    await recheckErasureCertificatesInTransaction(db,tx,{
+      uid,requestId,requestedAtMs,nowMs,
+    });
+    await db.commit(tx,[db.writeCreate(journalPath,{
+      uid,requestId,objectId,operationToken:token,
+      state:"outcome_unknown_requires_reconciliation",
+      // An attempted/uncertain operation MUST never be retried just
+      // because the worker did not record a success acknowledgement.
+      retryAllowed:false,externalIoAllowed:false,
+      completionVerified:false,revocationEffective:false,
+      createdAt:new Date(nowMs),createdByUid:clean(actor.uid),
+    })]);
+    return {ok:true,uncertainAttemptRecorded:true,
+      outcomeUnknown:true,retryAllowed:false,externalIoAllowed:false,
+      completionVerified:false,pendingReconciliation:true};
   }catch(error){
     await db.rollback(tx).catch(()=>{});
     throw error;
