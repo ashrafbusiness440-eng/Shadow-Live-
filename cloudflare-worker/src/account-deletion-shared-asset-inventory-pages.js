@@ -8,8 +8,10 @@ const resourceOk = v => /^[A-Za-z0-9_-]{1,180}$/.test(clean(v));
 const held = data => [
   data?.reviewHold, data?.legalHold, data?.retentionHold,
   data?.deletionHold, data?.evidenceHold,
-  data?.investigationHold, data?.reported,
-].some(flag => flag === true);
+  data?.investigationHold, data?.reported, data?.appealPending,
+].some(flag => flag === true) ||
+  ["pending", "open", "under_review"].includes(
+    clean(data?.appealStatus).toLowerCase());
 export const MAX_SHARED_ASSET_INVENTORY_PAGE = 5;
 const kinds = Object.freeze({
   rooms_owner_uid: Object.freeze({
@@ -110,7 +112,7 @@ export async function inspectAccountSharedAssetsPage(db, {
         clean(um.agencyId) === row.id &&
         clean(um.role) === "owner" &&
         clean(um.status) === "active" &&
-        !held(m) && !held(um);
+        !held(value) && !held(m) && !held(um);
       items.push({
         id: row.id, kind: "agency",
         membershipConsistent,

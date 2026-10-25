@@ -65,7 +65,18 @@ test("emulator: paginated shared rooms and owner agency require independent tran
     const held=await inspect(db,{...opts,kind:"agencies_owned"});
     assert.equal(held.items[0].held,true);
     assert.equal(held.items[0].membershipConsistent,false);
-    await req.update({status:"cancelled"});
+    await pair.update({legalHold:false,appealStatus:"open"});
+    const appealed=await inspect(db,{...opts,kind:"agencies_owned"});
+    assert.equal(appealed.items[0].held,true);
+    assert.equal(appealed.items[0].membershipConsistent,false);
+    await rooms[0].update({appealPending:true});
+    const roomAppeal=await inspect(db,{...opts,kind:"rooms_owner_uid",limit:1});
+    assert.equal(roomAppeal.items[0].held,true);
+    assert.equal(roomAppeal.erasureAllowed,false);
+    await req.update({appealPending:true});
+    await assert.rejects(inspect(db,{...opts,kind:"agencies_owned"}),
+      error=>error.code==="shared_asset_inventory_review_blocked");
+    await req.update({appealPending:false,status:"cancelled"});
     await assert.rejects(inspect(db,{...opts,kind:"rooms_owner_uid"}),
       error=>error.code==="shared_asset_inventory_review_blocked");
   }finally{
