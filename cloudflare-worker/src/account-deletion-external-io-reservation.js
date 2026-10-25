@@ -18,6 +18,10 @@ const dateMs = v => v instanceof Date ? v.getTime()
   : typeof v === "string" ? Date.parse(v)
   : Number.isFinite(v?.seconds) ? v.seconds * 1000 : NaN;
 const GRACE_MS = 30 * 86400_000;
+const revocationIntentPath = (uid,requestId) =>
+  "account_erasure_external_io_revocation_intents/" + uid + "__" + requestId;
+const revocationIntentAuditPath = requestId =>
+  "admin_audit_logs/erasure_external_io_revocation_intent_" + requestId;
 
 export class AccountErasureIoReservationError extends Error {
   constructor(code,status=409){super(code);this.code=code;this.status=status;}
@@ -36,6 +40,77 @@ const reject = (code,status) => {
  * imports this primitive. Approval revocation must later honor an explicit
  * durable interlock before any real external delete can be enabled.
  */
+/**
+ * Unrouted, NON-DESTRUCTIVE stop intent for future external I/O reservations.
+ * This is NOT an effective signoff revocation or an in-flight I/O barrier:
+ * any earlier reservation/operation requires separate reconciliation before
+ * a revocation can be declared effective. No automatic timeout reclaims it.
+ * The eventual approval-revocation writer MUST atomically coordinate with
+ * this marker and all in-flight operation fencing before releasing signoffs.
+ */
+export async function requestAccountErasureExternalIoRevocationIntent(db, {
+  uid, requestId, actor, nowMs = Date.now(),
+}={}) {
+  uid=clean(uid);requestId=clean(requestId);
+  if (!actor?.owner || !uidOk(clean(actor?.uid))) reject("owner_required",403);
+  if (!uidOk(uid) || !requestOk(requestId) ||
+      !Number.isSafeInteger(nowMs) || nowMs<=0) {
+    reject("invalid_external_io_revocation_intent",400);
+  }
+  if (typeof db?.beginTransaction!=="function" ||
+      typeof db?.commit!=="function" ||
+      typeof db?.writeCreate!=="function") {
+    reject("external_io_transaction_adapter_missing",503);
+  }
+  const requestPath="account_deletion_requests/"+uid;
+  const checkpointPath="account_deletion_erasure_checkpoints/"+uid;
+  const intentPath=revocationIntentPath(uid,requestId);
+  const auditPath=revocationIntentAuditPath(requestId);
+  const tx=await db.beginTransaction();
+  try {
+    const paths=[requestPath,checkpointPath,intentPath,auditPath];
+    const docs=typeof db.getMany==="function"
+      ? await db.getMany(paths,tx)
+      : await Promise.all(paths.map(p=>db.get(p,tx)));
+    if (!Array.isArray(docs) || docs.length!==4 ||
+        docs.some(d=>!d || typeof d.exists!=="boolean")) {
+      reject("external_io_transaction_read_failed",503);
+    }
+    const [request,checkpoint,existing,audit]=docs;
+    if (existing.exists || audit.exists) {
+      reject("external_io_revocation_requires_reconciliation");
+    }
+    if (!request.exists || !checkpoint.exists ||
+        clean(request.data?.uid)!==uid ||
+        clean(request.data?.requestId)!==requestId ||
+        clean(checkpoint.data?.uid)!==uid ||
+        clean(checkpoint.data?.requestId)!==requestId ||
+        clean(request.data?.status)!=="processing") {
+      reject("external_io_revocation_target_mismatch");
+    }
+    const at=new Date(nowMs),by=clean(actor.uid);
+    await db.commit(tx,[
+      db.writeCreate(intentPath,{
+        uid,requestId,status:"pending_reconciliation",
+        revocationEffective:false,externalIoAllowed:false,
+        requestedAt:at,requestedByUid:by,
+      }),
+      db.writeCreate(auditPath,{
+        action:"accountErasureExternalIoRevocationIntent",
+        targetType:"user",targetId:uid,requestId,
+        actorUid:by,createdAt:at,
+        revocationEffective:false,
+      }),
+    ]);
+    return {ok:true,revocationIntentCreated:true,
+      revocationEffective:false,pendingReconciliation:true,
+      externalIoAllowed:false};
+  } catch(error) {
+    await db.rollback(tx).catch(()=>{});
+    throw error;
+  }
+}
+
 export async function reserveAccountErasureExternalIo(db, {
   uid, requestId, objectId, actor, token, nowMs = Date.now(),
 }={}) {
@@ -54,7 +129,7 @@ export async function reserveAccountErasureExternalIo(db, {
   const path = "account_erasure_external_io_reservations/" + uid + "__" + objectId;
   const tx = await db.beginTransaction();
   try {
-    // Six bounded exact reads in ONE Firestore transaction-scoped batchGet
+    // Seven bounded exact reads in ONE Firestore transaction-scoped batchGet
     // (instead of parallel REST GETs contending for the same transaction).
     // Test adapters without getMany retain the identical transaction-scoped
     // exact-read fallback. All writes still use this same transaction.
@@ -65,6 +140,7 @@ export async function reserveAccountErasureExternalIo(db, {
       path,
       "storage_objects/"+objectId,
       "admin_audit_logs/erasure_processing_start_"+requestId,
+      revocationIntentPath(uid,requestId),
     ];
     const base=typeof db.getMany==="function"
       ? await db.getMany(basePaths,tx)
@@ -72,7 +148,12 @@ export async function reserveAccountErasureExternalIo(db, {
     if (!Array.isArray(base)||base.length!==basePaths.length) {
       reject("external_io_transaction_read_failed",503);
     }
-    const [request,checkpoint,user,existing,storageObject,admission]=base;
+    const [request,checkpoint,user,existing,storageObject,admission,
+      revocationIntent]=base;
+    // A revocation INTENT is a durable stop for future reservations, even
+    // when an already-started object still needs human reconciliation.
+    // This read conflicts with a concurrent create in the SAME transaction.
+    if (revocationIntent?.exists) reject("external_io_revocation_intent_pending");
     if (existing.exists) reject("external_io_reservation_requires_reconciliation");
     if (!request.exists || !checkpoint.exists || !user.exists ||
         !storageObject.exists || !admission.exists ||
