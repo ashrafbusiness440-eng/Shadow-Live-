@@ -1,4 +1,6 @@
 // Queue-only verified-stage adapter for existing bounded R2 account cleanup.
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // Not exposed as HTTP or cron. Existing worker owns the actual R2 operations.
 // The production erasure checkpoint is always blocked, so this stage is inert.
 const clean=v=>String(v??"").trim();
@@ -69,6 +71,13 @@ export async function queueAccountDeletionR2Stage(db,{
       await db.rollback(tx);
       return {ok:true,queued:false,duplicate:true};
     }
+    // The same Firestore transaction must observe all six current approvals
+    // before the R2 cleanup job can be queued. Revocation/appeal conflicts
+    // stop this enqueue; the real object deletion remains a separate gate.
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt,
+      nowMs: now.getTime(),
+    });
     await db.commit(tx,[
       db.writeCreate(jobPath,{
         ownerUid:uid,requestId,reason:"account_deleted_verified",
