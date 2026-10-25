@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // Gated internal one-record cleanup for a deleted account's own diary like
 // or view-dedupe key. There is no public caller, cron or production executor.
 // Real checkpoints still have destructiveAllowed=false. Counterparty diaries,
@@ -38,13 +40,14 @@ export class AccountDiaryInteractionErasureError extends Error {
  * the future finalizer; none of the flags can be set by this module.
  */
 export async function eraseDeletedDiaryInteraction(db, {
-  uid, requestId, diaryId, kind,
+  uid, requestId, diaryId, kind, nowMs = Date.now(),
 } = {}) {
   uid = clean(uid);
   requestId = clean(requestId);
   diaryId = clean(diaryId);
   if (!uidOk(uid) || !requestOk(requestId) || !diaryOk(diaryId) ||
-      !Object.hasOwn(kinds, kind)) {
+      !Object.hasOwn(kinds, kind) ||
+      !Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new AccountDiaryInteractionErasureError(
       "invalid_diary_interaction_erasure_target", 400);
   }
@@ -98,6 +101,9 @@ export async function eraseDeletedDiaryInteraction(db, {
       throw new AccountDiaryInteractionErasureError(
         "diary_interaction_legacy_schema_requires_review");
     }
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt, nowMs,
+    });
     await db.commit(tx, [db.writeDelete(path)]);
     return { ok: true, erased: true, duplicate: false };
   } catch (error) {
