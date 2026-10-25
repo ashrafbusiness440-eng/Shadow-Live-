@@ -49,6 +49,8 @@ test("cancellation, stale checkpoint and every legal hold block deletion",async(
     db=>db.docs.get("account_deletion_requests/"+uid).status="review_ready",
     db=>db.docs.get("account_deletion_requests/"+uid).requestId="stale_request_123456",
     db=>db.docs.get("account_deletion_requests/"+uid).reviewHold=true,
+    db=>db.docs.get("account_deletion_requests/"+uid).appealPending=true,
+    db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).appealStatus="Under_Review",
     db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).phase="preflight_blocked",
     db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).destructiveAllowed=false,
     db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).requestId="stale_request_123456",
@@ -56,6 +58,8 @@ test("cancellation, stale checkpoint and every legal hold block deletion",async(
     db=>db.docs.get("users/"+uid).accountStatus="active",
     db=>db.docs.get("users/"+uid).role="owner",
     db=>db.docs.get("users/"+uid).legalHold=true,
+    db=>db.docs.get("users/"+uid).appealStatus="OPEN",
+    db=>db.docs.get("public_profiles/"+uid).appealPending=true,
     db=>db.docs.get("public_profiles/"+uid).retentionHold=true,
     db=>db.docs.delete("users/"+uid),
   ];
