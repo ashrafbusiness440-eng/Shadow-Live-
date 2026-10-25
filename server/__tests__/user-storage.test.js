@@ -1310,3 +1310,89 @@ test("queued R2 cleanup refuses new report, evidence and appeal holds before any
     assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
   }
 });
+
+
+test("revocation after the first R2 file halts the remaining account batch",async()=>{
+  const ownerUid="deleted_member_late",ids=["1".repeat(32),"2".repeat(32)];
+  const pending=[];
+  let bucketDeletes=0,revoked=false,readObjectPage=false;
+  const base={
+    async runQuery(path,opts={}){
+      if(path==="storage_account_cleanup_jobs")return [{
+        id:"late_revoke_cleanup",data:{ownerUid,reason:"account_deleted"},
+      }];
+      if(path==="storage_objects"){
+        readObjectPage=true;
+        return ids.map(id=>({id,data:{
+          objectId:id,ownerUid,scope:"chat_image",
+          storageKey:"chat/room/"+ownerUid+"/"+id+".png",
+          targetId:"room_123",
+        }}));
+      }
+      throw Error("unexpected_scan_"+path);
+    },
+    async get(){return {exists:false,data:null};},
+    writeDelete(path){return {op:"delete",path};},
+    writeCreate(path,data){return {op:"create",path,data};},
+    async commit(_tx,items){pending.push(...items);},
+  };
+  const db=certifiedCleanupDb(base);
+  const previousGet=db.get.bind(db);
+  db.get=async(path,tx)=>{
+    const document=await previousGet(path,tx);
+    if(revoked && path.includes("account_deletion_erasure_approvals/") &&
+       path.endsWith("__retention_policy")){
+      return {exists:true,data:{...document.data,decision:"revoked"}};
+    }
+    return document;
+  };
+  const result=await runDeletedAccountStorageCleanup(db,{
+    async delete(){bucketDeletes++;revoked=true;},
+  },{limit:5});
+  assert.equal(readObjectPage,true);
+  assert.equal(result.deleted,1);
+  assert.equal(result.failed,1);
+  assert.equal(bucketDeletes,1);
+  assert.equal(pending.some(w=>
+    w.path==="storage_account_cleanup_jobs/late_revoke_cleanup"),false);
+});
+
+test("valid looking R2 job without independent six-domain signoffs cannot enumerate media",async()=>{
+  const uid="uncertified_storage_user",requestId="uncertified_queue_request_12345";
+  const queries=[];
+  const db={
+    async beginTransaction(){return "tx";},
+    async rollback(){},
+    async runQuery(path){
+      queries.push(path);
+      if(path==="storage_account_cleanup_jobs")return [{
+        id:"uncertified_job_123",data:{ownerUid:uid,requestId,
+          reason:"account_deleted_verified",status:"queued"},
+      }];
+      throw Error("cannot_scan_media_without_certificates");
+    },
+    async get(path){
+      const docs={
+        ["account_deletion_requests/"+uid]:{uid,requestId,status:"processing",
+          requestedAt:new Date(Date.now()-40*86400_000)},
+        ["account_deletion_erasure_checkpoints/"+uid]:{
+          requestId,phase:"storage_media",destructiveAllowed:true,
+          storageRetentionApproved:true,sharedMediaOwnershipReviewed:true,
+          legalEvidenceReviewComplete:true,financialSettlementApproved:true,
+          playBillingReviewComplete:true,
+        },
+        ["users/"+uid]:{role:"user",accountStatus:"deletion_processing"},
+        ["admin_audit_logs/r2_deletion_queue_"+requestId]:{
+          targetId:uid,requestId,action:"accountErasureR2QueueCertified",
+        },
+      };
+      return {exists:Object.hasOwn(docs,path),data:docs[path]||null};
+    },
+  };
+  const result=await runDeletedAccountStorageCleanup(db,{
+    async delete(){throw Error("never_delete_without_signoffs");},
+  },{limit:5});
+  assert.equal(result.blocked,true);
+  assert.equal(result.deleted,0);
+  assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
+});
