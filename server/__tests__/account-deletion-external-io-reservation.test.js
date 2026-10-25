@@ -5,6 +5,8 @@ import {reserveAccountErasureExternalIo as reserve}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
+import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 
 const uid="erasure_user_123",requestId="erasure_request_123456",
   objectId="media_object_123456",token="reservation_operation_token_123456",
@@ -26,9 +28,16 @@ class Db {
       }],
       ["account_deletion_erasure_checkpoints/"+uid,{
         uid,requestId,phase:"storage_media",destructiveAllowed:true,
+        storageRetentionApproved:true,sharedMediaOwnershipReviewed:true,
+        legalEvidenceReviewComplete:true,financialSettlementApproved:true,
+        playBillingReviewComplete:true,
       }],
       ["users/"+uid,{role:"user",accountStatus:"deletion_processing"}],
       ["storage_objects/"+objectId,{ownerUid:uid,scope:"chat_image"}],
+      ["admin_audit_logs/erasure_processing_start_"+requestId,{
+        targetId:uid,requestId,action:"accountErasureProcessingAdmitted",
+        certifiedDomains:[...domains],
+      }],
     ]);
     seedSyntheticErasureCertificates(this.docs,{uid,requestId,nowMs});
     this.reads=[];this.commits=[];this.rollbacks=0;
@@ -68,8 +77,8 @@ test("reservation is an exact one-record Firestore transaction and NEVER R2 dele
   assert.equal(db.commits[0].path,resPath);
   assert.equal(db.docs.get(resPath).state,"reserved_requires_external_interlock");
   assert.equal(db.docs.get(resPath).externalIoAllowed,false);
-  assert.equal(db.reads.length,17);
-  assert.equal(new Set(db.reads).size,17);
+  assert.equal(db.reads.length,18);
+  assert.equal(new Set(db.reads).size,18);
   assert.equal(db.reads.filter(x=>x.startsWith("account_deletion_erasure_approvals/")).length,6);
 });
 test("reserved token never permits duplicate or stale recovery",async()=>{
