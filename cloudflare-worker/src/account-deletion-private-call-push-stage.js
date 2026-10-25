@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // One-token, already-enumerated private-call push cleanup. NO route or cron.
 // Production preflight checkpoints remain destructiveAllowed=false.
 import { createHash } from "node:crypto";
@@ -7,9 +8,7 @@ const validUid = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const validRequestId = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const validHash = value => /^[a-f0-9]{64}$/.test(clean(value));
 const validToken = value => /^[A-Za-z0-9_:\-.]{32,512}$/.test(clean(value));
-const held = data => [data?.reviewHold, data?.legalHold,
-  data?.retentionHold, data?.deletionHold, data?.evidenceHold]
-  .some(value => value === true);
+
 
 export class PrivateCallPushErasureError extends Error {
   constructor(code, status = 409) {
