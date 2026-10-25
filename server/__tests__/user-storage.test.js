@@ -1360,6 +1360,57 @@ test("revocation after the first R2 file halts the remaining account batch",asyn
     w.path==="storage_account_cleanup_jobs/late_revoke_cleanup"),false);
 });
 
+test("pending revocation-intent after first R2 object blocks the rest of the batch",async()=>{
+  // Old isolated primitive remains test-only: the production scheduler is
+  // fully OFF pending an external-operation lease and reconciliation protocol.
+  const ownerUid="deleted_member_stop_after_first";
+  const ids=["3".repeat(32),"4".repeat(32)];
+  let deletes=0,stopPending=false,pageEnumerated=false;
+  const writes=[];
+  const base={
+    async runQuery(path){
+      if(path==="storage_account_cleanup_jobs")return [{
+        id:"stop_after_first_job",data:{
+          ownerUid,reason:"account_deleted",
+        },
+      }];
+      if(path==="storage_objects"){
+        pageEnumerated=true;
+        return ids.map(id=>({id,data:{
+          objectId:id,ownerUid,scope:"chat_image",
+          storageKey:"chat/room/"+ownerUid+"/"+id+".png",
+          targetId:"room_123",
+        }}));
+      }
+      throw Error("unexpected_query_"+path);
+    },
+    async get(){return {exists:false,data:null};},
+    writeDelete(path){return {op:"delete",path};},
+    writeCreate(path,data){return {op:"create",path,data};},
+    async commit(_tx,ops){writes.push(...ops);},
+  };
+  const db=certifiedCleanupDb(base);
+  const originalGet=db.get.bind(db);
+  db.get=async (path,tx)=>{
+    if(path==="account_erasure_external_io_revocation_intents/"+
+      ownerUid+"__certified_cleanup_stop_after_first_job"){
+      return stopPending ? {exists:true,data:{
+        status:"pending_reconciliation",revocationEffective:false,
+      }} : {exists:false,data:null};
+    }
+    return originalGet(path,tx);
+  };
+  const result=await runDeletedAccountStorageCleanup(db,{
+    async delete(){deletes++;stopPending=true;},
+  },{limit:5});
+  assert.equal(pageEnumerated,true);
+  assert.equal(deletes,1);
+  assert.equal(result.deleted,1);
+  assert.equal(result.failed,1);
+  assert.equal(writes.some(write=>
+    write.path==="storage_account_cleanup_jobs/stop_after_first_job"),false);
+});
+
 test("valid looking R2 job without independent six-domain signoffs cannot enumerate media",async()=>{
   const uid="uncertified_storage_user",requestId="uncertified_queue_request_12345";
   const queries=[];
