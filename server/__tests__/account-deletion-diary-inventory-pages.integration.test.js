@@ -68,7 +68,16 @@ test("emulator: cursor pages cover owned diaries; nested comments retain authors
       "protected original content");
     assert.equal((await comments[1].get()).data().text,"counterparty comment");
     assert.equal((await user.get()).data().coins,543);
-    await request.update({status:"cancelled"});
+    await comments[1].update({appealStatus:"OPEN"});
+    const appealed=await inspect(db,{uid,requestId,actor:owner,
+      kind:"comments",diaryId:diaries[0].id,limit:2});
+    assert.equal(appealed.items[1].needsReview,true);
+    assert.equal(appealed.erasureAllowed,false);
+    assert.equal((await comments[1].get()).data().text,"counterparty comment");
+    await request.update({appealPending:true});
+    await assert.rejects(inspect(db,{uid,requestId,actor:owner}),
+      e=>e.code==="diary_inventory_review_blocked");
+    await request.update({appealPending:false,status:"cancelled"});
     await assert.rejects(inspect(db,{uid,requestId,actor:owner}),
       e=>e.code==="diary_inventory_review_blocked");
   }finally{
