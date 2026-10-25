@@ -191,3 +191,22 @@ in-flight holder barrier with cancellation and crash/timeout reconciliation;
 safe storage/agency disposition; authorized reviewer evidence; and the
 private-text same-transaction certification guard. **No live R2 delete,
 approval release, Firebase Auth deletion or final completion receipt.**
+
+### Gate 1: batchGet transport-row completeness (not a go-live signal)
+
+The actual Cloudflare Firestore REST `getMany` previously synthesized
+`exists:false` for a requested path omitted by a malformed or truncated
+HTTP `documents:batchGet` response. In particular, an omitted
+`account_erasure_external_io_revocation_intents` row could be mistaken
+for an explicitly missing revocation-intent document. The shared adapter
+now requires **one unique, matching found/missing row for every requested
+document**, allows arbitrary response order, and rejects incomplete,
+duplicate, mixed found-and-missing, or unrelated rows. This distinguishes
+a legitimate absent stop marker from a failed transport response.
+Regression tests check each case in the shared Firestore reliability suite.
+The change also protects other consumers of this reusable Firestore adapter;
+it adds no scans, new external services or background work.
+
+This is additional fail-closed defense for the *unmerged* branch. It
+does not implement in-flight external-I/O cancellation, authorize deletions
+or override any of the outstanding four gate blockers.
