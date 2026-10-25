@@ -11,7 +11,8 @@ import {firestoreClient} from "../../cloudflare-worker/src/firestore.js";
 import {verifyAccountStorageCleanupJob}
   from "../../cloudflare-worker/src/user-storage.js";
 import {reserveAccountErasureExternalIo as reserve,
-  requestAccountErasureExternalIoRevocationIntent as requestStop}
+  requestAccountErasureExternalIoRevocationIntent as requestStop,
+  recordAccountErasureExternalIoCoordinationHold as recordHold}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
   from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
@@ -131,6 +132,22 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
       e=>e.code==="external_io_reservation_requires_reconciliation"||
         e.code==="erasure_transactional_certification_blocked");
     assert.equal((await reservation.get()).data().externalIoAllowed,false);
+    // Claim a non-permissive request-wide coordination hold using the
+    // actual Cloudflare REST adapter and the winning reservation token.
+    // This is a durable marker, NOT an R2 delete or permission.
+    const hold=doc("account_erasure_external_io_coordination_holds/"+
+      uid+"__"+requestId);
+    refs.push(hold);
+    const holdResult=await recordHold(firestoreClient(env),{
+      ...args(stored.data().operationToken),
+      objectId,
+    });
+    assert.equal(holdResult.externalIoAllowed,false);
+    assert.equal((await hold.get()).data().state,
+      "claimed_requires_external_interlock");
+    await assert.rejects(recordHold(firestoreClient(env),{
+      ...args(stored.data().operationToken),objectId,
+    }),e=>e.code==="external_io_coordination_requires_reconciliation");
     // A stop requested AFTER a prior immutable reservation must prevent
     // reservations for DIFFERENT objects too. This is a transaction-scoped
     // boundary, not a claim that prior external I/O was cancelled.
@@ -149,6 +166,8 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
       uid,requestId,actor:{uid:owner,owner:true},nowMs,
     });
     assert.equal(intentResult.revocationEffective,false);
+    assert.equal(intentResult.coordinationHoldObserved,true);
+    assert.equal((await hold.get()).data().externalIoAllowed,false);
     await certificates[0].update({decision:"approved"});
     await assert.rejects(reserve(firestoreClient(env),{
       ...args("rest_worker_new_object_token_123456"),objectId:secondId,
