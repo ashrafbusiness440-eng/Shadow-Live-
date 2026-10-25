@@ -135,6 +135,10 @@ test("holds, deleted account and stale request fail before query",async()=>{
     d=>d.docs.get(req).status="cancelled",
     d=>d.docs.get(req).requestId="other_request_12345",
     d=>d.docs.get(req).investigationHold=true,
+    d=>d.docs.get(req).appealPending=true,
+    d=>d.docs.get(req).appealStatus="Under_Review",
+    d=>d.docs.get(cp).appealStatus="open",
+    d=>d.docs.get(account).appealPending=true,
     d=>d.docs.get(cp).requestId="other_request_12345",
     d=>d.docs.get(cp).reported=true,
     d=>d.docs.get(account).role="owner",
@@ -156,6 +160,35 @@ test("protected transaction remains visible only as a review flag",async()=>{
   assert.equal(page.items[0].legalHoldPresent,true);
   assert.equal(page.items[0].recordReviewRequired,true);
   assert.equal(JSON.stringify(page).includes("50000"),false);
+});
+test("open appeal on financial records and Play ledger is visible only as blocker flags",async()=>{
+  for(const patch of [{appealPending:true},{appealStatus:" Under_Review "}]) {
+    const db=new Db();
+    db.docs.set("financial_ledger/"+id(2),{
+      userId:uid,delta:999,reason:"sensitive",...patch,
+    });
+    const row=await run(db);
+    assert.equal(row.checked,1);
+    assert.equal(row.items[0].legalHoldPresent,true);
+    assert.equal(row.items[0].financialSettlementVerified,false);
+    assert.equal(JSON.stringify(row).includes("999"),false);
+  }
+  const db=new Db(),hash=id(4);
+  db.docs.set("google_play_purchases/"+hash,{
+    uid,tokenHash:hash,status:"credited",refundState:"none",
+    disputeState:"none",appealStatus:"pending",orderId:"hidden_order",
+  });
+  db.docs.set("financial_ledger/play_"+hash,{
+    userId:uid,sourceType:"googlePlayPurchase",sourceId:hash,
+    appealPending:true,delta:99,
+  });
+  const page=await run(db,{scope:"purchase"});
+  assert.equal(page.checked,1);
+  assert.equal(page.items[0].legalHoldPresent,true);
+  assert.equal(page.items[0].ledgerLinked,false);
+  assert.equal(page.items[0].financialSettlementVerified,false);
+  assert.equal(page.erasureAllowed,false);
+  assert.equal(JSON.stringify(page).includes("hidden_order"),false);
 });
 test("invalid input rejected before IO; forged query ownership fails closed",async()=>{
   for(const patch of [
