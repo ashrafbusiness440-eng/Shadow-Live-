@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // INTERNAL ONLY: read-only discovery of comments authored by the account
 // on OTHER people's diaries, based on indexed diary_operations.actorUid.
 // The operation journal is not a complete legacy inventory or erasure proof.
@@ -5,11 +6,7 @@ const clean = value => String(value ?? "").trim();
 const uidOk = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const idOk = value => /^[A-Za-z0-9_-]{3,220}$/.test(clean(value));
-const held = d => [
-  d?.reviewHold, d?.legalHold, d?.retentionHold,
-  d?.deletionHold, d?.evidenceHold, d?.reported,
-  d?.investigationHold,
-].some(v => v === true);
+
 
 export const MAX_CROSS_DIARY_OPERATION_PAGE = 5;
 export class AccountCrossDiaryDiscoveryError extends Error {
