@@ -14,7 +14,8 @@ import {verifyAccountStorageCleanupJob}
   from "../../cloudflare-worker/src/user-storage.js";
 import {reserveAccountErasureExternalIo as reserve,
   requestAccountErasureExternalIoRevocationIntent as requestStop,
-  recordAccountErasureExternalIoCoordinationHold as recordHold}
+  recordAccountErasureExternalIoCoordinationHold as recordHold,
+  recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
   from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
@@ -143,6 +144,23 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     await assert.rejects(recordHold(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
     }),e=>e.code==="external_io_coordination_requires_reconciliation");
+    // The irreversible unknown-outcome journal is an independent request-
+    // wide record. It is NOT proof of an R2 write, does not permit deletion,
+    // and cannot be automatically retried after a simulated crash.
+    const journal=doc("account_erasure_external_io_uncertain_attempts/"+
+      uid+"__"+requestId);
+    refs.push(journal);
+    const attempt=await recordUncertainAttempt(firestoreClient(env),{
+      ...args(stored.data().operationToken),objectId,
+    });
+    assert.equal(attempt.outcomeUnknown,true);
+    assert.equal(attempt.externalIoAllowed,false);
+    assert.equal(attempt.retryAllowed,false);
+    assert.equal((await journal.get()).data().state,
+      "outcome_unknown_requires_reconciliation");
+    await assert.rejects(recordUncertainAttempt(firestoreClient(env),{
+      ...args(stored.data().operationToken),objectId,
+    }),e=>e.code==="external_io_uncertain_attempt_requires_reconciliation");
     // A held request must block a SECOND object even before the Owner
     // requests revocation. This is the actual REST Firestore transaction path.
     const heldObjectId="rest_io_held_"+suffix;
@@ -183,7 +201,13 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     });
     assert.equal(intentResult.revocationEffective,false);
     assert.equal(intentResult.coordinationHoldObserved,true);
+    assert.equal(intentResult.uncertainAttemptObserved,true);
+    assert.equal((await intent.get()).data().uncertainAttemptObserved,true);
+    assert.equal((await journal.get()).data().retryAllowed,false);
     assert.equal((await hold.get()).data().externalIoAllowed,false);
+    await assert.rejects(recordUncertainAttempt(firestoreClient(env),{
+      ...args(stored.data().operationToken),objectId,
+    }),e=>e.code==="external_io_revocation_intent_pending");
     await certificates[0].update({decision:"approved"});
     await assert.rejects(reserve(firestoreClient(env),{
       ...args("rest_worker_new_object_token_123456"),objectId:secondId,
