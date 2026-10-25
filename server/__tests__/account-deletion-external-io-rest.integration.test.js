@@ -170,9 +170,12 @@ test("emulator: REST transactional batchGet blocks revoked approval before any r
       uid,requestId,objectId,nowMs,actor:{
         owner:true,uid:"test_owner_rest_123456",
       },token:"rest_revoke_token_123456",
-    }),e=>assert.equal(e.code,"erasure_transactional_certification_blocked",
-      JSON.stringify({message:e.message,status:e.status,
-        details:e.details})));
+    }),e=>{
+      assert.equal(e.code,"erasure_transactional_certification_blocked",
+        JSON.stringify({message:e.message,status:e.status,
+          details:e.details}));
+      return true;
+    });
     assert.equal((await docs[5].get()).exists,false);
   }finally{
     await Promise.all([...docs,...certificates].map(ref=>ref.delete()));
