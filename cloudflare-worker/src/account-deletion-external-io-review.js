@@ -50,7 +50,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     typeof db?.commit!=="function"||
     typeof db?.rollback!=="function"||
     typeof db?.writeCreate!=="function"||
-    (typeof db?.getMany!=="function"&&typeof db?.get!=="function")){
+    typeof db?.get!=="function"){
     fail("independent_external_io_review_adapter_missing",503);
   }
   const casePath=path("account_erasure_external_io_reconciliation_cases",

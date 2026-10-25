@@ -291,12 +291,40 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     const reviewAudit=doc("admin_audit_logs/erasure_external_io_independent_review_"+
       requestId);
     refs.push(reviewDoc,reviewAudit);
+    const reviewerUid="independent_reviewer_123456789";
+    const issuerProfile=doc("users/"+owner);
+    const reviewerProfile=doc("users/"+reviewerUid);
+    const grant=doc("account_erasure_external_io_reviewer_grants/"+
+      uid+"__"+requestId+"__"+reviewerUid);
+    const grantAudit=doc("admin_audit_logs/erasure_external_io_reviewer_grant_"+
+      requestId+"__"+reviewerUid);
+    refs.push(reviewerProfile,issuerProfile,grant,grantAudit);
+    const issuedAt=new Date(nowMs+2000);
+    await Promise.all([
+      reviewerProfile.set({uid:reviewerUid,role:"admin",adminEnabled:true,
+        capabilities:["reviewAccountErasureR2Evidence"],
+        accountStatus:"active"}),
+      issuerProfile.set({uid:owner,role:"owner",accountStatus:"active"}),
+      grant.set({uid,requestId,objectId,reviewerUid,
+        grantedByUid:owner,scope:"account_erasure_r2_reconciliation",
+        status:"active",revoked:false,grantedAt:issuedAt,
+        expiresAt:new Date(issuedAt.getTime()+3600_000)}),
+      grantAudit.set({action:"accountErasureExternalIoReviewerGrantRecorded",
+        targetId:uid,requestId,objectId,reviewerUid,
+        actorUid:owner,createdAt:issuedAt}),
+    ]);
     const reviewerArgs={
       uid,requestId,objectId,token:stored.data().operationToken,
-      actor:{uid:"independent_reviewer_123456789",evidenceReviewer:true},
+      actor:{uid:reviewerUid,evidenceReviewer:true},
       assessment:"provider_evidence_submitted_unverified",
       evidenceDigestSha256:"b".repeat(64),nowMs:nowMs+3000,
     };
+    // Client-supplied boolean cannot override an absent/missing profile
+    // or a revoked scoped grant. Both are checked in the REST transaction.
+    await reviewerProfile.update({adminEnabled:false});
+    await assert.rejects(reviewExternalIo(firestoreClient(env),reviewerArgs),
+      e=>e.code==="independent_external_io_review_grant_invalid");
+    await reviewerProfile.update({adminEnabled:true});
     await assert.rejects(reviewExternalIo(firestoreClient(env),{
       ...reviewerArgs,actor:{uid:owner,evidenceReviewer:true},
     }),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch");

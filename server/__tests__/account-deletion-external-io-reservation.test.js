@@ -711,9 +711,30 @@ const externalReviewOpts=(patch={})=>({
   evidenceDigestSha256:"a".repeat(64),
   nowMs:nowMs+3000,...patch,
 });
+function seedIndependentReviewerGrant(db,patch={}){
+  const reviewer=independentReviewer;
+  const grantPath="account_erasure_external_io_reviewer_grants/"+
+    uid+"__"+requestId+"__"+reviewer;
+  const auditPath="admin_audit_logs/erasure_external_io_reviewer_grant_"+
+    requestId+"__"+reviewer;
+  const issuedAt=new Date(nowMs+2000);
+  db.docs.set("users/"+reviewer,{uid:reviewer,role:"admin",
+    adminEnabled:true,capabilities:["reviewAccountErasureR2Evidence"],
+    accountStatus:"active"});
+  db.docs.set("users/"+owner,{uid:owner,role:"owner",
+    accountStatus:"active"});
+  db.docs.set(grantPath,{uid,requestId,objectId,reviewerUid:reviewer,
+    grantedByUid:owner,scope:"account_erasure_r2_reconciliation",
+    status:"active",revoked:false,grantedAt:issuedAt,
+    expiresAt:new Date(issuedAt.getTime()+3600_000),...patch});
+  db.docs.set(auditPath,{action:"accountErasureExternalIoReviewerGrantRecorded",
+    targetId:uid,requestId,objectId,reviewerUid:reviewer,
+    actorUid:owner,createdAt:issuedAt});
+}
 async function readyReviewCase(db){
   await prepareManualCase(db);
   await openCase(db,manualCaseOpts());
+  seedIndependentReviewerGrant(db);
 }
 test("independent review writes two immutable records and never resolves R2 outcome",async()=>{
   const db=new Db();await readyReviewCase(db);
@@ -804,4 +825,36 @@ test("emergency independent review remains non-destructive after prior certifica
   assert.equal(review.completionVerified,false);
   assert.equal(db.docs.get("account_erasure_external_io_uncertain_attempts/"+
     uid+"__"+requestId).retryAllowed,false);
+});
+
+test("caller evidenceReviewer flag alone cannot replace current audited case-scoped grant",async()=>{
+  for(const revoke of [
+    db=>db.docs.delete("account_erasure_external_io_reviewer_grants/"+
+      uid+"__"+requestId+"__"+independentReviewer),
+    db=>db.docs.delete("admin_audit_logs/erasure_external_io_reviewer_grant_"+
+      requestId+"__"+independentReviewer),
+    db=>db.docs.delete("users/"+independentReviewer),
+    db=>db.docs.get("users/"+independentReviewer).adminEnabled=false,
+    db=>db.docs.get("users/"+independentReviewer).capabilities=[],
+    db=>db.docs.get("users/"+independentReviewer).accountStatus="deleted",
+    db=>db.docs.get("account_erasure_external_io_reviewer_grants/"+
+      uid+"__"+requestId+"__"+independentReviewer).status="revoked",
+    db=>db.docs.get("account_erasure_external_io_reviewer_grants/"+
+      uid+"__"+requestId+"__"+independentReviewer).expiresAt=new Date(nowMs+1000),
+    db=>db.docs.get("account_erasure_external_io_reviewer_grants/"+
+      uid+"__"+requestId+"__"+independentReviewer).scope="all",
+    db=>db.docs.get("account_erasure_external_io_reviewer_grants/"+
+      uid+"__"+requestId+"__"+independentReviewer).requestId="other_request_123456",
+    db=>db.docs.get("admin_audit_logs/erasure_external_io_reviewer_grant_"+
+      requestId+"__"+independentReviewer).actorUid=independentReviewer,
+    db=>db.docs.get("users/"+owner).role="admin",
+  ]){
+    const db=new Db();await readyReviewCase(db);
+    revoke(db);
+    await assert.rejects(reviewCase(db,externalReviewOpts()),
+      e=>e.code==="independent_external_io_review_grant_invalid"||
+        e.code==="independent_external_io_review_grant_issuer_invalid");
+    assert.equal(db.docs.has("account_erasure_external_io_independent_reviews/"+
+      uid+"__"+requestId),false);
+  }
 });

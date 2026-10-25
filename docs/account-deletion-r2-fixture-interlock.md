@@ -197,3 +197,35 @@ authorization and evidence vault, confirming independent Cloudflare R2
 provider logs/object generations against an isolated explicitly authorized
 test bucket, coordinating all real approval issuers and revocation writers,
 and a reviewed finalizer. None are asserted complete by this fixture.
+
+
+### Case-scoped reviewer grant and current privilege guard (internal-only)
+
+The independent-review writer now **rejects a naked** `actor.evidenceReviewer`
+flag. Before accepting an assessment, in the **same Firestore transaction**
+as creating the review and audit it reads:
+
+- `users/<reviewerUid>`: current `adminEnabled:true`, specific
+  `reviewAccountErasureR2Evidence` capability, matching UID, and a
+  non-deleted / non-banned profile.
+- `account_erasure_external_io_reviewer_grants/<targetUid>__<requestId>__<reviewerUid>`:
+  exact account, request, object, reviewer and scope; status `active`,
+  `revoked!==true`, granted time no older than **one hour** at expiration,
+  and not expired when assessed.
+- `admin_audit_logs/erasure_external_io_reviewer_grant_<requestId>__<reviewerUid>`:
+  matching independent grant issuer UID, object/request/reviewer and exact
+  grant timestamp. The issuer's `users/<issuerUid>` record must **currently**
+  indicate an active platform Owner, re-read in this same transaction.
+
+A revoked/expired/replaced grant, absent audit, missing admin capability,
+demoted issuer or damaged transactional snapshot fails closed. Tests exercise
+these refusal paths and a real REST/Firestore Emulator guard: setting a
+caller-provided reviewer flag while `adminEnabled:false` never works.
+
+This is not a newly wired capability issuer or proof of cryptographic
+session authentication. A future restricted backend route MUST bind the
+reviewer's UID to the server-verified Firebase ID token and recent sign-in,
+then issue grants only through independently authorized Owner actions with
+create-only audits. Existing private test grants are synthetic. **No external
+evidence or account erasure is certified here**, and no public HTTP route,
+cron, production R2 operation or Firebase Auth deletion was added.
