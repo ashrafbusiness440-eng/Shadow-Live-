@@ -98,5 +98,5 @@ https://trello.com/c/O1o7gn2s
 https://trello.com/c/z0zPEz0j
 https://trello.com/c/gKZWJQVp
 
-PR #348 is frozen and must never be modified. No Vercel. Do not rebuild APK
+PR #348 is frozen and must never be modified. Use only the approved GitHub Pages/Cloudflare hosting. Do not rebuild APK
 per backend change. Reuse shared policies rather than copy-paste guards.
