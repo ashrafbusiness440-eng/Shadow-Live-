@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as protectedHold } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // Bounded, independently gated erasure stage for pre-enumerated support pairs.
 // NOT routed to API/cron. Existing support points and gift counts are immutable.
 const clean = value => String(value ?? "").trim();
@@ -21,10 +23,11 @@ export class SupportSnapshotStageError extends Error {
  * or owner action can set those states through this module.
  */
 export async function redactDeletedSupporterPair(db, {
-  deletedUid, counterpartUid, requestId,
+  deletedUid, counterpartUid, requestId, nowMs = Date.now(),
 } = {}) {
   if (!validUid(deletedUid) || !validUid(counterpartUid) ||
-      deletedUid === counterpartUid || !validRequestId(requestId)) {
+      deletedUid === counterpartUid || !validRequestId(requestId) ||
+      !Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new SupportSnapshotStageError("invalid_support_erasure_target");
   }
   const tx = await db.beginTransaction();
@@ -78,6 +81,10 @@ export async function redactDeletedSupporterPair(db, {
       await db.rollback(tx);
       return { ok: true, redacted: 0, duplicate: true };
     }
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid: deletedUid, requestId,
+      requestedAt: request.data?.requestedAt, nowMs,
+    });
     await db.commit(tx, writes);
     return { ok: true, redacted: writes.length, duplicate: false };
   } catch (error) {
