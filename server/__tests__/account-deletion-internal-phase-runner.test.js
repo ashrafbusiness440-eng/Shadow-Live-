@@ -71,9 +71,9 @@ const opts=(step,extra={})=>({
   ...(step==="private_text"?{conversationId}:{}),...extra,
 });
 
-test("five existing bounded stages are invoked only after matching all six certifications",async()=>{
+test("four transaction-guarded bounded stages can be invoked only with all six approvals",async()=>{
   assert.deepEqual(ACCOUNT_ERASURE_INTERNAL_STEPS,Object.keys(stagePhase));
-  for(const step of ACCOUNT_ERASURE_INTERNAL_STEPS) {
+  for(const step of ACCOUNT_ERASURE_INTERNAL_STEPS.filter(s=>s!=="private_text")) {
     const db=new Db(step);
     const result=await run(db,opts(step));
     assert.deepEqual({
@@ -283,4 +283,15 @@ test("bounded batchGet missing audit fails closed and never falls back to unlock
   }),e=>e.code==="erasure_transactional_certification_blocked");
   assert.equal(db.getCalls.length,0);
   assert.equal(db.commits,0);
+});
+
+test("even fully certified processing state cannot dispatch unguarded private text",async()=>{
+  const db=new Db("private_text");
+  await assert.rejects(run(db,opts("private_text")),
+    e=>e.code==="private_text_erasure_transaction_guard_missing");
+  assert.equal(db.getCalls.length,0);
+  assert.equal(db.queries.length,0);
+  assert.equal(db.commits,0);
+  assert.equal(db.docs.get("conversations/"+conversationId).participants[1],other);
+  assert.equal(db.docs.get(userPath).diamonds,12);
 });
