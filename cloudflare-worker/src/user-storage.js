@@ -1610,15 +1610,26 @@ export async function verifyAccountStorageCleanupJob(db, job) {
   // valid financial, Play, shared-asset, legal or retention signoffs.
   const tx = await db.beginTransaction();
   try {
-    const [request, checkpoint, user, audit, revocationIntent] =
-      await Promise.all([
-        db.get("account_deletion_requests/" + uid, tx),
-        db.get("account_deletion_erasure_checkpoints/" + uid, tx),
-        db.get("users/" + uid, tx),
-        db.get("admin_audit_logs/r2_deletion_queue_" + requestId, tx),
-        db.get("account_erasure_external_io_revocation_intents/" +
-          uid + "__" + requestId, tx),
-      ]);
+    // Five bounded exact snapshots in one transaction-scoped batchGet.
+    // Parallel REST GETs on one read/write transaction can contend on the
+    // Firestore Emulator. The production adapter supports getMany, while
+    // legacy unit fixtures retain their transaction-scoped exact fallback.
+    const paths = [
+      "account_deletion_requests/" + uid,
+      "account_deletion_erasure_checkpoints/" + uid,
+      "users/" + uid,
+      "admin_audit_logs/r2_deletion_queue_" + requestId,
+      "account_erasure_external_io_revocation_intents/" +
+        uid + "__" + requestId,
+    ];
+    const rows = typeof db.getMany === "function"
+      ? await db.getMany(paths, tx)
+      : await Promise.all(paths.map(path => db.get(path, tx)));
+    if (!Array.isArray(rows) || rows.length !== paths.length ||
+        rows.some(doc => !doc || typeof doc.exists !== "boolean")) {
+      throw new Error("account_erasure_queue_transaction_read_failed");
+    }
+    const [request, checkpoint, user, audit, revocationIntent] = rows;
 
     // A durable pending stop request is independently authoritative even if
     // certificates remain approved. This also rejects missing/malformed reads.
