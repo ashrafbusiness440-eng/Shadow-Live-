@@ -494,3 +494,153 @@ export async function recordAccountErasureExternalIoUncertainAttempt(db,{
     throw error;
   }
 }
+
+
+/**
+ * INTERNAL, UNROUTED, READ-ONLY R2 evidence collection for an ambiguous
+ * external outcome. bucket.head is the ONLY storage operation. A present or
+ * absent key is a point-in-time observation, NOT proof that the original
+ * bucket.delete succeeded/failed or that no unrelated writer intervened.
+ *
+ * The immutable attempt records the key before any eventual R2 work. Read
+ * it in a closed transaction, perform ONE read-only head outside Firestore,
+ * then recheck the complete exact identity in a new write transaction.
+ * A concurrent stop is permitted: it remains pending and the observation
+ * must NEVER release it, set externalIoAllowed or certify completion.
+ * No auto retry, polling, production route or destructive operation.
+ */
+export async function recordAccountErasureExternalIoReadOnlyProbe(db,bucket,{
+  uid,requestId,objectId,token,probeId,actor,nowMs=Date.now(),
+}={}){
+  uid=clean(uid);requestId=clean(requestId);objectId=clean(objectId);
+  token=clean(token);probeId=clean(probeId);
+  if(!actor?.owner||!uidOk(clean(actor?.uid)))reject("owner_required",403);
+  if(!uidOk(uid)||!requestOk(requestId)||!objectOk(objectId)||
+     !tokenOk(token)||!requestOk(probeId)||
+     !Number.isSafeInteger(nowMs)||nowMs<=0){
+    reject("invalid_external_io_probe",400);
+  }
+  if(typeof bucket?.head!=="function"||
+     typeof db?.beginTransaction!=="function"||
+     typeof db?.rollback!=="function"||
+     typeof db?.commit!=="function"||
+     typeof db?.writeCreate!=="function"){
+    reject("external_io_read_only_probe_adapter_missing",503);
+  }
+  const journalPath=uncertainAttemptPath(uid,requestId);
+  const observationPath="account_erasure_external_io_probe_observations/"+
+    uid+"__"+requestId+"__"+probeId;
+  const paths=[
+    journalPath,
+    coordinationHoldPath(uid,requestId),
+    "account_erasure_external_io_reservations/"+uid+"__"+objectId,
+    "storage_objects/"+objectId,
+    "account_deletion_requests/"+uid,
+    "account_deletion_erasure_checkpoints/"+uid,
+    revocationIntentPath(uid,requestId),
+    observationPath,
+  ];
+  const read=async(tx)=>{
+    const rows=typeof db.getMany==="function"
+      ? await db.getMany(paths,tx)
+      : await Promise.all(paths.map(path=>db.get(path,tx)));
+    if(!Array.isArray(rows)||rows.length!==paths.length||
+       rows.some(row=>!row||typeof row.exists!=="boolean")){
+      reject("external_io_probe_transaction_read_failed",503);
+    }
+    const [journal,hold,reservation,object,request,checkpoint,stop,existing]=rows;
+    if(existing.exists)reject("external_io_probe_already_recorded");
+    const key=clean(journal.data?.storageKey);
+    if(!journal.exists||!hold.exists||!reservation.exists||
+       !request.exists||!checkpoint.exists||
+       clean(journal.data?.uid)!==uid||
+       clean(journal.data?.requestId)!==requestId||
+       clean(journal.data?.objectId)!==objectId||
+       clean(journal.data?.operationToken)!==token||
+       clean(journal.data?.state)!=="outcome_unknown_requires_reconciliation"||
+       journal.data?.retryAllowed!==false||
+       journal.data?.externalIoAllowed!==false||
+       journal.data?.completionVerified!==false||
+       !key||key.length>1024||
+       clean(hold.data?.uid)!==uid||
+       clean(hold.data?.requestId)!==requestId||
+       clean(hold.data?.objectId)!==objectId||
+       clean(hold.data?.operationToken)!==token||
+       clean(hold.data?.state)!=="claimed_requires_external_interlock"||
+       hold.data?.externalIoAllowed!==false||
+       hold.data?.completionVerified!==false||
+       clean(reservation.data?.uid)!==uid||
+       clean(reservation.data?.requestId)!==requestId||
+       clean(reservation.data?.objectId)!==objectId||
+       clean(reservation.data?.operationToken)!==token||
+       reservation.data?.externalIoAllowed!==false||
+       reservation.data?.completionVerified!==false||
+       clean(request.data?.uid)!==uid||
+       clean(request.data?.requestId)!==requestId||
+       clean(checkpoint.data?.uid)!==uid||
+       clean(checkpoint.data?.requestId)!==requestId||
+       (object.exists&&(
+         clean(object.data?.ownerUid)!==uid||
+         clean(object.data?.storageKey)!==key))||
+       (stop.exists&&(
+         clean(stop.data?.uid)!==uid||
+         clean(stop.data?.requestId)!==requestId||
+         stop.data?.revocationEffective!==false))){
+      reject("external_io_probe_identity_mismatch");
+    }
+    return {key,objectExists:object.exists,stopObserved:stop.exists};
+  };
+  let original;
+  const inspectionTx=await db.beginTransaction();
+  try {
+    original=await read(inspectionTx);
+  } finally {
+    await db.rollback(inspectionTx).catch(()=>{});
+  }
+  let head;
+  try{
+    head=await bucket.head(original.key);
+  }catch{
+    // A timeout/error says NOTHING about existence or delete outcome.
+    // Preserve the unknown journal and leave no false success observation.
+    reject("external_io_read_only_probe_failed",503);
+  }
+  if(head===undefined||!(head===null||
+      (typeof head==="object"&&!Array.isArray(head)))){
+    reject("external_io_read_only_probe_invalid_response",503);
+  }
+  const presence=head===null?"absent_at_probe":"present_at_probe";
+  const tx=await db.beginTransaction();
+  try{
+    const latest=await read(tx);
+    if(latest.key!==original.key||
+       latest.objectExists!==original.objectExists){
+      reject("external_io_probe_identity_changed");
+    }
+    // An Owner stop that arrived during the head call is captured on the
+    // committed audit. We STILL do not mark that stop effective.
+    const size=Number(head?.size);
+    const etag=clean(head?.etag).slice(0,256);
+    await db.commit(tx,[db.writeCreate(observationPath,{
+      uid,requestId,objectId,operationToken:token,probeId,
+      storageKey:original.key,
+      state:"point_in_time_observation_requires_reconciliation",
+      presenceAtProbe:presence,
+      objectMetadataExistsAtProbe:latest.objectExists,
+      stopObservedAtCommit:latest.stopObserved,
+      observedSizeBytes:head&&Number.isSafeInteger(size)&&size>=0?size:null,
+      observedEtag:head?etag:"",
+      observedAt:new Date(nowMs),observedByUid:clean(actor.uid),
+      // Neither branch resolves historical side effects or authorizes retry.
+      retryAllowed:false,externalIoAllowed:false,
+      completionVerified:false,revocationEffective:false,
+    })]);
+    return {ok:true,observationRecorded:true,presenceAtProbe:presence,
+      stopObservedAtCommit:latest.stopObserved,
+      retryAllowed:false,externalIoAllowed:false,
+      completionVerified:false,pendingReconciliation:true};
+  }catch(error){
+    await db.rollback(tx).catch(()=>{});
+    throw error;
+  }
+}
