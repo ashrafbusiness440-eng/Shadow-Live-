@@ -19,6 +19,7 @@ import {
   cleanupQueuedStorageObject,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
+  verifyAccountStorageCleanupJob,
   runFencedDeletedAccountStorageCleanup,
   ACCOUNT_ERASURE_R2_FENCE_READY,
   authorizeAgencyLogoManagement,
@@ -1461,4 +1462,30 @@ test("queued R2 job stops on pending external-I/O revocation intent BEFORE media
     assert.equal(deletes,0);
     assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
   }
+});
+
+test("queued R2 job verification batches five exact current-state reads before twelve signoffs",async()=>{
+  const uid="bounded_cleanup_member_123",queries=[],sizes=[],transactions=[];
+  const base={
+    async runQuery(path){
+      queries.push(path);
+      if(path==="storage_account_cleanup_jobs")return [{
+        id:"batch_receipt_123",data:{ownerUid:uid,reason:"account_deleted"},
+      }];
+      throw Error("unapproved_storage_query");
+    },
+    async get(){return {exists:false,data:null};},
+    async commit(){throw Error("read_only_verification_must_not_commit");},
+  };
+  const db=certifiedCleanupDb(base);
+  const [job]=await db.runQuery("storage_account_cleanup_jobs",{limit:1});
+  db.getMany=async(paths,tx)=>{
+    sizes.push(paths.length);
+    transactions.push(tx);
+    return Promise.all(paths.map(path=>db.get(path,tx)));
+  };
+  assert.equal(await verifyAccountStorageCleanupJob(db,job),true);
+  assert.deepEqual(sizes,[5,12]);
+  assert.ok(transactions.every(tx=>tx==="synthetic_cleanup_tx"));
+  assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
 });
