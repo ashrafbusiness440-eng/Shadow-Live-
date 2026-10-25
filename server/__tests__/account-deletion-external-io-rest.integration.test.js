@@ -68,7 +68,7 @@ const sid=()=>randomUUID().replaceAll("-","").slice(0,18);
 const days=n=>n*86400_000;
 
 test("emulator: actual Cloudflare REST transactions admit at most one I/O reservation",{
-  timeout:45000,
+  timeout:85000,
 },async()=>{
   const suffix=sid(),uid="rest_io_user_"+suffix,
     requestId="rest_io_request_"+suffix,
@@ -128,6 +128,30 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
       "rest_worker_three_token_123456")),
       e=>e.code==="external_io_reservation_requires_reconciliation"||
         e.code==="erasure_transactional_certification_blocked");
+    assert.equal((await reservation.get()).data().externalIoAllowed,false);
+    // A stop requested AFTER a prior immutable reservation must prevent
+    // reservations for DIFFERENT objects too. This is a transaction-scoped
+    // boundary, not a claim that prior external I/O was cancelled.
+    const secondId="rest_io_second_"+suffix;
+    const secondAsset=doc("storage_objects/"+secondId);
+    const secondReservation=doc(
+      "account_erasure_external_io_reservations/"+uid+"__"+secondId);
+    const intent=doc(
+      "account_erasure_external_io_revocation_intents/"+uid+"__"+requestId);
+    const intentAudit=doc(
+      "admin_audit_logs/erasure_external_io_revocation_intent_"+requestId);
+    refs.push(secondAsset,secondReservation,intent,intentAudit);
+    await secondAsset.set({objectId:secondId,ownerUid:uid,
+      scope:"chat_image"});
+    const intentResult=await requestStop(firestoreClient(env),{
+      uid,requestId,actor:{uid:owner,owner:true},nowMs,
+    });
+    assert.equal(intentResult.revocationEffective,false);
+    await certificates[0].update({decision:"approved"});
+    await assert.rejects(reserve(firestoreClient(env),{
+      ...args("rest_worker_new_object_token_123456"),objectId:secondId,
+    }),e=>e.code==="external_io_revocation_intent_pending");
+    assert.equal((await secondReservation.get()).exists,false);
     assert.equal((await reservation.get()).data().externalIoAllowed,false);
   }finally{
     await Promise.all(refs.map(ref=>ref.delete()));
