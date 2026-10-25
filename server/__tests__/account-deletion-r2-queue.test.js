@@ -118,3 +118,25 @@ test("a revoked storage certificate cannot queue a job or create its audit",asyn
  assert.equal(db.docs.has(audit),false);
  assert.equal(db.commits.length,0);
 });
+
+test("R2 queue duplicate is never success after any domain approval is revoked",async()=>{
+ for(const domain of [
+  "financial_settlement","play_billing","moderation_legal",
+  "shared_assets","content_storage_inventory","retention_policy",
+ ]){
+  const db=new Db();
+  await run(db);
+  const approval=db.docs.get(
+    "account_deletion_erasure_approvals/"+requestId+"__"+domain);
+  approval.decision="revoked";
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.docs.has(job),true);
+  assert.equal(db.commits.length,1);
+  // Even an already consumed queue job cannot yield stale success.
+  db.docs.delete(job);
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.commits.length,1);
+ }
+});
