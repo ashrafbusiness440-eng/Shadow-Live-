@@ -147,3 +147,26 @@ route, listener, cron, global scan or APK build.
 This is the FIRST implementation item in the **fixed eight closure gates**
 (not a new ninth gate). Do not mark the financial, Play, legal or shared
 asset decisions cleared just because test fixtures contain approvals.
+
+## Batch 1 continuation — shared transactional guards for push and diary
+
+The already-guarded per-record push-token erasure and diary like/view erasure
+now reuse the exact same six-domain Firestore transaction certification check
+as notifications (dependent on the separate notification PR #526). The
+bounded push and diary page adapters forward an explicit checked time
+without changing maximum page size (five), ownership, legal evidence holds,
+counterparty protection or account-status rules.
+
+A test-only fixture helper centrally creates 12 disposable domain approval
+and audit records. It is NEVER imported into the Cloudflare runtime.
+Node regressions cover missing/revoked signoffs, and existing Firestore
+Emulator acceptance exercises owned records, idempotent retry and
+counterparty preservation. As with #526, the synthetic certificate fixtures
+ARE NOT real independent financial/Play/legal/asset/retention approvals.
+
+**This does not yet cover private text, profile, support-snapshot or social
+pair writes.** Never claim all per-record races resolved. The private text
+stage remains unchanged; no route, cron, live destructive checkpoint, R2
+delete, Firebase Auth delete, financial settlement or production activation.
+The existing independently reviewed approvals and real concurrent conflict
+acceptance are still required for release.
