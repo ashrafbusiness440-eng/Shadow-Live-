@@ -10,6 +10,7 @@ import {
   AccountDeletionReviewControlError,
 } from "./account-deletion-review-control.js";
 import { inspectAccountErasureInventory } from "./account-deletion-erasure-inventory.js";
+import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
 import { generalReportType } from "./general-reports.js";
@@ -671,7 +672,7 @@ export async function adminInbox(request, env) {
     // controls or retention notes to ordinary moderators.
     if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
          "accountDeletionHold", "accountDeletionReleaseHold",
-         "accountDeletionPreflightCheckpoint"].includes(action)) {
+         "accountDeletionPreflightCheckpoint", "accountDeletionClosureReadiness"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
         return json(request, env, await listCompletedAccountDeletionLogs(db));
@@ -699,6 +700,12 @@ export async function adminInbox(request, env) {
       if (!Number.isFinite(age) || age < -60 || age > 600) {
         throw new AdminInboxError("recent_auth_required", 401);
       }
+      if (action === "accountDeletionClosureReadiness") {
+        return json(request, env,
+          await inspectAccountDeletionClosureReadiness(db, {
+            uid: targetUid, requestId: body.requestId, actor,
+          }));
+      }
       if (action === "accountDeletionPreflightCheckpoint") {
         return json(request, env,
           await recordErasurePreflightCheckpoint(db, {
@@ -722,7 +729,8 @@ export async function adminInbox(request, env) {
     if (quota) return quota;
     if (error instanceof AdminInboxError ||
         error instanceof AccountDeletionReviewControlError ||
-         error instanceof AccountErasureCheckpointError) {
+         error instanceof AccountErasureCheckpointError ||
+         error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
     const code = clean(error?.code || error?.message || "admin_inbox_failed");
