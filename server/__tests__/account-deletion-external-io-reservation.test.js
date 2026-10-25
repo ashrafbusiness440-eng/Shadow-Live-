@@ -271,3 +271,20 @@ test("revocation requested after an existing reservation remains pending, never 
   })),e=>e.code==="external_io_revocation_intent_pending");
   assert.equal(db.commits.length,3);
 });
+
+test("malformed intent batchGet slot FAILS CLOSED instead of treating it as no revocation",async()=>{
+  for(const corrupted of [undefined,null,{},{
+    exists:"false",data:null,
+  }]){
+    const db=new Db(),read=db.getMany.bind(db);
+    db.getMany=async(paths,tx)=>{
+      const docs=await read(paths,tx);
+      if(paths.length===7)docs[6]=corrupted;
+      return docs;
+    };
+    await assert.rejects(reserve(db,opts()),
+      e=>e.code==="external_io_transaction_read_failed");
+    assert.equal(db.docs.has(resPath),false);
+    assert.equal(db.commits.length,0);
+  }
+});
