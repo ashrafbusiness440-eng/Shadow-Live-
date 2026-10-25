@@ -79,8 +79,8 @@ test("reservation is an exact one-record Firestore transaction and NEVER R2 dele
   assert.equal(db.commits[0].path,resPath);
   assert.equal(db.docs.get(resPath).state,"reserved_requires_external_interlock");
   assert.equal(db.docs.get(resPath).externalIoAllowed,false);
-  assert.equal(db.reads.length,19);
-  assert.equal(new Set(db.reads).size,19);
+  assert.equal(db.reads.length,20);
+  assert.equal(new Set(db.reads).size,20);
   assert.equal(db.reads.filter(x=>x.startsWith("account_deletion_erasure_approvals/")).length,6);
 });
 test("reserved token never permits duplicate or stale recovery",async()=>{
@@ -176,7 +176,7 @@ test("unverified prior admission or financial clearance cannot create a reservat
   }
 });
 
-test("reservation groups seven current-state and twelve audited-signoff reads into only two transaction-scoped batchGets",async()=>{
+test("reservation groups eight current-state and twelve audited-signoff reads into only two transaction-scoped batchGets",async()=>{
   const db=new Db(),calls=[];
   const real=db.getMany.bind(db);
   db.getMany=async(paths,tx)=>{
@@ -185,7 +185,7 @@ test("reservation groups seven current-state and twelve audited-signoff reads in
   };
   const result=await reserve(db,opts());
   assert.equal(result.externalIoAllowed,false);
-  assert.deepEqual(calls.map(c=>c.count),[7,12]);
+  assert.deepEqual(calls.map(c=>c.count),[8,12]);
   assert.ok(calls.every(c=>c.tx==="tx_123"));
   assert.equal(db.commits.length,1);
 });
@@ -194,7 +194,7 @@ test("truncated transactional batchGet never creates any reservation",async()=>{
   const db=new Db(),real=db.getMany.bind(db);
   db.getMany=async(paths,tx)=>{
     const result=await real(paths,tx);
-    return paths.length===7 ? result.slice(0,6) : result;
+    return paths.length===8 ? result.slice(0,7) : result;
   };
   await assert.rejects(reserve(db,opts()),
     e=>e.code==="external_io_transaction_read_failed");
@@ -281,12 +281,42 @@ test("malformed intent batchGet slot FAILS CLOSED instead of treating it as no r
     const db=new Db(),read=db.getMany.bind(db);
     db.getMany=async(paths,tx)=>{
       const docs=await read(paths,tx);
-      if(paths.length===7)docs[6]=corrupted;
+      if(paths.length===8)docs[6]=corrupted;
       return docs;
     };
     await assert.rejects(reserve(db,opts()),
       e=>e.code==="external_io_transaction_read_failed");
     assert.equal(db.docs.has(resPath),false);
+    assert.equal(db.commits.length,0);
+  }
+});
+
+test("request-wide hold blocks reservations for OTHER objects even before Owner stop",async()=>{
+  const db=new Db(),secondId="another_media_object_999999";
+  db.docs.set("storage_objects/"+secondId,{ownerUid:uid,scope:"chat_image"});
+  await reserve(db,opts());
+  await recordHold(db,opts());
+  const existingWrites=db.commits.length;
+  await assert.rejects(reserve(db,opts({
+    objectId:secondId,token:"another_media_token_1234567890",
+  })),e=>e.code==="external_io_coordination_requires_reconciliation");
+  assert.equal(db.commits.length,existingWrites);
+  assert.equal(db.docs.has(
+    "account_erasure_external_io_reservations/"+uid+"__"+secondId),false);
+  assert.equal(db.docs.get("account_erasure_external_io_coordination_holds/"+
+    uid+"__"+requestId).externalIoAllowed,false);
+});
+
+test("malformed request-wide hold batchGet slot always blocks new reservations",async()=>{
+  for(const invalid of [undefined,null,{}, {exists:"false"}]){
+    const db=new Db(),orig=db.getMany.bind(db);
+    db.getMany=async(paths,tx)=>{
+      const rows=await orig(paths,tx);
+      if(paths.length===8)rows[7]=invalid;
+      return rows;
+    };
+    await assert.rejects(reserve(db,opts()),
+      e=>e.code==="external_io_transaction_read_failed");
     assert.equal(db.commits.length,0);
   }
 });
