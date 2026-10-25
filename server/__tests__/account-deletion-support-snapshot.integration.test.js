@@ -5,6 +5,8 @@ import { deleteApp, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 import { redactDeletedSupporterPair } from "../../cloudflare-worker/src/account-deletion-support-snapshot-stage.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app = getApps()[0] || initializeApp({ projectId: "shadow-live-economy-test" });
 const firestore = getFirestore(app);
@@ -16,6 +18,7 @@ test("emulated Firestore retries redact existing support snapshots, preserving m
   const deletedUid = "erased_" + suffix;
   const counterpartUid = "recipient_" + suffix;
   const requestId = "deletion_request_" + suffix;
+  const nowMs=Date.now();
   const request = firestore.doc("account_deletion_requests/" + deletedUid);
   const checkpoint = firestore.doc("account_deletion_erasure_checkpoints/" + deletedUid);
   const user = firestore.doc("users/" + deletedUid);
@@ -23,8 +26,12 @@ test("emulated Firestore retries redact existing support snapshots, preserving m
   const attraction = firestore.doc(`user_level_support/${counterpartUid}/attraction/${deletedUid}`);
   const untouched = firestore.doc(`user_level_support/${counterpartUid}/attraction/active_${suffix}`);
   const opts = { deletedUid, counterpartUid, requestId };
+  const certificates=await seedEmulatorErasureCertificates(firestore,{
+    uid:deletedUid,requestId,nowMs,
+  });
   await Promise.all([
-    request.set({ uid: deletedUid, requestId, status: "processing" }),
+    request.set({ uid: deletedUid, requestId, status: "processing",
+      requestedAt:new Date(nowMs-40*86400_000) }),
     checkpoint.set({requestId,phase:"support_snapshots",destructiveAllowed:true}),
     user.set({ role:"user", accountStatus:"deletion_processing" }),
     wealth.set({counterpartUid:deletedUid,displayName:"Private Old Name",
@@ -58,6 +65,6 @@ test("emulated Firestore retries redact existing support snapshots, preserving m
     await assert.rejects(redactDeletedSupporterPair(adapter,opts),
       e=>e.code==="support_erasure_not_authorized");
   } finally {
-    await Promise.all([request,checkpoint,user,wealth,attraction,untouched].map(ref=>ref.delete()));
+    await Promise.all([request,checkpoint,user,wealth,attraction,untouched,...certificates].map(ref=>ref.delete()));
   }
 });
