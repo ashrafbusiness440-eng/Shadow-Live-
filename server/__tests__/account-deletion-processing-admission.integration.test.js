@@ -70,6 +70,13 @@ test("emulator: concurrent certified admission of suspended account preserves mo
     await checkpoint.update({reported:true});
     await assert.rejects(admitCertifiedAccountErasure(db,opts),
       error=>error.code==="erasure_admission_blocked");
+    await checkpoint.update({reported:false,appealStatus:"under_review"});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_admission_blocked");
+    await checkpoint.update({appealStatus:"closed"});
+    await user.update({appealPending:true});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_admission_blocked");
     assert.equal((await user.get()).data().coins,900);
     assert.equal((await checkpoint.get()).data().destructiveAllowed,false);
   }finally{

@@ -7,7 +7,10 @@ const GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 const held = d => [
   d?.reviewHold, d?.legalHold, d?.retentionHold, d?.deletionHold,
   d?.evidenceHold, d?.investigationHold, d?.reported,
-].some(x => x === true);
+  d?.appealPending,
+].some(x => x === true) ||
+  ["pending", "open", "under_review"].includes(
+    clean(d?.appealStatus).toLowerCase());
 const ms = v => {
   if (v instanceof Date) return v.getTime();
   if (typeof v?.toDate === "function") return v.toDate().getTime();
