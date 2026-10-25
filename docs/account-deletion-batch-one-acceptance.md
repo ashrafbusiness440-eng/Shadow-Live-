@@ -100,3 +100,22 @@ https://trello.com/c/gKZWJQVp
 
 PR #348 is frozen and must never be modified. Use only the approved GitHub Pages/Cloudflare hosting. Do not rebuild APK
 per backend change. Reuse shared policies rather than copy-paste guards.
+
+## Internal external-I/O reservation prototype — not a production lease
+
+The module `account-deletion-external-io-reservation.js` is an unrouted,
+unscheduled and **non-permissive** single-object reservation. Its exact
+Firestore transaction checks request, checkpoint, account, storage object,
+original admission audit and twelve independent signoff records before a
+unique create-only reservation (no overwrite, no automatic expiry reclaim).
+It cannot call R2, change room/agency ownership, clear a hold, or return an
+external-I/O permit; its persisted `externalIoAllowed` is always `false`.
+Synthetic-only unit tests cover two racing callers, duplicate reservations,
+holds, admission mismatch and approval revocations.
+
+This is a necessary but not sufficient component of gate 1. A real
+revocation writer and R2 worker must honor a mutually exclusive durable
+fence, plus require operator reconciliation of ambiguous external outcomes
+before any retry or lease release. **No production R2 deletion may rely on
+this prototype.** The live R2 worker has NOT been connected to it, so this
+addition cannot be misinterpreted as solving the external side-effect race.
