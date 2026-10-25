@@ -83,7 +83,7 @@ test("emulator: scoped R2 listing reports missing metadata, leaves other user/au
     await request.update({appealPending:false,legalHold:true});
     await assert.rejects(inspect(db,r2,opts),
       e=>e.code==="private_voice_orphan_review_blocked");
-    assert.equal(calls.length,2);
+    assert.equal(calls.length,3);
   } finally {
     await Promise.all(refs.map(ref=>ref.delete()));
   }
