@@ -6,6 +6,8 @@ import {getFirestore} from "firebase-admin/firestore";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 import {drainAccountDiaryInteractions as drain}
   from "../../cloudflare-worker/src/account-deletion-diary-interaction-batches.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const store=getFirestore(app),db=cloudflareFirestoreAdapter(store);
@@ -16,6 +18,7 @@ const hex=u=>Buffer.from(u,"utf8").toString("hex");
 test("emulator: two bounded indexed cleanup passes retain other's diary and funds",async()=>{
   const suffix=sid(),uid="deleted_page_"+suffix,other="other_page_"+suffix;
   const requestId="page_request_"+suffix;
+  const nowMs=Date.now();
   const req=store.doc("account_deletion_requests/"+uid);
   const cp=store.doc("account_deletion_erasure_checkpoints/"+uid);
   const user=store.doc("users/"+uid);
@@ -25,8 +28,12 @@ test("emulator: two bounded indexed cleanup passes retain other's diary and fund
   const view=store.doc("diary_view_keys/"+diaries[0].id+"__"+hex(uid));
   const otherLike=store.doc("diary_likes/"+diaries[0].id+"__"+hex(other));
   const all=[req,cp,user,...diaries,...likes,view,otherLike];
+  all.push(...await seedEmulatorErasureCertificates(store,{
+    uid,requestId,nowMs,
+  }));
   await Promise.all([
-    req.set({uid,requestId,status:"processing"}),
+    req.set({uid,requestId,status:"processing",
+      requestedAt:new Date(nowMs-40*86400_000)}),
     cp.set({uid,requestId,phase:"diary_interactions",destructiveAllowed:true,
       diaryInteractionRetentionCleared:true,legalEvidenceReviewComplete:true,
       historicalDiaryCountersReviewed:true}),
