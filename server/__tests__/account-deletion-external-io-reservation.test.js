@@ -173,3 +173,29 @@ test("unverified prior admission or financial clearance cannot create a reservat
     assert.equal(db.docs.has(resPath),false);
   }
 });
+
+test("reservation groups six current-state and twelve audited-signoff reads into only two transaction-scoped batchGets",async()=>{
+  const db=new Db(),calls=[];
+  const real=db.getMany.bind(db);
+  db.getMany=async(paths,tx)=>{
+    calls.push({count:paths.length,tx});
+    return real(paths,tx);
+  };
+  const result=await reserve(db,opts());
+  assert.equal(result.externalIoAllowed,false);
+  assert.deepEqual(calls.map(c=>c.count),[6,12]);
+  assert.ok(calls.every(c=>c.tx==="tx_123"));
+  assert.equal(db.commits.length,1);
+});
+
+test("truncated transactional batchGet never creates any reservation",async()=>{
+  const db=new Db(),real=db.getMany.bind(db);
+  db.getMany=async(paths,tx)=>{
+    const result=await real(paths,tx);
+    return paths.length===6 ? result.slice(0,5) : result;
+  };
+  await assert.rejects(reserve(db,opts()),
+    e=>e.code==="external_io_transaction_read_failed");
+  assert.equal(db.commits.length,0);
+  assert.equal(db.docs.has(resPath),false);
+});
