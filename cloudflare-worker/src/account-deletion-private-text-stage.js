@@ -1,14 +1,11 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Internal, intentionally unrouted erasure primitive for ONE already-enumerated
 // private text message. This cannot perform financial, media or R2 deletion.
 // The production preflight always has destructiveAllowed=false.
 const clean = v => String(v ?? "").trim();
 const validUid = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const validId = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
-const held = data => [
-  data?.legalHold, data?.retentionHold, data?.deletionHold,
-  data?.reviewHold, data?.evidenceHold, data?.investigationHold,
-  data?.reported,
-].some(flag => flag === true);
+
 
 export class PrivateTextErasureError extends Error {
   constructor(code, status=409) { super(code); this.code=code; this.status=status; }
