@@ -5,6 +5,8 @@ import { deleteApp, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 import { erasePublicProfileStage } from "../../cloudflare-worker/src/account-deletion-public-profile-stage.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);
@@ -15,6 +17,7 @@ test("profile-only deletion is idempotent and keeps accounts and financial evide
   const suffix=randomUUID().replaceAll("-","").slice(0,18);
   const uid="erasure_profile_"+suffix;
   const requestId="delete_request_"+suffix;
+  const nowMs=Date.now();
   const paths={
     request:db.doc("account_deletion_requests/"+uid),
     checkpoint:db.doc("account_deletion_erasure_checkpoints/"+uid),
@@ -23,8 +26,10 @@ test("profile-only deletion is idempotent and keeps accounts and financial evide
     ledger:db.doc("financial_ledger/test_"+suffix),
     evidence:db.doc("reports/test_"+suffix),
   };
+  const certificates=await seedEmulatorErasureCertificates(db,{uid,requestId,nowMs});
   await Promise.all([
-    paths.request.set({uid,requestId,status:"processing"}),
+    paths.request.set({uid,requestId,status:"processing",
+      requestedAt:new Date(nowMs-40*86400_000)}),
     paths.checkpoint.set({requestId,phase:"public_profile",destructiveAllowed:true}),
     paths.user.set({role:"user",accountStatus:"deletion_processing",coins:1500,diamonds:3}),
     paths.profile.set({uid,displayName:"Old Secret",profileImageUrl:"https://test.invalid/old.png"}),
@@ -57,6 +62,6 @@ test("profile-only deletion is idempotent and keeps accounts and financial evide
     await assert.rejects(erasePublicProfileStage(workerDb,args),
       e=>e.code==="public_profile_erasure_blocked");
   } finally {
-    await Promise.all(Object.values(paths).map(ref=>ref.delete()));
+    await Promise.all([...Object.values(paths),...certificates].map(ref=>ref.delete()));
   }
 });
