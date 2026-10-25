@@ -31,10 +31,13 @@ class _AccountDeletionOwnerReviewPageState
   final _reason = TextEditingController();
   Map<String, dynamic>? _details;
   Map<String, dynamic>? _inventory;
+  Map<String, dynamic>? _closure;
   String? _error;
   String? _inventoryError;
+  String? _closureError;
   bool _busy = false;
   bool _inventoryBusy = false;
+  bool _closureBusy = false;
 
   @override
   void initState() {
@@ -64,7 +67,12 @@ class _AccountDeletionOwnerReviewPageState
           data['status'] != 'review_ready') {
         throw StateError('الطلب تغيّر أو تم إلغاؤه. حدّث صندوق الإشعارات.');
       }
-      setState(() => _details = data);
+      setState(() {
+        _details = data;
+        // Never keep a stale approval snapshot after a hold/review refresh.
+        _closure = null;
+        _inventory = null;
+      });
     } catch (error) {
       if (mounted) {
         setState(() => _error = 'تعذر تحميل المراجعة: ${error.toString()}');
@@ -153,6 +161,40 @@ class _AccountDeletionOwnerReviewPageState
     }
   }
 
+  Future<void> _inspectClosure() async {
+    if (_busy || _closureBusy || _details == null) return;
+    setState(() {
+      _closureBusy = true;
+      _closureError = null;
+      _closure = null;
+    });
+    try {
+      final result = await widget.request(
+        'accountDeletionClosureReadiness', widget.targetUid,
+        widget.requestId, '',
+      );
+      if (!mounted) return;
+      if (result['ok'] != true || result['erasureAllowed'] != false ||
+          result['destructiveAllowed'] != false ||
+          result['processingAdmitted'] != false ||
+          result['completionVerified'] != false ||
+          result['independentEvidenceVerified'] != false ||
+          result['totalRequiredDomains'] != 6 ||
+          result['domains'] is! List ||
+          (result['domains'] as List).length != 6) {
+        throw StateError('نتيجة مراجعة الاعتمادات غير صالحة.');
+      }
+      setState(() => _closure = result);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _closureError =
+          'تعذر فحص جاهزية الإغلاق: ${error.toString()}');
+      }
+    } finally {
+      if (mounted) setState(() => _closureBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final details = _details;
@@ -181,6 +223,14 @@ class _AccountDeletionOwnerReviewPageState
       'walletTransferRecipient': 'تحويلات المحفظة الواردة إلى الحساب',
       'legacyReporter': 'بلاغات قديمة مقدمة من الحساب (حسب UID)',
       'legacyReportedUser': 'بلاغات قديمة ضد الحساب (حسب UID)',
+    };
+    final closureTitles = <String, String>{
+      'financial_settlement': 'تسوية المحفظة والهدايا والوكالات',
+      'play_billing': 'مشتريات Google Play والاستردادات',
+      'moderation_legal': 'البلاغات والأدلة والاعتراضات القانونية',
+      'shared_assets': 'ملكية الغرف والوكالات والأصول المشتركة',
+      'content_storage_inventory': 'جرد البيانات القديمة والصور والملفات',
+      'retention_policy': 'سياسة الاحتفاظ ومددها وأسبابها',
     };
     final checks = <String, String>{
       'ownerAccount': 'حساب أونر محمي',
@@ -286,6 +336,44 @@ class _AccountDeletionOwnerReviewPageState
                   'الهدايا وأدلة البلاغات والتعليقات والرسائل والمرفقات '
                   'والبيانات القديمة تحتاج مراجعة مستقلة. '
                   'لا يوجد سماح بالحذف النهائي.',
+                  style: TextStyle(color: Colors.amber),
+                ),
+              ],
+              const SizedBox(height: 14),
+              const Text(
+                'اعتمادات إغلاق حذف الحساب — ستة مجالات مستقلة. '
+                'مطابقة وثائق المراجعة لا تعني إكمال التسويات أو السماح بالحذف.',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              OutlinedButton.icon(
+                onPressed: (_busy || _closureBusy || _inventoryBusy)
+                    ? null : _inspectClosure,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('فحص حالة الاعتمادات الستة (دون حذف)'),
+              ),
+              if (_closureBusy) const LinearProgressIndicator(),
+              if (_closureError != null)
+                Text(_closureError!,
+                    style: const TextStyle(color: Colors.redAccent)),
+              if (_closure != null) ...[
+                ...(_closure!['domains'] as List).map((raw) {
+                  final domain = Map<String, dynamic>.from(raw as Map);
+                  final key = domain['domain']?.toString() ?? '';
+                  final valid = domain['certificateDocumentsValid'] == true;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.info_outline, color: Colors.amber),
+                    title: Text(closureTitles[key] ?? 'اعتماد غير معروف'),
+                    subtitle: Text(valid
+                        ? 'وثائق الاعتماد متطابقة شكليًا — التحقق الفعلي مستقل'
+                        : 'الاعتماد ناقص أو غير صالح — يتطلب مراجعة'),
+                  );
+                }),
+                const Text(
+                  'حتى لو ظهرت الوثائق الست كلها متطابقة، الحذف النهائي '
+                  'موقوف حتى التحقق المالي والقانوني والتقني '
+                  'والاختبارات العملية. لا توجد موافقة تلقائية.',
                   style: TextStyle(color: Colors.amber),
                 ),
               ],
