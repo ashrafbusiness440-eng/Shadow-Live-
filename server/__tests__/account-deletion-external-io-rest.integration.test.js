@@ -15,7 +15,8 @@ import {verifyAccountStorageCleanupJob}
 import {reserveAccountErasureExternalIo as reserve,
   requestAccountErasureExternalIoRevocationIntent as requestStop,
   recordAccountErasureExternalIoCoordinationHold as recordHold,
-  recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt}
+  recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt,
+  recordAccountErasureExternalIoReadOnlyProbe as recordProbe}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
   from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
@@ -103,7 +104,8 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
       user.set({accountStatus:"deletion_processing",role:"user",coins:330}),
       admission.set({action:"accountErasureProcessingAdmitted",
         targetId:uid,requestId,certifiedDomains:[...domains]}),
-      asset.set({objectId,ownerUid:uid,scope:"chat_image"}),
+      asset.set({objectId,ownerUid:uid,scope:"chat_image",
+        storageKey:"account-erasure/emulator/"+suffix+".webp"}),
     ]);
     const args=token=>({uid,requestId,objectId,actor:{
       uid:owner,owner:true,
@@ -158,6 +160,36 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     assert.equal(attempt.retryAllowed,false);
     assert.equal((await journal.get()).data().state,
       "outcome_unknown_requires_reconciliation");
+    assert.equal((await journal.get()).data().storageKey,
+      "account-erasure/emulator/"+suffix+".webp");
+    // Actual Cloudflare REST adapter writes the read-only probe observation;
+    // bucket is fake and its delete method MUST NEVER run.
+    const probeOne=doc("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__rest_probe_one_123456");
+    const probeTwo=doc("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__rest_probe_two_123456");
+    refs.push(probeOne,probeTwo);
+    let probeHeads=0;
+    const mockBucket={
+      async head(key){
+        probeHeads++;
+        assert.equal(key,"account-erasure/emulator/"+suffix+".webp");
+        return probeHeads===1?{etag:"fake-erasure-test",size:101}:null;
+      },
+      async delete(){throw Error("bucket_delete_must_not_be_called");},
+    };
+    const evidence=await recordProbe(firestoreClient(env),mockBucket,{
+      ...args(stored.data().operationToken),objectId,
+      probeId:"rest_probe_one_123456",
+    });
+    assert.equal(evidence.presenceAtProbe,"present_at_probe");
+    assert.equal(evidence.completionVerified,false);
+    assert.equal((await probeOne.get()).data().retryAllowed,false);
+    await assert.rejects(recordProbe(firestoreClient(env),mockBucket,{
+      ...args(stored.data().operationToken),objectId,
+      probeId:"rest_probe_one_123456",
+    }),e=>e.code==="external_io_probe_already_recorded");
+    assert.equal(probeHeads,1);
     await assert.rejects(recordUncertainAttempt(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
     }),e=>e.code==="external_io_uncertain_attempt_requires_reconciliation");
@@ -205,6 +237,16 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     assert.equal((await intent.get()).data().uncertainAttemptObserved,true);
     assert.equal((await journal.get()).data().retryAllowed,false);
     assert.equal((await hold.get()).data().externalIoAllowed,false);
+    const evidenceAfterStop=await recordProbe(
+      firestoreClient(env),mockBucket,{
+        ...args(stored.data().operationToken),objectId,
+        probeId:"rest_probe_two_123456",
+      });
+    assert.equal(evidenceAfterStop.presenceAtProbe,"absent_at_probe");
+    assert.equal(evidenceAfterStop.stopObservedAtCommit,true);
+    assert.equal(evidenceAfterStop.completionVerified,false);
+    assert.equal((await probeTwo.get()).data().revocationEffective,false);
+    assert.equal((await intent.get()).data().revocationEffective,false);
     await assert.rejects(recordUncertainAttempt(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
     }),e=>e.code==="external_io_revocation_intent_pending");
