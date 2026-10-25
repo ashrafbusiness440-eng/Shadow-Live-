@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 import {readFileSync} from "node:fs";
 import {removeDeletedAccountSocialPair} from "../../cloudflare-worker/src/account-deletion-social-pair-stage.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 const uid="deleted_member_123",otherUid="other_member_456",requestId="current_request_12345678";
 const rp="account_deletion_requests/"+uid,cp="account_deletion_erasure_checkpoints/"+uid,up="users/"+uid;
 const paths=[
@@ -11,7 +13,7 @@ const paths=[
 class Db{
  constructor(){
   this.docs=new Map([
-   [rp,{uid,requestId,status:"processing"}],
+   [rp,{uid,requestId,status:"processing",requestedAt:new Date(Date.now()-40*86400_000)}],
    [cp,{requestId,phase:"social_links",destructiveAllowed:true}],
    [up,{role:"user",accountStatus:"deletion_processing"}],
    [paths[0],{followerUid:uid,followingUid:otherUid}],
@@ -20,7 +22,9 @@ class Db{
    [paths[3],{blockerUid:otherUid,blockedUid:uid}],
    ["follows/other_member_456__third_member_789",
       {followerUid:otherUid,followingUid:"third_member_789"}],
-  ]);this.commits=[];this.rollbacks=0;
+  ]);
+  seedSyntheticErasureCertificates(this.docs,{uid,requestId});
+  this.commits=[];this.rollbacks=0;
  }
  async beginTransaction(){return "tx";}
  async get(path,tx){assert.equal(tx,"tx");return {exists:this.docs.has(path),data:this.docs.get(path)??null};}
@@ -97,4 +101,14 @@ test("no global scans, no Auth, no message/financial deletion",()=>{
  const source=readFileSync("cloudflare-worker/src/account-deletion-social-pair-stage.js","utf8");
  assert.doesNotMatch(source,/runQuery\(|\.list\(|deleteAuthUser\(|financial_ledger|conversations\/|messages\//);
  assert.match(source,/destructiveAllowed!==true/);
+});
+
+test("revoked certification protects all social relations before any write",async()=>{
+  const db=new Db();
+  db.docs.get("account_deletion_erasure_approvals/"+requestId+
+    "__shared_assets").appealStatus="open";
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.commits.length,0);
+  for(const path of paths)assert.equal(db.docs.has(path),true);
 });
