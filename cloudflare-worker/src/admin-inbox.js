@@ -672,7 +672,8 @@ export async function adminInbox(request, env) {
     // controls or retention notes to ordinary moderators.
     if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
          "accountDeletionHold", "accountDeletionReleaseHold",
-         "accountDeletionPreflightCheckpoint", "accountDeletionClosureReadiness"].includes(action)) {
+         "accountDeletionClosureReadiness",
+         "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
         return json(request, env, await listCompletedAccountDeletionLogs(db));
