@@ -101,6 +101,8 @@ jobs:
         run: node --test server/__tests__/account-deletion-internal-phase-runner.test.js
       - name: Verify shared transactional erasure signoffs cover all seven known write stages
         run: node --test server/__tests__/account-deletion-transaction-coverage.test.js
+      - name: Verify future external I/O reservation is non-permissive, single-writer and revocation-safe
+        run: node --test server/__tests__/account-deletion-external-io-reservation.test.js
       - name: Bounded retry-safe diary interaction erasure batches
         run: node --test server/__tests__/account-deletion-diary-interaction-batches.test.js
       - name: Safe private-chat conversation and authored-message inventory
