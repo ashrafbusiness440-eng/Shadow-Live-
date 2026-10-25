@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // One-token, already-enumerated private-call push cleanup. NO route or cron.
 // Production preflight checkpoints remain destructiveAllowed=false.
 import { createHash } from "node:crypto";
@@ -25,12 +27,13 @@ export class PrivateCallPushErasureError extends Error {
  * A separate certified executor must enumerate and verify ALL token hashes.
  */
 export async function eraseDeletedPrivateCallPushToken(db, {
-  uid, requestId, tokenHash,
+  uid, requestId, tokenHash, nowMs = Date.now(),
 } = {}) {
   uid = clean(uid);
   requestId = clean(requestId);
   tokenHash = clean(tokenHash);
-  if (!validUid(uid) || !validRequestId(requestId) || !validHash(tokenHash)) {
+  if (!validUid(uid) || !validRequestId(requestId) || !validHash(tokenHash) ||
+      !Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new PrivateCallPushErasureError("invalid_push_erasure_target", 400);
   }
   const devicePath = `private_call_push_devices/${uid}/tokens/${tokenHash}`;
@@ -81,6 +84,9 @@ export async function eraseDeletedPrivateCallPushToken(db, {
       await db.rollback(tx);
       return { ok: true, removed: 0, duplicate: true };
     }
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt, nowMs,
+    });
     await db.commit(tx, writes);
     return { ok: true, removed: writes.length, duplicate: false };
   } catch (error) {
