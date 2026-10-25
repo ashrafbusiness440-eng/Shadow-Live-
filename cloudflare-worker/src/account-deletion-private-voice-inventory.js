@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // INTERNAL read-only inventory of private voice metadata and linked records.
 // Never lists or deletes R2 keys. No HTTP route, cron, cleanup authority or
 // account-deletion completion certificate is exposed by this module.
@@ -7,11 +8,7 @@ const reqOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const conversationOk = v => /^[A-Za-z0-9_-]{1,180}$/.test(clean(v));
 const objectOk = v => /^[a-f0-9]{32}$/.test(clean(v));
 const messageOk = v => /^voice_[a-f0-9]{32}$/.test(clean(v));
-const held = d => [
-  d?.reviewHold, d?.legalHold, d?.retentionHold,
-  d?.deletionHold, d?.evidenceHold, d?.investigationHold,
-  d?.reported,
-].some(x => x === true);
+
 const knownObjectKeys = new Set([
   "objectId", "ownerUid", "otherUid", "conversationId", "storageKey",
   "mimeType", "expectedSizeBytes", "durationSeconds", "state",
