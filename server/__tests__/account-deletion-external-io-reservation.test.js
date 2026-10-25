@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {readFileSync} from "node:fs";
 import {reserveAccountErasureExternalIo as reserve,
-  requestAccountErasureExternalIoRevocationIntent as requestStop}
+  requestAccountErasureExternalIoRevocationIntent as requestStop,
+  recordAccountErasureExternalIoCoordinationHold as recordHold}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
@@ -211,7 +212,8 @@ test("Owner revocation intent is immutable, audited and blocks any NEW reservati
   const stopped=await requestStop(db,payload);
   assert.deepEqual(stopped,{
     ok:true,revocationIntentCreated:true,revocationEffective:false,
-    pendingReconciliation:true,externalIoAllowed:false,
+    pendingReconciliation:true,coordinationHoldObserved:false,
+    externalIoAllowed:false,
   });
   assert.equal(db.docs.get(intentPath).status,"pending_reconciliation");
   assert.equal(db.docs.get(intentPath).revocationEffective,false);
@@ -286,5 +288,87 @@ test("malformed intent batchGet slot FAILS CLOSED instead of treating it as no r
       e=>e.code==="external_io_transaction_read_failed");
     assert.equal(db.docs.has(resPath),false);
     assert.equal(db.commits.length,0);
+  }
+});
+
+test("non-permissive coordination holder and stop writer share immutable request fence",async()=>{
+  const db=new Db();
+  const holdPath="account_erasure_external_io_coordination_holds/"+
+    uid+"__"+requestId;
+  await reserve(db,opts());
+  const held=await recordHold(db,opts());
+  assert.deepEqual(held,{
+    ok:true,holdRecorded:true,externalIoAllowed:false,
+    revocationEffective:false,pendingReconciliation:true,
+  });
+  const saved={...db.docs.get(holdPath)};
+  assert.equal(saved.state,"claimed_requires_external_interlock");
+  assert.equal(saved.externalIoAllowed,false);
+  assert.equal(saved.completionVerified,false);
+  await assert.rejects(recordHold(db,opts()),
+    e=>e.code==="external_io_coordination_requires_reconciliation");
+  const stopped=await requestStop(db,{
+    uid,requestId,actor:{uid:owner,owner:true},nowMs,
+  });
+  assert.equal(stopped.coordinationHoldObserved,true);
+  assert.equal(stopped.revocationEffective,false);
+  assert.equal(db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId).coordinationHoldObserved,true);
+  assert.deepEqual(db.docs.get(holdPath),saved);
+  assert.equal(db.docs.get(resPath).externalIoAllowed,false);
+  await assert.rejects(recordHold(db,opts()),
+    e=>e.code==="external_io_revocation_intent_pending");
+  assert.equal(db.docs.get(holdPath).externalIoAllowed,false);
+});
+
+test("stop before holder or invalid operation token permanently denies coordination hold",async()=>{
+  const prior=new Db();
+  await reserve(prior,opts());
+  await requestStop(prior,{uid,requestId,actor:{uid:owner,owner:true},nowMs});
+  await assert.rejects(recordHold(prior,opts()),
+    e=>e.code==="external_io_revocation_intent_pending");
+  assert.equal([...prior.docs.keys()].some(p=>
+    p.startsWith("account_erasure_external_io_coordination_holds/")),false);
+  const invalid=new Db();
+  await reserve(invalid,opts());
+  await assert.rejects(recordHold(invalid,opts({token:"wrong_reservation_token_123456"})),
+    e=>e.code==="external_io_coordination_not_authorized");
+  assert.equal([...invalid.docs.keys()].some(p=>
+    p.startsWith("account_erasure_external_io_coordination_holds/")),false);
+  invalid.docs.get("account_deletion_requests/"+uid).legalHold=true;
+  await assert.rejects(recordHold(invalid,opts()),
+    e=>e.code==="external_io_coordination_not_authorized");
+});
+
+test("two workers cannot create two coordination holders, including different objects",async()=>{
+  const db=new Db(),object2="media_object_654321",token2="holder_second_token_123456";
+  await reserve(db,opts());
+  db.docs.set("storage_objects/"+object2,{ownerUid:uid,scope:"chat_image"});
+  await reserve(db,opts({objectId:object2,token:token2}));
+  const races=await Promise.allSettled([
+    recordHold(db,opts()),
+    recordHold(db,opts({objectId:object2,token:token2})),
+  ]);
+  assert.equal(races.filter(r=>r.status==="fulfilled").length,1);
+  assert.equal(races.filter(r=>r.status==="rejected").length,1);
+  assert.equal([...db.docs.keys()].filter(p=>
+    p.startsWith("account_erasure_external_io_coordination_holds/")).length,1);
+});
+
+test("incomplete coordination or stop transaction snapshot never writes a hold or stop",async()=>{
+  for(const fn of ["holder","stop"]){
+    const db=new Db();
+    if(fn==="holder")await reserve(db,opts());
+    const commits=db.commits.length,read=db.getMany.bind(db);
+    db.getMany=async(paths,tx)=>{
+      const docs=await read(paths,tx);
+      if(paths.length===(fn==="holder"?8:5))
+        docs[docs.length-1]=undefined;
+      return docs;
+    };
+    await assert.rejects(fn==="holder" ? recordHold(db,opts())
+      : requestStop(db,{uid,requestId,actor:{uid:owner,owner:true},nowMs}),
+      e=>e.code==="external_io_transaction_read_failed");
+    assert.equal(db.commits.length,commits);
   }
 });
