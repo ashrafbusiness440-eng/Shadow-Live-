@@ -145,7 +145,10 @@ export async function reserveAccountErasureExternalIo(db, {
     const base=typeof db.getMany==="function"
       ? await db.getMany(basePaths,tx)
       : await Promise.all(basePaths.map(p=>db.get(p,tx)));
-    if (!Array.isArray(base)||base.length!==basePaths.length) {
+    if (!Array.isArray(base) || base.length!==basePaths.length ||
+        base.some(record => !record || typeof record.exists!=="boolean")) {
+      // An absent/malformed revocation-intent slot must NEVER look like
+      // "no stop requested". The complete transaction result is required.
       reject("external_io_transaction_read_failed",503);
     }
     const [request,checkpoint,user,existing,storageObject,admission,
