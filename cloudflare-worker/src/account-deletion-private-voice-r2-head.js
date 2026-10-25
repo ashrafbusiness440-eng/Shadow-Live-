@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // INTERNAL ONLY: reconcile one VERIFIED private voice object with R2 HEAD.
 // Read-only. No endpoint/cron, R2 list/get/delete, Firestore mutation,
 // erasure stage approval, Firebase Auth deletion or completion receipt.
@@ -7,11 +8,7 @@ const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const objectOk = value => /^[a-f0-9]{32}$/.test(clean(value));
 const conversationOk = value => /^[A-Za-z0-9_-]{1,180}$/.test(clean(value));
 const messageOk = value => /^voice_[a-f0-9]{32}$/.test(clean(value));
-const held = data => [
-  data?.reviewHold, data?.legalHold, data?.retentionHold,
-  data?.deletionHold, data?.evidenceHold, data?.investigationHold,
-  data?.reported,
-].some(value => value === true);
+
 const knownObjectFields = new Set([
   "objectId","ownerUid","otherUid","conversationId","storageKey",
   "mimeType","expectedSizeBytes","durationSeconds","state",
