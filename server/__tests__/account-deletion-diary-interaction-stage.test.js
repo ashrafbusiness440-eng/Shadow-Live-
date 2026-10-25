@@ -3,6 +3,8 @@ import test from "node:test";
 import {readFileSync} from "node:fs";
 import {eraseDeletedDiaryInteraction as erase}
   from "../../cloudflare-worker/src/account-deletion-diary-interaction-stage.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const uid="delete_me_123",other="other_user_999",requestId="delete_request_123456789";
 const diaryId="diary_other_123";
@@ -17,7 +19,8 @@ const unrelated="diary_likes/"+diaryId+"__"+hex(other);
 class Db{
   constructor(){
     this.docs=new Map([
-      [req,{uid,requestId,status:"processing"}],
+      [req,{uid,requestId,status:"processing",
+        requestedAt:new Date(Date.now()-40*86400_000)}],
       [cp,{uid,requestId,phase:"diary_interactions",
         destructiveAllowed:true,diaryInteractionRetentionCleared:true,
         legalEvidenceReviewComplete:true,historicalDiaryCountersReviewed:true}],
@@ -30,6 +33,7 @@ class Db{
         lastCountedAtMs:100,nextEligibleAtMs:999}],
       [unrelated,{userUid:other,diaryId,createdAt:new Date()}],
     ]);
+    seedSyntheticErasureCertificates(this.docs,{uid,requestId});
     this.commits=[];this.reads=0;
   }
   async beginTransaction(){return "tx";}
@@ -160,4 +164,14 @@ test("source only deletes exact account-owned interaction; no Auth or broad scan
   assert.doesNotMatch(s,/runQuery\(|deleteAuthUser\(|setInterval\(|bucket\.delete\(/);
   assert.match(s,/destructiveAllowed !== true/);
   assert.match(s,/diaryInteractionRetentionCleared !== true/);
+});
+
+test("diary interaction cannot be erased after any approval is revoked",async()=>{
+  const db=new Db();
+  db.docs.get("account_deletion_erasure_approvals/"+requestId+
+    "__moderation_legal").decision="revoked";
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.commits.length,0);
+  assert.equal(db.docs.has(like),true);
 });
