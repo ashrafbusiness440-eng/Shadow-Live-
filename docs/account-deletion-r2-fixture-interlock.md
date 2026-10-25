@@ -35,3 +35,43 @@ human evidence-based reconciliation and a separate real test bucket.
 The existing production Worker remains hard OFF until those conditions
 are satisfied. Gates 1, 2, 3 and 5 remain OPEN; PR #526 dependency and
 PR #348 freeze unchanged.
+
+## Transactional signoff withdrawal / stop writer
+
+`withdrawAccountErasureDomainWithExternalIoStop` is a concrete
+internal-only Firestore transaction coordinating **one of the six independent
+signed approvals** with the matching request-wide R2 stop. In one transaction
+it reads the current request, checkpoint, account, signed approval and audit,
+the stop/audit pair, any hold/uncertain attempt, and the fixture dispatch
+journal; then it revokes the approval for *new dispatches*, creates an
+immutable domain-withdrawal audit, and creates the stop intent and stop audit
+if no earlier valid stop exists.
+
+The fixture dispatch transaction also reads the stop record and all six
+approval/audit pairs before creating its own dispatch marker. Firestore's
+transaction conflict ordering prevents a stop committed first from issuing a
+new dispatch. If the fixture dispatch committed first, its single external
+call might already be running, so the later stop remains
+`pending_reconciliation` and `revocationEffective:false`.
+A withdrawal is allowed even if a legal hold or certificate expiry exists:
+neither must prevent an emergency stop. Duplicate/invalid requests fail
+closed rather than overwriting immutable audit entries.
+
+Unit regression tests and a disposable Firestore Emulator integration test
+using the real Cloudflare REST transaction adapter verify withdrawal while a
+**synthetic bucket.delete callback** is in flight, no retry and no false
+completion. These tests are not evidence of Cloudflare's actual R2 network
+side effects or ownership reconciliation. The withdrawal writer is unexposed:
+no real admin route or all-signoff writer migration is yet deployed, and the
+fixture executor accepts only `erasure-fixture/` keys. No production
+`bucket.delete` is enabled.
+
+### Still required to close Gate 1
+
+Actual approval-revocation call sites (all six domains) and owner operations
+must be migrated to the same protocol, tested against true simultaneous
+Firestore transactions and real test-bucket R2 failures. A human-controlled,
+evidence-based post-crash reconciliation mechanism and all legal, finance,
+Play Billing, and shared-media gate approvals remain missing. The observed
+`head` presence/absence or fixture call acknowledgment alone can never
+close an R2 outcome or certify account deletion.

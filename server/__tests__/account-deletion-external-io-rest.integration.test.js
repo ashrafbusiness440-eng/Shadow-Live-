@@ -18,6 +18,10 @@ import {reserveAccountErasureExternalIo as reserve,
   recordAccountErasureExternalIoUncertainAttempt as recordUncertainAttempt,
   recordAccountErasureExternalIoReadOnlyProbe as recordProbe}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
+import {rehearseAccountErasureR2Dispatch as dispatchFixture}
+  from "../../cloudflare-worker/src/account-deletion-r2-external-interlock.js";
+import {withdrawAccountErasureDomainWithExternalIoStop as withdrawDomain}
+  from "../../cloudflare-worker/src/account-deletion-domain-withdrawal-interlock.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
   from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 import {seedEmulatorErasureCertificates}
@@ -461,6 +465,90 @@ test("emulator: REST private text redaction rechecks revoked audited approval",{
     assert.equal((await user.get()).data().coins,470);
     assert.equal((await conversation.get()).data().lastMessage,
       "رسالة من حساب محذوف");
+  }finally{
+    await Promise.all(refs.map(ref=>ref.delete()));
+  }
+});
+
+test("emulator: real Cloudflare REST withdrawal fences fixture R2 dispatch while in flight",{
+  timeout:125000,
+},async()=>{
+  const suffix=sid(),uid="rest_fixture_user_"+suffix,
+    requestId="rest_fixture_request_"+suffix,
+    objectId="rest_fixture_object_"+suffix;
+  const token="fixture_external_operation_token_123456";
+  const nowMs=Date.now(),requestedAt=new Date(nowMs-days(40));
+  const owner="test_owner_rest_123456";
+  const args={uid,requestId,objectId,token,
+    actor:{uid:owner,owner:true},nowMs};
+  const stopArgs={uid,requestId,domain:"play_billing",
+    actor:{uid:owner,owner:true},nowMs};
+  const key="erasure-fixture/"+suffix+".webp";
+  const doc=path=>store.doc(path);
+  const request=doc("account_deletion_requests/"+uid);
+  const checkpoint=doc("account_deletion_erasure_checkpoints/"+uid);
+  const user=doc("users/"+uid);
+  const admission=doc("admin_audit_logs/erasure_processing_start_"+requestId);
+  const asset=doc("storage_objects/"+objectId);
+  const reservation=doc("account_erasure_external_io_reservations/"+
+    uid+"__"+objectId);
+  const holdDoc=doc("account_erasure_external_io_coordination_holds/"+
+    uid+"__"+requestId);
+  const attempt=doc("account_erasure_external_io_uncertain_attempts/"+
+    uid+"__"+requestId);
+  const dispatchDoc=doc("account_erasure_external_io_fixture_dispatches/"+
+    uid+"__"+requestId);
+  const stopDoc=doc("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId);
+  const stopAudit=doc("admin_audit_logs/erasure_external_io_revocation_intent_"+
+    requestId);
+  const withdrawalAudit=doc("admin_audit_logs/erasure_domain_withdrawal_"+
+    requestId+"__play_billing");
+  const certs=await seedEmulatorErasureCertificates(store,{uid,requestId,nowMs});
+  const refs=[request,checkpoint,user,admission,asset,reservation,holdDoc,
+    attempt,dispatchDoc,stopDoc,stopAudit,withdrawalAudit,...certs];
+  try{
+    await Promise.all([
+      request.set({uid,requestId,status:"processing",requestedAt,
+        eligibleAt:new Date(requestedAt.getTime()+days(30))}),
+      checkpoint.set({uid,requestId,phase:"storage_media",
+        destructiveAllowed:true,storageRetentionApproved:true,
+        sharedMediaOwnershipReviewed:true,legalEvidenceReviewComplete:true,
+        financialSettlementApproved:true,playBillingReviewComplete:true}),
+      user.set({accountStatus:"deletion_processing",role:"user"}),
+      admission.set({action:"accountErasureProcessingAdmitted",
+        targetId:uid,requestId,certifiedDomains:[...domains]}),
+      asset.set({ownerUid:uid,objectId,scope:"chat_image",storageKey:key}),
+    ]);
+    await reserve(firestoreClient(env),args);
+    await recordHold(firestoreClient(env),args);
+    await recordUncertainAttempt(firestoreClient(env),args);
+    let deletes=0;
+    const result=await dispatchFixture(firestoreClient(env),{
+      async delete(seenKey){
+        deletes++;
+        assert.equal(seenKey,key);
+        // Deliberately withdraw AFTER external dispatch is committed but
+        // BEFORE the mock bucket call acknowledges completion.
+        const withdrawal=await withdrawDomain(firestoreClient(env),stopArgs);
+        assert.equal(withdrawal.domainApprovalRevoked,true);
+        assert.equal(withdrawal.existingExternalIoObserved,true);
+        assert.equal(withdrawal.revocationEffective,false);
+      },
+    },args);
+    assert.equal(deletes,1);
+    assert.equal(result.completionVerified,false);
+    assert.equal((await dispatchDoc.get()).data().completionVerified,false);
+    assert.equal((await stopDoc.get()).data().status,"pending_reconciliation");
+    assert.equal((await stopDoc.get()).data().revocationEffective,false);
+    assert.equal((await withdrawalAudit.get()).data().externalIoOutcome,
+      "requires_reconciliation");
+    assert.equal((await certs[2].get()).data().decision,"revoked");
+    await assert.rejects(dispatchFixture(firestoreClient(env),{
+      async delete(){deletes++;},
+    },args),/r2_interlock_stopped_or_already_dispatched/);
+    assert.equal(deletes,1);
+    assert.equal((await attempt.get()).data().retryAllowed,false);
   }finally{
     await Promise.all(refs.map(ref=>ref.delete()));
   }

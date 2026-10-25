@@ -8,6 +8,8 @@ import {
   recordAccountErasureExternalIoUncertainAttempt as journal,
   requestAccountErasureExternalIoRevocationIntent as stop,
 } from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
+import {withdrawAccountErasureDomainWithExternalIoStop as withdraw}
+  from "../../cloudflare-worker/src/account-deletion-domain-withdrawal-interlock.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
@@ -44,11 +46,17 @@ class Db {
   async get(p){return {exists:this.docs.has(p),data:this.docs.get(p)||null};}
   async getMany(paths){return paths.map(p=>({exists:this.docs.has(p),
     data:this.docs.get(p)||null}));}
-  writeCreate(path,data){return {path,data};}
+  writeCreate(path,data){return {path,data,op:"create"};}
+  writeUpdate(path,data,mask){return {path,data,mask,op:"update"};}
   async commit(_,writes){
-    for(const write of writes)if(this.docs.has(write.path))
-      throw Error("conflicting_create");
-    for(const write of writes)this.docs.set(write.path,write.data);
+    for(const write of writes){
+      if(write.op==="create"&&this.docs.has(write.path))
+        throw Error("conflicting_create");
+      if(write.op==="update"&&!this.docs.has(write.path))
+        throw Error("missing_update_document");
+    }
+    for(const write of writes)this.docs.set(write.path,
+      write.op==="update"?{...this.docs.get(write.path),...write.data}:write.data);
     this.commits++;
   }
   async rollback(){}
@@ -125,4 +133,69 @@ test("live-shaped keys and revoked synthetic certificates never dispatch",async(
     await assert.rejects(dispatch(db,{async delete(){deleted++;}},opts()));
     assert.equal(deleted,0);
   }
+});
+
+test("withdrawal atomically revokes one approval and blocks fixture dispatch",async()=>{
+  const db=new Db();await prepared(db);let deletes=0;
+  const result=await withdraw(db,{...stopOpts(),domain:"play_billing"});
+  assert.equal(result.domainApprovalRevoked,true);
+  assert.equal(result.stopCreated,true);
+  assert.equal(result.revocationEffective,false);
+  assert.equal(result.existingExternalIoObserved,true);
+  assert.equal(db.docs.get("account_deletion_erasure_approvals/"+
+    requestId+"__play_billing").decision,"revoked");
+  assert.equal(db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId).status,"pending_reconciliation");
+  assert.equal(db.docs.get("admin_audit_logs/erasure_domain_withdrawal_"+
+    requestId+"__play_billing").externalIoOutcome,"requires_reconciliation");
+  await assert.rejects(dispatch(db,{async delete(){deletes++;}},opts()),
+    /stopped_or_already_dispatched/);
+  assert.equal(deletes,0);
+  await assert.rejects(withdraw(db,{...stopOpts(),domain:"play_billing"}),
+    /erasure_domain_withdrawal_invalid_state/);
+});
+
+test("withdrawal while external delete is in flight never claims cancellation",async()=>{
+  const db=new Db();await prepared(db);let deletes=0;
+  const result=await dispatch(db,{async delete(){
+    deletes++;
+    const withdrawn=await withdraw(db,{...stopOpts(),
+      domain:"financial_settlement"});
+    assert.equal(withdrawn.revocationEffective,false);
+    assert.equal(withdrawn.domainApprovalRevoked,true);
+    assert.equal(withdrawn.existingExternalIoObserved,true);
+  }},opts());
+  assert.equal(deletes,1);
+  assert.equal(result.completionVerified,false);
+  assert.equal(db.docs.get("account_erasure_external_io_fixture_dispatches/"+
+    uid+"__"+requestId).completionVerified,false);
+  assert.equal(db.docs.get("account_deletion_erasure_approvals/"+
+    requestId+"__financial_settlement").decision,"revoked");
+  const intent=db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId);
+  assert.equal(intent.revocationEffective,false);
+  assert.equal(intent.fixtureDispatchObserved,true);
+  await assert.rejects(dispatch(db,{async delete(){deletes++;}},opts()),
+    /stopped_or_already_dispatched/);
+  assert.equal(deletes,1);
+});
+
+test("stale, invalid or malformed withdrawal cannot rewrite signoff or stop",async()=>{
+  for(const modify of [
+    db=>db.docs.delete("admin_audit_logs/erasure_domain_cert_"+
+      requestId+"__retention_policy"),
+    db=>db.docs.get("account_deletion_erasure_approvals/"+
+      requestId+"__retention_policy").decision="revoked",
+    db=>db.docs.set("account_erasure_external_io_revocation_intents/"+
+      uid+"__"+requestId,{uid:"wrong_account",requestId,
+        revocationEffective:false,externalIoAllowed:false}),
+  ]){
+    const db=new Db();await prepared(db);modify(db);
+    await assert.rejects(withdraw(db,{...stopOpts(),domain:"retention_policy"}));
+    assert.equal(db.docs.has("admin_audit_logs/erasure_domain_withdrawal_"+
+      requestId+"__retention_policy"),false);
+  }
+  const db=new Db();await prepared(db);
+  await assert.rejects(withdraw(db,{...stopOpts(),
+    domain:"play_billing",actor:{uid:owner,owner:false}}),/owner_required/);
 });
