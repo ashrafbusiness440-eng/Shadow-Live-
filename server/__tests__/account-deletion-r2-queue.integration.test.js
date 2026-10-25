@@ -41,6 +41,13 @@ test("emulator: one certified cleanup job despite concurrent retries and consume
   assert.deepEqual(outcomes.map(x=>x.queued).sort(),[false,true]);
   assert.equal((await job.get()).data().requestId,requestId);
   assert.equal((await audit.get()).data().targetId,uid);
+  // A late certificate revocation must NOT return duplicate success.
+  const playCert=db.doc("account_deletion_erasure_approvals/"+requestId+"__play_billing");
+  await playCert.update({decision:"revoked"});
+  await assert.rejects(queueAccountDeletionR2Stage(workerDb,args),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal((await job.get()).exists,true);
+  await playCert.update({decision:"approved"});
   await job.delete();
   assert.deepEqual(await queueAccountDeletionR2Stage(workerDb,args),
     {ok:true,queued:false,duplicate:true});
