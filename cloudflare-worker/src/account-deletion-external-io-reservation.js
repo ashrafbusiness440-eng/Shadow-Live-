@@ -5,6 +5,8 @@ import { accountDeletionHasActiveHold as held }
   from "./account-deletion-active-holds.js";
 import { recheckErasureCertificatesInTransaction }
   from "./account-deletion-erasure-transactional-cert-gate.js";
+import {REQUIRED_ERASURE_ADMISSION_DOMAINS}
+  from "./account-deletion-processing-admission.js";
 
 const clean = v => String(v ?? "").trim();
 const uidOk = v => /^[A-Za-z0-9_-]{3,128}$/.test(v);
@@ -52,16 +54,25 @@ export async function reserveAccountErasureExternalIo(db, {
   const path = "account_erasure_external_io_reservations/" + uid + "__" + objectId;
   const tx = await db.beginTransaction();
   try {
-    const [request,checkpoint,user,existing,storageObject] = await Promise.all([
+    const [request,checkpoint,user,existing,storageObject,admission] = await Promise.all([
       db.get("account_deletion_requests/"+uid,tx),
       db.get("account_deletion_erasure_checkpoints/"+uid,tx),
       db.get("users/"+uid,tx),
       db.get(path,tx),
       db.get("storage_objects/"+objectId,tx),
+      db.get("admin_audit_logs/erasure_processing_start_"+requestId,tx),
     ]);
     if (existing.exists) reject("external_io_reservation_requires_reconciliation");
     if (!request.exists || !checkpoint.exists || !user.exists ||
-        !storageObject.exists ||
+        !storageObject.exists || !admission.exists ||
+        clean(admission.data?.action)!=="accountErasureProcessingAdmitted" ||
+        clean(admission.data?.targetId)!==uid ||
+        clean(admission.data?.requestId)!==requestId ||
+        !Array.isArray(admission.data?.certifiedDomains) ||
+        admission.data.certifiedDomains.length!==
+          REQUIRED_ERASURE_ADMISSION_DOMAINS.length ||
+        !REQUIRED_ERASURE_ADMISSION_DOMAINS.every(domain=>
+          admission.data.certifiedDomains.includes(domain)) ||
         clean(request.data?.uid)!==uid ||
         clean(request.data?.requestId)!==requestId ||
         clean(checkpoint.data?.uid)!==uid ||
@@ -69,6 +80,11 @@ export async function reserveAccountErasureExternalIo(db, {
         clean(request.data?.status)!=="processing" ||
         clean(checkpoint.data?.phase)!=="storage_media" ||
         checkpoint.data?.destructiveAllowed!==true ||
+        checkpoint.data?.storageRetentionApproved!==true ||
+        checkpoint.data?.sharedMediaOwnershipReviewed!==true ||
+        checkpoint.data?.legalEvidenceReviewComplete!==true ||
+        checkpoint.data?.financialSettlementApproved!==true ||
+        checkpoint.data?.playBillingReviewComplete!==true ||
         clean(user.data?.accountStatus)!=="deletion_processing" ||
         clean(user.data?.role)==="owner" ||
         clean(storageObject.data?.ownerUid)!==uid ||
