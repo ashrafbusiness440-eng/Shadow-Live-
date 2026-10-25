@@ -223,14 +223,18 @@ audited signoff documents and the absence of a stop intent. A second
 holder, including a holder for a different object under that request, is
 denied pending human reconciliation. The stop-intent writer atomically
 checks this very same hold path before recording an immutable pending
-stop, and records only whether it observed a hold. The two writers
-coordinate via Firestore transaction read-set conflict plus create-only
-preconditions, with no polling and at most eight exact primary document
-reads followed by twelve signoff reads.
+stop, and records only whether it observed a hold. The reservation
+writer also checks the request-wide hold in its transaction: a claimed
+hold blocks **new reservations for ANY object** under that request even
+before a stop is requested. Missing or malformed transaction slots
+fail closed. Both writers coordinate via Firestore transaction read-set
+conflict plus create-only preconditions, with no polling and at most
+eight exact primary document reads followed by twelve signoff reads.
 
 Unit and disposable Cloudflare REST + Firestore Emulator coverage
-verifies repeated holders, invalid tokens, already-pending stops and a
-preexisting hold followed by an Owner stop. The marker is deliberately
+verifies repeated holders, invalid tokens, malformed hold snapshots,
+cross-object reservation attempts under an existing hold, already-pending
+stops and a preexisting hold followed by an Owner stop. The marker is deliberately
 **non-permissive**: `externalIoAllowed:false`,
 `revocationEffective:false`, and `completionVerified:false` are
 immutable. No call to R2 or Firebase Auth, no production caller, no
