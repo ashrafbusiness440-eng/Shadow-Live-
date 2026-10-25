@@ -1749,21 +1749,24 @@ export async function runDeletedAccountStorageCleanup(
   }
 
   if (objects.length < budget && failed === 0) {
-    // A new hold must not be hidden by a false 'completed' receipt.
+    // Exhausting ONE indexed page does NOT prove all account media, legacy
+    // aliases, shared room/agency ownership and external R2 outcomes have
+    // been reconciled. The legacy final-page path used to delete the queued
+    // job and mint a misleading completion audit with no such certificate.
+    // Keep the job intact and require independently verified, durable,
+    // account-wide completion proof before a future finalizer can release it.
+    // The production scheduled account-erasure executor is still HARD OFF.
     if (!await verifyAccountStorageCleanupJob(db, job)) {
       return { jobsChecked: 1, checked: objects.length, deleted,
-        transferred, failed: 1, blocked: true };
+        transferred, failed: 1, blocked: true,
+        completionVerified: false };
     }
-    await db.commit(null, [
-      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
-      db.writeCreate(`storage_audit_logs/${auditId()}`, {
-        actorUid: "system",
-        subjectUid: ownerUid,
-        action: "completeDeletedAccountStorageCleanup",
-        reason: clean(job.data?.reason || "account_deleted"),
-        createdAt: new Date(nowMs),
-      }),
-    ]);
+    return {
+      jobsChecked: 1, checked: objects.length, deleted,
+      transferred, failed: 0, blocked: true,
+      pendingReconciliation: true, completionVerified: false,
+      reason: "account_storage_final_inventory_reconciliation_required",
+    };
   }
 
   return {
