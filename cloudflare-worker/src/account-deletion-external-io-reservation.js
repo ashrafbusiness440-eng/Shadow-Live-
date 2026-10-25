@@ -143,7 +143,7 @@ export async function reserveAccountErasureExternalIo(db, {
   const path = "account_erasure_external_io_reservations/" + uid + "__" + objectId;
   const tx = await db.beginTransaction();
   try {
-    // Seven bounded exact reads in ONE Firestore transaction-scoped batchGet
+    // Eight bounded exact reads in ONE Firestore transaction-scoped batchGet
     // (instead of parallel REST GETs contending for the same transaction).
     // Test adapters without getMany retain the identical transaction-scoped
     // exact-read fallback. All writes still use this same transaction.
@@ -155,6 +155,9 @@ export async function reserveAccountErasureExternalIo(db, {
       "storage_objects/"+objectId,
       "admin_audit_logs/erasure_processing_start_"+requestId,
       revocationIntentPath(uid,requestId),
+      // Request-wide holder blocks ALL further object reservations,
+      // including reservations for a different media object.
+      coordinationHoldPath(uid,requestId),
     ];
     const base=typeof db.getMany==="function"
       ? await db.getMany(basePaths,tx)
@@ -166,11 +169,13 @@ export async function reserveAccountErasureExternalIo(db, {
       reject("external_io_transaction_read_failed",503);
     }
     const [request,checkpoint,user,existing,storageObject,admission,
-      revocationIntent]=base;
-    // A revocation INTENT is a durable stop for future reservations, even
-    // when an already-started object still needs human reconciliation.
-    // This read conflicts with a concurrent create in the SAME transaction.
-    if (revocationIntent?.exists) reject("external_io_revocation_intent_pending");
+      revocationIntent,coordinationHold]=base;
+    // A pending stop OR a claimed request-wide hold always blocks NEW
+    // reservations. Both paths are transactional reads and conflict with
+    // concurrent create-only stop/hold commits by independent workers.
+    // The hold is NOT a bucket-delete permit or an expiry-reclaimable lease.
+    if (revocationIntent.exists) reject("external_io_revocation_intent_pending");
+    if (coordinationHold.exists) reject("external_io_coordination_requires_reconciliation");
     if (existing.exists) reject("external_io_reservation_requires_reconciliation");
     if (!request.exists || !checkpoint.exists || !user.exists ||
         !storageObject.exists || !admission.exists ||
