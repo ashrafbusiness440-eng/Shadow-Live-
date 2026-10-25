@@ -143,3 +143,33 @@ test("reserved I/O primitive has no route, timer, bucket usage, or Auth removal"
   }
   assert.match(src,/externalIoAllowed:false/);
 });
+
+test("two racing workers cannot both reserve the same immutable object key",async()=>{
+  const db=new Db();
+  const first=opts({token:"independent_worker_one_123456"});
+  const second=opts({token:"independent_worker_two_123456"});
+  const outcomes=await Promise.allSettled([
+    reserve(db,first),reserve(db,second),
+  ]);
+  assert.equal(outcomes.filter(x=>x.status==="fulfilled").length,1);
+  assert.equal(outcomes.filter(x=>x.status==="rejected").length,1);
+  assert.equal(db.commits.length,1);
+  assert.equal(db.docs.get(resPath).externalIoAllowed,false);
+  assert.equal(db.docs.get(resPath).completionVerified,false);
+});
+test("unverified prior admission or financial clearance cannot create a reservation",async()=>{
+  for(const invalidate of [
+    db=>db.docs.delete("admin_audit_logs/erasure_processing_start_"+requestId),
+    db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid)
+      .financialSettlementApproved=false,
+    db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid)
+      .sharedMediaOwnershipReviewed=false,
+    db=>db.docs.get("admin_audit_logs/erasure_processing_start_"+requestId)
+      .certifiedDomains=["moderation_legal"],
+  ]){
+    const db=new Db();invalidate(db);
+    await assert.rejects(reserve(db,opts()),
+      e=>e.code==="external_io_reservation_not_authorized");
+    assert.equal(db.docs.has(resPath),false);
+  }
+});
