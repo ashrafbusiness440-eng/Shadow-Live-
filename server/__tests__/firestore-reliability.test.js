@@ -11,6 +11,7 @@ import {
   FIRESTORE_RETRY_MAX_DELAY_MS,
   FIRESTORE_TRANSIENT_MAX_ATTEMPTS,
   createFirestoreQuotaCircuitState,
+  correlateFirestoreBatchGetRows,
   firestoreRetryDelayMs,
   isFirestoreQuotaCircuitOpen,
   isFirestoreQuotaStatus,
@@ -192,6 +193,37 @@ test("Firestore batchGet rejects malformed or oversized responses, not zero scor
   );
 });
 
+
+
+test("Firestore batchGet distinguishes an explicit missing document from an omitted transport row",()=>{
+  const root="projects/p/databases/(default)/documents/";
+  const first=root+"account_deletion_requests/member";
+  const stop=root+"account_erasure_external_io_revocation_intents/member__request";
+  const found={found:{name:first,fields:{
+    status:{stringValue:"processing"},
+  }}};
+  const absent={missing:stop};
+  // Firestore may stream out of order. Both documented rows are required.
+  assert.deepEqual(correlateFirestoreBatchGetRows([absent,found],[
+    first,stop,
+  ]),[
+    {exists:true,data:{status:"processing"},updateTime:null},
+    {exists:false,data:null,updateTime:null},
+  ]);
+  assert.throws(()=>correlateFirestoreBatchGetRows([found],[first,stop]),
+    /firestore_batch_get_incomplete_response/);
+  assert.throws(()=>correlateFirestoreBatchGetRows([found,found],[first,stop]),
+    /firestore_batch_get_unexpected_document_row/);
+  assert.throws(()=>correlateFirestoreBatchGetRows([found,{
+    missing:root+"unrelated/path",
+  }],[first,stop]),/firestore_batch_get_unexpected_document_row/);
+  assert.throws(()=>correlateFirestoreBatchGetRows([found,{
+    found:{name:stop},missing:stop,
+  }],[first,stop]),/firestore_batch_get_invalid_document_row/);
+  assert.throws(()=>correlateFirestoreBatchGetRows([found,{
+    found:{},missing:0,
+  }],[first,stop]),/firestore_batch_get_invalid_document_row/);
+});
 
 test("legacy Firestore getAll supports privacy ranking in one bounded batch", async () => {
   const db = getFirestoreForEnv({
