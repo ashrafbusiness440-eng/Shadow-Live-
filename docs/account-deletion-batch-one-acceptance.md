@@ -92,6 +92,44 @@ acknowledgement, known R2 result, real-bucket proof, or authenticated human
 reconciliation. No live worker calls it. The scheduled account-erasure
 R2 route stays HARD OFF; fixed gates 1/2/3/5 remain OPEN.
 
+### Gate 1: read-only R2 unknown-outcome inspection (NOT proof of deletion)
+
+The internal, **unrouted** unknown-outcome journal now also pins the exact
+`storageKey` in its immutable create-only record. Previously a deleted or
+missing Firestore `storage_objects` row could leave no trustworthy key to
+inspect after a crash. A missing/empty storage key is rejected BEFORE an
+unknown-outcome journal can be recorded. Existing journals without a pinned
+key are **not** silently migrated into a deletion permit.
+
+A separate Owner-only, non-destructive, manual-only primitive
+`recordAccountErasureExternalIoReadOnlyProbe` uses **only**
+`bucket.head(pinnedStorageKey)` to create an immutable observation of
+`present_at_probe` or `absent_at_probe`. It first checks the journal,
+original reservation, same-token coordination hold and current request,
+checkpoint, optional storage metadata and prior probe ID in a read-only
+Firestore transaction. After closing that transaction, it calls R2 HEAD
+**once**, then checks the identity again and atomically creates an audit
+observation via Firestore transaction. This sequence does not hold a
+Firestore transaction open over a bucket network call. Reused probe IDs,
+wrong tokens, absent journal/hold, changed object identity, missing or
+malformed snapshots, failed R2 HEAD or ambiguous HEAD response all fail
+closed. A legitimate Owner stop may arrive during the probe: the evidence
+records whether it was present at commit but **never** declares it effective.
+
+The observation deliberately says `completionVerified:false`,
+`retryAllowed:false`, `externalIoAllowed:false` and
+`revocationEffective:false`. Presence is not proof the original
+operation did not run, and absence is not proof it succeeded or that
+another writer did not alter the key. No account is closed, no file is
+deleted and no stale holder is released from this observation. Node tests
+cover present/absent, duplicate, timeout/malformed head, changed key and
+stop-during-HEAD. Actual Cloudflare REST adapter / disposable local
+Firestore Emulator tests verify immutable observations before and after
+a pending Owner stop using a **fake read-only bucket**. A genuine external
+operation lease/revocation protocol, real-bucket testing, independently
+authenticated operator review and ambiguous-outcome final reconciliation
+are **still missing**; first-batch gates 1/2/3/5 remain OPEN, production OFF.
+
 ## Gate 2 — financial settlement and Google Play Billing
 
 Review **all pages** of the already implemented eight exact indexed financial
