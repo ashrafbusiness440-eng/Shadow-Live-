@@ -86,6 +86,16 @@ test("held metadata is reported for review, other owner fails closed",async()=>{
   assert.equal(result.items[0].needsReview,true);
   assert.equal(result.items[1].needsReview,false);
 });
+test("metadata appeals prevent clearance for exact scoped R2 objects",async()=>{
+  const db=new Db(),r2=new R2([key(1),key(2)]);
+  db.meta(1,{appealPending:true});
+  db.meta(2,{appealStatus:" OPEN "});
+  const page=await inspect(db,r2,opts);
+  assert.deepEqual(page.items.map(x=>x.needsReview),[true,true]);
+  assert.equal(page.erasureAllowed,false);
+  assert.equal(r2.deleteCalls,0);
+  assert.equal(db.docs.get(up).coins,123);
+});
 test("R2 list wrong-prefix, malformed ID, duplicates and errors fail closed",async()=>{
   const cases=[
     ["private-voice/another_chat/"+uid+"/"+objectId(1)+".wav",
@@ -115,6 +125,10 @@ test("unauthorized request, holds and invalid chat block before R2 access",async
     d=>d.docs.get(cp).requestId="other_request_123456",
     d=>d.docs.get(up).role="owner",
     d=>d.docs.get(up).legalHold=true,
+    d=>d.docs.get(rp).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="Under_Review",
+    d=>d.docs.get(up).appealStatus="open",
+    d=>d.docs.get(chat).appealPending=true,
     d=>d.docs.get(chat).evidenceHold=true,
     d=>d.docs.get(chat).participants=[uid,uid],
   ];
