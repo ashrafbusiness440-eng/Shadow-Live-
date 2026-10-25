@@ -81,6 +81,12 @@ export async function runCertifiedInternalAccountErasurePage(db, {
         : (conversationId !== null || cursor !== null))) {
     reject("invalid_internal_erasure_step", 400);
   }
+  // The direct private-text primitive has not received its same-transaction
+  // certificate guard. Even a forged destructiveAllowed checkpoint and valid
+  // signoffs MUST NOT dispatch it. This block has no production escape hatch.
+  if (step === "private_text") {
+    reject("private_text_erasure_transaction_guard_missing");
+  }
   const requestPath = "account_deletion_requests/" + uid;
   const checkpointPath = "account_deletion_erasure_checkpoints/" + uid;
   const userPath = "users/" + uid;
