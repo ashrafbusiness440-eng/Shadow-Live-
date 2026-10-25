@@ -15,7 +15,7 @@ Read [docs/REUSE_FIRST_ENGINEERING_STANDARD.md](docs/REUSE_FIRST_ENGINEERING_STA
 
 ## Non-negotiable project guardrails
 - Do not reimplement merged work or touch unrelated/frozen work; in particular **do not edit frozen PR #348**.
-- GitHub Pages hosts the static web and Shadow Control UI; Cloudflare Workers hosts APIs. **Do not introduce Vercel.**
+- **Only GitHub Pages** hosts static web and Shadow Control UI; **only Cloudflare Workers** hosts APIs. Keep those approved deployment targets unchanged.
 - Never activate live account erasure, R2 deletion, financial/Play chargeback settlement, legal/evidence disposal or Firebase Auth deletion merely because reusable code or a test exists; preserve `destructiveAllowed:false` until independent approvals and end-to-end verification are complete.
 - Do not rebuild APK on every edit. Keep review and CI batches focused.
 
