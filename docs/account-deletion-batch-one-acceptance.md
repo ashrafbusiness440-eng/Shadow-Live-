@@ -61,6 +61,37 @@ not implement a release of the held operation, a trusted execution
 lease, or a verified recovery path. Production scheduled account-R2
 cleanup remains HARD OFF.
 
+### Gate 1: immutable uncertain external-I/O outcome journal (internal-only)
+
+The **unrouted** account-erasure external-I/O coordination implementation now
+records a request-wide, create-only `account_erasure_external_io_uncertain_attempts`
+journal for a previously reserved object and its claimed non-permissive hold,
+using the same Firestore write transaction as the current account/request,
+asset, admission, reservation, hold, stop-intent, and **twelve current
+approval/audit records**. Only the exact token and object from that hold
+may create it. A mismatched token, missing hold, revoked signoff, hold,
+incomplete transaction read, duplicate writer or earlier Owner stop
+rejects the attempt **without writing**.
+
+This entry conservatively means the external outcome may now be unknown,
+*not* that R2 was actually invoked or succeeded. Its immutable fields
+`state:"outcome_unknown_requires_reconciliation"`,
+`retryAllowed:false`, `externalIoAllowed:false`,
+`completionVerified:false` cannot be changed by a timer, crashed worker
+or a second claimant. The Owner's stop-intent writer reads this journal in
+the same Firestore transaction, records `uncertainAttemptObserved` in both
+the pending stop and its audit, but **never declares the stop effective**.
+The journal survives the stop and needs independent outcome reconciliation.
+
+Node tests cover stop-first, stop-after, duplicate, token mismatch,
+revocation and damaged batch snapshots. A disposable Cloudflare REST +
+Firestore Emulator test exercises persisted unknown-outcome and Owner stop
+with separate adapter calls. The journal does **not** grant permission to
+call `bucket.delete` or provide a production-equivalent lease, cancellation,
+acknowledgement, known R2 result, real-bucket proof, or authenticated human
+reconciliation. No live worker calls it. The scheduled account-erasure
+R2 route stays HARD OFF; fixed gates 1/2/3/5 remain OPEN.
+
 ## Gate 2 — financial settlement and Google Play Billing
 
 Review **all pages** of the already implemented eight exact indexed financial
