@@ -107,15 +107,16 @@ export async function drainAccountOwnedNotifications(db, {
 
 export async function drainAccountPrivateCallPushDevices(db, {
   uid, requestId, limit = MAX_ACCOUNT_ERASURE_BATCH_ITEMS,
+  nowMs = Date.now(),
 } = {}) {
   return drainBatch(db, {
-    uid, requestId, phase: "push_devices", limit,
+    uid, requestId, phase: "push_devices", limit, nowMs,
     collection: targetUid => `private_call_push_devices/${targetUid}/tokens`,
     filters: () => [],
     idPattern: /^[a-f0-9]{64}$/,
-    erase: (store, userId, operationId, id) =>
+    erase: (store, userId, operationId, id, atMs) =>
       eraseDeletedPrivateCallPushToken(store, {
-        uid: userId, requestId: operationId, tokenHash: id,
+        uid: userId, requestId: operationId, tokenHash: id, nowMs: atMs,
       }),
   });
 }
