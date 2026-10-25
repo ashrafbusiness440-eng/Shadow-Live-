@@ -76,6 +76,20 @@ test("view dedupe keys are discoverable even without diary_operations",async()=>
   assert.equal(db.queries[0].collection,"diary_view_keys");
   assert.equal(page.hasMore,false);
 });
+test("open appeals on owned like or counterpart diary require review",async()=>{
+  for(const path of [
+    "diary_likes/diary_test_1__"+key(uid),
+    "diaries/diary_test_1",
+  ]) {
+    const db=new FakeDb();db.add("likes",1);
+    db.docs.get(path).appealStatus=" OPEN ";
+    const page=await inspect(db,{uid,requestId,actor});
+    assert.equal(page.items[0].needsReview,true);
+    assert.equal(page.erasureAllowed,false);
+    assert.equal(db.docs.get("diaries/diary_test_1").likeCount,7);
+    assert.equal(db.docs.get("users/"+uid).coins,350);
+  }
+});
 test("missing diary and anomalous legacy key are flagged, not cleared",async()=>{
   const db=new FakeDb();db.add("likes",1);
   db.docs.delete("diaries/diary_test_1");
@@ -93,6 +107,9 @@ test("hold and request rotation prevent discovery, not treated as empty",async()
     db=>db.docs.get("account_deletion_requests/"+uid).requestId="rotated",
     db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).requestId="old",
     db=>db.docs.get("account_deletion_requests/"+uid).legalHold=true,
+    db=>db.docs.get("account_deletion_requests/"+uid).appealPending=true,
+    db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).appealStatus="Under_Review",
+    db=>db.docs.get("users/"+uid).appealPending=true,
     db=>db.docs.get("users/"+uid).role="owner",
   ];
   for(const edit of edits){
