@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // INTERNAL READ-ONLY discovery for an account's private conversations and
 // authored messages. Neither stage is routed, scheduled or able to erase.
 // Cursor exhaustion cannot certify legacy coverage, legal clearance, or Auth.
@@ -5,10 +6,7 @@ const clean = v => String(v ?? "").trim();
 const uidOk = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const reqOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const idOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
-const held = d => [
-  d?.reviewHold, d?.legalHold, d?.retentionHold, d?.deletionHold,
-  d?.evidenceHold, d?.investigationHold, d?.reported,
-].some(x => x === true);
+
 const textKinds = new Set(["text", "animated_emoji"]);
 const textSchemaKeys = new Set([
   "senderId", "receiverId", "createdAt", "type", "deletedForEveryone",
