@@ -20,6 +20,8 @@ import {reserveAccountErasureExternalIo as reserve,
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {openAccountErasureExternalIoReconciliationCase as openReconciliation}
   from "../../cloudflare-worker/src/account-deletion-external-io-reconciliation.js";
+import {recordAccountErasureExternalIoIndependentReview as reviewExternalIo}
+  from "../../cloudflare-worker/src/account-deletion-external-io-review.js";
 import {recheckErasureCertificatesInTransaction as recheckCerts}
   from "../../cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js";
 import {rehearseAccountErasureR2Dispatch as dispatchFixture}
@@ -281,6 +283,34 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     assert.equal((await caseDoc.get()).data().retryAllowed,false);
     assert.equal((await caseDoc.get()).data().ownerStopObserved,true);
     assert.equal((await caseAudit.get()).data().completionVerified,false);
+    // Persist a SECOND actor's non-permissive attestation via the real
+    // Cloudflare REST transaction adapter. Its submitted digest is NOT
+    // a verified provider event, deletion receipt or permission to retry.
+    const reviewDoc=doc("account_erasure_external_io_independent_reviews/"+
+      uid+"__"+requestId);
+    const reviewAudit=doc("admin_audit_logs/erasure_external_io_independent_review_"+
+      requestId);
+    refs.push(reviewDoc,reviewAudit);
+    const reviewerArgs={
+      uid,requestId,objectId,token:stored.data().operationToken,
+      actor:{uid:"independent_reviewer_123456789",evidenceReviewer:true},
+      assessment:"provider_evidence_submitted_unverified",
+      evidenceDigestSha256:"b".repeat(64),nowMs:nowMs+3000,
+    };
+    await assert.rejects(reviewExternalIo(firestoreClient(env),{
+      ...reviewerArgs,actor:{uid:owner,evidenceReviewer:true},
+    }),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch");
+    const reviewed=await reviewExternalIo(firestoreClient(env),reviewerArgs);
+    assert.equal(reviewed.stillUnresolved,true);
+    assert.equal(reviewed.completionVerified,false);
+    assert.equal((await reviewDoc.get()).data().status,
+      "independent_review_recorded_still_unresolved");
+    assert.equal((await reviewDoc.get()).data().providerHistoryVerified,false);
+    assert.equal((await reviewDoc.get()).data().retryAllowed,false);
+    assert.equal((await reviewAudit.get()).data().revocationEffective,false);
+    await assert.rejects(reviewExternalIo(firestoreClient(env),reviewerArgs),
+      e=>e.code==="independent_external_io_review_already_recorded");
+    assert.equal((await intent.get()).data().revocationEffective,false);
     await assert.rejects(openReconciliation(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
       firstProbeId:"rest_probe_two_123456",

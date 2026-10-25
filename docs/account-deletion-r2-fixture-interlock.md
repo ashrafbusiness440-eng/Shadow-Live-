@@ -142,3 +142,58 @@ This prevents silent approval resurrection; it does not replace authorized
 independent signoff issuance, emergency stop writers, real provider evidence,
 or production release gates. Existing request-wide stop still blocks R2
 dispatch, and no production R2/Auth deletion is enabled.
+
+
+## Immutable independent external-I/O evidence assessment (internal-only)
+
+The reconciler can now attach **one** immutable, separately audited
+*assessment* to an already opened manual R2 case via
+`recordAccountErasureExternalIoIndependentReview`. This helper is not
+routed or scheduled. The invoking adapter must later prove the reviewer's
+rights from a server-authenticated, scoped authorization record. It cannot
+accept browser-provided `actor.evidenceReviewer` as authorization.
+
+The assessment enforces independent personnel: the reviewer must not be
+the reconciliation case creator, the Owner who filed the stop, or either
+original R2 HEAD observer. It reads the current case, original case audit,
+stop+audit, uncertain attempt, hold, reservation, account request and
+checkpoint in one Firestore transaction, then re-reads **both immutable
+post-stop HEAD observations in the same transaction** to reject tampered
+tokens, paths, flags or observer identities. Its sole mutations are a
+create-only independent review and separate audit record. Repeated
+assessments fail closed.
+
+Only three unresolved categories may be recorded:
+`insufficient_provider_evidence`, `external_history_discrepancy`, or
+`provider_evidence_submitted_unverified`. Even the latter reports only
+that an external evidence fingerprint was *submitted*; it does not prove
+that such evidence is authentic, that Cloudflare performed any particular
+operation, or that the object has been permanently deleted. The only
+input evidence identifier is a 64-character lowercase SHA-256 hex digest.
+No raw evidence, storage object keys, free text, bucket credentials,
+external URLs, payment information or report content is copied to the
+review or audit.
+
+Every review has `status:"independent_review_recorded_still_unresolved"`,
+`providerHistoryVerified:false`, `evidenceAuthenticityVerified:false`,
+`canCertifyErasure:false`, `retryAllowed:false`,
+`externalIoAllowed:false`, `completionVerified:false` and
+`revocationEffective:false`. The Owner stop, uncertain journal and open
+case remain unchanged. Human review is an input to, NOT a substitute for,
+provider-side external operation evidence, generation checks, shared
+ownership/retention signoffs or an independently justified final
+resolution. Live production R2 deletion and Firebase Auth deletion remain
+hard disabled.
+
+Unit tests cover independence, duplicates, malformed digest and fake
+"confirmed" assessments, changed/missing case/stop/HEAD evidence, withdrawn
+certificates and still-unresolved outcomes. An actual Cloudflare Firestore
+REST adapter / disposable Firestore Emulator integration confirms a
+separate reviewer assessment cannot transform a pending case into a
+delete receipt, R2 replay permission or effective stop.
+
+**Still blocking Gate 1:** securely implementing the actual reviewer
+authorization and evidence vault, confirming independent Cloudflare R2
+provider logs/object generations against an isolated explicitly authorized
+test bucket, coordinating all real approval issuers and revocation writers,
+and a reviewed finalizer. None are asserted complete by this fixture.

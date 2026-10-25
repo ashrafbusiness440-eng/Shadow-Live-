@@ -9,6 +9,8 @@ import {reserveAccountErasureExternalIo as reserve,
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {openAccountErasureExternalIoReconciliationCase as openCase}
   from "../../cloudflare-worker/src/account-deletion-external-io-reconciliation.js";
+import {recordAccountErasureExternalIoIndependentReview as reviewCase}
+  from "../../cloudflare-worker/src/account-deletion-external-io-review.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
 import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
@@ -699,4 +701,107 @@ test("historical withdrawal audit defeats an approved decision resurrected later
   await assert.rejects(reserve(db,opts()),
     e=>e.code==="erasure_transactional_certification_blocked");
   assert.equal(db.docs.has(resPath),false);
+});
+
+const independentReviewer="independent_reviewer_user_456789";
+const externalReviewOpts=(patch={})=>({
+  uid,requestId,objectId,token,
+  actor:{uid:independentReviewer,evidenceReviewer:true},
+  assessment:"provider_evidence_submitted_unverified",
+  evidenceDigestSha256:"a".repeat(64),
+  nowMs:nowMs+3000,...patch,
+});
+async function readyReviewCase(db){
+  await prepareManualCase(db);
+  await openCase(db,manualCaseOpts());
+}
+test("independent review writes two immutable records and never resolves R2 outcome",async()=>{
+  const db=new Db();await readyReviewCase(db);
+  const result=await reviewCase(db,externalReviewOpts());
+  assert.deepEqual(result,{
+    ok:true,reviewRecorded:true,
+    assessment:"provider_evidence_submitted_unverified",
+    stillUnresolved:true,externalIoAllowed:false,retryAllowed:false,
+    completionVerified:false,revocationEffective:false,
+  });
+  const p="account_erasure_external_io_independent_reviews/"+
+    uid+"__"+requestId,review=db.docs.get(p);
+  assert.equal(review.reviewerUid,independentReviewer);
+  assert.equal(review.claimedEvidenceDigestSha256,"a".repeat(64));
+  assert.equal(review.evidenceAuthenticityVerified,false);
+  assert.equal(review.providerHistoryVerified,false);
+  assert.equal(review.completionVerified,false);
+  assert.equal(review.retryAllowed,false);
+  assert.equal(db.docs.get("account_erasure_external_io_reconciliation_cases/"+
+    uid+"__"+requestId).status,"awaiting_independent_evidence_review");
+  assert.equal(db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId).revocationEffective,false);
+  assert.equal(db.docs.get("admin_audit_logs/erasure_external_io_independent_review_"+
+    requestId).completionVerified,false);
+  await assert.rejects(reviewCase(db,externalReviewOpts()),
+    e=>e.code==="independent_external_io_review_already_recorded");
+});
+test("reviewer cannot be Owner who requested stop or observed either HEAD",async()=>{
+  const db=new Db();await readyReviewCase(db);
+  await assert.rejects(reviewCase(db,externalReviewOpts({
+    actor:{uid:owner,evidenceReviewer:true},
+  })),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch");
+  await assert.rejects(reviewCase(db,externalReviewOpts({
+    actor:{uid:independentReviewer,evidenceReviewer:false},
+  })),e=>e.code==="independent_evidence_reviewer_required");
+  assert.equal(db.docs.has("account_erasure_external_io_independent_reviews/"+
+    uid+"__"+requestId),false);
+});
+test("independent review rejects raw evidence/URL payloads and permits only opaque SHA256",async()=>{
+  const db=new Db();await readyReviewCase(db);
+  for(const patch of [
+    {evidenceDigestSha256:"https://example.invalid/private-evidence"},
+    {evidenceDigestSha256:""},
+    {assessment:"confirmed_deleted"},
+    {assessment:"external_proof_complete"},
+    {nowMs:-1},
+    {requestId:"other"},
+  ]){
+    await assert.rejects(reviewCase(db,externalReviewOpts(patch)));
+  }
+  assert.equal(db.docs.has("account_erasure_external_io_independent_reviews/"+
+    uid+"__"+requestId),false);
+});
+test("tampered case/probe/stop or missing transaction slots block independent reviewer",async()=>{
+  for(const damage of [
+    db=>db.docs.get("account_erasure_external_io_reconciliation_cases/"+
+      uid+"__"+requestId).completionVerified=true,
+    db=>db.docs.get("account_erasure_external_io_reconciliation_cases/"+
+      uid+"__"+requestId).storageKey="changed/shared-key",
+    db=>db.docs.get("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_second_123456").completionVerified=true,
+    db=>db.docs.get("account_erasure_external_io_probe_observations/"+
+      uid+"__"+requestId+"__reconcile_probe_first_123456").observedByUid=
+      independentReviewer,
+    db=>db.docs.get("account_erasure_external_io_revocation_intents/"+
+      uid+"__"+requestId).revocationEffective=true,
+    db=>db.docs.delete("account_erasure_external_io_coordination_holds/"+
+      uid+"__"+requestId),
+    db=>db.getMany=async()=>[],
+  ]){
+    const db=new Db();await readyReviewCase(db);
+    damage(db);
+    await assert.rejects(reviewCase(db,externalReviewOpts()));
+    assert.equal(db.docs.has("account_erasure_external_io_independent_reviews/"+
+      uid+"__"+requestId),false);
+    assert.equal(db.docs.has("admin_audit_logs/erasure_external_io_independent_review_"+
+      requestId),false);
+  }
+});
+test("emergency independent review remains non-destructive after prior certificate withdrawal",async()=>{
+  const db=new Db();await readyReviewCase(db);
+  db.docs.get("account_deletion_erasure_approvals/"+
+    requestId+"__play_billing").decision="revoked";
+  const review=await reviewCase(db,externalReviewOpts({
+    assessment:"external_history_discrepancy",
+  }));
+  assert.equal(review.stillUnresolved,true);
+  assert.equal(review.completionVerified,false);
+  assert.equal(db.docs.get("account_erasure_external_io_uncertain_attempts/"+
+    uid+"__"+requestId).retryAllowed,false);
 });
