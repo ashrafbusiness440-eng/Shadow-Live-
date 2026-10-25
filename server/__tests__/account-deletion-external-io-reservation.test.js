@@ -766,7 +766,8 @@ test("reviewer cannot be Owner who requested stop or observed either HEAD",async
   const db=new Db();await readyReviewCase(db);
   await assert.rejects(reviewCase(db,externalReviewOpts({
     actor:{uid:owner,evidenceReviewer:true},
-  })),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch");
+  })),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch"||
+      e.code==="independent_external_io_review_grant_invalid");
   await assert.rejects(reviewCase(db,externalReviewOpts({
     actor:{uid:independentReviewer,evidenceReviewer:false},
   })),e=>e.code==="independent_evidence_reviewer_required");

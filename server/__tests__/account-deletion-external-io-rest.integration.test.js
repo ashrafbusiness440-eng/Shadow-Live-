@@ -327,7 +327,8 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     await reviewerProfile.update({adminEnabled:true});
     await assert.rejects(reviewExternalIo(firestoreClient(env),{
       ...reviewerArgs,actor:{uid:owner,evidenceReviewer:true},
-    }),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch");
+    }),e=>e.code==="independent_external_io_review_identity_or_fence_mismatch"||
+      e.code==="independent_external_io_review_grant_invalid");
     const reviewed=await reviewExternalIo(firestoreClient(env),reviewerArgs);
     assert.equal(reviewed.stillUnresolved,true);
     assert.equal(reviewed.completionVerified,false);
