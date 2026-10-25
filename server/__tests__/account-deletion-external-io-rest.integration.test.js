@@ -339,11 +339,12 @@ test("emulator: REST private text redaction rechecks revoked audited approval",{
   const request=store.doc("account_deletion_requests/"+uid);
   const checkpoint=store.doc("account_deletion_erasure_checkpoints/"+uid);
   const user=store.doc("users/"+uid);
+  const admission=store.doc("admin_audit_logs/erasure_processing_start_"+requestId);
   const certificates=await seedEmulatorErasureCertificates(store,{
     uid,requestId,nowMs,
   });
   const refs=[conversation,messageOne,messageTwo,counterpart,
-    request,checkpoint,user,...certificates];
+    request,checkpoint,user,admission,...certificates];
   const args=messageId=>({uid,requestId,conversationId,messageId,
     now:new Date(nowMs)});
   try{
@@ -353,6 +354,8 @@ test("emulator: REST private text redaction rechecks revoked audited approval",{
       checkpoint.set({uid,requestId,phase:"private_text",destructiveAllowed:true,
         privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}),
       user.set({role:"user",accountStatus:"deletion_processing",coins:470}),
+      admission.set({action:"accountErasureProcessingAdmitted",
+        targetId:uid,requestId,certifiedDomains:[...domains]}),
       conversation.set({participants:[uid,other],lastSenderId:uid,
         lastMessage:"Confidential old preview"}),
       messageOne.set({senderId:uid,receiverId:other,type:"text",
@@ -362,6 +365,15 @@ test("emulator: REST private text redaction rechecks revoked audited approval",{
       counterpart.set({senderId:other,receiverId:uid,type:"text",
         text:"other user message",createdAt:new Date(nowMs-days(39))}),
     ]);
+    // Missing original admission cannot be hidden by a forged checkpoint
+    // or otherwise valid synthetic signoffs.
+    await admission.delete();
+    await assert.rejects(redactDeletedPrivateTextMessage(
+      firestoreClient(env),args(messageOne.id)),e=>
+      e.code==="private_text_erasure_blocked");
+    assert.equal((await messageOne.get()).data().text,"private one");
+    await admission.set({action:"accountErasureProcessingAdmitted",
+      targetId:uid,requestId,certifiedDomains:[...domains]});
     // The real Cloudflare REST transaction sees all six synthetic current
     // signoffs; only this first disposable text row may be tombstoned.
     const initial=await redactDeletedPrivateTextMessage(
