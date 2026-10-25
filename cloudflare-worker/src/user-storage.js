@@ -2,6 +2,8 @@ import {
   ImageAppealError, submitImageModerationAppeal,
 } from "./image-moderation-appeal.js";
 import { finalImageEvidenceFields } from "./image-moderation-retention.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 import { verifyPrivateChatImageMessage } from "./image-moderation-chat.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
@@ -1597,37 +1599,60 @@ export async function verifyAccountStorageCleanupJob(db, job) {
   if (!/^[A-Za-z0-9_-]{3,128}$/.test(uid) ||
       !/^[A-Za-z0-9_-]{12,180}$/.test(requestId) ||
       clean(job?.data?.reason) !== "account_deleted_verified" ||
-      clean(job?.data?.status) !== "queued") return false;
-  const [request, checkpoint, user, audit] = await Promise.all([
-    db.get("account_deletion_requests/" + uid),
-    db.get("account_deletion_erasure_checkpoints/" + uid),
-    db.get("users/" + uid),
-    db.get("admin_audit_logs/r2_deletion_queue_" + requestId),
-  ]);
-  const held = d => [d?.legalHold, d?.retentionHold,
-    d?.deletionHold, d?.reviewHold, d?.evidenceHold,
-    d?.investigationHold, d?.reported, d?.appealPending,
-  ].some(x => x === true) ||
-    ["pending", "open", "under_review"].includes(
-      clean(d?.appealStatus).toLowerCase());
-  return request.exists && checkpoint.exists && user.exists && audit.exists &&
-    clean(request.data?.uid) === uid &&
-    clean(request.data?.requestId) === requestId &&
-    clean(checkpoint.data?.requestId) === requestId &&
-    clean(request.data?.status) === "processing" &&
-    clean(checkpoint.data?.phase) === "storage_media" &&
-    checkpoint.data?.destructiveAllowed === true &&
-    checkpoint.data?.storageRetentionApproved === true &&
-    checkpoint.data?.sharedMediaOwnershipReviewed === true &&
-    checkpoint.data?.legalEvidenceReviewComplete === true &&
-    checkpoint.data?.financialSettlementApproved === true &&
-    checkpoint.data?.playBillingReviewComplete === true &&
-    clean(user.data?.accountStatus) === "deletion_processing" &&
-    clean(user.data?.role) !== "owner" &&
-    clean(audit.data?.targetId) === uid &&
-    clean(audit.data?.requestId) === requestId &&
-    clean(audit.data?.action) === "accountErasureR2QueueCertified" &&
-    !held(request.data) && !held(checkpoint.data) && !held(user.data);
+      clean(job?.data?.status) !== "queued" ||
+      typeof db?.beginTransaction !== "function") return false;
+
+  // Reuse the six independently audited approvals already required by the
+  // finalizer, in the SAME read-only transaction as the current request,
+  // checkpoint, user and queue audit. Never equate checkpoint booleans with
+  // valid financial, Play, shared-asset, legal or retention signoffs.
+  const tx = await db.beginTransaction();
+  try {
+    const [request, checkpoint, user, audit] = await Promise.all([
+      db.get("account_deletion_requests/" + uid, tx),
+      db.get("account_deletion_erasure_checkpoints/" + uid, tx),
+      db.get("users/" + uid, tx),
+      db.get("admin_audit_logs/r2_deletion_queue_" + requestId, tx),
+    ]);
+    const held = d => [d?.legalHold, d?.retentionHold,
+      d?.deletionHold, d?.reviewHold, d?.evidenceHold,
+      d?.investigationHold, d?.reported, d?.appealPending,
+    ].some(x => x === true) ||
+      ["pending", "open", "under_review"].includes(
+        clean(d?.appealStatus).toLowerCase());
+    const valid = request.exists && checkpoint.exists && user.exists &&
+      audit.exists &&
+      clean(request.data?.uid) === uid &&
+      clean(request.data?.requestId) === requestId &&
+      clean(checkpoint.data?.requestId) === requestId &&
+      clean(request.data?.status) === "processing" &&
+      clean(checkpoint.data?.phase) === "storage_media" &&
+      checkpoint.data?.destructiveAllowed === true &&
+      checkpoint.data?.storageRetentionApproved === true &&
+      checkpoint.data?.sharedMediaOwnershipReviewed === true &&
+      checkpoint.data?.legalEvidenceReviewComplete === true &&
+      checkpoint.data?.financialSettlementApproved === true &&
+      checkpoint.data?.playBillingReviewComplete === true &&
+      clean(user.data?.accountStatus) === "deletion_processing" &&
+      clean(user.data?.role) !== "owner" &&
+      clean(audit.data?.targetId) === uid &&
+      clean(audit.data?.requestId) === requestId &&
+      clean(audit.data?.action) === "accountErasureR2QueueCertified" &&
+      !held(request.data) && !held(checkpoint.data) && !held(user.data);
+    if (!valid) {
+      await db.rollback(tx);
+      return false;
+    }
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt,
+      nowMs: Date.now(),
+    });
+    await db.rollback(tx);
+    return true;
+  } catch {
+    await db.rollback(tx).catch(() => {});
+    return false;
+  }
 }
 
 export async function runDeletedAccountStorageCleanup(
@@ -1675,6 +1700,16 @@ export async function runDeletedAccountStorageCleanup(
   let transferred = 0;
   let failed = 0;
   for (const item of objects) {
+    // Each file must see live approvals again: a cancellation, appeal or
+    // revoked signoff after the page started stops the remaining records.
+    // Bucket.delete cannot be atomic with Firestore; a separate finalizer
+    // lease is still mandatory before any real production erasure.
+    if (!await verifyAccountStorageCleanupJob(db, job)) {
+      failed += 1;
+      console.error("Stopped account R2 cleanup after approval/hold changed",
+        clean(job.id).slice(0, 100));
+      break;
+    }
     try {
       const cleanup = await deleteAccountOwnedStorageObject({
         db,
@@ -1699,6 +1734,11 @@ export async function runDeletedAccountStorageCleanup(
   }
 
   if (objects.length < budget && failed === 0) {
+    // A new hold must not be hidden by a false 'completed' receipt.
+    if (!await verifyAccountStorageCleanupJob(db, job)) {
+      return { jobsChecked: 1, checked: objects.length, deleted,
+        transferred, failed: 1, blocked: true };
+    }
     await db.commit(null, [
       db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
       db.writeCreate(`storage_audit_logs/${auditId()}`, {
