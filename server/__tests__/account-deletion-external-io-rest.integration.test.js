@@ -125,13 +125,6 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     assert.equal(stored.data().completionVerified,false);
     assert.equal(stored.data().state,"reserved_requires_external_interlock");
     assert.equal((await user.get()).data().coins,330);
-    // Revocation after a reservation must never permit a fresh reservation.
-    await certificates[0].update({decision:"revoked"});
-    await assert.rejects(reserve(firestoreClient(env),args(
-      "rest_worker_three_token_123456")),
-      e=>e.code==="external_io_reservation_requires_reconciliation"||
-        e.code==="erasure_transactional_certification_blocked");
-    assert.equal((await reservation.get()).data().externalIoAllowed,false);
     // Claim a non-permissive request-wide coordination hold using the
     // actual Cloudflare REST adapter and the winning reservation token.
     // This is a durable marker, NOT an R2 delete or permission.
@@ -148,6 +141,13 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     await assert.rejects(recordHold(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
     }),e=>e.code==="external_io_coordination_requires_reconciliation");
+    // Revocation after a reservation must never permit a fresh reservation.
+    await certificates[0].update({decision:"revoked"});
+    await assert.rejects(reserve(firestoreClient(env),args(
+      "rest_worker_three_token_123456")),
+      e=>e.code==="external_io_reservation_requires_reconciliation"||
+        e.code==="erasure_transactional_certification_blocked");
+    assert.equal((await reservation.get()).data().externalIoAllowed,false);
     // A stop requested AFTER a prior immutable reservation must prevent
     // reservations for DIFFERENT objects too. This is a transaction-scoped
     // boundary, not a claim that prior external I/O was cancelled.
