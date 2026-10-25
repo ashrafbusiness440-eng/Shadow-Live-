@@ -19,6 +19,8 @@ import {
   cleanupQueuedStorageObject,
   storageActivePointerId,
   runDeletedAccountStorageCleanup,
+  runFencedDeletedAccountStorageCleanup,
+  ACCOUNT_ERASURE_R2_FENCE_READY,
   authorizeAgencyLogoManagement,
 } from "../../cloudflare-worker/src/user-storage.js";
 import {
@@ -1395,4 +1397,32 @@ test("valid looking R2 job without independent six-domain signoffs cannot enumer
   assert.equal(result.blocked,true);
   assert.equal(result.deleted,0);
   assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
+});
+
+test("live scheduled account-erasure R2 requires an unimplemented external revocation fence",async()=>{
+  assert.equal(ACCOUNT_ERASURE_R2_FENCE_READY,false);
+  let reads=0,commits=0,deletes=0;
+  const db={
+    async runQuery(){reads++;throw Error("account_erasure_scan_must_be_blocked");},
+    async beginTransaction(){reads++;throw Error("account_erasure_tx_must_be_blocked");},
+    async commit(){commits++;throw Error("account_erasure_commit_must_be_blocked");},
+  };
+  const bucket={async delete(){deletes++;throw Error("r2_delete_must_be_blocked");}};
+  const result=await runFencedDeletedAccountStorageCleanup(db,bucket,{
+    nowMs:Date.now(),limit:25,
+  });
+  assert.deepEqual(result,{
+    jobsChecked:0,checked:0,deleted:0,transferred:0,
+    failed:0,blocked:true,reason:"external_io_fence_not_ready",
+  });
+  assert.equal(reads,0);
+  assert.equal(commits,0);
+  assert.equal(deletes,0);
+  // Verify the actual hourly entrypoint uses the guarded wrapper rather than
+  // the older directly invocable, intentionally retained test primitive.
+  const source=fs.readFileSync(
+    new URL("../../cloudflare-worker/src/user-storage.js",import.meta.url),"utf8");
+  const live=source.slice(source.indexOf("export async function runDueStorageCleanup("));
+  assert.match(live,/await runFencedDeletedAccountStorageCleanup\(/);
+  assert.doesNotMatch(live,/await runDeletedAccountStorageCleanup\(/);
 });
