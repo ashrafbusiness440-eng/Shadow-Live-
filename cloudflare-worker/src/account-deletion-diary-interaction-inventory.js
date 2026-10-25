@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Account erasure: internal, READ-ONLY indexed discovery of diary like/view
 // records by userUid. No endpoint, cron, erasure authorization or mutation.
 const clean = value => String(value ?? "").trim();
@@ -5,11 +6,7 @@ const uidOk = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const docIdOk = value => /^[A-Za-z0-9_-]{3,512}$/.test(clean(value));
 const diaryIdOk = value => /^[A-Za-z0-9_-]{3,220}$/.test(clean(value));
-const held = data => [
-  data?.reviewHold, data?.legalHold, data?.retentionHold,
-  data?.deletionHold, data?.evidenceHold, data?.investigationHold,
-  data?.reported,
-].some(value => value === true);
+
 
 export const MAX_DIARY_INTERACTION_INVENTORY_PAGE = 5;
 
