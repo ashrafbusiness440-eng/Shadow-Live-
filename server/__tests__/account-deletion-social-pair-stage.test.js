@@ -41,6 +41,9 @@ test("no cleanup if cancellation, hold, old request or owner account",async()=>{
  const mods=[
  d=>d.docs.get(rp).status="cancelled",
  d=>d.docs.get(rp).reviewHold=true,
+ d=>d.docs.get(rp).appealPending=true,
+ d=>d.docs.get(cp).appealStatus="Under_Review",
+ d=>d.docs.get(up).appealPending=true,
  d=>d.docs.get(rp).requestId="stale_request_12345",
  d=>d.docs.get(cp).phase="preflight_blocked",
  d=>d.docs.get(cp).requestId="stale_request_12345",
@@ -60,12 +63,20 @@ test("no cleanup if cancellation, hold, old request or owner account",async()=>{
 });
 test("a hold on ANY individual follows/blocks row prevents the whole transaction",async()=>{
  for(const path of paths){
-  for(const flag of ["legalHold","retentionHold","evidenceHold","investigationHold"]){
+  for(const flag of ["legalHold","retentionHold","evidenceHold","investigationHold","appealPending"]){
    const db=new Db();db.docs.get(path)[flag]=true;
    await assert.rejects(run(db),e=>e.code==="social_pair_retention_hold");
    assert.equal(db.commits.length,0);
    for(const id of paths)assert.equal(db.docs.has(id),true);
   }
+ }
+});
+test("appealStatus open on a reciprocal relationship stops all four deletions",async()=>{
+ for(const path of paths){
+  const db=new Db();db.docs.get(path).appealStatus="Open";
+  await assert.rejects(run(db),e=>e.code==="social_pair_retention_hold");
+  assert.equal(db.commits.length,0);
+  for(const id of paths)assert.equal(db.docs.has(id),true);
  }
 });
 test("a corrupt legacy follow or block cannot cause partial cleanup",async()=>{
