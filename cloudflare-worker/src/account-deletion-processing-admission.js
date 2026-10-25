@@ -44,7 +44,7 @@ const auditPath = (requestId, domain) =>
 const startAuditPath = requestId =>
   "admin_audit_logs/erasure_processing_start_" + requestId;
 
-function checkSignoff(approval, audit, { uid, requestId, domain,
+export function validateErasureDomainSignoff(approval, audit, { uid, requestId, domain,
   requestedAtMs, nowMs }) {
   const a = approval?.data;
   const b = audit?.data;
@@ -148,7 +148,7 @@ export async function admitCertifiedAccountErasure(db, {
         db.get(auditPath(requestId, domain), tx),
       ]));
     for (let i = 0; i < REQUIRED_ERASURE_ADMISSION_DOMAINS.length; i++) {
-      checkSignoff(signed[i * 2], signed[i * 2 + 1], {
+      validateErasureDomainSignoff(signed[i * 2], signed[i * 2 + 1], {
         uid, requestId,
         domain: REQUIRED_ERASURE_ADMISSION_DOMAINS[i],
         requestedAtMs, nowMs,

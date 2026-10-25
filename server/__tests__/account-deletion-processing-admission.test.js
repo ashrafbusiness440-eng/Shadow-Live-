@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { inspectAccountDeletionClosureReadiness as inspectClosure } from "../../cloudflare-worker/src/account-deletion-closure-readiness.js";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { admitCertifiedAccountErasure, REQUIRED_ERASURE_ADMISSION_DOMAINS }
@@ -53,7 +54,7 @@ class Db {
   async beginTransaction() { return "tx"; }
   async rollback() { this.rollbacks++; }
   async get(path, tx) {
-    assert.equal(tx, "tx"); this.reads.push(path);
+    if (tx !== undefined) assert.equal(tx, "tx"); this.reads.push(path);
     return {exists:this.docs.has(path),data:this.docs.get(path) ?? null};
   }
   writeUpdate(path, data, fields) {return {type:"update",path,data,fields};}
@@ -253,4 +254,97 @@ test("no Auth deletion, stage launch, R2 or financial deletion in admission",()=
   assert.doesNotMatch(source,
     /runQuery\(|deleteAuthUser\(|writeDelete\(|\.delete\(|setInterval\(|bucket\.delete\(/);
   assert.match(source,/destructiveAllowed: false/);
+});
+
+const closure = (db, patch={}) => inspectClosure(db, {
+  uid, requestId, actor:{uid:ownerUid,owner:true}, nowMs, ...patch,
+});
+
+test("read-only closure checklist reuses all six admission certificate rules",async()=>{
+  const db=new Db();
+  const originalWallet={...db.docs.get(userPath)};
+  const result=await closure(db);
+  assert.deepEqual(result.domains.map(x=>x.domain),[...REQUIRED_ERASURE_ADMISSION_DOMAINS]);
+  assert.equal(result.structurallySignedDomains,6);
+  assert.equal(result.totalRequiredDomains,6);
+  assert.equal(result.domains.every(x=>
+    x.certificateDocumentsPresent && x.certificateDocumentsValid &&
+    x.independentEvidenceReviewRequired),true);
+  assert.equal(result.independentEvidenceVerified,false);
+  assert.equal(result.processingAdmitted,false);
+  assert.equal(result.destructiveAllowed,false);
+  assert.equal(result.erasureAllowed,false);
+  assert.equal(result.completionVerified,false);
+  assert.equal(result.firebaseAuthDeleted,false);
+  assert.equal(db.reads.length,15);
+  assert.equal(db.commits.length,0);
+  assert.deepEqual(db.docs.get(userPath),originalWallet);
+});
+
+test("closure checklist reports missing, expired, forged or appealed domain certificates",async()=>{
+  for(const domain of REQUIRED_ERASURE_ADMISSION_DOMAINS) {
+    for(const patch of [
+      d=>d.docs.delete(approvePath(domain)),
+      d=>d.docs.delete(domainAuditPath(domain)),
+      d=>{d.docs.get(approvePath(domain)).expiresAt=new Date(nowMs-1);},
+      d=>{d.docs.get(approvePath(domain)).signedByUid="impostor_user";},
+      d=>{d.docs.get(domainAuditPath(domain)).appealPending=true;},
+      d=>{d.docs.get(approvePath(domain)).decision="pending";},
+    ]) {
+      const db=new Db();patch(db);
+      const result=await closure(db);
+      assert.equal(result.structurallySignedDomains,5);
+      assert.equal(result.domains.find(x=>x.domain===domain).certificateDocumentsValid,false);
+      assert.equal(result.erasureAllowed,false);
+      assert.equal(db.commits.length,0);
+      assert.equal(db.docs.get(userPath).coins,300);
+    }
+  }
+});
+
+test("closure checklist stops before certificate reads for stale, held or premature requests",async()=>{
+  for(const patch of [
+    d=>{d.docs.get(requestPath).status="cancelled";},
+    d=>{d.docs.get(requestPath).requestId="rotated_req_1234567";},
+    d=>{d.docs.get(checkpointPath).requestId="different_req_123";},
+    d=>{d.docs.get(requestPath).appealStatus=" Under_Review ";},
+    d=>{d.docs.get(checkpointPath).reported=true;},
+    d=>{d.docs.get(userPath).legalHold=true;},
+    d=>{d.docs.get(userPath).accountStatus="deletion_processing";},
+    d=>{d.docs.get(checkpointPath).destructiveAllowed=true;},
+    d=>{d.docs.get(requestPath).eligibleAt=new Date(nowMs+1);},
+    d=>{d.docs.get(requestPath).requestedAt=new Date(nowMs-86400_000);},
+  ]) {
+    const db=new Db();patch(db);
+    await assert.rejects(closure(db),e=>
+      ["closure_readiness_review_blocked","closure_readiness_grace_not_elapsed"].includes(e.code));
+    assert.equal(db.reads.length,3);
+    assert.equal(db.commits.length,0);
+  }
+});
+
+test("closure checklist denies nonowner and malformed input before any reads",async()=>{
+  for(const patch of [
+    {actor:{owner:false,uid:ownerUid}},
+    {actor:{owner:true,uid:"../bad"}},
+    {uid:"../bad"},
+    {requestId:"short"},
+    {nowMs:NaN},
+  ]) {
+    const db=new Db();
+    await assert.rejects(closure(db,patch),e=>[400,403].includes(e.status));
+    assert.equal(db.reads.length,0);
+  }
+});
+
+test("closure review is wired only to authenticated Owner and fresh auth",()=>{
+  const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
+  const gate=source.indexOf('if (["accountDeletionCompletedLogs"');
+  const closureRoute=source.indexOf('if (action === "accountDeletionClosureReadiness")');
+  const recent=source.indexOf('throw new AdminInboxError("recent_auth_required"');
+  assert.ok(gate>=0 && closureRoute>gate && recent>gate && closureRoute>recent);
+  assert.match(source.slice(gate,closureRoute),/if \(!actor\.owner\)/);
+  const helper=readFileSync("cloudflare-worker/src/account-deletion-closure-readiness.js","utf8");
+  assert.doesNotMatch(helper,/db\.commit\(|db\.runQuery\(|writeDelete\(|writeUpdate\(|deleteAuthUser\(|bucket\.delete\(/);
+  assert.match(helper,/destructiveAllowed: false/);
 });
