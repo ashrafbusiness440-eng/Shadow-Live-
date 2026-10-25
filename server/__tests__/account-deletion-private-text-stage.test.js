@@ -208,13 +208,13 @@ test("missing or unrelated admission and unelapsed grace never touch private mes
  }
 });
 
-test("primary private-text verification reads bounded seven exact records and 12 signoffs",async()=>{
+test("primary private-text verification reads seven records plus 18 signoff and withdrawal documents",async()=>{
  const db=new Db(),counts=[],before=db.get.bind(db);
  db.getMany=async(paths,tx)=>{
   counts.push(paths.length);
   return Promise.all(paths.map(path=>before(path,tx)));
  };
  await run(db);
- assert.deepEqual(counts,[7,12]);
+ assert.deepEqual(counts,[7,18]);
  assert.equal(db.commits.length,1);
 });
