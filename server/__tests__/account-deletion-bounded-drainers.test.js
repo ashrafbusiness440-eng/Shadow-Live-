@@ -126,6 +126,9 @@ test("stale request, missing approvals, holds and Owner block before index query
     d=>d.docs.get(userPath).role="owner",
     d=>d.docs.get(userPath).accountStatus="active",
     d=>d.docs.get(userPath).legalHold=true,
+    d=>d.docs.get(requestPath).appealPending=true,
+    d=>d.docs.get(checkpointPath).appealStatus="Under_Review",
+    d=>d.docs.get(userPath).appealPending=true,
     d=>d.docs.delete(requestPath),
   ];
   for(const mod of mods){const db=new Db();db.addNotices(2);mod(db);
