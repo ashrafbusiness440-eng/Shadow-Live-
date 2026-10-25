@@ -1524,7 +1524,7 @@ test("queued R2 job stops on pending external-I/O revocation intent BEFORE media
   }
 });
 
-test("queued R2 job verification batches five exact current-state reads before twelve signoffs",async()=>{
+test("queued R2 job verification batches six exact current-state reads before twelve signoffs",async()=>{
   const uid="bounded_cleanup_member_123",queries=[],sizes=[],transactions=[];
   const base={
     async runQuery(path){
@@ -1545,7 +1545,7 @@ test("queued R2 job verification batches five exact current-state reads before t
     return Promise.all(paths.map(path=>db.get(path,tx)));
   };
   assert.equal(await verifyAccountStorageCleanupJob(db,job),true);
-  assert.deepEqual(sizes,[5,12]);
+  assert.deepEqual(sizes,[6,12]);
   assert.ok(transactions.every(tx=>tx==="synthetic_cleanup_tx"));
   assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
 });
@@ -1574,4 +1574,42 @@ test("empty account R2 inventory never issues a completion receipt",async()=>{
   assert.equal(result.completionVerified,false);
   assert.equal(result.pendingReconciliation,true);
   assert.deepEqual(writes,[]);
+});
+
+test("request-wide non-permissive R2 holder blocks legacy job before media enumeration",async()=>{
+  const uid="fenced_storage_user_123456",requestId="certified_cleanup_blocked_hold_123";
+  const queries=[];
+  const base={
+    async runQuery(path){
+      queries.push(path);
+      if(path==="storage_account_cleanup_jobs")return [{
+        id:"blocked_hold_123",data:{ownerUid:uid,reason:"account_deleted"},
+      }];
+      if(path==="storage_objects")throw Error("must_not_enumerate_media");
+      throw Error("unexpected_query");
+    },
+    async get(){return {exists:false,data:null};},
+    async commit(){throw Error("must_never_commit");},
+  };
+  const db=certifiedCleanupDb(base);
+  const real=db.get.bind(db);
+  db.get=async(path,tx)=>{
+    if(path==="account_erasure_external_io_coordination_holds/"+
+      uid+"__"+requestId) {
+      return {exists:true,data:{
+        uid,requestId,state:"claimed_requires_external_interlock",
+        externalIoAllowed:false,completionVerified:false,
+      }};
+    }
+    return real(path,tx);
+  };
+  let deletes=0;
+  const result=await runDeletedAccountStorageCleanup(db,{
+    async delete(){deletes++;},
+  },{limit:5});
+  assert.equal(result.blocked,true);
+  assert.equal(result.deleted,0);
+  assert.equal(result.checked,0);
+  assert.equal(deletes,0);
+  assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
 });
