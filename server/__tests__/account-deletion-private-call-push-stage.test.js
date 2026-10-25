@@ -133,12 +133,18 @@ test("one-token stage never scans, calls Auth/FCM or leaks raw token in response
   assert.match(source, /destructiveAllowed !== true/);
 });
 
-test("late revoked push certification blocks a token mutation",async()=>{
-  const db=new Db();
-  db.docs.get("account_deletion_erasure_approvals/"+requestId+
-    "__play_billing").decision="revoked";
-  await assert.rejects(run(db),
-    e=>e.code==="erasure_transactional_certification_blocked");
-  assert.equal(db.docs.has(paths.device),true);
-  assert.equal(db.commits.length,0);
+test("revoking any of the six push certifications blocks the token write",async()=>{
+  const domains=[
+    "financial_settlement","play_billing","moderation_legal",
+    "shared_assets","content_storage_inventory","retention_policy",
+  ];
+  for(const domain of domains){
+    const db=new Db();
+    db.docs.get("account_deletion_erasure_approvals/"+requestId+
+      "__"+domain).decision="revoked";
+    await assert.rejects(run(db),
+      e=>e.code==="erasure_transactional_certification_blocked");
+    assert.equal(db.docs.has(paths.device),true);
+    assert.equal(db.commits.length,0);
+  }
 });
