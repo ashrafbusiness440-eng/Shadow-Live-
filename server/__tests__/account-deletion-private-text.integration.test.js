@@ -49,7 +49,12 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
   assert.equal((await theirs.get()).data().text,"Other person's message");
   assert.equal((await user.get()).data().diamonds,15);
   assert.equal((await evidence.get()).data().evidence,"Unmodified evidence");
-  await request.update({status:"cancelled"});
+  await request.update({appealPending:true});
+  await assert.rejects(redactDeletedPrivateTextMessage(workerDb,opts),
+    e=>e.code==="private_text_erasure_blocked");
+  assert.equal((await user.get()).data().diamonds,15);
+  assert.equal((await theirs.get()).data().text,"Other person's message");
+  await request.update({appealPending:false,status:"cancelled"});
   await assert.rejects(redactDeletedPrivateTextMessage(workerDb,opts),
     e=>e.code==="private_text_erasure_blocked");
  }finally{

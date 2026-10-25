@@ -122,6 +122,8 @@ test("media, protected evidence or malformed text block entire selected page",as
     d=>d.docs.get(msgPath+msgId(1)).legacyMediaKey="secret",
     d=>d.docs.get(msgPath+msgId(1)).receiverId="third_user_567",
     d=>d.docs.get(msgPath+msgId(1)).investigationHold=true,
+    d=>d.docs.get(msgPath+msgId(1)).appealPending=true,
+    d=>d.docs.get(msgPath+msgId(1)).appealStatus="OPEN",
     d=>d.docs.set("content_filter_flags/"+msgId(1),{evidence:"retain"}),
   ];
   for(const edit of cases){
@@ -140,6 +142,10 @@ test("cancelled request, role, holds, policies and invalid participants stop bef
     d=>d.docs.get(cp).privateMessageRetentionCleared=false,
     d=>d.docs.get(cp).legalEvidenceReviewComplete=false,
     d=>d.docs.get(cp).evidenceHold=true,
+    d=>d.docs.get(cp).appealStatus="Under_Review",
+    d=>d.docs.get(rp).appealPending=true,
+    d=>d.docs.get(up).appealPending=true,
+    d=>d.docs.get(chat).appealStatus="open",
     d=>d.docs.get(up).accountStatus="active",
     d=>d.docs.get(up).role="owner",
     d=>d.docs.get(up).authDeleted=true,

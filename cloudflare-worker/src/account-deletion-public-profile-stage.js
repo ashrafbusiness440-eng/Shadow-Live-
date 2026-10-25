@@ -1,11 +1,11 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // A single-document public identity cleanup primitive for the verified
 // erasure finalizer. NOT connected to HTTP, cron, or a production feature flag.
 // Never deletes users/{uid}, Auth, reports, wallets, financial ledgers or R2.
 const clean = value => String(value ?? "").trim();
 const uidPattern = /^[A-Za-z0-9_-]{3,128}$/;
 const requestIdPattern = /^[A-Za-z0-9_-]{12,180}$/;
-const held = d => [d?.legalHold, d?.retentionHold,
-  d?.deletionHold, d?.reviewHold].some(v => v === true);
+
 
 export class PublicProfileErasureError extends Error {
   constructor(code, status = 409) {

@@ -71,6 +71,9 @@ test("stale request, cancellation, holds, owner and missing approvals block all 
     d => { d.docs.get(paths.request).requestId = "old_request_1234567"; },
     d => { d.docs.get(paths.request).status = "cancelled"; },
     d => { d.docs.get(paths.request).reviewHold = true; },
+    d => { d.docs.get(paths.request).appealPending = true; },
+    d => { d.docs.get(paths.checkpoint).appealStatus = "Under_Review"; },
+    d => { d.docs.get(paths.user).appealPending = true; },
     d => { d.docs.get(paths.checkpoint).phase = "preflight_blocked"; },
     d => { d.docs.get(paths.checkpoint).destructiveAllowed = false; },
     d => { d.docs.get(paths.checkpoint).notificationRetentionCleared = false; },
@@ -79,6 +82,8 @@ test("stale request, cancellation, holds, owner and missing approvals block all 
     d => { d.docs.get(paths.user).role = "owner"; },
     d => { d.docs.get(paths.user).accountStatus = "active"; },
     d => { d.docs.get(paths.device).evidenceHold = true; },
+    d => { d.docs.get(paths.device).appealStatus = "open"; },
+    d => { d.docs.get(paths.owner).appealPending = true; },
     d => { d.docs.get(paths.owner).legalHold = true; },
     d => { d.docs.delete(paths.request); },
   ];

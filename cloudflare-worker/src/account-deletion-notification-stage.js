@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Account-owned notification cleanup, one pre-enumerated notification at a time.
 // Never deletes another recipient's notices or report/financial source records.
 // Internal only: no route, cron, or production executor currently invokes it.
@@ -5,9 +6,7 @@ const clean = value => String(value ?? "").trim();
 const uidOk = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const noticeOk = value => /^[A-Za-z0-9_-]{3,300}$/.test(clean(value));
-const held = data => [data?.reviewHold, data?.legalHold,
-  data?.retentionHold, data?.deletionHold, data?.evidenceHold]
-  .some(value => value === true);
+
 
 export class AccountNotificationErasureError extends Error {
   constructor(code, status = 409) {

@@ -43,6 +43,15 @@ test("profile-only deletion is idempotent and keeps accounts and financial evide
     assert.equal((await paths.user.get()).data().diamonds,3);
     assert.equal((await paths.ledger.get()).data().delta,100);
     assert.equal((await paths.evidence.get()).data().reason,"retained evidence");
+    // New appeals block even idempotent retries, not only fresh deletes.
+    await paths.profile.set({uid,displayName:"Protected",appealPending:true});
+    await assert.rejects(erasePublicProfileStage(workerDb,args),
+      e=>e.code==="public_profile_erasure_blocked");
+    assert.equal((await paths.profile.get()).data().displayName,"Protected");
+    await paths.profile.update({appealPending:false,appealStatus:"open"});
+    await assert.rejects(erasePublicProfileStage(workerDb,args),
+      e=>e.code==="public_profile_erasure_blocked");
+    assert.equal((await paths.ledger.get()).data().delta,100);
     // Even a retry of the old request must not succeed after cancellation.
     await paths.request.update({status:"cancelled"});
     await assert.rejects(erasePublicProfileStage(workerDb,args),

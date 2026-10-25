@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // INTERNAL ONLY: bounded, manually driven private-text redaction batches.
 // No API route, cron, polling, stage advancement or production executor.
 // Checkpoints created by the live account-delete lifecycle have
@@ -9,11 +10,7 @@ const clean = v => String(v ?? "").trim();
 const uidOk = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const requestOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const idOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
-const held = d => [
-  d?.legalHold, d?.retentionHold, d?.deletionHold,
-  d?.reviewHold, d?.evidenceHold, d?.investigationHold,
-  d?.reported,
-].some(x => x === true);
+
 const allowedText = new Set(["text", "animated_emoji"]);
 const safeFields = new Set([
   "senderId", "receiverId", "createdAt", "type", "deletedForEveryone",

@@ -52,6 +52,9 @@ test("request status, approvals, legal/report holds and Owner block",async()=>{
     d=>d.docs.get(reqPath).status="cancelled",
     d=>d.docs.get(reqPath).requestId="stale_request_12345678",
     d=>d.docs.get(reqPath).reviewHold=true,
+    d=>d.docs.get(reqPath).appealPending=true,
+    d=>d.docs.get(cpPath).appealStatus="Under_Review",
+    d=>d.docs.get(userPath).appealPending=true,
     d=>d.docs.get(cpPath).requestId="stale_request_12345678",
     d=>d.docs.get(cpPath).phase="preflight_blocked",
     d=>d.docs.get(cpPath).destructiveAllowed=false,
@@ -62,6 +65,7 @@ test("request status, approvals, legal/report holds and Owner block",async()=>{
     d=>d.docs.get(userPath).role="owner",
     d=>d.docs.get(userPath).accountStatus="active",
     d=>d.docs.get(noticePath).evidenceHold=true,
+    d=>d.docs.get(noticePath).appealStatus="open",
     d=>d.docs.delete(reqPath),
   ];
   for(const mod of mods){const db=new Db();mod(db);

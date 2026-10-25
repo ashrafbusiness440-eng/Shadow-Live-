@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Internal small-batch drainers for two previously gated one-document stages.
 // No route, cron, polling, completion receipt or production executor.
 import { eraseDeletedAccountNotification }
@@ -8,10 +9,7 @@ import { eraseDeletedPrivateCallPushToken }
 const clean = value => String(value ?? "").trim();
 const uidOk = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
-const held = data => [
-  data?.reviewHold, data?.legalHold, data?.retentionHold,
-  data?.deletionHold, data?.evidenceHold,
-].some(x => x === true);
+
 export const MAX_ACCOUNT_ERASURE_BATCH_ITEMS = 5;
 
 export class AccountErasureBatchError extends Error {

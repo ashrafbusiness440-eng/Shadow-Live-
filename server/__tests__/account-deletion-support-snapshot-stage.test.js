@@ -79,6 +79,9 @@ test("requires same current request, certified checkpoint, and processing user",
   const modifications = [
     db => db.docs.get("account_deletion_requests/" + uid).status = "review_ready",
     db => db.docs.get("account_deletion_requests/" + uid).reviewHold = true,
+    db => db.docs.get("account_deletion_requests/" + uid).appealPending = true,
+    db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).appealStatus = "Under_Review",
+    db => db.docs.get("users/" + uid).appealPending = true,
     db => db.docs.get("account_deletion_requests/" + uid).requestId = "old_request_id_999",
     db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).destructiveAllowed = false,
     db => db.docs.get("account_deletion_erasure_checkpoints/" + uid).phase = "preflight_blocked",
@@ -103,6 +106,7 @@ test("historical wealth or attraction with protected evidence never gets redacte
   for (const [path,flag] of [
     [wealthPath,"legalHold"],[attractionPath,"retentionHold"],
     [wealthPath,"evidenceHold"],[attractionPath,"investigationHold"],
+    [wealthPath,"appealPending"],
   ]) {
     const db = new Db();
     db.docs.get(path)[flag] = true;
@@ -114,6 +118,16 @@ test("historical wealth or attraction with protected evidence never gets redacte
   }
 });
 
+test("new appeal on retained counterpart support snapshot blocks redaction",async()=>{
+  for(const path of [wealthPath,attractionPath]){
+    const db=new Db();
+    db.docs.get(path).appealStatus="Open";
+    await assert.rejects(redact(db),
+      e=>e.code==="support_snapshot_retention_hold");
+    assert.equal(db.commits.length,0);
+    assert.equal(db.docs.get(wealthPath).displayName,"Legacy Recipient");
+  }
+});
 test("old or corrupt counterpart records fail closed without partial redaction", async () => {
   const db = new Db();
   db.docs.get(attractionPath).counterpartUid = "different_user";

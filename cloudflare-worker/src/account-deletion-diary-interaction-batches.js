@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Internal only: bounded resumable drain of one user's exact diary like/view
 // records using the independently guarded single-record erasure stage.
 // No route, cron, polling, Firebase Auth/R2 deletion or completion receipt.
@@ -8,10 +9,7 @@ const clean = v => String(v ?? "").trim();
 const uidOk = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const requestOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const diaryOk = v => /^[A-Za-z0-9_-]{3,220}$/.test(clean(v));
-const held = d => [
-  d?.reviewHold, d?.legalHold, d?.retentionHold, d?.deletionHold,
-  d?.evidenceHold, d?.investigationHold, d?.reported,
-].some(flag => flag === true);
+
 const collections = Object.freeze({ likes: "diary_likes", views: "diary_view_keys" });
 const hex = uid => Array.from(new TextEncoder().encode(uid),
   byte => byte.toString(16).padStart(2, "0")).join("");

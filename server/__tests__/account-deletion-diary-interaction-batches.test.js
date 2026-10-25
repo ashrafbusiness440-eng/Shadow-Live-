@@ -97,6 +97,8 @@ test("malformed or held second row blocks batch before any deletion",async()=>{
     d=>d.docs.get("diary_likes/owned_diary_likes_001__"+hx(uid)).diaryId=
       "unexpected_diary_001",
     d=>d.docs.get("diary_likes/owned_diary_likes_001__"+hx(uid)).legalHold=true,
+    d=>d.docs.get("diary_likes/owned_diary_likes_001__"+hx(uid)).appealPending=true,
+    d=>d.docs.get("diary_likes/owned_diary_likes_001__"+hx(uid)).appealStatus="open",
   ]){
     const db=new Db();db.add("likes",3);change(db);
     await assert.rejects(run(db),e=>
@@ -125,6 +127,9 @@ test("request/certification holds block before query",async()=>{
     d=>d.docs.get(cp).historicalDiaryCountersReviewed=false,
     d=>d.docs.get(cp).diaryInteractionRetentionCleared=false,
     d=>d.docs.get(cp).evidenceHold=true,
+    d=>d.docs.get(req).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="Under_Review",
+    d=>d.docs.get(user).appealPending=true,
     d=>d.docs.get(user).role="owner",
     d=>d.docs.get(user).authDeleted=true,
   ];
