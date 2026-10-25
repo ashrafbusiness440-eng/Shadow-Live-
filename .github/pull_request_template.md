@@ -19,6 +19,6 @@
 - **النشر بعد الدمج:** (يحدّث عند اكتماله فقط)
 - **بطاقات Trello الأصلية التي حدّثت:**
 
-مرجع القاعدة: [Reuse-First Engineering Standard](../docs/REUSE_FIRST_ENGINEERING_STANDARD.md).
+مرجع القاعدة: [Reuse-First Engineering Standard](https://github.com/ashrafbusiness440-eng/Shadow-Live-/blob/main/docs/REUSE_FIRST_ENGINEERING_STANDARD.md).
 
 > الوثائق فقط: يمكن وضع N/A في اختبارات runtime غير المطبقة، لكن اشرح قرار إعادة الاستخدام. لا تعلن اختبارًا أو نشرًا ناجحًا قبل التحقق.
