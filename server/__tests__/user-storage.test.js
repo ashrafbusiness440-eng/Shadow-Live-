@@ -724,7 +724,7 @@ test("deleted-account cleanup processes at most 25 storage objects per run", asy
   );
 });
 
-test("deleted-account cleanup closes the job after the final partial batch", async () => {
+test("account R2 page exhaustion cannot forge completion or remove queued job", async () => {
   const objects = [{
     id: "a".repeat(32),
     data: {
@@ -775,13 +775,22 @@ test("deleted-account cleanup closes the job after the final partial batch", asy
   assert.equal(result.checked, 1);
   assert.equal(result.deleted, 1);
   assert.equal(result.failed, 0);
+  assert.equal(result.blocked,true);
+  assert.equal(result.pendingReconciliation,true);
+  assert.equal(result.completionVerified,false);
+  assert.equal(result.reason,
+    "account_storage_final_inventory_reconciliation_required");
   assert.equal(
     commits.some(
       (write) =>
         write.op === "delete" &&
         write.path === "storage_account_cleanup_jobs/delete_op_final",
     ),
-    true,
+    false,
+  );
+  assert.equal(
+    commits.some(write=>write.data?.action==="completeDeletedAccountStorageCleanup"),
+    false,
   );
   assert.equal(
     commits.some(
@@ -1539,4 +1548,30 @@ test("queued R2 job verification batches five exact current-state reads before t
   assert.deepEqual(sizes,[5,12]);
   assert.ok(transactions.every(tx=>tx==="synthetic_cleanup_tx"));
   assert.deepEqual(queries,["storage_account_cleanup_jobs"]);
+});
+
+test("empty account R2 inventory never issues a completion receipt",async()=>{
+  const uid="empty_storage_user_123456",writes=[];
+  const db={
+    async runQuery(path) {
+      if(path==="storage_account_cleanup_jobs")return [{
+        id:"empty_storage_final",data:{ownerUid:uid,reason:"account_deleted"},
+      }];
+      if(path==="storage_objects")return [];
+      throw Error("unexpected_collection_"+path);
+    },
+    async get(){return {exists:false,data:null};},
+    writeCreate(path,data){return {op:"create",path,data};},
+    writeDelete(path){return {op:"delete",path};},
+    async commit(_,rows){writes.push(...rows);},
+  };
+  const result=await runDeletedAccountStorageCleanup(certifiedCleanupDb(db),{
+    async delete(){throw Error("bucket_must_never_be_touched");},
+  },{limit:5});
+  assert.equal(result.checked,0);
+  assert.equal(result.deleted,0);
+  assert.equal(result.blocked,true);
+  assert.equal(result.completionVerified,false);
+  assert.equal(result.pendingReconciliation,true);
+  assert.deepEqual(writes,[]);
 });
