@@ -99,8 +99,10 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     ]);
     const approved=outcomes.filter(x=>x.status==="fulfilled");
     assert.equal(approved.length,1,
-      JSON.stringify(outcomes.map(x=>x.status==="rejected"?
-        String(x.reason?.message):x.value)));
+      JSON.stringify(outcomes.map(x=>x.status==="rejected"?{
+        message:x.reason?.message,status:x.reason?.status,
+        code:x.reason?.code,details:x.reason?.details,
+      }:x.value)));
     assert.equal(outcomes.filter(x=>x.status==="rejected").length,1);
     assert.equal(approved[0].value.externalIoAllowed,false);
     const stored=await reservation.get();
@@ -158,7 +160,9 @@ test("emulator: REST transactional batchGet blocks revoked approval before any r
       uid,requestId,objectId,nowMs,actor:{
         owner:true,uid:"test_owner_rest_123456",
       },token:"rest_revoke_token_123456",
-    }),e=>e.code==="erasure_transactional_certification_blocked");
+    }),e=>assert.equal(e.code,"erasure_transactional_certification_blocked",
+      JSON.stringify({message:e.message,status:e.status,
+        details:e.details})));
     assert.equal((await docs[5].get()).exists,false);
   }finally{
     await Promise.all([...docs,...certificates].map(ref=>ref.delete()));
