@@ -246,3 +246,41 @@ test("transaction certification helper stays unexposed and does not write or del
   }
   assert.match(src,/destructiveAllowed: false/);
 });
+
+test("production-style bounded batchGet reads all signoffs in the exact write transaction",async()=>{
+  const db=new Db();
+  const calls=[];
+  db.getMany=async(paths,transaction)=>{
+    calls.push({paths,transaction});
+    return paths.map(path=>({
+      exists:db.docs.has(path),data:db.docs.get(path)||null,
+    }));
+  };
+  const result=await recheckTransaction(db,"tx",{
+    uid,requestId,requestedAt:new Date(requestedAtMs),nowMs,
+  });
+  assert.equal(result.validatedDomains,6);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].transaction,"tx");
+  assert.equal(calls[0].paths.length,12);
+  assert.equal(new Set(calls[0].paths).size,12);
+  assert.equal(db.getCalls.length,0);
+  assert.equal(db.commits,0);
+});
+
+test("bounded batchGet missing audit fails closed and never falls back to unlocked reads",async()=>{
+  const db=new Db();
+  const missing=certAudit("retention_policy");
+  db.getMany=async(paths,transaction)=>{
+    assert.equal(transaction,"tx");
+    return paths.map(path=>({
+      exists:path!==missing && db.docs.has(path),
+      data:path===missing?null:db.docs.get(path)||null,
+    }));
+  };
+  await assert.rejects(recheckTransaction(db,"tx",{
+    uid,requestId,requestedAtMs,nowMs,
+  }),e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.getCalls.length,0);
+  assert.equal(db.commits,0);
+});
