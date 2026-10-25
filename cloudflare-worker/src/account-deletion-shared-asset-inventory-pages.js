@@ -112,7 +112,7 @@ export async function inspectAccountSharedAssetsPage(db, {
         clean(um.agencyId) === row.id &&
         clean(um.role) === "owner" &&
         clean(um.status) === "active" &&
-        !held(m) && !held(um);
+        !held(value) && !held(m) && !held(um);
       items.push({
         id: row.id, kind: "agency",
         membershipConsistent,
