@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {readFileSync} from "node:fs";
-import {reserveAccountErasureExternalIo as reserve}
+import {reserveAccountErasureExternalIo as reserve,
+  requestAccountErasureExternalIoRevocationIntent as requestStop}
   from "../../cloudflare-worker/src/account-deletion-external-io-reservation.js";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
@@ -77,8 +78,8 @@ test("reservation is an exact one-record Firestore transaction and NEVER R2 dele
   assert.equal(db.commits[0].path,resPath);
   assert.equal(db.docs.get(resPath).state,"reserved_requires_external_interlock");
   assert.equal(db.docs.get(resPath).externalIoAllowed,false);
-  assert.equal(db.reads.length,18);
-  assert.equal(new Set(db.reads).size,18);
+  assert.equal(db.reads.length,19);
+  assert.equal(new Set(db.reads).size,19);
   assert.equal(db.reads.filter(x=>x.startsWith("account_deletion_erasure_approvals/")).length,6);
 });
 test("reserved token never permits duplicate or stale recovery",async()=>{
@@ -183,7 +184,7 @@ test("reservation groups six current-state and twelve audited-signoff reads into
   };
   const result=await reserve(db,opts());
   assert.equal(result.externalIoAllowed,false);
-  assert.deepEqual(calls.map(c=>c.count),[6,12]);
+  assert.deepEqual(calls.map(c=>c.count),[7,12]);
   assert.ok(calls.every(c=>c.tx==="tx_123"));
   assert.equal(db.commits.length,1);
 });
@@ -192,10 +193,64 @@ test("truncated transactional batchGet never creates any reservation",async()=>{
   const db=new Db(),real=db.getMany.bind(db);
   db.getMany=async(paths,tx)=>{
     const result=await real(paths,tx);
-    return paths.length===6 ? result.slice(0,5) : result;
+    return paths.length===7 ? result.slice(0,6) : result;
   };
   await assert.rejects(reserve(db,opts()),
     e=>e.code==="external_io_transaction_read_failed");
   assert.equal(db.commits.length,0);
   assert.equal(db.docs.has(resPath),false);
+});
+
+test("Owner revocation intent is immutable, audited and blocks any NEW reservation",async()=>{
+  const db=new Db();
+  const payload={uid,requestId,actor:{uid:owner,owner:true},nowMs};
+  const intentPath="account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId;
+  const auditPath="admin_audit_logs/erasure_external_io_revocation_intent_"+
+    requestId;
+  const stopped=await requestStop(db,payload);
+  assert.deepEqual(stopped,{
+    ok:true,revocationIntentCreated:true,revocationEffective:false,
+    pendingReconciliation:true,externalIoAllowed:false,
+  });
+  assert.equal(db.docs.get(intentPath).status,"pending_reconciliation");
+  assert.equal(db.docs.get(intentPath).revocationEffective,false);
+  assert.equal(db.docs.get(auditPath).action,
+    "accountErasureExternalIoRevocationIntent");
+  assert.equal(db.commits.length,2);
+  await assert.rejects(reserve(db,opts()),
+    e=>e.code==="external_io_revocation_intent_pending");
+  assert.equal(db.docs.has(resPath),false);
+  await assert.rejects(requestStop(db,payload),
+    e=>e.code==="external_io_revocation_requires_reconciliation");
+  assert.equal(db.commits.length,2);
+});
+test("revocation intent works without active signoffs but NEVER revokes them itself",async()=>{
+  const db=new Db();
+  const approvalPath="account_deletion_erasure_approvals/"+
+    requestId+"__play_billing";
+  const before={...db.docs.get(approvalPath)};
+  db.docs.get(approvalPath).decision="revoked";
+  const result=await requestStop(db,{
+    uid,requestId,actor:{uid:owner,owner:true},nowMs,
+  });
+  assert.equal(result.revocationEffective,false);
+  assert.equal(db.docs.get(approvalPath).decision,"revoked");
+  assert.equal(before.requestId,db.docs.get(approvalPath).requestId);
+  assert.equal(db.commits.length,2);
+});
+test("revocation-intent invalid targets and actors cannot write",async()=>{
+  const db=new Db();
+  for (const patch of [
+    {actor:{uid:owner,owner:false}},
+    {uid:"bad!"},
+    {requestId:"short"},
+    {nowMs:-1},
+  ]) {
+    await assert.rejects(requestStop(db,{
+      uid,requestId,actor:{uid:owner,owner:true},nowMs,...patch,
+    }));
+  }
+  assert.equal(db.reads.length,0);
+  assert.equal(db.commits.length,0);
 });
