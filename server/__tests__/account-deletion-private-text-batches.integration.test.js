@@ -6,6 +6,8 @@ import {getFirestore} from "firebase-admin/firestore";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 import {drainAccountPrivateTextPage as drain}
   from "../../cloudflare-worker/src/account-deletion-private-text-batches.js";
+import {seedEmulatorErasureCertificates}
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const store=getFirestore(app),db=cloudflareFirestoreAdapter(store);
@@ -15,6 +17,10 @@ const id=()=>randomUUID().replaceAll("-","").slice(0,18);
 test("emulator: 3/3/1 private text cursor pages redact author only; media and counterparty preserved",async()=>{
   const suffix=id(),uid="erase_text_"+suffix,other="other_text_"+suffix;
   const requestId="erase_message_req_"+suffix;
+  const nowMs=Date.now();
+  const certs=await seedEmulatorErasureCertificates(store,{
+    uid,requestId,nowMs,
+  });
   const conversationId="conversation_"+suffix;
   const request=store.doc("account_deletion_requests/"+uid);
   const checkpoint=store.doc("account_deletion_erasure_checkpoints/"+uid);
@@ -26,9 +32,10 @@ test("emulator: 3/3/1 private text cursor pages redact author only; media and co
   const heldMedia=conversation.collection("messages").doc("voice_"+suffix);
   const flag=store.doc("content_filter_flags/"+messages[0].id);
   const refs=[request,checkpoint,user,conversation,...messages,
-    theirMessage,heldMedia,flag];
+    theirMessage,heldMedia,flag,...certs];
   await Promise.all([
-    request.set({uid,requestId,status:"processing"}),
+    request.set({uid,requestId,status:"processing",
+      requestedAt:new Date(nowMs-40*86400_000)}),
     checkpoint.set({requestId,phase:"private_text",destructiveAllowed:true,
       privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}),
     user.set({role:"user",accountStatus:"deletion_processing",coins:700,
