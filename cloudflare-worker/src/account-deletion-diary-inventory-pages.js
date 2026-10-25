@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Internal read-only, bounded account-erasure diary inventory pages.
 // No HTTP route, cron, mutation, authorization to erase or completion proof.
 // A full legacy/mirror/comment-on-others inventory remains an independent gate.
@@ -5,10 +6,7 @@ const clean = value => String(value ?? "").trim();
 const uidOk = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const diaryOk = value => /^[A-Za-z0-9_-]{3,220}$/.test(clean(value));
-const held = d => [
-  d?.reviewHold, d?.legalHold, d?.retentionHold, d?.deletionHold,
-  d?.evidenceHold, d?.reported, d?.investigationHold,
-].some(flag => flag === true);
+
 export const MAX_DIARY_ERASURE_PAGE = 5;
 
 export class DiaryErasureInventoryError extends Error {
