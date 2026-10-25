@@ -2,18 +2,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import { erasePublicProfileStage } from "../../cloudflare-worker/src/account-deletion-public-profile-stage.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 const uid="member_to_erase_123";
 const requestId="request_deletion_1234567890";
 class Db {
   constructor() {
     this.docs=new Map([
-      ["account_deletion_requests/"+uid,{uid,requestId,status:"processing"}],
+      ["account_deletion_requests/"+uid,{uid,requestId,status:"processing",requestedAt:new Date(Date.now()-40*86400_000)}],
       ["account_deletion_erasure_checkpoints/"+uid,{requestId,phase:"public_profile",destructiveAllowed:true}],
       ["users/"+uid,{accountStatus:"deletion_processing",role:"user",diamonds:77}],
       ["public_profiles/"+uid,{uid,displayName:"Secret Member",profileImageUrl:"https://private.example/old.jpg"}],
       ["wallet_private/"+uid,{passwordHash:"do_not_touch"}],
       ["reports/hold_evidence_123",{reporterUid:uid,content:"preserve"}],
     ]);
+    seedSyntheticErasureCertificates(this.docs,{uid,requestId});
     this.writes=[];this.reads=[];this.rollbacks=0;
   }
   async beginTransaction() {return "transaction";}
@@ -91,4 +94,14 @@ test("no production entrypoint or broad scans, no Auth, storage or ledger calls"
   }
   assert.match(content,/destructiveAllowed !== true/);
   assert.match(content,/public_profile_erasure_blocked/);
+});
+
+test("a revoked certification blocks public profile deletion in the same transaction",async()=>{
+  const db=new Db();
+  db.docs.get("account_deletion_erasure_approvals/"+requestId+
+    "__financial_settlement").decision="revoked";
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.docs.has("public_profiles/"+uid),true);
+  assert.equal(db.writes.length,0);
 });
