@@ -3,6 +3,8 @@ import {test} from "node:test";
 import {readFileSync} from "node:fs";
 import {seedSyntheticErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
+import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 import {redactDeletedPrivateTextMessage} from "../../cloudflare-worker/src/account-deletion-private-text-stage.js";
 
 const uid="deleted_member_123", other="other_member_456";
@@ -16,10 +18,15 @@ class Db{
  constructor(){
    this.docs=new Map([
      [requestPath,{uid,requestId,status:"processing",
-       requestedAt:new Date(Date.now()-40*86400_000)}],
-     [checkpointPath,{requestId,phase:"private_text",destructiveAllowed:true,
+       requestedAt:new Date(Date.now()-40*86400_000),
+       eligibleAt:new Date(Date.now()-10*86400_000)}],
+     [checkpointPath,{uid,requestId,phase:"private_text",destructiveAllowed:true,
        privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}],
      [userPath,{role:"user",accountStatus:"deletion_processing",coins:700}],
+     ["admin_audit_logs/erasure_processing_start_"+requestId,{
+       action:"accountErasureProcessingAdmitted",targetId:uid,requestId,
+       certifiedDomains:[...domains],
+     }],
      [conversationPath,{participants:[uid,other],lastSenderId:uid,lastMessage:"Sensitive preview",
        unreadCounts:{[other]:1}}],
      [messagePath,{senderId:uid,receiverId:other,type:"text",text:"Private contents",
@@ -162,7 +169,7 @@ test("truncated private-message primary transaction snapshot fails closed",async
  const db=new Db();
  db.getMany=async(paths,tx)=>{
    const docs=await Promise.all(paths.map(path=>db.get(path,tx)));
-   return paths.length===6 ? docs.slice(0,5) : docs;
+   return paths.length===7 ? docs.slice(0,6) : docs;
  };
  await assert.rejects(run(db),e=>
    e.code==="private_text_transaction_read_failed");
@@ -176,4 +183,38 @@ test("stage cannot enumerate chats, call Auth/R2 or delete counterpart",()=>{
  assert.match(source,/writeMaskedUpdate\(/);
  assert.match(source,/privateMessageRetentionCleared!==true/);
  assert.match(source,/legalEvidenceReviewComplete!==true/);
+});
+
+test("missing or unrelated admission and unelapsed grace never touch private messages",async()=>{
+ const originalAudit="admin_audit_logs/erasure_processing_start_"+requestId;
+ const changes=[
+   db=>db.docs.delete(originalAudit),
+   db=>db.docs.get(originalAudit).requestId="other_request_123456789",
+   db=>db.docs.get(originalAudit).certifiedDomains=["play_billing"],
+   db=>db.docs.get(originalAudit).appealPending=true,
+   db=>db.docs.get(checkpointPath).uid="different_user_123456",
+   db=>db.docs.get(requestPath).eligibleAt=new Date(Date.now()+86400_000),
+   db=>db.docs.get(requestPath).requestedAt=new Date(Date.now()-86400_000),
+   db=>db.docs.delete(requestPath),
+ ];
+ for(const mutate of changes){
+  const db=new Db();mutate(db);
+  await assert.rejects(run(db),e=>[
+    "private_text_erasure_blocked","private_text_grace_not_elapsed",
+  ].includes(e.code));
+  assert.equal(db.commits.length,0);
+  assert.equal(db.docs.get(messagePath).text,"Private contents");
+  assert.equal(db.docs.get(conversationPath).lastMessage,"Sensitive preview");
+ }
+});
+
+test("primary private-text verification reads bounded seven exact records and 12 signoffs",async()=>{
+ const db=new Db(),counts=[],before=db.get.bind(db);
+ db.getMany=async(paths,tx)=>{
+  counts.push(paths.length);
+  return Promise.all(paths.map(path=>before(path,tx)));
+ };
+ await run(db);
+ assert.deepEqual(counts,[7,12]);
+ assert.equal(db.commits.length,1);
 });
