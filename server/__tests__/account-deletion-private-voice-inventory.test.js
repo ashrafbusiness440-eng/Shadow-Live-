@@ -111,6 +111,25 @@ test("moderation marker, sent draft, old schema and cleanup-in-flight require re
   assert.equal(page.items[1].draftPresent,true);
   assert.equal(page.items[3].state,"deleting");
 });
+test("pending appeals on voice metadata, draft, message and conversation require review",async()=>{
+  for(const [state,path] of [
+    ["sent","private_voice_objects/"+id(1)],
+    ["sent",chat+"/messages/"+voice(1)],
+    ["uploaded","private_voice_drafts/"+id(1)],
+    ["sent",chat],
+  ]) {
+    for(const patch of [{appealPending:true},{appealStatus:" OPEN "}]) {
+      const db=new Db();db.add(1,state);
+      Object.assign(db.docs.get(path),patch);
+      const page=await run(db);
+      assert.equal(page.items[0].needsReview,true);
+      assert.equal(page.completionVerified,false);
+      assert.equal(page.erasureAllowed,false);
+      assert.equal(JSON.stringify(page).includes("private-voice/"),false);
+      assert.equal(db.docs.get(up).coins,500);
+    }
+  }
+});
 test("corrupt indexed owner rejected, even if query returned a foreign object",async()=>{
   const db=new Db();db.add(1);
   db.docs.get("private_voice_objects/"+id(1)).ownerUid=peer;
@@ -126,6 +145,9 @@ test("cancelled or held account, wrong request and invalid actors block IO",asyn
     d=>d.docs.get(rp).requestId="other_request_123456789",
     d=>d.docs.get(cp).requestId="other_request_123456789",
     d=>d.docs.get(cp).legalHold=true,
+    d=>d.docs.get(rp).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="UNDER_REVIEW",
+    d=>d.docs.get(up).appealStatus="open",
     d=>d.docs.get(up).role="owner",
     d=>d.docs.get(up).authDeleted=true,
   ];
