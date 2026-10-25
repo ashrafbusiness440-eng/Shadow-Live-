@@ -75,6 +75,24 @@ test("retention flag or missing operation metadata cannot be mistaken for cleara
   assert.equal(page.comments[1].needsReview,true);
   assert.equal(page.exhaustive,false);
 });
+test("reopened appeals on other owner's diary, comment and operation force review",async()=>{
+  for(const path of [
+    "diaries/diary_other","diaries/diary_other/comments/comment_1",
+    "diary_operations/operation_00000001",
+  ]) {
+    const db=new Db();
+    db.docs.set("diaries/diary_other",{ownerUid:other,text:"private"});
+    db.putOperation(1);
+    db.docs.set("diaries/diary_other/comments/comment_1",
+      {authorUid:uid,diaryId:"diary_other",text:"hidden"});
+    db.docs.get(path).appealStatus=" OPEN ";
+    const page=await inspect(db,{uid,requestId,actor});
+    assert.equal(page.comments[0].needsReview,true);
+    assert.equal(page.erasureAllowed,false);
+    assert.equal(JSON.stringify(page).includes("hidden"),false);
+    assert.equal(db.writes,0);
+  }
+});
 test("owner mismatches block and never modify counterparties",async()=>{
   const db=new Db();db.docs.set("diaries/diary_other",{ownerUid:other});
   db.putOperation(1);
@@ -90,6 +108,9 @@ test("stale requests, holds and unauthorized or oversized cursors block before q
     db=>db.docs.get("account_deletion_requests/"+uid).requestId="rotated",
     db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).requestId="stale",
     db=>db.docs.get("account_deletion_requests/"+uid).legalHold=true,
+    db=>db.docs.get("account_deletion_requests/"+uid).appealPending=true,
+    db=>db.docs.get("account_deletion_erasure_checkpoints/"+uid).appealStatus="Under_Review",
+    db=>db.docs.get("users/"+uid).appealStatus="open",
     db=>db.docs.get("users/"+uid).role="owner",
   ];
   for(const change of modifications){
