@@ -45,3 +45,19 @@ test("production dispatcher never exposes guarded stages as a route or cron",()=
   assert.doesNotMatch(runner,/deleteAuthUser\(|bucket\.delete\(|setInterval\(/);
   assert.match(runner,/completionVerified: false/);
 });
+
+test("R2 account worker checks live certified job before media scan, each object, and job completion",()=>{
+  const src=readFileSync("cloudflare-worker/src/user-storage.js","utf8");
+  const start=src.indexOf("export async function runDeletedAccountStorageCleanup(");
+  const end=src.indexOf("export async function claimDueApprovedDiaryCleanup(",start);
+  assert.ok(start>=0&&end>start);
+  const worker=src.slice(start,end);
+  const calls=worker.match(/verifyAccountStorageCleanupJob\(db, job\)/g)||[];
+  assert.equal(calls.length,3);
+  assert.ok(worker.indexOf("verifyAccountStorageCleanupJob(db, job)") <
+    worker.indexOf('db.runQuery("storage_objects"'));
+  assert.ok(worker.indexOf("for (const item of objects)") <
+    worker.lastIndexOf("verifyAccountStorageCleanupJob(db, job)"));
+  assert.match(src,/recheckErasureCertificatesInTransaction\(db, tx,/);
+  assert.match(src,/requestedAt: request.data\?\.requestedAt/);
+});
