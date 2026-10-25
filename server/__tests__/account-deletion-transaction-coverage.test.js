@@ -61,3 +61,16 @@ test("R2 account worker checks live certified job before media scan, each object
   assert.match(src,/recheckErasureCertificatesInTransaction\(db, tx,/);
   assert.match(src,/requestedAt: request.data\?\.requestedAt/);
 });
+
+test("unguarded private-text erasure is explicitly disabled at the internal dispatcher",()=>{
+  const runner=readFileSync(
+    "cloudflare-worker/src/account-deletion-internal-phase-runner.js","utf8");
+  const check=runner.indexOf('if (step === "private_text") {');
+  const reads=runner.indexOf('db.get(requestPath)');
+  assert.ok(check>=0 && reads>check);
+  assert.match(runner,/private_text_erasure_transaction_guard_missing/);
+  // The original primitive is intentionally still unrouted. This safeguard
+  // must never be misreported as a completed private-message cleanup stage.
+  const module=source("private-text");
+  assert.equal(module.includes("recheckErasureCertificatesInTransaction"),false);
+});
