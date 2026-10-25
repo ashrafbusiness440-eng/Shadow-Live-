@@ -67,7 +67,12 @@ class _AccountDeletionOwnerReviewPageState
           data['status'] != 'review_ready') {
         throw StateError('الطلب تغيّر أو تم إلغاؤه. حدّث صندوق الإشعارات.');
       }
-      setState(() => _details = data);
+      setState(() {
+        _details = data;
+        // Never keep a stale approval snapshot after a hold/review refresh.
+        _closure = null;
+        _inventory = null;
+      });
     } catch (error) {
       if (mounted) {
         setState(() => _error = 'تعذر تحميل المراجعة: ${error.toString()}');
