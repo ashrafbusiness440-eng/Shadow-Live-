@@ -1,12 +1,19 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 import { recheckErasureCertificatesInTransaction }
   from "./account-deletion-erasure-transactional-cert-gate.js";
+import { REQUIRED_ERASURE_ADMISSION_DOMAINS }
+  from "./account-deletion-processing-admission.js";
 // Internal, intentionally unrouted erasure primitive for ONE already-enumerated
 // private text message. This cannot perform financial, media or R2 deletion.
 // The production preflight always has destructiveAllowed=false.
 const clean = v => String(v ?? "").trim();
 const validUid = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const validId = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
+const GRACE_MS = 30 * 86400_000;
+const toMs = v => v instanceof Date ? v.getTime()
+  : typeof v?.toDate === "function" ? v.toDate().getTime()
+  : typeof v === "string" ? Date.parse(v)
+  : Number.isFinite(v?.seconds) ? v.seconds*1000 : NaN;
 
 
 export class PrivateTextErasureError extends Error {
@@ -53,6 +60,7 @@ export async function redactDeletedPrivateTextMessage(db, {
       conversationPath,
       messagePath,
       "content_filter_flags/"+messageId,
+      "admin_audit_logs/erasure_processing_start_"+requestId,
     ];
     const snapshots=typeof db.getMany==="function"
       ? await db.getMany(paths,tx)
@@ -61,11 +69,13 @@ export async function redactDeletedPrivateTextMessage(db, {
         snapshots.some(doc=>!doc || typeof doc.exists!=="boolean")) {
       throw new PrivateTextErasureError("private_text_transaction_read_failed",503);
     }
-    const [request,checkpoint,user,conversation,message,filterFlag]=snapshots;
+    const [request,checkpoint,user,conversation,message,filterFlag,
+      admission]=snapshots;
     if (!request.exists || !checkpoint.exists || !user.exists ||
         clean(request.data?.uid)!==uid ||
         clean(request.data?.requestId)!==requestId ||
         clean(checkpoint.data?.requestId)!==requestId ||
+        clean(checkpoint.data?.uid)!==uid ||
         clean(request.data?.status)!=="processing" ||
         clean(checkpoint.data?.phase)!=="private_text" ||
         checkpoint.data?.destructiveAllowed!==true ||
@@ -73,15 +83,37 @@ export async function redactDeletedPrivateTextMessage(db, {
         checkpoint.data?.legalEvidenceReviewComplete!==true ||
         clean(user.data?.accountStatus)!=="deletion_processing" ||
         clean(user.data?.role)==="owner" || user.data?.authDeleted===true ||
-        held(request.data)||held(checkpoint.data)||held(user.data)) {
+        !admission.exists ||
+        clean(admission.data?.action)!=="accountErasureProcessingAdmitted" ||
+        clean(admission.data?.targetId)!==uid ||
+        clean(admission.data?.requestId)!==requestId ||
+        !Array.isArray(admission.data?.certifiedDomains) ||
+        admission.data.certifiedDomains.length!==
+          REQUIRED_ERASURE_ADMISSION_DOMAINS.length ||
+        !REQUIRED_ERASURE_ADMISSION_DOMAINS.every(domain=>
+          admission.data.certifiedDomains.includes(domain)) ||
+        held(request.data)||held(checkpoint.data)||held(user.data)||
+        held(admission.data)) {
       throw new PrivateTextErasureError("private_text_erasure_blocked");
+    }
+    // Admission audit, request grace period and all six current domain
+    // signoffs MUST be checked inside the very transaction that writes
+    // masked text. A forged checkpoint or stale admission cannot erase.
+    const requestedAtMs=toMs(request.data?.requestedAt);
+    const eligibleAtMs=toMs(request.data?.eligibleAt);
+    const nowMs=now.getTime();
+    if (!Number.isSafeInteger(requestedAtMs) ||
+        !Number.isSafeInteger(eligibleAtMs) ||
+        requestedAtMs<=0 || eligibleAtMs<requestedAtMs+GRACE_MS ||
+        nowMs<requestedAtMs+GRACE_MS || nowMs<eligibleAtMs) {
+      throw new PrivateTextErasureError("private_text_grace_not_elapsed");
     }
     // This same transaction contains the six approval+immutable-audit
     // reads AND any masked text/preview writes. A revoked financial, Play,
     // legal, media or retention signoff cannot be hidden by the earlier
     // nontransactional batch preflight, or by a duplicate tombstone.
     await recheckErasureCertificatesInTransaction(db,tx,{
-      uid,requestId,requestedAt:request.data?.requestedAt,nowMs:now.getTime(),
+      uid,requestId,requestedAtMs,nowMs,
     });
     if (!conversation.exists || held(conversation.data) ||
         !Array.isArray(conversation.data?.participants) ||
