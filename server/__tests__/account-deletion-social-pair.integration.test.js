@@ -41,6 +41,11 @@ test("emulator: delete only the four targeted follow/block records, retry idempo
    assert.deepEqual(result.map(x=>x.removed).sort((a,b)=>a-b),[0,4]);
    for(const ref of pair)assert.equal((await ref.get()).exists,false);
    assert.equal((await unrelated.get()).exists,true);
+   await user.update({appealStatus:" Under_Review "});
+   await assert.rejects(removeDeletedAccountSocialPair(dbAdapter,opts),
+     e=>e.code==="social_pair_erasure_blocked");
+   assert.equal((await unrelated.get()).exists,true);
+   await user.update({appealStatus:"closed"});
    await request.update({reviewHold:true});
    await assert.rejects(removeDeletedAccountSocialPair(dbAdapter,opts),
      e=>e.code==="social_pair_erasure_blocked");
