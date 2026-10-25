@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {readFileSync} from "node:fs";
+import {seedSyntheticErasureCertificates}
+  from "./helpers/account-erasure-synthetic-certificates.js";
 import {
   drainAccountPrivateTextPage as drain,
   MAX_PRIVATE_TEXT_ERASURE_BATCH_ITEMS,
@@ -19,13 +21,15 @@ const msgId=i=>"private_msg_"+String(i).padStart(4,"0");
 class Db {
   constructor(){
     this.docs=new Map([
-      [rp,{uid,requestId,status:"processing"}],
+      [rp,{uid,requestId,status:"processing",
+        requestedAt:new Date(Date.now()-40*86400_000)}],
       [cp,{requestId,phase:"private_text",destructiveAllowed:true,
         privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}],
       [up,{role:"user",accountStatus:"deletion_processing",coins:500}],
       [chat,{participants:[uid,other],lastSenderId:uid,
         lastMessage:"Private last preview",unreadCounts:{[other]:4}}],
     ]);
+    seedSyntheticErasureCertificates(this.docs,{uid,requestId,nowMs:Date.now()});
     this.queries=[];this.commits=[];this.txCalls=0;this.failOn=0;
   }
   add(n=12){
