@@ -107,6 +107,9 @@ test("missing or forged domain certification and audit deny admission",async()=>
       d=>{d.docs.get(approvePath(domain)).retentionHold=true;},
       d=>{d.docs.get(approvePath(domain)).investigationHold=true;},
       d=>{d.docs.get(approvePath(domain)).reported=true;},
+      d=>{d.docs.get(approvePath(domain)).appealPending=true;},
+      d=>{d.docs.get(approvePath(domain)).appealStatus="under_review";},
+      d=>{d.docs.get(domainAuditPath(domain)).appealStatus="open";},
       d=>{d.docs.get(domainAuditPath(domain)).investigationHold=true;},
       d=>{d.docs.get(domainAuditPath(domain)).reported=true;},
     ]) {
@@ -167,6 +170,12 @@ test("cancellation, request rotation, Owner, holds or advanced checkpoint block"
     d=>{d.docs.get(checkpointPath).reported=true;},
     d=>{d.docs.get(userPath).investigationHold=true;},
     d=>{d.docs.get(userPath).reported=true;},
+    d=>{d.docs.get(requestPath).appealPending=true;},
+    d=>{d.docs.get(requestPath).appealStatus="Open";},
+    d=>{d.docs.get(checkpointPath).appealPending=true;},
+    d=>{d.docs.get(checkpointPath).appealStatus="under_review";},
+    d=>{d.docs.get(userPath).appealPending=true;},
+    d=>{d.docs.get(userPath).appealStatus="pending";},
     d=>{d.docs.get(userPath).authDeleted=true;},
     d=>{d.docs.set(startAuditPath,{action:"unknown"});},
   ];
