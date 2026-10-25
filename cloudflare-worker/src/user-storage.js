@@ -4,6 +4,8 @@ import {
 import { finalImageEvidenceFields } from "./image-moderation-retention.js";
 import { recheckErasureCertificatesInTransaction }
   from "./account-deletion-erasure-transactional-cert-gate.js";
+import { accountDeletionHasActiveHold as held }
+  from "./account-deletion-active-holds.js";
 import { verifyPrivateChatImageMessage } from "./image-moderation-chat.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
@@ -1617,12 +1619,7 @@ export async function verifyAccountStorageCleanupJob(db, job) {
         db.get("account_erasure_external_io_revocation_intents/" +
           uid + "__" + requestId, tx),
       ]);
-    const held = d => [d?.legalHold, d?.retentionHold,
-      d?.deletionHold, d?.reviewHold, d?.evidenceHold,
-      d?.investigationHold, d?.reported, d?.appealPending,
-    ].some(x => x === true) ||
-      ["pending", "open", "under_review"].includes(
-        clean(d?.appealStatus).toLowerCase());
+
     // A durable pending stop request is independently authoritative even if
     // certificates remain approved. This also rejects missing/malformed reads.
     // It does NOT make the external bucket side effect atomic with Firestore.
