@@ -7,6 +7,7 @@ import { accountDeletionHasActiveHold as held }
 import {
   REQUIRED_ERASURE_ADMISSION_DOMAINS,
   validateErasureDomainSignoff,
+  erasureDomainWithdrawalAuditPath,
 } from "./account-deletion-processing-admission.js";
 import {
   drainAccountOwnedNotifications,
@@ -129,18 +130,20 @@ export async function runCertifiedInternalAccountErasurePage(db, {
       nowMs < requestedAtMs + GRACE_MS || nowMs < eligibleAtMs) {
     reject("internal_erasure_grace_not_elapsed");
   }
-  // Recheck ALL six current certificates, including appeal/retention holds,
-  // expiry and immutable audit, before invoking ANY existing erasure stage.
+  // Recheck ALL six current certificates AND their immutable withdrawal
+  // tombstones, including appeal/retention holds, before ANY erasure stage.
+  // Even a tampered approved flag cannot resurrect withdrawn authorization.
   const signed = await Promise.all(REQUIRED_ERASURE_ADMISSION_DOMAINS
     .flatMap(domain => [
       db.get(certificatePath(requestId, domain)),
       db.get(certificateAuditPath(requestId, domain)),
+      db.get(erasureDomainWithdrawalAuditPath(requestId, domain)),
     ]));
   for (let i = 0; i < REQUIRED_ERASURE_ADMISSION_DOMAINS.length; i++) {
     try {
-      validateErasureDomainSignoff(signed[i * 2], signed[i * 2 + 1], {
+      validateErasureDomainSignoff(signed[i * 3], signed[i * 3 + 1], {
         uid, requestId, domain: REQUIRED_ERASURE_ADMISSION_DOMAINS[i],
-        requestedAtMs, nowMs,
+        requestedAtMs, nowMs, withdrawal: signed[i * 3 + 2],
       });
     } catch {
       reject("internal_erasure_certification_invalid");

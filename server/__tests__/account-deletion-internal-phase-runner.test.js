@@ -321,3 +321,21 @@ test("missing tombstone batchGet slot never masquerades as no withdrawal",async(
   }),e=>e.code==="erasure_transactional_certification_blocked");
   assert.equal(db.commits,0);
 });
+
+test("internal stage runner rejects withdrawn certifications even if approved is restored",async()=>{
+  for(const domain of domains){
+    const db=new Db("notifications");
+    const withdrawal="admin_audit_logs/erasure_domain_withdrawal_"+
+      requestId+"__"+domain;
+    db.docs.set(withdrawal,{
+      action:"accountErasureDomainWithdrawnWithExternalIoStop",
+      targetId:uid,requestId,domain,
+    });
+    assert.equal(db.docs.get(certPath(domain)).decision,"approved");
+    await assert.rejects(run(db,opts("notifications")),
+      e=>e.code==="internal_erasure_certification_invalid");
+    assert.equal(db.queries.length,0);
+    assert.equal(db.commits,0);
+    assert.equal(db.docs.get(userPath).coins,800);
+  }
+});
