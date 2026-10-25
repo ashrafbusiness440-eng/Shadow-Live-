@@ -172,7 +172,7 @@ test("emulator: withdrawn financial approval is rejected inside an actual Firest
   }
 });
 
-test("emulator: concurrent signoff revocation after transactional read conflicts, retries and forbids deletion",
+test("emulator: competing revoke and erasure writes have a safe server-ordered outcome",
   {timeout:25000},async()=>{
   const suffix=sid();
   const uid="race_erasure_"+suffix,requestId="race_request_"+suffix;
@@ -180,6 +180,7 @@ test("emulator: concurrent signoff revocation after transactional read conflicts
   const nowMs=Date.parse("2026-10-25T12:00:00Z");
   const requestedAtMs=nowMs-50*86400_000;
   const notice=store.doc("notifications/race_owned_"+suffix);
+  const marker=store.doc("admin_audit_logs/race_test_commit_"+suffix);
   const signoffs=domains.flatMap(domain=>[
     store.doc("account_deletion_erasure_approvals/"+requestId+"__"+domain),
     store.doc("admin_audit_logs/erasure_domain_cert_"+requestId+"__"+domain),
@@ -191,7 +192,7 @@ test("emulator: concurrent signoff revocation after transactional read conflicts
   let attempts=0;
   try {
     await Promise.all([
-      notice.set({userId:uid,body:"must never be erased"}),
+      notice.set({userId:uid,body:"must survive if revocation commits first"}),
       ...domains.flatMap((domain,i)=>[
         signoffs[i*2].set({uid,requestId,domain,decision:"approved",
           signedByUid:ownerUid,signedAt:new Date(nowMs-10000),
@@ -211,25 +212,43 @@ test("emulator: concurrent signoff revocation after transactional read conflicts
         uid,requestId,requestedAtMs,nowMs,
       });
       if(attempts===1){
-        // Pause AFTER all six approvals were read INSIDE tx.
         reachedFirstRead();
         await proceed;
       }
+      // Test-only marker provides an authoritative server commit updateTime.
+      tx.create(marker,{kind:"isolated_erasure_race",uid});
       tx.delete(notice);
     },{maxAttempts:4});
     await firstRead;
-    // Revocation commits OUTSIDE the in-flight transaction while it is paused.
-    await signoffs[0].update({decision:"revoked"});
+    // Firestore server transactions can LOCK read documents. The revoker
+    // therefore MUST start competing before release, but MUST NOT be awaited
+    // while we hold the transaction open (that would deadlock).
+    const revoke=signoffs[0].update({decision:"revoked"});
     resumeFirst();
-    await assert.rejects(transaction,
-      e=>e.code==="erasure_transactional_certification_blocked");
-    // Firestore must NOT commit the stale transaction: its read-set conflicted
-    // with the revoked approval, then the retry saw the revoked state.
-    assert.ok(attempts>=2,"Firestore must retry after the changed read");
-    assert.equal((await notice.get()).exists,true);
+    const [outcome,revocation]=await Promise.all([
+      transaction.then(()=>({committed:true}),
+        error=>({committed:false,error})),
+      revoke,
+    ]);
+    assert.ok(attempts>=1);
     assert.equal((await signoffs[0].get()).data().decision,"revoked");
+    if(outcome.committed){
+      // Erasure may legitimately commit BEFORE the revocation: transaction
+      // locks serialize the writes. It must not commit AFTER revocation.
+      assert.equal((await notice.get()).exists,false);
+      const receipt=await marker.get();
+      assert.equal(receipt.exists,true);
+      assert.ok(receipt.updateTime.toMillis()<=revocation.writeTime.toMillis());
+    }else{
+      // If revoke won, the conflicting transaction must abort or retry into
+      // the now-revoked signoff. No erase or marker may have committed.
+      assert.ok(["erasure_transactional_certification_blocked",10,"aborted"]
+        .includes(outcome.error?.code),String(outcome.error));
+      assert.equal((await notice.get()).exists,true);
+      assert.equal((await marker.get()).exists,false);
+    }
   } finally {
     resumeFirst?.();
-    await Promise.all([notice,...signoffs].map(ref=>ref.delete()));
+    await Promise.all([notice,marker,...signoffs].map(ref=>ref.delete()));
   }
 });
