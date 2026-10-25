@@ -1605,7 +1605,11 @@ export async function verifyAccountStorageCleanupJob(db, job) {
     db.get("admin_audit_logs/r2_deletion_queue_" + requestId),
   ]);
   const held = d => [d?.legalHold, d?.retentionHold,
-    d?.deletionHold, d?.reviewHold].some(x => x === true);
+    d?.deletionHold, d?.reviewHold, d?.evidenceHold,
+    d?.investigationHold, d?.reported, d?.appealPending,
+  ].some(x => x === true) ||
+    ["pending", "open", "under_review"].includes(
+      clean(d?.appealStatus).toLowerCase());
   return request.exists && checkpoint.exists && user.exists && audit.exists &&
     clean(request.data?.uid) === uid &&
     clean(request.data?.requestId) === requestId &&
