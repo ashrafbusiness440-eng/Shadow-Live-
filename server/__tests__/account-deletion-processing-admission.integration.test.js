@@ -77,6 +77,21 @@ test("emulator: concurrent certified admission of suspended account preserves mo
     await user.update({appealPending:true});
     await assert.rejects(admitCertifiedAccountErasure(db,opts),
       error=>error.code==="erasure_admission_blocked");
+    await user.update({appealPending:false});
+    await certs[0].update({decision:"revoked"});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_domain_certification_missing_or_invalid");
+    await certs[0].update({decision:"approved",expiresAt:new Date(nowMs-1)});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_domain_certification_missing_or_invalid");
+    await certs[0].update({expiresAt:new Date(nowMs+86400_000)});
+    await certs[1].update({appealStatus:"open"});
+    await assert.rejects(admitCertifiedAccountErasure(db,opts),
+      error=>error.code==="erasure_domain_certification_missing_or_invalid");
+    await certs[1].update({appealStatus:"closed"});
+    const retry=await admitCertifiedAccountErasure(db,opts);
+    assert.equal(retry.duplicate,true);
+    assert.equal(retry.destructiveAllowed,false);
     assert.equal((await user.get()).data().coins,900);
     assert.equal((await checkpoint.get()).data().destructiveAllowed,false);
   }finally{

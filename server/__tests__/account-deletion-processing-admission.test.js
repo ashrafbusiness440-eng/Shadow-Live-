@@ -94,6 +94,40 @@ test("six certified domains atomically admit processing but cannot authorize des
   assert.deepEqual((await run(db)).duplicate,true);
   assert.equal(db.commits.length,1);
 });
+test("admission retry rechecks all six domain approvals and audits",async()=>{
+  for (const domain of REQUIRED_ERASURE_ADMISSION_DOMAINS) {
+    for (const mutate of [
+      d=>d.docs.delete(approvePath(domain)),
+      d=>d.docs.delete(domainAuditPath(domain)),
+      d=>{d.docs.get(approvePath(domain)).decision="revoked";},
+      d=>{d.docs.get(approvePath(domain)).expiresAt=new Date(nowMs-1);},
+      d=>{d.docs.get(approvePath(domain)).appealPending=true;},
+      d=>{d.docs.get(domainAuditPath(domain)).investigationHold=true;},
+      d=>{d.docs.get(domainAuditPath(domain)).appealStatus="open";},
+    ]) {
+      const db=new Db();
+      assert.equal((await run(db)).admitted,true);
+      mutate(db);
+      await assert.rejects(run(db),
+        e=>e.code==="erasure_domain_certification_missing_or_invalid");
+      assert.equal(db.commits.length,1);
+      assert.equal(db.docs.get(checkpointPath).destructiveAllowed,false);
+      assert.equal(db.docs.get(userPath).coins,300);
+      assert.equal(db.docs.get(userPath).diamonds,5);
+    }
+  }
+});
+test("retry refuses forged start audit domain list and changed due dates",async()=>{
+  const db=new Db();
+  assert.equal((await run(db)).admitted,true);
+  db.docs.get(startAuditPath).certifiedDomains=["financial_settlement"];
+  await assert.rejects(run(db),e=>e.code==="erasure_admission_state_conflict");
+  assert.equal(db.commits.length,1);
+  db.docs.get(startAuditPath).certifiedDomains=[...REQUIRED_ERASURE_ADMISSION_DOMAINS];
+  db.docs.get(requestPath).eligibleAt=new Date(nowMs+1);
+  await assert.rejects(run(db),e=>e.code==="erasure_grace_not_elapsed");
+  assert.equal(db.commits.length,1);
+});
 test("missing or forged domain certification and audit deny admission",async()=>{
   for (const domain of REQUIRED_ERASURE_ADMISSION_DOMAINS) {
     for (const mutate of [

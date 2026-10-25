@@ -71,7 +71,7 @@ function checkSignoff(approval, audit, { uid, requestId, domain,
 /**
  * Admits only a fully certified CURRENT request to non-destructive processing.
  * All six domain certificates must already exist, with matching immutable
- * audit records. This routine cannot create/approve those documents itself.
+ * audit records, including on duplicate/retry calls. This routine cannot create/approve those documents itself.
  * Even after admission, checkpoint.destructiveAllowed stays FALSE.
  *
  * Only a separately verified backend Owner caller may use this internal API.
@@ -112,22 +112,25 @@ export async function admitCertifiedAccountErasure(db, {
         held(r) || held(c) || held(u)) {
       throw new AccountErasureAdmissionError("erasure_admission_blocked");
     }
-    if (r.status === "processing" && c.phase === "processing_admitted" &&
-        c.destructiveAllowed === false &&
-        u.accountStatus === "deletion_processing" &&
-        startAudit.exists &&
-        clean(startAudit.data?.requestId) === requestId &&
-        clean(startAudit.data?.targetId) === uid &&
-        clean(startAudit.data?.action) === "accountErasureProcessingAdmitted") {
-      await db.rollback(tx);
-      return { ok: true, admitted: false, duplicate: true,
-        phase: "processing_admitted", destructiveAllowed: false };
-    }
-    if (r.status !== "review_ready" || c.phase !== "preflight_blocked" ||
-        c.destructiveAllowed !== false ||
-        !["", "active", "suspended", "banned", "disabled"].includes(
-          clean(u.accountStatus)) ||
-        startAudit.exists) {
+    const duplicate = r.status === "processing" &&
+      c.phase === "processing_admitted" &&
+      c.destructiveAllowed === false &&
+      u.accountStatus === "deletion_processing" &&
+      startAudit.exists &&
+      clean(startAudit.data?.requestId) === requestId &&
+      clean(startAudit.data?.targetId) === uid &&
+      clean(startAudit.data?.action) === "accountErasureProcessingAdmitted" &&
+      Array.isArray(startAudit.data?.certifiedDomains) &&
+      startAudit.data.certifiedDomains.length ===
+        REQUIRED_ERASURE_ADMISSION_DOMAINS.length &&
+      REQUIRED_ERASURE_ADMISSION_DOMAINS.every(domain =>
+        startAudit.data.certifiedDomains.includes(domain));
+    if (!duplicate &&
+        (r.status !== "review_ready" || c.phase !== "preflight_blocked" ||
+         c.destructiveAllowed !== false ||
+         !["", "active", "suspended", "banned", "disabled"].includes(
+           clean(u.accountStatus)) ||
+         startAudit.exists)) {
       throw new AccountErasureAdmissionError("erasure_admission_state_conflict");
     }
     const requestedAtMs = ms(r.requestedAt);
@@ -150,6 +153,14 @@ export async function admitCertifiedAccountErasure(db, {
         domain: REQUIRED_ERASURE_ADMISSION_DOMAINS[i],
         requestedAtMs, nowMs,
       });
+    }
+    // Even idempotent retries must revalidate every current certificate and
+    // audit: a revoked, expired or held approval can never return success.
+    // This path is read-only and never advances an erasure stage.
+    if (duplicate) {
+      await db.rollback(tx);
+      return { ok: true, admitted: false, duplicate: true,
+        phase: "processing_admitted", destructiveAllowed: false };
     }
     const now = new Date(nowMs);
     await db.commit(tx, [
