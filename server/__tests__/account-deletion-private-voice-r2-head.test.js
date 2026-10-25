@@ -84,14 +84,18 @@ test("protected and wrong-linked sent message block before R2 access",async()=>{
   const mutations=[
     d=>d.docs.set("content_filter_flags/"+messageId,{evidence:"protected"}),
     d=>d.docs.get(msg).legalHold=true,
+    d=>d.docs.get(msg).appealPending=true,
+    d=>d.docs.get(msg).appealStatus="open",
     d=>d.docs.get(msg).receiverId="third_person_123",
     d=>d.docs.get(msg).sizeBytes=100,
     d=>d.docs.get(msg).unexpectedAttachment="private_url",
     d=>d.docs.get(chat).investigationHold=true,
+    d=>d.docs.get(chat).appealPending=true,
     d=>d.docs.get(chat).participants=[uid,uid],
     d=>d.docs.set(draft,{ownerUid:uid}),
     d=>d.docs.get(op).storageKey="other/account/secret.wav",
     d=>d.docs.get(op).evidenceHold=true,
+    d=>d.docs.get(op).appealStatus="Under_Review",
     d=>d.docs.get(op).unexpected="old_media",
     d=>d.docs.get(op).ownerUid=other,
     d=>d.docs.get(op).state="deleting",
@@ -107,6 +111,7 @@ test("invalid draft and stale/held request block R2",async()=>{
     d=>d.docs.delete(draft),
     d=>d.docs.get(draft).storageKey="different_path",
     d=>d.docs.get(draft).legalHold=true,
+    d=>d.docs.get(draft).appealPending=true,
     d=>d.docs.get(draft).extraPrivateField="x",
   ];
   for(const mutate of modifications){
@@ -119,6 +124,9 @@ test("invalid draft and stale/held request block R2",async()=>{
     d=>d.docs.get(rp).requestId="other_request_12345",
     d=>d.docs.get(cp).uid="unknown_user_321",
     d=>d.docs.get(cp).evidenceHold=true,
+    d=>d.docs.get(rp).appealPending=true,
+    d=>d.docs.get(cp).appealStatus="OPEN",
+    d=>d.docs.get(up).appealStatus="under_review",
     d=>d.docs.get(up).role="owner",
     d=>d.docs.get(up).authDeleted=true,
   ]){
