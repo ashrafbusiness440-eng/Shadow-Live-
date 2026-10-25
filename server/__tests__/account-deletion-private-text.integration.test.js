@@ -5,6 +5,8 @@ import {deleteApp,getApps,initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 import {redactDeletedPrivateTextMessage} from "../../cloudflare-worker/src/account-deletion-private-text-stage.js";
+import {seedEmulatorErasureCertificates}
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app), workerDb=cloudflareFirestoreAdapter(db);
@@ -22,8 +24,13 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
  const user=db.doc("users/"+uid);
  const evidence=db.doc("reports/report_"+suffix);
  const opts={uid,requestId,conversationId,messageId};
+ const nowMs=Date.now();
+ const certs=await seedEmulatorErasureCertificates(db,{
+   uid,requestId,nowMs,
+ });
  await Promise.all([
-   request.set({uid,requestId,status:"processing"}),
+   request.set({uid,requestId,status:"processing",
+     requestedAt:new Date(nowMs-40*86400_000)}),
    checkpoint.set({requestId,phase:"private_text",destructiveAllowed:true,
      privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}),
    user.set({role:"user",accountStatus:"deletion_processing",diamonds:15}),
@@ -49,6 +56,15 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
   assert.equal((await theirs.get()).data().text,"Other person's message");
   assert.equal((await user.get()).data().diamonds,15);
   assert.equal((await evidence.get()).data().evidence,"Unmodified evidence");
+  // Revoking an independently audited Play signoff also blocks a
+  // duplicate/tombstone retry; it cannot report certification success.
+  const play= db.doc("account_deletion_erasure_approvals/"+
+    requestId+"__play_billing");
+  await play.update({decision:"revoked"});
+  await assert.rejects(redactDeletedPrivateTextMessage(workerDb,opts),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal((await theirs.get()).data().text,"Other person's message");
+  await play.update({decision:"approved"});
   await request.update({appealPending:true});
   await assert.rejects(redactDeletedPrivateTextMessage(workerDb,opts),
     e=>e.code==="private_text_erasure_blocked");
@@ -58,7 +74,7 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
   await assert.rejects(redactDeletedPrivateTextMessage(workerDb,opts),
     e=>e.code==="private_text_erasure_blocked");
  }finally{
-  await Promise.all([own,theirs,conversation,request,checkpoint,user,evidence]
-    .map(ref=>ref.delete()));
+  await Promise.all([own,theirs,conversation,request,checkpoint,user,evidence,
+    ...certs].map(ref=>ref.delete()));
  }
 });
