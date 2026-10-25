@@ -120,12 +120,46 @@ test("emulator: actual Cloudflare REST transactions admit at most one I/O reserv
     const args=token=>({uid,requestId,objectId,actor:{
       uid:owner,owner:true,
     },token,nowMs});
-    // Two completely separate copies of the actual REST adapter, not an
-    // in-memory serial queue. Firestore must resolve the create-only conflict.
-    const outcomes=await Promise.allSettled([
-      reserve(firestoreClient(env),args("rest_worker_one_token_123456")),
-      reserve(firestoreClient(env),args("rest_worker_two_token_123456")),
-    ]);
+    // The two real REST clients still overlap, but only AFTER the first
+    // has finished its snapshot and reached the commit boundary. Without
+    // bounded orchestration, two independently locked Emulator REST reads
+    // sometimes deadlock until Firestore's 85-second test timeout. We do
+    // NOT retry a delete, waive a fence, or fake any Firestore response.
+    let beginCommit,releaseCommit;
+    const firstAtCommit=new Promise(resolve=>{beginCommit=resolve;});
+    const commitBarrier=new Promise(resolve=>{releaseCommit=resolve;});
+    const firstAdapter=firestoreClient(env);
+    const winningAdapter={...firstAdapter,
+      async commit(...params){
+        beginCommit();
+        await commitBarrier;
+        return firstAdapter.commit(...params);
+      },
+    };
+    const first=reserve(winningAdapter,args("rest_worker_one_token_123456"));
+    const watched=first.then(value=>({ok:true,value}),
+      error=>({ok:false,error}));
+    let second;
+    let outcomes;
+    try{
+      await Promise.race([
+        firstAtCommit,
+        watched.then(result=>{
+          if(!result.ok)throw result.error;
+          throw Error("first_reservation_finished_before_commit_boundary");
+        }),
+      ]);
+      // Start the other independent client while the first real Firestore
+      // transaction is still open, then release immediately to avoid the
+      // Emulator's pathological pair of mutually blocked lock waits.
+      second=reserve(firestoreClient(env),
+        args("rest_worker_two_token_123456"));
+      releaseCommit();
+      outcomes=await Promise.allSettled([first,second]);
+    }finally{
+      releaseCommit();
+      await Promise.allSettled([first,...(second?[second]:[])]);
+    }
     const approved=outcomes.filter(x=>x.status==="fulfilled");
     assert.equal(approved.length,1,
       JSON.stringify(outcomes.map(x=>x.status==="rejected"?{
