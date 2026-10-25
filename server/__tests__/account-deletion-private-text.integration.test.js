@@ -7,6 +7,8 @@ import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter
 import {redactDeletedPrivateTextMessage} from "../../cloudflare-worker/src/account-deletion-private-text-stage.js";
 import {seedEmulatorErasureCertificates}
   from "./helpers/account-erasure-synthetic-certificates.js";
+import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app), workerDb=cloudflareFirestoreAdapter(db);
@@ -23,6 +25,7 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
  const checkpoint=db.doc("account_deletion_erasure_checkpoints/"+uid);
  const user=db.doc("users/"+uid);
  const evidence=db.doc("reports/report_"+suffix);
+ const admission=db.doc("admin_audit_logs/erasure_processing_start_"+requestId);
  const opts={uid,requestId,conversationId,messageId};
  const nowMs=Date.now();
  const certs=await seedEmulatorErasureCertificates(db,{
@@ -30,8 +33,9 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
  });
  await Promise.all([
    request.set({uid,requestId,status:"processing",
-     requestedAt:new Date(nowMs-40*86400_000)}),
-   checkpoint.set({requestId,phase:"private_text",destructiveAllowed:true,
+     requestedAt:new Date(nowMs-40*86400_000),
+     eligibleAt:new Date(nowMs-10*86400_000)}),
+   checkpoint.set({uid,requestId,phase:"private_text",destructiveAllowed:true,
      privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}),
    user.set({role:"user",accountStatus:"deletion_processing",diamonds:15}),
    conversation.set({participants:[uid,other],lastSenderId:uid,lastMessage:"Private contents"}),
@@ -39,6 +43,8 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
      vipLevel:1,createdAt:new Date("2026-10-01T00:00:00Z")}),
    theirs.set({senderId:other,receiverId:uid,type:"text",text:"Other person's message"}),
    evidence.set({reporterUid:other,targetUid:uid,evidence:"Unmodified evidence"}),
+   admission.set({action:"accountErasureProcessingAdmitted",
+     targetId:uid,requestId,certifiedDomains:[...domains]}),
  ]);
  try{
   const results=await Promise.all([
@@ -75,6 +81,6 @@ test("emulator: redact only a deleted sender's private text, retry-safe, hold-aw
     e=>e.code==="private_text_erasure_blocked");
  }finally{
   await Promise.all([own,theirs,conversation,request,checkpoint,user,evidence,
-    ...certs].map(ref=>ref.delete()));
+    admission,...certs].map(ref=>ref.delete()));
  }
 });
