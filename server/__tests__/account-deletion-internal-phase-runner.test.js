@@ -183,3 +183,66 @@ test("dispatcher has no production route, scheduling, Auth delete or R2 operatio
   assert.match(src,/c\.destructiveAllowed !== true/);
   assert.match(src,/completionVerified: false/);
 });
+
+import {
+  recheckErasureCertificatesInTransaction as recheckTransaction,
+} from "../../cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js";
+
+test("transaction certificate guard reuses all six approvals in the supplied tx, without writes",async()=>{
+  const db=new Db();
+  const tx="certificate_tx_123";
+  const originalGet=db.get.bind(db);
+  const checked=[];
+  db.get=async(path,actualTx)=>{
+    assert.equal(actualTx,tx);
+    checked.push(path);
+    return originalGet(path);
+  };
+  const result=await recheckTransaction(db,tx,{
+    uid,requestId,requestedAtMs,nowMs,
+  });
+  assert.deepEqual(result,{
+    validAtTransactionRead:true,validatedDomains:6,
+    destructiveAllowed:false,completionVerified:false,
+  });
+  assert.equal(checked.length,12);
+  assert.equal(db.queries.length,0);
+  assert.equal(db.commits,0);
+});
+
+test("transaction certificate guard rejects missing tx before reading",async()=>{
+  const db=new Db();
+  await assert.rejects(
+    recheckTransaction(db,null,{uid,requestId,requestedAtMs,nowMs}),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.getCalls.length,0);
+});
+
+test("transaction certificate guard rejects each revoked domain and late appeal",async()=>{
+  for (const domain of domains) {
+    for (const mutation of [
+      d=>d.docs.get(certPath(domain)).decision="revoked",
+      d=>d.docs.get(certPath(domain)).appealPending=true,
+      d=>d.docs.delete(certAudit(domain)),
+    ]) {
+      const db=new Db();
+      mutation(db);
+      await assert.rejects(recheckTransaction(db,"tx",{
+        uid,requestId,requestedAtMs,nowMs,
+      }),e=>e.code==="erasure_transactional_certification_blocked");
+      assert.equal(db.commits,0);
+      assert.equal(db.queries.length,0);
+    }
+  }
+});
+
+test("transaction certification helper stays unexposed and does not write or delete",()=>{
+  const src=readFileSync(
+    "cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js","utf8");
+  const route=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
+  assert.doesNotMatch(route,/account-deletion-erasure-transactional-cert-gate/);
+  for (const write of ["db.commit(", "db.writeDelete(", "bucket.delete(", "deleteAuthUser("]) {
+    assert.equal(src.includes(write), false);
+  }
+  assert.match(src,/destructiveAllowed: false/);
+});

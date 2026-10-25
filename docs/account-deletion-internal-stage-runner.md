@@ -93,3 +93,24 @@ notification stage processes at most five records, retry preserves the
 counterparty and financial balances, and no result claims completed deletion.
 
 No Android APK rebuild is required for this Worker-only internal tranche.
+
+## Follow-up: transaction-scoped approval recheck (implementation scaffold, OFF)
+
+`account-deletion-erasure-transactional-cert-gate.js` introduces an internal
+`recheckErasureCertificatesInTransaction(db, tx, {uid, requestId,
+requestedAtMs, nowMs})` function. It reuses the six existing
+`validateErasureDomainSignoff` rules and fetches exactly the twelve approval
+and immutable-audit documents with the **supplied transaction**. The function
+does not write, lease, issue approval, authorize erasure, create routes or
+run a stage; its return explicitly says `destructiveAllowed: false` and
+`completionVerified: false`.
+
+This is only a reusable prerequisite for future *same-transaction*,
+per-record stage integration. It does **not** yet prevent the documented
+post-preflight revocation race: none of the five destructive adapters invokes
+the helper and production remains OFF. Before activation, integrate
+request/user/checkpoint/target-record hold checks AND this shared six-domain
+certification check in the **same stage commit transaction**, prove Firestore
+conflict/retry behavior under simultaneous revocation, and implement durable,
+audited stage leasing and independent real signoffs. The existing up-to-five
+batch size, 30-day grace and no-finalization guard remain unchanged.
