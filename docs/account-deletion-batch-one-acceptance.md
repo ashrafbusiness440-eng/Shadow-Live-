@@ -163,3 +163,31 @@ admin route. Real revocation writers, an in-flight holder protocol and
 explicit reconciliation still must be integrated and proven. No one may
 flip `ACCOUNT_ERASURE_R2_FENCE_READY` or `destructiveAllowed` on the
 strength of these tests. First-batch gates **1/2/3/5 remain open**.
+
+### Gate 1 incremental safety verification (still NOT accepted)
+
+The request-specific revocation-intent document must be read as one of the
+**seven** exact Firestore transaction snapshots used by any new object
+reservation. A malformed seventh slot (missing, null, non-boolean `exists`)
+must fail closed, not look like a missing stop request. Node regressions
+assert no writes in these cases. Actual Cloudflare REST + Firestore Emulator
+acceptance additionally checks that an Owner stop intent recorded *after*
+one reservation blocks reserving a **different** object, even if a synthetic
+approval is subsequently restored. This is NOT a proof of external side
+effect cancellation.
+
+The existing account-cleanup queue verifier also checks the same durable
+pending intent inside its bounded read-only Firestore verification
+transaction, before it may enumerate storage objects, before each object
+and before completion. A held or malformed response rejects the job. The
+existing shared `accountDeletionHasActiveHold` policy is reused instead
+of maintaining another separate hold list. This is defense-in-depth:
+the scheduled account-erasure R2 path remains independently disabled by
+`ACCOUNT_ERASURE_R2_FENCE_READY=false`, while ordinary unrelated storage
+maintenance remains unaffected.
+
+Still missing: an independent actual approval-revocation writer; a durable
+in-flight holder barrier with cancellation and crash/timeout reconciliation;
+safe storage/agency disposition; authorized reviewer evidence; and the
+private-text same-transaction certification guard. **No live R2 delete,
+approval release, Firebase Auth deletion or final completion receipt.**
