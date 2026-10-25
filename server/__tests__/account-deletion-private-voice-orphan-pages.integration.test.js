@@ -71,10 +71,19 @@ test("emulator: scoped R2 listing reports missing metadata, leaves other user/au
     assert.equal((await evidence.get()).data().evidence,"protected original");
     assert.equal((await conversation.get()).data().lastMessage,"🎤 voice");
     assert.equal((await user.get()).data().coins,400);
-    await request.update({legalHold:true});
+    await metadata[0].update({appealStatus:"open"});
+    const appealed=await inspect(db,r2,opts);
+    assert.equal(appealed.items[0].needsReview,true);
+    assert.equal(appealed.erasureAllowed,false);
+    assert.equal(calls.length,3);
+    await request.update({appealPending:true});
     await assert.rejects(inspect(db,r2,opts),
       e=>e.code==="private_voice_orphan_review_blocked");
-    assert.equal(calls.length,2);
+    assert.equal(calls.length,3);
+    await request.update({appealPending:false,legalHold:true});
+    await assert.rejects(inspect(db,r2,opts),
+      e=>e.code==="private_voice_orphan_review_blocked");
+    assert.equal(calls.length,3);
   } finally {
     await Promise.all(refs.map(ref=>ref.delete()));
   }

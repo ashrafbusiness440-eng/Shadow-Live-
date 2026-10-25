@@ -66,7 +66,16 @@ test("emulator: private conversations and authored message cursor pages keep cou
     assert.equal((await theirMessage.get()).data().text,"counterparty private text");
     assert.equal((await conversation.get()).data().lastMessage,"Sensitive preview");
     assert.equal((await user.get()).data().coins,750);
-    await request.update({status:"cancelled"});
+    await messages[2].update({appealPending:true});
+    const appealed=await inspect(db,{uid,requestId,actor,
+      kind:"authored_messages",conversationId,limit:3});
+    assert.equal(appealed.items[2].needsReview,true);
+    assert.equal(appealed.erasureAllowed,false);
+    await request.update({appealStatus:"Under_Review"});
+    await assert.rejects(inspect(db,{uid,requestId,actor}),
+      e=>e.code==="private_inventory_review_blocked");
+    assert.equal((await theirMessage.get()).data().text,"counterparty private text");
+    await request.update({appealStatus:"closed",status:"cancelled"});
     await assert.rejects(inspect(db,{uid,requestId,actor}),
       e=>e.code==="private_inventory_review_blocked");
   } finally {

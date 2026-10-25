@@ -83,6 +83,16 @@ test("emulator: index privately owned voice objects; preserve counterpart voice 
     assert.equal((await otherObj.get()).data().ownerUid,other);
     assert.equal((await chat.get()).data().lastMessage,"🎤 Voice message");
     assert.equal((await user.get()).data().coins,321);
+    await request.update({appealPending:true});
+    await assert.rejects(inspect(db,{uid,requestId,actor}),
+      e=>e.code==="private_voice_inventory_review_blocked");
+    await request.update({appealPending:false});
+    await chat.update({appealStatus:"under_review"});
+    const heldPage=await inspect(db,{uid,requestId,actor,limit:3});
+    assert.equal(heldPage.items.every(x=>x.needsReview),true);
+    assert.equal(heldPage.erasureAllowed,false);
+    assert.equal((await otherObj.get()).data().ownerUid,other);
+    await chat.update({appealStatus:"closed"});
     await request.update({legalHold:true});
     await assert.rejects(inspect(db,{uid,requestId,actor}),
       e=>e.code==="private_voice_inventory_review_blocked");

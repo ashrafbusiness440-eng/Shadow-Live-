@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // INTERNAL ONLY: read-only, five-object R2 listing scoped to ONE verified
 // private conversation and ONE deleting user. No global bucket scan,
 // R2 get/head/delete, timer, Auth changes or account-erasure authorization.
@@ -6,10 +7,7 @@ const uidOk = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const reqOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const chatOk = v => /^[A-Za-z0-9_-]{1,180}$/.test(clean(v));
 const objectOk = v => /^[a-f0-9]{32}$/.test(clean(v));
-const held = d => [
-  d?.reviewHold, d?.legalHold, d?.retentionHold, d?.deletionHold,
-  d?.evidenceHold, d?.investigationHold, d?.reported,
-].some(x => x === true);
+
 export const MAX_PRIVATE_VOICE_ORPHAN_PAGE = 5;
 
 export class PrivateVoiceOrphanInventoryError extends Error {

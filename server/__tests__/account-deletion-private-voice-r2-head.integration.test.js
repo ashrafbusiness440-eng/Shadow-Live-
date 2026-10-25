@@ -66,6 +66,16 @@ test("emulator: exact R2 HEAD check preserves other voice, chat, evidence and wa
       error=>error.code==="private_voice_r2_sent_message_review_required");
     assert.equal(calls.length,1);
     await flag.delete();
+    await message.update({appealPending:true});
+    await assert.rejects(inspect(db,bucket,opts),
+      error=>error.code==="private_voice_r2_sent_message_review_required");
+    assert.equal(calls.length,1);
+    await message.update({appealPending:false});
+    await chat.update({appealStatus:"Open"});
+    await assert.rejects(inspect(db,bucket,opts),
+      error=>error.code==="private_voice_r2_conversation_review_required");
+    assert.equal(calls.length,1);
+    await chat.update({appealStatus:"closed"});
     await request.update({legalHold:true});
     await assert.rejects(inspect(db,bucket,opts),
       error=>error.code==="private_voice_r2_review_blocked");
