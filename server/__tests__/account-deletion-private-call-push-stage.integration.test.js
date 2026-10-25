@@ -5,6 +5,8 @@ import { getApps, initializeApp, deleteApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { cloudflareFirestoreAdapter } from "./helpers/cloudflare-firestore-adapter.js";
 import { eraseDeletedPrivateCallPushToken } from "../../cloudflare-worker/src/account-deletion-private-call-push-stage.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app = getApps()[0] || initializeApp({ projectId: "shadow-live-economy-test" });
 const firestore = getFirestore(app);
@@ -16,6 +18,7 @@ test("emulator: concurrent push token cleanup is idempotent and leaves unrelated
   const uid = "erase_push_" + suffix;
   const otherUid = "other_push_" + suffix;
   const requestId = "push_req_" + suffix;
+  const nowMs = Date.now();
   const token = "test-token-" + suffix + "-012345678901234567890123456789";
   const hash = createHash("sha256").update(token).digest("hex");
   const request = firestore.doc("account_deletion_requests/" + uid);
@@ -25,8 +28,12 @@ test("emulator: concurrent push token cleanup is idempotent and leaves unrelated
   const device = firestore.doc("private_call_push_devices/" + uid + "/tokens/" + hash);
   const unrelated = firestore.doc("private_call_push_devices/" + otherUid + "/tokens/" + hash);
   const refs = [request, checkpoint, user, owner, device, unrelated];
+  refs.push(...await seedEmulatorErasureCertificates(firestore,{
+    uid,requestId,nowMs,
+  }));
   await Promise.all([
-    request.set({ uid, requestId, status: "processing" }),
+    request.set({ uid, requestId, status: "processing",
+      requestedAt: new Date(nowMs - 40 * 86400_000) }),
     checkpoint.set({ requestId, phase: "push_devices", destructiveAllowed: true,
       notificationRetentionCleared: true, legalEvidenceReviewComplete: true }),
     user.set({ role: "user", accountStatus: "deletion_processing" }),
@@ -57,6 +64,7 @@ test("emulator: re-assigned push token owner is not revoked by deletion of old a
   const uid = "erase_push_" + suffix;
   const nextUid = "next_push_" + suffix;
   const requestId = "push_req_" + suffix;
+  const nowMs = Date.now();
   const token = "test-token-" + suffix + "-012345678901234567890123456789";
   const hash = createHash("sha256").update(token).digest("hex");
   const request = firestore.doc("account_deletion_requests/" + uid);
@@ -66,8 +74,12 @@ test("emulator: re-assigned push token owner is not revoked by deletion of old a
   const stale = firestore.doc("private_call_push_devices/" + uid + "/tokens/" + hash);
   const current = firestore.doc("private_call_push_devices/" + nextUid + "/tokens/" + hash);
   const refs = [request, checkpoint, user, owner, stale, current];
+  refs.push(...await seedEmulatorErasureCertificates(firestore,{
+    uid,requestId,nowMs,
+  }));
   await Promise.all([
-    request.set({ uid, requestId, status: "processing" }),
+    request.set({ uid, requestId, status: "processing",
+      requestedAt: new Date(nowMs - 40 * 86400_000) }),
     checkpoint.set({ requestId, phase: "push_devices", destructiveAllowed: true,
       notificationRetentionCleared: true, legalEvidenceReviewComplete: true }),
     user.set({ role: "user", accountStatus: "deletion_processing" }),
