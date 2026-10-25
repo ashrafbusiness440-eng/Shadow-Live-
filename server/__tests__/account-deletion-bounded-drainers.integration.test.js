@@ -7,6 +7,8 @@ import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter
 import {
   drainAccountOwnedNotifications,drainAccountPrivateCallPushDevices,
 } from "../../cloudflare-worker/src/account-deletion-bounded-drainers.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 import { REQUIRED_ERASURE_ADMISSION_DOMAINS as domains }
   from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 
@@ -70,6 +72,7 @@ test("emulator: drain notifications in limited indexed calls; retain counterpart
 test("emulator: five-token cleanup preserves unrelated token ownership",async()=>{
   const suffix=sid(),uid="erase_device_"+suffix,other="other_device_"+suffix;
   const requestId="device_request_"+suffix;
+  const nowMs=Date.now();
   const request=store.doc("account_deletion_requests/"+uid);
   const checkpoint=store.doc("account_deletion_erasure_checkpoints/"+uid);
   const user=store.doc("users/"+uid);
@@ -86,8 +89,12 @@ test("emulator: five-token cleanup preserves unrelated token ownership",async()=
     "private_call_push_devices/"+other+"/tokens/other_token_"+suffix);
   const refs=[request,checkpoint,user,third,
     ...tokens.flatMap(x=>[x.device,x.owner])];
+  refs.push(...await seedEmulatorErasureCertificates(store,{
+    uid,requestId,nowMs,
+  }));
   await Promise.all([
-    request.set({uid,requestId,status:"processing"}),
+    request.set({uid,requestId,status:"processing",
+      requestedAt:new Date(nowMs-40*86400_000)}),
     checkpoint.set({requestId,phase:"push_devices",destructiveAllowed:true,
       notificationRetentionCleared:true,legalEvidenceReviewComplete:true}),
     user.set({role:"user",accountStatus:"deletion_processing"}),
