@@ -1,3 +1,4 @@
+import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
 // Gated internal one-record cleanup for a deleted account's own diary like
 // or view-dedupe key. There is no public caller, cron or production executor.
 // Real checkpoints still have destructiveAllowed=false. Counterparty diaries,
@@ -6,11 +7,7 @@ const clean = value => String(value ?? "").trim();
 const uidOk = value => /^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk = value => /^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const diaryOk = value => /^[A-Za-z0-9_-]{3,220}$/.test(clean(value));
-const held = value => [
-  value?.reviewHold, value?.legalHold, value?.retentionHold,
-  value?.deletionHold, value?.evidenceHold, value?.investigationHold,
-  value?.reported,
-].some(flag => flag === true);
+
 const kinds = Object.freeze({ likes: "diary_likes", views: "diary_view_keys" });
 const commonKeys = [
   "userUid", "diaryId", "reviewHold", "legalHold", "retentionHold",
