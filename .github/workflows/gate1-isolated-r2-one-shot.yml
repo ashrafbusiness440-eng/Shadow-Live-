@@ -18,7 +18,9 @@ concurrency:
 
 jobs:
   isolated-provider-proof:
-    if: ${{ github.repository == 'ashrafbusiness440-eng/Shadow-Live-' && github.ref == 'refs/heads/gate1-r2-isolated-proof-20261026' && github.event.head_commit.message == 'test(gate1): execute one isolated R2 fixture proof only' }}
+    # Folded YAML avoids the colon-space inside the fixed one-shot commit message.
+    if: >-
+      ${{ github.repository == 'ashrafbusiness440-eng/Shadow-Live-' && github.ref == 'refs/heads/gate1-r2-isolated-proof-20261026' && github.event.head_commit.message == 'test(gate1): execute one isolated R2 fixture proof only' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
