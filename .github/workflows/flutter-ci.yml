@@ -103,6 +103,8 @@ jobs:
         run: node --test server/__tests__/account-deletion-transaction-coverage.test.js
       - name: Verify future external I/O reservation is non-permissive, single-writer and revocation-safe
         run: node --test server/__tests__/account-deletion-external-io-reservation.test.js server/__tests__/account-deletion-r2-external-interlock.test.js
+      - name: Validate authenticated independent reviewer and isolated R2 fixture safety
+        run: node --test server/__tests__/account-deletion-external-io-reviewer-grants.test.js server/__tests__/account-deletion-r2-isolated-smoke.test.js
       - name: Bounded retry-safe diary interaction erasure batches
         run: node --test server/__tests__/account-deletion-diary-interaction-batches.test.js
       - name: Safe private-chat conversation and authored-message inventory
