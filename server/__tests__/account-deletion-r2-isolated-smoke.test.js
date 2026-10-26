@@ -201,8 +201,12 @@ test("provider GET bytes mismatch refuses to delete even if HTTP 200",async()=>{
 
 test("manual isolated R2 workflow cannot run on push/PR/cron or production credentials",async()=>{
   const {readFileSync}=await import("node:fs");
-  const workflow=readFileSync(
-    ".github/workflows/account-erasure-isolated-r2-proof.yml","utf8");
+  const {fileURLToPath}=await import("node:url");
+  // The manual GitHub Action runs tests from cloudflare-worker/, while
+  // primary CI runs from repository root. Resolve relative to THIS file.
+  const workflow=readFileSync(fileURLToPath(new URL(
+    "../../.github/workflows/account-erasure-isolated-r2-proof.yml",
+    import.meta.url)),"utf8");
   assert.match(workflow,/workflow_dispatch:/);
   assert.doesNotMatch(workflow,/^\s+(?:push|pull_request|schedule):/m);
   assert.match(workflow,/R2_ERASURE_TEST_ACCESS_KEY_ID.*secrets\.R2_ERASURE_TEST_ACCESS_KEY_ID/);
