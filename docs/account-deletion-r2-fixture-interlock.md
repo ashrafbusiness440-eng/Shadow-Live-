@@ -394,3 +394,33 @@ It is intentionally not made into a destructive account-delete or R2
 worker endpoint. Unit assertions keep Owner/recent-auth and
 non-destructive stop invariants, while existing Firestore Emulator REST
 tests cover the actual stop-first and dispatch-first state transitions.
+
+
+### Authenticated Owner reconciliation-case opening (no erasure permission)
+
+The existing verified-Firebase-session `adminInbox` now offers
+`accountErasureR2OpenReconciliation` **only to a current Owner**
+who has authenticated within the last ten minutes. Its request body
+supplies `targetUid`, `requestId`, `objectId`, the previously pinned
+operation `token`, and the IDs `firstProbeId` / `secondProbeId`.
+The caller cannot supply or override the authenticated Owner actor.
+
+This action delegates to the existing bounded, create-only Firestore
+transaction `openAccountErasureExternalIoReconciliationCase`. The two
+HEAD observations MUST already exist as independent persisted records
+whose token, account, object, storage key, time ordering, and
+post-stop status match the stopped request, reservation, hold and
+uncertain journal. No client-supplied HEAD result, object key or
+provider claim can substitute for the transactional records.
+A duplicate case/audit refuses a second write. Typed conflicts return
+without disclosing document contents. Reviewers may subsequently attach
+an independent *unresolved* assessment under a scoped Owner grant.
+
+**Never interpret this route as permission to invoke R2.delete,
+automatically release a stop, certify external provider history,
+produce an account-erasure receipt, delete Firebase Auth or dispatch a
+worker.** It is only evidence-case administration. Before human
+reconciliation can be considered final, the separate authorized test
+bucket, independent Cloudflare operation logs/object-generation
+corroboration, real owner-specific asset inventory and the six-domain
+signoff/withdrawal writers remain release blockers.

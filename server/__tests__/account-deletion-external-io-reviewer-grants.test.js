@@ -221,3 +221,44 @@ test("Owner emergency R2 stop route is freshly authenticated and never destructi
   assert.match(code,/pendingReconciliation:true/);
   assert.doesNotMatch(code,/bucket\.delete\(|deleteAuthUser\(|writeDelete\(/);
 });
+
+test("Owner-only reconciliation opener binds two persisted probe IDs under fresh auth",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
+  const start=source.indexOf('if (["accountDeletionCompletedLogs"');
+  const handler=source.indexOf('if (action === "accountErasureR2OpenReconciliation")',start);
+  const end=source.indexOf('if (action === "accountErasureR2ReviewerGrant"',handler);
+  assert.ok(start>=0&&handler>start&&end>handler);
+  const section=source.slice(start,end);
+  assert.match(section,/if \(!actor\.owner\)/);
+  assert.match(section,/throw new AdminInboxError\("recent_auth_required", 401\)/);
+  assert.match(section,/openAccountErasureExternalIoReconciliationCase\(db/);
+  for(const field of ["requestId","objectId","token","firstProbeId","secondProbeId"]){
+    assert.ok(section.includes(field+": body."+field),"checked field "+field);
+  }
+  assert.match(section,/uid: targetUid/);
+  assert.match(section,/actor,/);
+  assert.doesNotMatch(section,/body\.actor|body\.owner|body\.destructiveAllowed/);
+  assert.doesNotMatch(section,/bucket\.delete\(|writeDelete\(|deleteAuthUser\(/);
+});
+test("reconciliation opener cannot certify R2 deletion or remove a stop",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync(
+    "cloudflare-worker/src/account-deletion-external-io-reconciliation.js",
+    "utf8");
+  const start=source.indexOf(
+    "export async function openAccountErasureExternalIoReconciliationCase");
+  assert.ok(start>0);
+  const section=source.slice(start);
+  assert.match(section,/firstProbeId===secondProbeId/);
+  assert.match(section,/stop\.data\?\.revocationEffective!==false/);
+  assert.match(section,/journal\.data\?\.retryAllowed!==false/);
+  assert.match(section,/classif/);
+  assert.match(section,/await db\.commit\(tx,\[/);
+  assert.match(section,/db\.writeCreate\(casePath/);
+  assert.match(section,/db\.writeCreate\(auditPath/);
+  assert.match(section,/completionVerified:false/);
+  assert.match(section,/retryAllowed:false/);
+  assert.match(section,/externalIoAllowed:false/);
+  assert.doesNotMatch(section,/bucket\.delete\(|writeDelete\(|deleteAuthUser\(|writeUpdate\(stopPath/);
+});

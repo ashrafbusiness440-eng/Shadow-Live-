@@ -19,9 +19,13 @@ const stopPath = (uid,requestId) =>
 const probePath = (uid,requestId,probeId) =>
   "account_erasure_external_io_probe_observations/" +
   uid + "__" + requestId + "__" + probeId;
+export class AccountErasureExternalIoReconciliationError extends Error {
+  constructor(code,status=409){
+    super(code);this.code=code;this.status=status;
+  }
+}
 const fail=(code,status=409)=>{
-  const error=new Error(code);error.code=code;error.status=status;
-  throw error;
+  throw new AccountErasureExternalIoReconciliationError(code,status);
 };
 
 /**

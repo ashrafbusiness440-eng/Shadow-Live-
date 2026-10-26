@@ -23,6 +23,10 @@ import {
   requestAccountErasureExternalIoRevocationIntent,
   AccountErasureIoReservationError,
 } from "./account-deletion-external-io-reservation.js";
+import {
+  openAccountErasureExternalIoReconciliationCase,
+  AccountErasureExternalIoReconciliationError,
+} from "./account-deletion-external-io-reconciliation.js";
 import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
@@ -716,6 +720,7 @@ export async function adminInbox(request, env) {
          "accountErasureR2ReviewerGrant",
          "accountErasureR2ReviewerRevoke",
          "accountErasureR2EmergencyStop",
+         "accountErasureR2OpenReconciliation",
          "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
@@ -755,6 +760,22 @@ export async function adminInbox(request, env) {
           await requestAccountErasureExternalIoRevocationIntent(db, {
             uid: targetUid,
             requestId: body.requestId,
+            actor,
+          }));
+      }
+      // A post-stop reconciliation case only references TWO immutable
+      // prior R2 HEAD observations; the helper proves stop, pinned key,
+      // request identity, ordering and unresolved state transactionally.
+      // This records evidence for human assessment, NOT a delete receipt.
+      if (action === "accountErasureR2OpenReconciliation") {
+        return json(request, env,
+          await openAccountErasureExternalIoReconciliationCase(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            objectId: body.objectId,
+            token: body.token,
+            firstProbeId: body.firstProbeId,
+            secondProbeId: body.secondProbeId,
             actor,
           }));
       }
@@ -805,6 +826,7 @@ export async function adminInbox(request, env) {
          error instanceof AccountErasureReviewerGrantError ||
          error instanceof AccountErasureIndependentReviewError ||
          error instanceof AccountErasureIoReservationError ||
+         error instanceof AccountErasureExternalIoReconciliationError ||
          error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }
