@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 import {readFileSync} from "node:fs";
 import {queueAccountDeletionR2Stage} from "../../cloudflare-worker/src/account-deletion-r2-queue-stage.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 const uid="deleted_user_test_123",requestId="request_id_verified_123456";
 const rp="account_deletion_requests/"+uid,cp="account_deletion_erasure_checkpoints/"+uid,
  up="users/"+uid,job="storage_account_cleanup_jobs/"+uid,
@@ -9,13 +11,15 @@ const rp="account_deletion_requests/"+uid,cp="account_deletion_erasure_checkpoin
 class Db {
  constructor(){
   this.docs=new Map([
-   [rp,{uid,requestId,status:"processing"}],
+   [rp,{uid,requestId,status:"processing",
+     requestedAt:new Date(Date.now()-40*86400_000)}],
    [cp,{requestId,phase:"storage_media",destructiveAllowed:true,
      storageRetentionApproved:true,sharedMediaOwnershipReviewed:true,
      legalEvidenceReviewComplete:true,financialSettlementApproved:true,
      playBillingReviewComplete:true}],
    [up,{role:"user",accountStatus:"deletion_processing",coins:99}],
   ]);
+  seedSyntheticErasureCertificates(this.docs,{uid,requestId});
   this.commits=[];this.rollbacks=0;
  }
  async beginTransaction(){return "tx";}
@@ -102,4 +106,37 @@ test("queue-stage has no R2 calls, scans or Auth deletion",()=>{
  assert.match(src,/playBillingReviewComplete!==true/);
  assert.match(src,/legalEvidenceReviewComplete!==true/);
  assert.match(src,/sharedMediaOwnershipReviewed!==true/);
+});
+
+test("a revoked storage certificate cannot queue a job or create its audit",async()=>{
+ const db=new Db();
+ db.docs.get("account_deletion_erasure_approvals/"+requestId+
+   "__content_storage_inventory").decision="revoked";
+ await assert.rejects(run(db),
+   e=>e.code==="erasure_transactional_certification_blocked");
+ assert.equal(db.docs.has(job),false);
+ assert.equal(db.docs.has(audit),false);
+ assert.equal(db.commits.length,0);
+});
+
+test("R2 queue duplicate is never success after any domain approval is revoked",async()=>{
+ for(const domain of [
+  "financial_settlement","play_billing","moderation_legal",
+  "shared_assets","content_storage_inventory","retention_policy",
+ ]){
+  const db=new Db();
+  await run(db);
+  const approval=db.docs.get(
+    "account_deletion_erasure_approvals/"+requestId+"__"+domain);
+  approval.decision="revoked";
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.docs.has(job),true);
+  assert.equal(db.commits.length,1);
+  // Even an already consumed queue job cannot yield stale success.
+  db.docs.delete(job);
+  await assert.rejects(run(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.commits.length,1);
+ }
 });

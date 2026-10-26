@@ -6,6 +6,8 @@ import {getFirestore} from "firebase-admin/firestore";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 import {eraseDeletedDiaryInteraction as erase}
   from "../../cloudflare-worker/src/account-deletion-diary-interaction-stage.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const store=getFirestore(app),db=cloudflareFirestoreAdapter(store);
@@ -16,6 +18,7 @@ const hex=uid=>Buffer.from(uid,"utf8").toString("hex");
 test("emulator: retry-safe like/view deletion retains unrelated interactions and diary counts",async()=>{
   const id=suffix(),uid="deletion_like_"+id,other="other_liker_"+id;
   const requestId="erase_diary_interaction_"+id;
+  const nowMs=Date.now();
   const diaryId="diary_source_"+id;
   const req=store.doc("account_deletion_requests/"+uid);
   const cp=store.doc("account_deletion_erasure_checkpoints/"+uid);
@@ -25,8 +28,12 @@ test("emulator: retry-safe like/view deletion retains unrelated interactions and
   const view=store.doc("diary_view_keys/"+diaryId+"__"+hex(uid));
   const unrelated=store.doc("diary_likes/"+diaryId+"__"+hex(other));
   const refs=[req,cp,user,diary,like,view,unrelated];
+  refs.push(...await seedEmulatorErasureCertificates(store,{
+    uid,requestId,nowMs,
+  }));
   await Promise.all([
-    req.set({uid,requestId,status:"processing"}),
+    req.set({uid,requestId,status:"processing",
+      requestedAt:new Date(nowMs-40*86400_000)}),
     cp.set({uid,requestId,phase:"diary_interactions",
       destructiveAllowed:true,diaryInteractionRetentionCleared:true,
       legalEvidenceReviewComplete:true,historicalDiaryCountersReviewed:true}),

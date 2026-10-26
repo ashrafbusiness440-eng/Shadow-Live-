@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {readFileSync} from "node:fs";
+import {seedSyntheticErasureCertificates}
+  from "./helpers/account-erasure-synthetic-certificates.js";
+import {REQUIRED_ERASURE_ADMISSION_DOMAINS as domains}
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 import {
   drainAccountPrivateTextPage as drain,
   MAX_PRIVATE_TEXT_ERASURE_BATCH_ITEMS,
@@ -19,13 +23,20 @@ const msgId=i=>"private_msg_"+String(i).padStart(4,"0");
 class Db {
   constructor(){
     this.docs=new Map([
-      [rp,{uid,requestId,status:"processing"}],
-      [cp,{requestId,phase:"private_text",destructiveAllowed:true,
+      [rp,{uid,requestId,status:"processing",
+        requestedAt:new Date(Date.now()-40*86400_000),
+        eligibleAt:new Date(Date.now()-10*86400_000)}],
+      [cp,{uid,requestId,phase:"private_text",destructiveAllowed:true,
         privateMessageRetentionCleared:true,legalEvidenceReviewComplete:true}],
       [up,{role:"user",accountStatus:"deletion_processing",coins:500}],
+      ["admin_audit_logs/erasure_processing_start_"+requestId,{
+        action:"accountErasureProcessingAdmitted",targetId:uid,requestId,
+        certifiedDomains:[...domains],
+      }],
       [chat,{participants:[uid,other],lastSenderId:uid,
         lastMessage:"Private last preview",unreadCounts:{[other]:4}}],
     ]);
+    seedSyntheticErasureCertificates(this.docs,{uid,requestId,nowMs:Date.now()});
     this.queries=[];this.commits=[];this.txCalls=0;this.failOn=0;
   }
   add(n=12){
@@ -206,4 +217,28 @@ test("code cannot scan, automatically schedule, erase Auth/R2 or certify deletio
   assert.doesNotMatch(code,/deleteAuthUser\(|setInterval\(|bucket\.delete\(/);
   assert.match(code,/completionVerified: false/);
   assert.match(code,/orderBy: \[\{ field: "__name__"/);
+});
+
+test("private text preflight refuses to enumerate before admission and grace",async()=>{
+ const audit="admin_audit_logs/erasure_processing_start_"+requestId;
+ const changes=[
+  db=>db.docs.delete(audit),
+  db=>db.docs.get(audit).targetId="not_this_account",
+  db=>db.docs.get(audit).certifiedDomains=["retention_policy"],
+  db=>db.docs.get(audit).legalHold=true,
+  db=>db.docs.get(rp).eligibleAt=new Date(Date.now()+86400_000),
+  db=>db.docs.get(rp).requestedAt=new Date(Date.now()-86400_000),
+  db=>db.docs.get(cp).uid="someone_else",
+ ];
+ for(const change of changes){
+  const db=new Db();db.add(2);change(db);
+  await assert.rejects(run(db),e=>[
+    "private_text_batch_not_authorized",
+    "private_text_batch_grace_not_elapsed",
+  ].includes(e.code));
+  assert.equal(db.queries.length,0);
+  assert.equal(db.commits.length,0);
+  assert.equal(db.docs.get(msgPath+msgId(0)).text,"secret 0");
+  assert.equal(db.docs.get(msgPath+"counterparty_msg_9999").text,"theirs");
+ }
 });

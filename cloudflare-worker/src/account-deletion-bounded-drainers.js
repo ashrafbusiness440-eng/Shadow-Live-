@@ -22,6 +22,7 @@ export class AccountErasureBatchError extends Error {
 
 async function drainBatch(db, {
   uid, requestId, phase, limit, collection, filters, idPattern, erase,
+  nowMs = Date.now(),
 }) {
   uid = clean(uid);
   requestId = clean(requestId);
@@ -72,7 +73,7 @@ async function drainBatch(db, {
   for (const row of selected) {
     // Network failures abort; previously committed items are safely drained
     // on retry (the next indexed query will omit their removed documents).
-    const result = await erase(db, uid, requestId, row.id);
+    const result = await erase(db, uid, requestId, row.id, nowMs);
     if (result.deleted === true || result.removed > 0) erased++;
     else if (result.duplicate === true) duplicate++;
     else throw new AccountErasureBatchError("erasure_batch_unverified_result");
@@ -88,32 +89,34 @@ async function drainBatch(db, {
 
 export async function drainAccountOwnedNotifications(db, {
   uid, requestId, limit = MAX_ACCOUNT_ERASURE_BATCH_ITEMS,
+  nowMs = Date.now(),
 } = {}) {
   return drainBatch(db, {
-    uid, requestId, phase: "notifications", limit,
+    uid, requestId, phase: "notifications", limit, nowMs,
     collection: () => "notifications",
     filters: targetUid => [
       { field: "userId", op: "==", value: targetUid },
     ],
     idPattern: /^[A-Za-z0-9_-]{3,300}$/,
-    erase: (store, userId, operationId, id) =>
+    erase: (store, userId, operationId, id, atMs) =>
       eraseDeletedAccountNotification(store, {
-        uid: userId, requestId: operationId, notificationId: id,
+        uid: userId, requestId: operationId, notificationId: id, nowMs: atMs,
       }),
   });
 }
 
 export async function drainAccountPrivateCallPushDevices(db, {
   uid, requestId, limit = MAX_ACCOUNT_ERASURE_BATCH_ITEMS,
+  nowMs = Date.now(),
 } = {}) {
   return drainBatch(db, {
-    uid, requestId, phase: "push_devices", limit,
+    uid, requestId, phase: "push_devices", limit, nowMs,
     collection: targetUid => `private_call_push_devices/${targetUid}/tokens`,
     filters: () => [],
     idPattern: /^[a-f0-9]{64}$/,
-    erase: (store, userId, operationId, id) =>
+    erase: (store, userId, operationId, id, atMs) =>
       eraseDeletedPrivateCallPushToken(store, {
-        uid: userId, requestId: operationId, tokenHash: id,
+        uid: userId, requestId: operationId, tokenHash: id, nowMs: atMs,
       }),
   });
 }

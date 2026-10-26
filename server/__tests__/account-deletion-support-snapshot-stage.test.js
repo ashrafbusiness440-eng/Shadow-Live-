@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import { redactDeletedSupporterPair } from "../../cloudflare-worker/src/account-deletion-support-snapshot-stage.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const uid = "deleted_member_123";
 const other = "other_member_456";
@@ -13,6 +15,7 @@ class Db {
     this.docs = new Map([
       ["account_deletion_requests/" + uid, {
         uid, requestId, status: "processing", reviewHold: false,
+        requestedAt:new Date(Date.now()-40*86400_000),
       }],
       ["account_deletion_erasure_checkpoints/" + uid, {
         requestId, phase: "support_snapshots", destructiveAllowed: true,
@@ -29,6 +32,7 @@ class Db {
         points: 500, giftCount: 5,
       }],
     ]);
+    seedSyntheticErasureCertificates(this.docs,{uid,requestId});
     this.commits = [];
     this.rollbacks = 0;
   }
@@ -162,4 +166,15 @@ test("this stage has no endpoint, loop over all users or financial mutation", ()
   assert.doesNotMatch(s, /points:|giftCount:|coins:|diamonds:/);
   assert.match(s, /destructiveAllowed !== true/);
   assert.match(s, /deletion_processing/);
+});
+
+test("support snapshots stay intact when independent retention approval is revoked",async()=>{
+  const db=new Db();
+  db.docs.get("account_deletion_erasure_approvals/"+requestId+
+    "__retention_policy").decision="revoked";
+  await assert.rejects(redact(db),
+    e=>e.code==="erasure_transactional_certification_blocked");
+  assert.equal(db.commits.length,0);
+  assert.equal(db.docs.get(wealthPath).displayName,"Legacy Recipient");
+  assert.equal(db.docs.get(attractionPath).displayName,"Legacy Sender");
 });

@@ -29,6 +29,7 @@ export class AccountDiaryErasureBatchError extends Error {
  */
 export async function drainAccountDiaryInteractions(db, {
   uid, requestId, kind, limit = MAX_DIARY_ERASURE_BATCH_ITEMS,
+  nowMs = Date.now(),
 } = {}) {
   uid = clean(uid);
   requestId = clean(requestId);
@@ -88,7 +89,7 @@ export async function drainAccountDiaryInteractions(db, {
     // transaction; failures stop the batch. Already-deleted records are
     // missing from a retry query and won't be processed twice.
     const result = await eraseDeletedDiaryInteraction(db, {
-      uid, requestId, kind, diaryId: clean(row.data.diaryId),
+      uid, requestId, kind, diaryId: clean(row.data.diaryId), nowMs,
     });
     if (result.erased === true) erased++;
     else if (result.duplicate === true) duplicate++;

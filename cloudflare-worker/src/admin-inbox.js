@@ -10,6 +10,27 @@ import {
   AccountDeletionReviewControlError,
 } from "./account-deletion-review-control.js";
 import { inspectAccountErasureInventory } from "./account-deletion-erasure-inventory.js";
+import {
+  issueAccountErasureExternalIoReviewerGrant,
+  revokeAccountErasureExternalIoReviewerGrant,
+  AccountErasureReviewerGrantError,
+} from "./account-deletion-external-io-reviewer-grants.js";
+import {
+  recordAccountErasureExternalIoIndependentReview,
+  AccountErasureIndependentReviewError,
+} from "./account-deletion-external-io-review.js";
+import {
+  requestAccountErasureExternalIoRevocationIntent,
+  AccountErasureIoReservationError,
+} from "./account-deletion-external-io-reservation.js";
+import {
+  openAccountErasureExternalIoReconciliationCase,
+  AccountErasureExternalIoReconciliationError,
+} from "./account-deletion-external-io-reconciliation.js";
+import {
+  withdrawAccountErasureDomainWithExternalIoStop,
+  AccountErasureDomainWithdrawalError,
+} from "./account-deletion-domain-withdrawal-interlock.js";
 import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
@@ -668,11 +689,43 @@ export async function adminInbox(request, env) {
     if (action === "markVisibleRead") {
       return json(request, env, await markVisibleRead(db, actor));
     }
+    // The independent assessor (not Owner) must present the SAME verified
+    // Firebase session and a CURRENT explicitly capable admin profile. The
+    // internal writer rechecks the matching scoped, immutable Owner grant,
+    // revocation tombstone, observations and stop inside its transaction.
+    // An arbitrary caller-supplied actor flag is NEVER sufficient.
+    if (action === "accountErasureR2IndependentReview") {
+      if (actor.owner || !actor.adminEnabled ||
+          !actor.capabilities.has("reviewAccountErasureR2Evidence")) {
+        throw new AdminInboxError("forbidden", 403);
+      }
+      const age = Math.floor(Date.now() / 1000) -
+        Number(decoded?.auth_time);
+      if (!Number.isFinite(age) || age < -60 || age > 600) {
+        throw new AdminInboxError("recent_auth_required", 401);
+      }
+      return json(request, env,
+        await recordAccountErasureExternalIoIndependentReview(db, {
+          uid: body.targetUid,
+          requestId: body.requestId,
+          objectId: body.objectId,
+          token: body.token,
+          grantIssuerUid: body.grantIssuerUid,
+          assessment: body.assessment,
+          evidenceDigestSha256: body.evidenceDigestSha256,
+          actor: {uid: actor.uid, evidenceReviewer: true},
+        }));
+    }
     // Reuse the existing admin inbox route; never expose account erasure
     // controls or retention notes to ordinary moderators.
     if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
          "accountDeletionHold", "accountDeletionReleaseHold",
          "accountDeletionClosureReadiness",
+         "accountErasureR2ReviewerGrant",
+         "accountErasureR2ReviewerRevoke",
+         "accountErasureR2EmergencyStop",
+         "accountErasureR2OpenReconciliation",
+         "accountErasureR2WithdrawDomain",
          "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
@@ -700,6 +753,64 @@ export async function adminInbox(request, env) {
         Number(decoded?.auth_time);
       if (!Number.isFinite(age) || age < -60 || age > 600) {
         throw new AdminInboxError("recent_auth_required", 401);
+      }
+      // This is a strictly non-destructive Owner operation. The same
+      // already-verified Firebase session + <=10min auth_time protects it.
+      // Never let request bodies supply actor/issuer authority.
+      // Emergency STOP is an immutable, one-way Owner request. It can
+      // prevent later reservations but CANNOT prove any in-flight external
+      // R2.delete has been canceled; the outcome remains unresolved.
+      if (action === "accountErasureR2EmergencyStop") {
+        return json(request, env,
+          await requestAccountErasureExternalIoRevocationIntent(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            actor,
+          }));
+      }
+      // A post-stop reconciliation case only references TWO immutable
+      // prior R2 HEAD observations; the helper proves stop, pinned key,
+      // request identity, ordering and unresolved state transactionally.
+      // This records evidence for human assessment, NOT a delete receipt.
+      if (action === "accountErasureR2OpenReconciliation") {
+        return json(request, env,
+          await openAccountErasureExternalIoReconciliationCase(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            objectId: body.objectId,
+            token: body.token,
+            firstProbeId: body.firstProbeId,
+            secondProbeId: body.secondProbeId,
+            actor,
+          }));
+      }
+      // Emergency withdrawal of ONE certified domain atomically records
+      // its immutable withdrawal tombstone AND blocks NEW R2 operations.
+      // In-flight external I/O can still be unknown; never report it
+      // canceled or complete. The selected domain is validated against
+      // the six enumerated signoff domains inside the transaction writer.
+      if (action === "accountErasureR2WithdrawDomain") {
+        return json(request, env,
+          await withdrawAccountErasureDomainWithExternalIoStop(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            domain: body.domain,
+            actor,
+          }));
+      }
+      if (action === "accountErasureR2ReviewerGrant" ||
+          action === "accountErasureR2ReviewerRevoke") {
+        const params = {
+          uid: targetUid,
+          requestId: body.requestId,
+          objectId: body.objectId,
+          reviewerUid: body.reviewerUid,
+          actor,
+        };
+        return json(request, env,
+          action === "accountErasureR2ReviewerGrant"
+            ? await issueAccountErasureExternalIoReviewerGrant(db, params)
+            : await revokeAccountErasureExternalIoReviewerGrant(db, params));
       }
       if (action === "accountDeletionClosureReadiness") {
         return json(request, env,
@@ -731,6 +842,11 @@ export async function adminInbox(request, env) {
     if (error instanceof AdminInboxError ||
         error instanceof AccountDeletionReviewControlError ||
          error instanceof AccountErasureCheckpointError ||
+         error instanceof AccountErasureReviewerGrantError ||
+         error instanceof AccountErasureIndependentReviewError ||
+         error instanceof AccountErasureIoReservationError ||
+         error instanceof AccountErasureExternalIoReconciliationError ||
+         error instanceof AccountErasureDomainWithdrawalError ||
          error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }

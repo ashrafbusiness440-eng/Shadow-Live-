@@ -21,6 +21,42 @@ export function parseFirestoreBatchGetRows(payload, maxRows = 100) {
   return rows;
 }
 
+// A Firestore batchGet must return one explicit found OR missing result per
+// requested document. Absent transport rows are NOT equivalent to missing
+// Firestore documents: that confusion could bypass a deletion stop marker.
+export function correlateFirestoreBatchGetRows(rows, requestedNames) {
+  const expected = new Set(requestedNames);
+  if (!Array.isArray(rows) || !Array.isArray(requestedNames) ||
+      requestedNames.length === 0 ||
+      expected.size !== requestedNames.length ||
+      requestedNames.some(name => typeof name !== "string" || !name) ||
+      rows.length !== requestedNames.length) {
+    throw new Error("firestore_batch_get_incomplete_response");
+  }
+  const byName = new Map();
+  for (const row of rows) {
+    const foundName = typeof row?.found?.name === "string"
+      ? row.found.name : "";
+    const missingName = typeof row?.missing === "string"
+      ? row.missing : "";
+    if (Boolean(foundName) === Boolean(missingName)) {
+      throw new Error("firestore_batch_get_invalid_document_row");
+    }
+    const name = foundName || missingName;
+    if (!expected.has(name) || byName.has(name)) {
+      throw new Error("firestore_batch_get_unexpected_document_row");
+    }
+    byName.set(name, foundName ? {
+      exists: true,
+      data: decodeFields(row.found.fields || {}),
+      updateTime: row.found.updateTime || null,
+    } : {
+      exists: false, data: null, updateTime: null,
+    });
+  }
+  return requestedNames.map(name => byName.get(name));
+}
+
 export const FIRESTORE_TRANSIENT_MAX_ATTEMPTS = 3;
 export const FIRESTORE_RETRY_BASE_DELAY_MS = 350;
 export const FIRESTORE_RETRY_MAX_DELAY_MS = 2500;
@@ -506,30 +542,10 @@ export function firestoreClient(env) {
         },
       );
 
-      const byName = new Map();
-      for (const row of Array.isArray(body) ? body : []) {
-        if (row?.found?.name) {
-          byName.set(row.found.name, {
-            exists: true,
-            data: decodeFields(row.found.fields || {}),
-            updateTime: row.found.updateTime || null,
-          });
-        } else if (row?.missing) {
-          byName.set(row.missing, {
-            exists: false,
-            data: null,
-            updateTime: null,
-          });
-        }
-      }
-
-      return requested.map(
-        (path) =>
-          byName.get(documentName(path)) || {
-            exists: false,
-            data: null,
-            updateTime: null,
-          },
+      // Keep explicit "missing" records; reject transport omissions, duplicate
+      // or alien rows instead of manufacturing false "does not exist" reads.
+      return correlateFirestoreBatchGetRows(
+        body, requested.map((path) => documentName(path)),
       );
     },
 

@@ -114,3 +114,118 @@ certification check in the **same stage commit transaction**, prove Firestore
 conflict/retry behavior under simultaneous revocation, and implement durable,
 audited stage leasing and independent real signoffs. The existing up-to-five
 batch size, 30-day grace and no-finalization guard remain unchanged.
+
+## Batch 1 — transactional revocation protection for notification records
+
+The existing **unrouted** `notifications` adapter now rechecks the six
+domain approval/audit pairs **inside the same Firestore transaction** that
+deletes an exact owned notice. It delegates to the shared transaction helper
+from PR #525, rather than reimplementing finance or legal policy. The helper
+normalizes the request timestamp, validates all six signoffs and uses
+transactional `getMany` (one 12-document batchGet RPC on the production REST
+adapter) when supported. An invalid, expired, revoked or appealed signoff
+rejects the write. This is independent of and in addition to the runner's
+pre-batch checks. The runner forwards its bounded test clock to that stage.
+
+The notification unit tests now seed explicit independently signed synthetic
+approval/audit documents and cover revocation of every domain; the emulator
+tests cover a revoked approval rejected within an actual Firestore SDK
+transaction, as well as existing bounded synthetic cleanup. The SDK test
+does **not** prove a deliberately synchronized concurrent update conflict:
+perform a separate locking/retry test before production activation.
+
+**NOT A COMPLETED SECURITY GATE OR PRODUCTION APPROVAL.** Other per-record
+stages (private chat text, call tokens, diary interactions, social links,
+support snapshots and profile) must use this same in-transaction certification
+check before their writes; audited phase leasing/retry and independent real
+financial/Play/room/agency/legal/retention signoffs remain missing.
+No changes were made to financial ledgers, purchase status, room ownership,
+appeal holdings, retention rules, Auth or R2. No account erasure was enabled;
+`destructiveAllowed=false` remains the only production behavior. No new
+route, listener, cron, global scan or APK build.
+
+This is the FIRST implementation item in the **fixed eight closure gates**
+(not a new ninth gate). Do not mark the financial, Play, legal or shared
+asset decisions cleared just because test fixtures contain approvals.
+
+## Batch 1 continuation — shared transactional guards for push and diary
+
+The already-guarded per-record push-token erasure and diary like/view erasure
+now reuse the exact same six-domain Firestore transaction certification check
+as notifications (dependent on the separate notification PR #526). The
+bounded push and diary page adapters forward an explicit checked time
+without changing maximum page size (five), ownership, legal evidence holds,
+counterparty protection or account-status rules.
+
+A test-only fixture helper centrally creates 12 disposable domain approval
+and audit records. It is NEVER imported into the Cloudflare runtime.
+Node regressions cover missing/revoked signoffs, and existing Firestore
+Emulator acceptance exercises owned records, idempotent retry and
+counterparty preservation. As with #526, the synthetic certificate fixtures
+ARE NOT real independent financial/Play/legal/asset/retention approvals.
+
+**This does not yet cover private text, profile, support-snapshot or social
+pair writes.** Never claim all per-record races resolved. The private text
+stage remains unchanged; no route, cron, live destructive checkpoint, R2
+delete, Firebase Auth delete, financial settlement or production activation.
+The existing independently reviewed approvals and real concurrent conflict
+acceptance are still required for release.
+
+## Additional batch-one per-record guards (profile, relationships, supporter snapshots)
+
+The public profile, exact social-pair and exact supporter-snapshot stage
+adapters now each require an independently validated six-domain certificate
+and audit-pair check *within their own Firestore write transaction*. They
+retain existing account/current-request/checkpoint/role/record-hold checks,
+owner/counterparty matching, idempotence and historical support points.
+No financial or counterparty history is erased by this extension.
+
+Unit and isolated Firestore Emulator fixtures use synthetic test-only
+approvals and verify existing privacy/hold behavior; revoked certificates
+are checked before any stage mutation. The test-only fixture must never
+be used to issue real approvals.
+
+These safeguards DO NOT automatically admit or execute deletion. The private
+text stage remains outside the new stage-level recheck, and real concurrent
+revocation conflict acceptance, live independent financial/Play/legal/shared
+asset/storage/retention evidence, durable phase leasing, exhaustive inventory
+and final Auth deletion remain blocking. Keep production deletion disabled.
+
+## Emulator conflict acceptance — transactional signoff revocation
+
+A separate disposable Firestore Emulator test creates six synthetic signed
+domain approvals, pauses a real Firestore SDK write transaction **after**
+its twelve approval/audit reads, and starts an independent revocation before
+releasing the transaction. Firestore server-side reads may use **pessimistic
+locks**: the revoke writer can be serialized *after* the erasure commit.
+The test therefore validates either safe outcome using Firestore commit time:
+if erasure commits, its server updateTime must be no later than the
+revocation's writeTime; if revocation wins, the erasure transaction must
+abort/retry and the notification must survive. The test deliberately does not
+deadlock by awaiting a locked revocation while holding the first transaction
+open. Separate unit coverage confirms one bounded 12-document transactional
+`getMany(paths, tx)` RPC and that absent audits fail closed.
+
+**Scope:** test-only Firestore SDK/emulator concurrency contract. Deployment
+still uses Cloudflare's REST Firestore adapter and its own transactional
+batchGet; compare and independently exercise its conflict behavior before
+production, especially across retries and ambiguous commits. Other system
+gates (finance, billing, shared assets, legal/retention, inventory,
+phase leasing, private text, Auth-last) remain unresolved. No production
+deletion activation is authorized by this test.
+
+## R2 cleanup queue — revoke-safe enqueue only (not object deletion)
+
+The existing `storage_media` queue adapter now checks the same six approval
+and immutable-audit pairs inside its own Firestore transaction before
+writing the cleanup job plus audit. A late revocation must reject the enqueue.
+Existing job deduplication, content holds, shared ownership, financial and
+Play checkpoint checks remain unchanged. The actual R2 object deletion
+belongs to another storage worker and is **NOT** made safe or authorized by
+this enqueue guard. Recheck approval/retention/ownership in that worker before
+any object delete, and prove exact-inventory coverage first.
+
+The fixed seven-stage source audit is executed by Flutter CI and intentionally
+records the private-text stage as a remaining exception. CI also runs
+disposable queue unit and Firestore Emulator tests. No production deletion
+switch is enabled; the completed-account receipt is still not written.

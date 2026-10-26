@@ -3,6 +3,8 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { eraseDeletedPrivateCallPushToken } from "../../cloudflare-worker/src/account-deletion-private-call-push-stage.js";
+import { seedSyntheticErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 
 const uid = "deletedUser_321";
 const otherUid = "otherUser_456";
@@ -20,7 +22,8 @@ const paths = {
 class Db {
   constructor() {
     this.docs = new Map([
-      [paths.request, { uid, requestId, status: "processing" }],
+      [paths.request, { uid, requestId, status: "processing",
+        requestedAt: new Date(Date.now()-40*86400_000) }],
       [paths.checkpoint, { requestId, phase: "push_devices",
         destructiveAllowed: true, notificationRetentionCleared: true,
         legalEvidenceReviewComplete: true }],
@@ -29,6 +32,7 @@ class Db {
       [paths.owner, { uid }],
       [paths.other, { token, platform: "android" }],
     ]);
+    seedSyntheticErasureCertificates(this.docs, {uid,requestId});
     this.reads = []; this.commits = []; this.rollbacks = 0;
   }
   async beginTransaction() { return "tx"; }
@@ -56,7 +60,7 @@ test("removes only deleted user's token and binding; retry is idempotent", async
   assert.equal(db.docs.has(paths.other), true);
   assert.deepEqual(await run(db), { ok: true, removed: 0, duplicate: true });
   assert.equal(db.commits.length, 1);
-  assert.equal(db.reads.length, 10);
+  assert.equal(db.reads.length, 28);
 });
 test("reassigned token owner survives deletion of stale previous account row", async () => {
   const db = new Db();
@@ -127,4 +131,20 @@ test("one-token stage never scans, calls Auth/FCM or leaks raw token in response
     "cloudflare-worker/src/account-deletion-private-call-push-stage.js", "utf8");
   assert.doesNotMatch(source, /runQuery\(|fetch\(|deleteAuthUser\(|setInterval\(/);
   assert.match(source, /destructiveAllowed !== true/);
+});
+
+test("revoking any of the six push certifications blocks the token write",async()=>{
+  const domains=[
+    "financial_settlement","play_billing","moderation_legal",
+    "shared_assets","content_storage_inventory","retention_policy",
+  ];
+  for(const domain of domains){
+    const db=new Db();
+    db.docs.get("account_deletion_erasure_approvals/"+requestId+
+      "__"+domain).decision="revoked";
+    await assert.rejects(run(db),
+      e=>e.code==="erasure_transactional_certification_blocked");
+    assert.equal(db.docs.has(paths.device),true);
+    assert.equal(db.commits.length,0);
+  }
 });

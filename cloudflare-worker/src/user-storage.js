@@ -2,6 +2,10 @@ import {
   ImageAppealError, submitImageModerationAppeal,
 } from "./image-moderation-appeal.js";
 import { finalImageEvidenceFields } from "./image-moderation-retention.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
+import { accountDeletionHasActiveHold as held }
+  from "./account-deletion-active-holds.js";
 import { verifyPrivateChatImageMessage } from "./image-moderation-chat.js";
 import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import {
@@ -1597,37 +1601,80 @@ export async function verifyAccountStorageCleanupJob(db, job) {
   if (!/^[A-Za-z0-9_-]{3,128}$/.test(uid) ||
       !/^[A-Za-z0-9_-]{12,180}$/.test(requestId) ||
       clean(job?.data?.reason) !== "account_deleted_verified" ||
-      clean(job?.data?.status) !== "queued") return false;
-  const [request, checkpoint, user, audit] = await Promise.all([
-    db.get("account_deletion_requests/" + uid),
-    db.get("account_deletion_erasure_checkpoints/" + uid),
-    db.get("users/" + uid),
-    db.get("admin_audit_logs/r2_deletion_queue_" + requestId),
-  ]);
-  const held = d => [d?.legalHold, d?.retentionHold,
-    d?.deletionHold, d?.reviewHold, d?.evidenceHold,
-    d?.investigationHold, d?.reported, d?.appealPending,
-  ].some(x => x === true) ||
-    ["pending", "open", "under_review"].includes(
-      clean(d?.appealStatus).toLowerCase());
-  return request.exists && checkpoint.exists && user.exists && audit.exists &&
-    clean(request.data?.uid) === uid &&
-    clean(request.data?.requestId) === requestId &&
-    clean(checkpoint.data?.requestId) === requestId &&
-    clean(request.data?.status) === "processing" &&
-    clean(checkpoint.data?.phase) === "storage_media" &&
-    checkpoint.data?.destructiveAllowed === true &&
-    checkpoint.data?.storageRetentionApproved === true &&
-    checkpoint.data?.sharedMediaOwnershipReviewed === true &&
-    checkpoint.data?.legalEvidenceReviewComplete === true &&
-    checkpoint.data?.financialSettlementApproved === true &&
-    checkpoint.data?.playBillingReviewComplete === true &&
-    clean(user.data?.accountStatus) === "deletion_processing" &&
-    clean(user.data?.role) !== "owner" &&
-    clean(audit.data?.targetId) === uid &&
-    clean(audit.data?.requestId) === requestId &&
-    clean(audit.data?.action) === "accountErasureR2QueueCertified" &&
-    !held(request.data) && !held(checkpoint.data) && !held(user.data);
+      clean(job?.data?.status) !== "queued" ||
+      typeof db?.beginTransaction !== "function") return false;
+
+  // Reuse the six independently audited approvals already required by the
+  // finalizer, in the SAME read-only transaction as the current request,
+  // checkpoint, user and queue audit. Never equate checkpoint booleans with
+  // valid financial, Play, shared-asset, legal or retention signoffs.
+  const tx = await db.beginTransaction();
+  try {
+    // Six bounded exact snapshots in one transaction-scoped batchGet.
+    // Parallel REST GETs on one read/write transaction can contend on the
+    // Firestore Emulator. The production adapter supports getMany, while
+    // legacy unit fixtures retain their transaction-scoped exact fallback.
+    const paths = [
+      "account_deletion_requests/" + uid,
+      "account_deletion_erasure_checkpoints/" + uid,
+      "users/" + uid,
+      "admin_audit_logs/r2_deletion_queue_" + requestId,
+      "account_erasure_external_io_revocation_intents/" +
+        uid + "__" + requestId,
+      // This request-wide hold is NON-PERMISSIVE. An existing holder can
+      // never be mistaken for authorization to start or resume an R2
+      // deletion; it first requires independent external-I/O reconciliation.
+      "account_erasure_external_io_coordination_holds/" +
+        uid + "__" + requestId,
+    ];
+    const rows = typeof db.getMany === "function"
+      ? await db.getMany(paths, tx)
+      : await Promise.all(paths.map(path => db.get(path, tx)));
+    if (!Array.isArray(rows) || rows.length !== paths.length ||
+        rows.some(doc => !doc || typeof doc.exists !== "boolean")) {
+      throw new Error("account_erasure_queue_transaction_read_failed");
+    }
+    const [request, checkpoint, user, audit, revocationIntent,
+      coordinationHold] = rows;
+
+    // A durable pending stop request is independently authoritative even if
+    // certificates remain approved. This also rejects missing/malformed reads.
+    // It does NOT make the external bucket side effect atomic with Firestore.
+    const valid = revocationIntent?.exists === false &&
+      coordinationHold?.exists === false &&
+      request?.exists === true && checkpoint?.exists === true &&
+      user?.exists === true && audit?.exists === true &&
+      clean(request.data?.uid) === uid &&
+      clean(request.data?.requestId) === requestId &&
+      clean(checkpoint.data?.requestId) === requestId &&
+      clean(request.data?.status) === "processing" &&
+      clean(checkpoint.data?.phase) === "storage_media" &&
+      checkpoint.data?.destructiveAllowed === true &&
+      checkpoint.data?.storageRetentionApproved === true &&
+      checkpoint.data?.sharedMediaOwnershipReviewed === true &&
+      checkpoint.data?.legalEvidenceReviewComplete === true &&
+      checkpoint.data?.financialSettlementApproved === true &&
+      checkpoint.data?.playBillingReviewComplete === true &&
+      clean(user.data?.accountStatus) === "deletion_processing" &&
+      clean(user.data?.role) !== "owner" &&
+      clean(audit.data?.targetId) === uid &&
+      clean(audit.data?.requestId) === requestId &&
+      clean(audit.data?.action) === "accountErasureR2QueueCertified" &&
+      !held(request.data) && !held(checkpoint.data) && !held(user.data);
+    if (!valid) {
+      await db.rollback(tx);
+      return false;
+    }
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt,
+      nowMs: Date.now(),
+    });
+    await db.rollback(tx);
+    return true;
+  } catch {
+    await db.rollback(tx).catch(() => {});
+    return false;
+  }
 }
 
 export async function runDeletedAccountStorageCleanup(
@@ -1675,6 +1722,16 @@ export async function runDeletedAccountStorageCleanup(
   let transferred = 0;
   let failed = 0;
   for (const item of objects) {
+    // Each file must see live approvals again: a cancellation, appeal or
+    // revoked signoff after the page started stops the remaining records.
+    // Bucket.delete cannot be atomic with Firestore; a separate finalizer
+    // lease is still mandatory before any real production erasure.
+    if (!await verifyAccountStorageCleanupJob(db, job)) {
+      failed += 1;
+      console.error("Stopped account R2 cleanup after approval/hold changed",
+        clean(job.id).slice(0, 100));
+      break;
+    }
     try {
       const cleanup = await deleteAccountOwnedStorageObject({
         db,
@@ -1699,16 +1756,24 @@ export async function runDeletedAccountStorageCleanup(
   }
 
   if (objects.length < budget && failed === 0) {
-    await db.commit(null, [
-      db.writeDelete(`storage_account_cleanup_jobs/${job.id}`),
-      db.writeCreate(`storage_audit_logs/${auditId()}`, {
-        actorUid: "system",
-        subjectUid: ownerUid,
-        action: "completeDeletedAccountStorageCleanup",
-        reason: clean(job.data?.reason || "account_deleted"),
-        createdAt: new Date(nowMs),
-      }),
-    ]);
+    // Exhausting ONE indexed page does NOT prove all account media, legacy
+    // aliases, shared room/agency ownership and external R2 outcomes have
+    // been reconciled. The legacy final-page path used to delete the queued
+    // job and mint a misleading completion audit with no such certificate.
+    // Keep the job intact and require independently verified, durable,
+    // account-wide completion proof before a future finalizer can release it.
+    // The production scheduled account-erasure executor is still HARD OFF.
+    if (!await verifyAccountStorageCleanupJob(db, job)) {
+      return { jobsChecked: 1, checked: objects.length, deleted,
+        transferred, failed: 1, blocked: true,
+        completionVerified: false };
+    }
+    return {
+      jobsChecked: 1, checked: objects.length, deleted,
+      transferred, failed: 0, blocked: true,
+      pendingReconciliation: true, completionVerified: false,
+      reason: "account_storage_final_inventory_reconciliation_required",
+    };
   }
 
   return {
@@ -1925,6 +1990,24 @@ export async function cleanupQueuedStorageObject(
   return { status: "deleted", objectId };
 }
 
+// Account-erasure R2 side effects MUST remain disconnected from the live
+// hourly cleanup until revocation and in-flight external I/O share a proven
+// durable fence. A signed checkpoint alone cannot protect bucket.delete.
+// Ordinary replacement/expiry cleanup remains unaffected by this guard.
+export const ACCOUNT_ERASURE_R2_FENCE_READY = false;
+
+export async function runFencedDeletedAccountStorageCleanup(
+  db, bucket, options = {},
+) {
+  if (!ACCOUNT_ERASURE_R2_FENCE_READY) {
+    return {
+      jobsChecked: 0, checked: 0, deleted: 0, transferred: 0,
+      failed: 0, blocked: true, reason: "external_io_fence_not_ready",
+    };
+  }
+  return runDeletedAccountStorageCleanup(db, bucket, options);
+}
+
 export async function runDueStorageCleanup(
   env,
   {
@@ -1943,7 +2026,7 @@ export async function runDueStorageCleanup(
   );
   let remainingBudget = maxBatch;
 
-  const accountCleanup = await runDeletedAccountStorageCleanup(
+  const accountCleanup = await runFencedDeletedAccountStorageCleanup(
     db,
     bucket,
     { nowMs, limit: remainingBudget },

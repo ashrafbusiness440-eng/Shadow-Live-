@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
+import { REQUIRED_ERASURE_ADMISSION_DOMAINS }
+  from "./account-deletion-processing-admission.js";
 // INTERNAL ONLY: bounded, manually driven private-text redaction batches.
 // No API route, cron, polling, stage advancement or production executor.
 // Checkpoints created by the live account-delete lifecycle have
@@ -10,6 +12,11 @@ const clean = v => String(v ?? "").trim();
 const uidOk = v => /^[A-Za-z0-9_-]{3,128}$/.test(clean(v));
 const requestOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 const idOk = v => /^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
+const GRACE_MS = 30*86400_000;
+const toMs = v => v instanceof Date ? v.getTime()
+  : typeof v?.toDate === "function" ? v.toDate().getTime()
+  : typeof v === "string" ? Date.parse(v)
+  : Number.isFinite(v?.seconds) ? v.seconds*1000 : NaN;
 
 const allowedText = new Set(["text", "animated_emoji"]);
 const safeFields = new Set([
@@ -53,17 +60,24 @@ export async function drainAccountPrivateTextPage(db, {
       !(now instanceof Date) || !Number.isFinite(now.getTime())) {
     reject("invalid_private_text_batch", 400);
   }
-  const [request, checkpoint, user, conversation] = await Promise.all([
-    db.get("account_deletion_requests/" + uid),
-    db.get("account_deletion_erasure_checkpoints/" + uid),
-    db.get("users/" + uid),
-    db.get("conversations/" + conversationId),
-  ]);
+  // Check the original admission and grace BEFORE enumerating any private
+  // messages. The later per-message mutation separately rechecks all twelve
+  // audited signoff documents in its own write transaction.
+  const [request, checkpoint, user, conversation, admission] =
+    await Promise.all([
+      db.get("account_deletion_requests/" + uid),
+      db.get("account_deletion_erasure_checkpoints/" + uid),
+      db.get("users/" + uid),
+      db.get("conversations/" + conversationId),
+      db.get("admin_audit_logs/erasure_processing_start_" + requestId),
+    ]);
   if (!request.exists || !checkpoint.exists || !user.exists ||
+      !admission.exists ||
       clean(request.data?.uid) !== uid ||
       clean(request.data?.requestId) !== requestId ||
       clean(request.data?.status) !== "processing" ||
       clean(checkpoint.data?.requestId) !== requestId ||
+      clean(checkpoint.data?.uid) !== uid ||
       clean(checkpoint.data?.phase) !== "private_text" ||
       checkpoint.data?.destructiveAllowed !== true ||
       checkpoint.data?.privateMessageRetentionCleared !== true ||
@@ -71,8 +85,26 @@ export async function drainAccountPrivateTextPage(db, {
       clean(user.data?.accountStatus) !== "deletion_processing" ||
       clean(user.data?.role) === "owner" ||
       user.data?.authDeleted === true ||
-      held(request.data) || held(checkpoint.data) || held(user.data)) {
+      clean(admission.data?.action) !== "accountErasureProcessingAdmitted" ||
+      clean(admission.data?.targetId) !== uid ||
+      clean(admission.data?.requestId) !== requestId ||
+      !Array.isArray(admission.data?.certifiedDomains) ||
+      admission.data.certifiedDomains.length !==
+        REQUIRED_ERASURE_ADMISSION_DOMAINS.length ||
+      !REQUIRED_ERASURE_ADMISSION_DOMAINS.every(domain =>
+        admission.data.certifiedDomains.includes(domain)) ||
+      held(request.data) || held(checkpoint.data) || held(user.data) ||
+      held(admission.data)) {
     reject("private_text_batch_not_authorized");
+  }
+  const requestedAtMs=toMs(request.data?.requestedAt);
+  const eligibleAtMs=toMs(request.data?.eligibleAt);
+  if (!Number.isSafeInteger(requestedAtMs) ||
+      !Number.isSafeInteger(eligibleAtMs) ||
+      requestedAtMs<=0 || eligibleAtMs<requestedAtMs+GRACE_MS ||
+      now.getTime()<requestedAtMs+GRACE_MS ||
+      now.getTime()<eligibleAtMs) {
+    reject("private_text_batch_grace_not_elapsed");
   }
   const participants = conversation.data?.participants;
   if (!conversation.exists || held(conversation.data) ||

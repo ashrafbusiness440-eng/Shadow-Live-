@@ -5,6 +5,8 @@ import {getApps,initializeApp,deleteApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
 import {removeDeletedAccountSocialPair} from "../../cloudflare-worker/src/account-deletion-social-pair-stage.js";
+import { seedEmulatorErasureCertificates }
+  from "./helpers/account-erasure-synthetic-certificates.js";
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app),dbAdapter=cloudflareFirestoreAdapter(db);
 after(async()=>{await deleteApp(app);});
@@ -12,6 +14,7 @@ test("emulator: delete only the four targeted follow/block records, retry idempo
  const suffix=randomUUID().replaceAll("-","").slice(0,18);
  const uid="erasure_social_"+suffix,otherUid="counterpart_"+suffix,third="unrelated_"+suffix;
  const requestId="erasure_req_"+suffix;
+ const nowMs=Date.now();
  const request=db.doc("account_deletion_requests/"+uid);
  const checkpoint=db.doc("account_deletion_erasure_checkpoints/"+uid);
  const user=db.doc("users/"+uid);
@@ -22,8 +25,10 @@ test("emulator: delete only the four targeted follow/block records, retry idempo
   db.doc(`user_blocks/${otherUid}/items/${uid}`),
  ];
  const unrelated=db.doc(`follows/${otherUid}__${third}`);
+ const certificates=await seedEmulatorErasureCertificates(db,{uid,requestId,nowMs});
  await Promise.all([
-  request.set({uid,requestId,status:"processing"}),
+  request.set({uid,requestId,status:"processing",
+    requestedAt:new Date(nowMs-40*86400_000)}),
   checkpoint.set({requestId,phase:"social_links",destructiveAllowed:true}),
   user.set({role:"user",accountStatus:"deletion_processing"}),
   pair[0].set({followerUid:uid,followingUid:otherUid}),
@@ -50,6 +55,6 @@ test("emulator: delete only the four targeted follow/block records, retry idempo
    await assert.rejects(removeDeletedAccountSocialPair(dbAdapter,opts),
      e=>e.code==="social_pair_erasure_blocked");
  }finally{
-   await Promise.all([request,checkpoint,user,unrelated,...pair].map(ref=>ref.delete()));
+   await Promise.all([request,checkpoint,user,unrelated,...pair,...certificates].map(ref=>ref.delete()));
  }
 });

@@ -276,7 +276,7 @@ test("read-only closure checklist reuses all six admission certificate rules",as
   assert.equal(result.erasureAllowed,false);
   assert.equal(result.completionVerified,false);
   assert.equal(result.firebaseAuthDeleted,false);
-  assert.equal(db.reads.length,15);
+  assert.equal(db.reads.length,21);
   assert.equal(db.commits.length,0);
   assert.deepEqual(db.docs.get(userPath),originalWallet);
 });
@@ -341,10 +341,31 @@ test("closure review is wired only to authenticated Owner and fresh auth",()=>{
   const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
   const gate=source.indexOf('if (["accountDeletionCompletedLogs"');
   const closureRoute=source.indexOf('if (action === "accountDeletionClosureReadiness")');
-  const recent=source.indexOf('throw new AdminInboxError("recent_auth_required"');
+  // The independent admin reviewer has its OWN fresh-auth gate before
+  // the Owner-only block. Assert this Owner gate's own check, not the first
+  // occurrence elsewhere in the file.
+  const recent=source.indexOf('throw new AdminInboxError("recent_auth_required"',gate);
   assert.ok(gate>=0 && closureRoute>gate && recent>gate && closureRoute>recent);
   assert.match(source.slice(gate,closureRoute),/if \(!actor\.owner\)/);
   const helper=readFileSync("cloudflare-worker/src/account-deletion-closure-readiness.js","utf8");
   assert.doesNotMatch(helper,/db\.commit\(|db\.runQuery\(|writeDelete\(|writeUpdate\(|deleteAuthUser\(|bucket\.delete\(/);
   assert.match(helper,/destructiveAllowed: false/);
+});
+
+test("readiness and admission reject six tombstoned approvals even if decision is approved",async()=>{
+  for(const domain of REQUIRED_ERASURE_ADMISSION_DOMAINS){
+    const db=new Db(),path="admin_audit_logs/erasure_domain_withdrawal_"+
+      requestId+"__"+domain;
+    db.docs.set(path,{action:"accountErasureDomainWithdrawnWithExternalIoStop",
+      targetId:uid,requestId,domain});
+    assert.equal(db.docs.get(approvePath(domain)).decision,"approved");
+    await assert.rejects(run(db),
+      e=>e.code==="erasure_domain_certification_missing_or_invalid");
+    assert.equal(db.commits.length,0);
+    const report=await closure(db);
+    const status=report.domains.find(x=>x.domain===domain);
+    assert.equal(status.certificateDocumentsValid,false);
+    assert.equal(report.structurallySignedDomains,5);
+    assert.equal(report.destructiveAllowed,false);
+  }
 });

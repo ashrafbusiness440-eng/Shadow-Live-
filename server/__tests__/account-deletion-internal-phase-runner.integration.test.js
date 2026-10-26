@@ -125,3 +125,130 @@ test("emulator: production-style blocked checkpoint cannot remove disposable mes
     await Promise.all(refs.map(ref=>ref.delete()));
   }
 });
+
+import { recheckErasureCertificatesInTransaction as recheckTransactional }
+  from "../../cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js";
+
+test("emulator: withdrawn financial approval is rejected inside an actual Firestore transaction",async()=>{
+  const suffix=sid();
+  const uid="erase_conflict_"+suffix, requestId="conflict_request_"+suffix;
+  const ownerUid="owner_erasure_test_123";
+  const requestedAtMs=Date.parse("2026-08-01T00:00:00Z");
+  const nowMs=Date.parse("2026-10-25T12:00:00Z");
+  const note=store.doc("notifications/conflict_notice_"+suffix);
+  const signoffs=domains.flatMap(domain=>[
+    store.doc("account_deletion_erasure_approvals/"+requestId+"__"+domain),
+    store.doc("admin_audit_logs/erasure_domain_cert_"+requestId+"__"+domain),
+  ]);
+  try {
+    await Promise.all([
+      note.set({userId:uid,body:"private notice must survive"}),
+      ...domains.flatMap((domain,i)=>[
+        signoffs[i*2].set({uid,requestId,domain,decision:"approved",
+          signedByUid:ownerUid,signedAt:new Date(nowMs-20000),
+          expiresAt:new Date(nowMs+86400_000)}),
+        signoffs[i*2+1].set({action:"accountErasureDomainCertified",
+          actorUid:ownerUid,targetId:uid,requestId,domain,
+          createdAt:new Date(nowMs-20000)}),
+      ]),
+    ]);
+    // Revocation is a separately committed change, visible before the
+    // transaction. Do not claim this is a real simultaneous race test.
+    await signoffs[0].update({decision:"revoked"});
+    const txDb={async get(path,tx){
+      const snapshot=await tx.get(store.doc(path));
+      return {exists:snapshot.exists,data:snapshot.exists?snapshot.data():null};
+    }};
+    await assert.rejects(store.runTransaction(async tx=>{
+      await recheckTransactional(txDb,tx,{
+        uid,requestId,requestedAtMs,nowMs,
+      });
+      tx.delete(note);
+    },{maxAttempts:3}),e=>
+      e.code==="erasure_transactional_certification_blocked");
+    assert.equal((await note.get()).exists,true);
+  } finally {
+    await Promise.all([note,...signoffs].map(ref=>ref.delete()));
+  }
+});
+
+test("emulator: competing revoke and erasure writes have a safe server-ordered outcome",
+  {timeout:25000},async()=>{
+  const suffix=sid();
+  const uid="race_erasure_"+suffix,requestId="race_request_"+suffix;
+  const ownerUid="owner_erasure_test_123";
+  const nowMs=Date.parse("2026-10-25T12:00:00Z");
+  const requestedAtMs=nowMs-50*86400_000;
+  const notice=store.doc("notifications/race_owned_"+suffix);
+  const marker=store.doc("admin_audit_logs/race_test_commit_"+suffix);
+  const signoffs=domains.flatMap(domain=>[
+    store.doc("account_deletion_erasure_approvals/"+requestId+"__"+domain),
+    store.doc("admin_audit_logs/erasure_domain_cert_"+requestId+"__"+domain),
+  ]);
+  let resumeFirst;
+  let reachedFirstRead;
+  const firstRead=new Promise(resolve=>{reachedFirstRead=resolve;});
+  const proceed=new Promise(resolve=>{resumeFirst=resolve;});
+  let attempts=0;
+  try {
+    await Promise.all([
+      notice.set({userId:uid,body:"must survive if revocation commits first"}),
+      ...domains.flatMap((domain,i)=>[
+        signoffs[i*2].set({uid,requestId,domain,decision:"approved",
+          signedByUid:ownerUid,signedAt:new Date(nowMs-10000),
+          expiresAt:new Date(nowMs+86400_000)}),
+        signoffs[i*2+1].set({action:"accountErasureDomainCertified",
+          actorUid:ownerUid,targetId:uid,requestId,domain,
+          createdAt:new Date(nowMs-10000)}),
+      ]),
+    ]);
+    const txDb={async get(path,tx){
+      const snapshot=await tx.get(store.doc(path));
+      return {exists:snapshot.exists,data:snapshot.exists?snapshot.data():null};
+    }};
+    const transaction=store.runTransaction(async tx=>{
+      attempts++;
+      await recheckTransactional(txDb,tx,{
+        uid,requestId,requestedAtMs,nowMs,
+      });
+      if(attempts===1){
+        reachedFirstRead();
+        await proceed;
+      }
+      // Test-only marker provides an authoritative server commit updateTime.
+      tx.create(marker,{kind:"isolated_erasure_race",uid});
+      tx.delete(notice);
+    },{maxAttempts:4});
+    await firstRead;
+    // Firestore server transactions can LOCK read documents. The revoker
+    // therefore MUST start competing before release, but MUST NOT be awaited
+    // while we hold the transaction open (that would deadlock).
+    const revoke=signoffs[0].update({decision:"revoked"});
+    resumeFirst();
+    const [outcome,revocation]=await Promise.all([
+      transaction.then(()=>({committed:true}),
+        error=>({committed:false,error})),
+      revoke,
+    ]);
+    assert.ok(attempts>=1);
+    assert.equal((await signoffs[0].get()).data().decision,"revoked");
+    if(outcome.committed){
+      // Erasure may legitimately commit BEFORE the revocation: transaction
+      // locks serialize the writes. It must not commit AFTER revocation.
+      assert.equal((await notice.get()).exists,false);
+      const receipt=await marker.get();
+      assert.equal(receipt.exists,true);
+      assert.ok(receipt.updateTime.toMillis()<=revocation.writeTime.toMillis());
+    }else{
+      // If revoke won, the conflicting transaction must abort or retry into
+      // the now-revoked signoff. No erase or marker may have committed.
+      assert.ok(["erasure_transactional_certification_blocked",10,"aborted"]
+        .includes(outcome.error?.code),String(outcome.error));
+      assert.equal((await notice.get()).exists,true);
+      assert.equal((await marker.get()).exists,false);
+    }
+  } finally {
+    resumeFirst?.();
+    await Promise.all([notice,marker,...signoffs].map(ref=>ref.delete()));
+  }
+});

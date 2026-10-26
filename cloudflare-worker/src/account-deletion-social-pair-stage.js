@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as hold } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // Fail-closed internal per-counterparty social-link cleanup.
 // NOT routed or scheduled. Exact four-document transaction only.
 const clean=v=>String(v??"").trim();
@@ -8,9 +10,10 @@ const reqOk=v=>/^[A-Za-z0-9_-]{12,180}$/.test(clean(v));
 export class SocialPairErasureError extends Error {
   constructor(code,status=409){super(code);this.code=code;this.status=status;}
 }
-export async function removeDeletedAccountSocialPair(db,{uid,otherUid,requestId}={}){
+export async function removeDeletedAccountSocialPair(db,{uid,otherUid,requestId,nowMs=Date.now()}={}){
   uid=clean(uid);otherUid=clean(otherUid);requestId=clean(requestId);
-  if(!uidOk(uid)||!uidOk(otherUid)||uid===otherUid||!reqOk(requestId)){
+  if(!uidOk(uid)||!uidOk(otherUid)||uid===otherUid||!reqOk(requestId)||
+     !Number.isSafeInteger(nowMs)||nowMs<=0){
     throw new SocialPairErasureError("invalid_social_pair",400);
   }
   const links=[
@@ -55,6 +58,9 @@ export async function removeDeletedAccountSocialPair(db,{uid,otherUid,requestId}
     if(!writes.length){
       await db.rollback(tx);return {ok:true,removed:0,duplicate:true};
     }
+    await recheckErasureCertificatesInTransaction(db,tx,{
+      uid,requestId,requestedAt:request.data?.requestedAt,nowMs,
+    });
     await db.commit(tx,writes);
     return {ok:true,removed:writes.length,duplicate:false};
   }catch(error){

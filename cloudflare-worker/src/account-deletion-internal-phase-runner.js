@@ -7,6 +7,7 @@ import { accountDeletionHasActiveHold as held }
 import {
   REQUIRED_ERASURE_ADMISSION_DOMAINS,
   validateErasureDomainSignoff,
+  erasureDomainWithdrawalAuditPath,
 } from "./account-deletion-processing-admission.js";
 import {
   drainAccountOwnedNotifications,
@@ -81,6 +82,12 @@ export async function runCertifiedInternalAccountErasurePage(db, {
         : (conversationId !== null || cursor !== null))) {
     reject("invalid_internal_erasure_step", 400);
   }
+  // The direct private-text primitive has not received its same-transaction
+  // certificate guard. Even a forged destructiveAllowed checkpoint and valid
+  // signoffs MUST NOT dispatch it. This block has no production escape hatch.
+  if (step === "private_text") {
+    reject("private_text_erasure_transaction_guard_missing");
+  }
   const requestPath = "account_deletion_requests/" + uid;
   const checkpointPath = "account_deletion_erasure_checkpoints/" + uid;
   const userPath = "users/" + uid;
@@ -123,18 +130,20 @@ export async function runCertifiedInternalAccountErasurePage(db, {
       nowMs < requestedAtMs + GRACE_MS || nowMs < eligibleAtMs) {
     reject("internal_erasure_grace_not_elapsed");
   }
-  // Recheck ALL six current certificates, including appeal/retention holds,
-  // expiry and immutable audit, before invoking ANY existing erasure stage.
+  // Recheck ALL six current certificates AND their immutable withdrawal
+  // tombstones, including appeal/retention holds, before ANY erasure stage.
+  // Even a tampered approved flag cannot resurrect withdrawn authorization.
   const signed = await Promise.all(REQUIRED_ERASURE_ADMISSION_DOMAINS
     .flatMap(domain => [
       db.get(certificatePath(requestId, domain)),
       db.get(certificateAuditPath(requestId, domain)),
+      db.get(erasureDomainWithdrawalAuditPath(requestId, domain)),
     ]));
   for (let i = 0; i < REQUIRED_ERASURE_ADMISSION_DOMAINS.length; i++) {
     try {
-      validateErasureDomainSignoff(signed[i * 2], signed[i * 2 + 1], {
+      validateErasureDomainSignoff(signed[i * 3], signed[i * 3 + 1], {
         uid, requestId, domain: REQUIRED_ERASURE_ADMISSION_DOMAINS[i],
-        requestedAtMs, nowMs,
+        requestedAtMs, nowMs, withdrawal: signed[i * 3 + 2],
       });
     } catch {
       reject("internal_erasure_certification_invalid");
@@ -143,12 +152,12 @@ export async function runCertifiedInternalAccountErasurePage(db, {
   const args = { uid, requestId, limit };
   let result;
   if (step === "notifications") {
-    result = await drainAccountOwnedNotifications(db, args);
+    result = await drainAccountOwnedNotifications(db, { ...args, nowMs });
   } else if (step === "push_devices") {
-    result = await drainAccountPrivateCallPushDevices(db, args);
+    result = await drainAccountPrivateCallPushDevices(db, { ...args, nowMs });
   } else if (step === "diary_likes" || step === "diary_views") {
     result = await drainAccountDiaryInteractions(db, {
-      ...args, kind: step === "diary_likes" ? "likes" : "views",
+      ...args, kind: step === "diary_likes" ? "likes" : "views", nowMs,
     });
   } else {
     result = await drainAccountPrivateTextPage(db, {

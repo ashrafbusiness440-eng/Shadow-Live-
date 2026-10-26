@@ -41,17 +41,24 @@ const approvalPath = (requestId, domain) =>
   `account_deletion_erasure_approvals/${requestId}__${domain}`;
 const auditPath = (requestId, domain) =>
   `admin_audit_logs/erasure_domain_cert_${requestId}__${domain}`;
+export const erasureDomainWithdrawalAuditPath = (requestId, domain) =>
+  `admin_audit_logs/erasure_domain_withdrawal_${requestId}__${domain}`;
 const startAuditPath = requestId =>
   "admin_audit_logs/erasure_processing_start_" + requestId;
 
 export function validateErasureDomainSignoff(approval, audit, { uid, requestId, domain,
-  requestedAtMs, nowMs }) {
+  requestedAtMs, nowMs, withdrawal }) {
   const a = approval?.data;
   const b = audit?.data;
   const signedAt = ms(a?.signedAt);
   const auditedAt = ms(b?.createdAt);
   const expiresAt = ms(a?.expiresAt);
-  if (!approval?.exists || !audit?.exists ||
+  // Immutable withdrawal is a request-scoped, non-reusable tombstone.
+  // Do NOT trust a mutable "approved" value restored after withdrawal.
+  // Missing/malformed withdrawal snapshots cannot silently mean "absent".
+  if (withdrawal?.exists !== false ||
+      a?.withdrawnAt !== undefined || a?.withdrawnByUid !== undefined ||
+      !approval?.exists || !audit?.exists ||
       clean(a?.uid) !== uid || clean(a?.requestId) !== requestId ||
       clean(a?.domain) !== domain || clean(a?.decision) !== "approved" ||
       clean(b?.action) !== "accountErasureDomainCertified" ||
@@ -142,16 +149,26 @@ export async function admitCertifiedAccountErasure(db, {
         nowMs < requestedAtMs + GRACE_MS || nowMs < eligibleAtMs) {
       throw new AccountErasureAdmissionError("erasure_grace_not_elapsed");
     }
-    const signed = await Promise.all(REQUIRED_ERASURE_ADMISSION_DOMAINS
-      .flatMap(domain => [
-        db.get(approvalPath(requestId, domain), tx),
-        db.get(auditPath(requestId, domain), tx),
-      ]));
+    // Read the immutable withdrawal tombstone alongside each approval and
+    // original audit INSIDE the same transaction that admits processing.
+    const paths = REQUIRED_ERASURE_ADMISSION_DOMAINS.flatMap(domain => [
+      approvalPath(requestId, domain),
+      auditPath(requestId, domain),
+      erasureDomainWithdrawalAuditPath(requestId, domain),
+    ]);
+    const signed = typeof db.getMany === "function"
+      ? await db.getMany(paths, tx)
+      : await Promise.all(paths.map(path => db.get(path, tx)));
+    if (!Array.isArray(signed) || signed.length !== paths.length ||
+        signed.some(row => !row || typeof row.exists !== "boolean")) {
+      throw new AccountErasureAdmissionError(
+        "erasure_domain_certification_missing_or_invalid");
+    }
     for (let i = 0; i < REQUIRED_ERASURE_ADMISSION_DOMAINS.length; i++) {
-      validateErasureDomainSignoff(signed[i * 2], signed[i * 2 + 1], {
+      validateErasureDomainSignoff(signed[i * 3], signed[i * 3 + 1], {
         uid, requestId,
         domain: REQUIRED_ERASURE_ADMISSION_DOMAINS[i],
-        requestedAtMs, nowMs,
+        requestedAtMs, nowMs, withdrawal: signed[i * 3 + 2],
       });
     }
     // Even idempotent retries must revalidate every current certificate and

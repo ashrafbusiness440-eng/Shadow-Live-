@@ -1,0 +1,50 @@
+name: Isolated Account Erasure R2 Provider Fixture
+
+# Deliberately NOT a pull_request, push, deploy or cron workflow.
+# An operator must first provision the dedicated, isolated R2 TEST bucket
+# named shadow-live-erasure-test with its OWN test-only S3 credentials.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: "Type the exact standalone bucket: shadow-live-erasure-test"
+        required: true
+        type: string
+      confirmation:
+        description: "Type TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erasure-isolated-r2-test-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  isolated-provider-proof:
+    # Never silently skip a bad request as a green workflow.
+    # The script validates both exact strings BEFORE constructing a client.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: cloudflare-worker
+    env:
+      R2_ERASURE_TEST_BUCKET: ${{ inputs.bucket }}
+      R2_ERASURE_TEST_CONFIRMATION: ${{ inputs.confirmation }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_ERASURE_TEST_ACCESS_KEY_ID: ${{ secrets.R2_ERASURE_TEST_ACCESS_KEY_ID }}
+      R2_ERASURE_TEST_SECRET_ACCESS_KEY: ${{ secrets.R2_ERASURE_TEST_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Cloudflare Worker package dependencies
+        run: npm install --no-audit --no-fund
+      - name: Safety guard and negative tests (offline)
+        run: node --test ../server/__tests__/account-deletion-r2-isolated-smoke.test.js
+      - name: Evidence from separately provisioned isolated Cloudflare R2 bucket
+        run: node scripts/account-erasure-isolated-r2-smoke.mjs
