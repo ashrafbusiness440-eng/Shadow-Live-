@@ -142,11 +142,15 @@ test("30 day grace and wrong request are blockers",async()=>{
   await assert.rejects(reserve(wrong,opts()),
     e=>e.code==="external_io_reservation_not_authorized");
 });
-test("reserved I/O primitive has no route, timer, bucket usage, or Auth removal",()=>{
+test("reservation and dispatch stay unrouted; Owner emergency stop is non-destructive",()=>{
   const src=readFileSync(
     "cloudflare-worker/src/account-deletion-external-io-reservation.js","utf8");
   const route=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
-  assert.doesNotMatch(route,/account-deletion-external-io-reservation/);
+  // The safe immutable STOP is now intentionally routed through the
+  // verified Owner and fresh-auth gate. No reservation/holder/probe or
+  // destructive R2 operation is made available through the admin API.
+  assert.match(route,/requestAccountErasureExternalIoRevocationIntent\(db/);
+  assert.doesNotMatch(route,/(?:reserveAccountErasureExternalIo|recordAccountErasureExternalIoCoordinationHold|recordAccountErasureExternalIoUncertainAttempt|recordAccountErasureExternalIoReadOnlyProbe|rehearseAccountErasureR2Dispatch)\(/);
   for(const bad of ["bucket.delete(", "deleteAuthUser(", "setInterval(", "setTimeout("]){
     assert.equal(src.includes(bad),false);
   }
