@@ -11,8 +11,13 @@ const permittedAssessments = Object.freeze([
   "external_history_discrepancy",
   "provider_evidence_submitted_unverified",
 ]);
+export class AccountErasureIndependentReviewError extends Error {
+  constructor(code,status=409){
+    super(code);this.code=code;this.status=status;
+  }
+}
 const fail = (code,status=409) => {
-  const e=new Error(code);e.code=code;e.status=status;throw e;
+  throw new AccountErasureIndependentReviewError(code,status);
 };
 const rowOk=row=>row&&typeof row.exists==="boolean";
 const REVIEW_CAPABILITY="reviewAccountErasureR2Evidence";

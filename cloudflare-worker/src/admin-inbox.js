@@ -15,6 +15,10 @@ import {
   revokeAccountErasureExternalIoReviewerGrant,
   AccountErasureReviewerGrantError,
 } from "./account-deletion-external-io-reviewer-grants.js";
+import {
+  recordAccountErasureExternalIoIndependentReview,
+  AccountErasureIndependentReviewError,
+} from "./account-deletion-external-io-review.js";
 import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
@@ -673,6 +677,33 @@ export async function adminInbox(request, env) {
     if (action === "markVisibleRead") {
       return json(request, env, await markVisibleRead(db, actor));
     }
+    // The independent assessor (not Owner) must present the SAME verified
+    // Firebase session and a CURRENT explicitly capable admin profile. The
+    // internal writer rechecks the matching scoped, immutable Owner grant,
+    // revocation tombstone, observations and stop inside its transaction.
+    // An arbitrary caller-supplied actor flag is NEVER sufficient.
+    if (action === "accountErasureR2IndependentReview") {
+      if (actor.owner || !actor.adminEnabled ||
+          !actor.capabilities.has("reviewAccountErasureR2Evidence")) {
+        throw new AdminInboxError("forbidden", 403);
+      }
+      const age = Math.floor(Date.now() / 1000) -
+        Number(decoded?.auth_time);
+      if (!Number.isFinite(age) || age < -60 || age > 600) {
+        throw new AdminInboxError("recent_auth_required", 401);
+      }
+      return json(request, env,
+        await recordAccountErasureExternalIoIndependentReview(db, {
+          uid: body.targetUid,
+          requestId: body.requestId,
+          objectId: body.objectId,
+          token: body.token,
+          grantIssuerUid: body.grantIssuerUid,
+          assessment: body.assessment,
+          evidenceDigestSha256: body.evidenceDigestSha256,
+          actor: {uid: actor.uid, evidenceReviewer: true},
+        }));
+    }
     // Reuse the existing admin inbox route; never expose account erasure
     // controls or retention notes to ordinary moderators.
     if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
@@ -756,6 +787,7 @@ export async function adminInbox(request, env) {
         error instanceof AccountDeletionReviewControlError ||
          error instanceof AccountErasureCheckpointError ||
          error instanceof AccountErasureReviewerGrantError ||
+         error instanceof AccountErasureIndependentReviewError ||
          error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }

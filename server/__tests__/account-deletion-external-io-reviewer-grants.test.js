@@ -176,3 +176,19 @@ test("Owner route reuses verified Firebase token, current profile and recent aut
   assert.match(src,/accountErasureR2ReviewerGrant/);
   assert.match(src,/accountErasureR2ReviewerRevoke/);
 });
+
+test("independent review HTTP action requires live admin capability and recent Firebase auth",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
+  const start=source.indexOf('if (action === "accountErasureR2IndependentReview")');
+  const end=source.indexOf("// Reuse the existing admin inbox route;",start);
+  assert.ok(start>0 && end>start);
+  const section=source.slice(start,end);
+  assert.match(section,/actor\.owner/);
+  assert.match(section,/actor\.adminEnabled/);
+  assert.match(section,/actor\.capabilities\.has\("reviewAccountErasureR2Evidence"\)/);
+  assert.match(section,/age > 600/);
+  assert.match(section,/recordAccountErasureExternalIoIndependentReview\(db/);
+  assert.match(section,/actor: \{uid: actor\.uid, evidenceReviewer: true\}/);
+  assert.doesNotMatch(section,/body\.actor|body\.evidenceReviewer|body\.owner/);
+});

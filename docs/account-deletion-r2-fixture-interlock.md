@@ -300,3 +300,49 @@ sanctioned isolated test bucket, credential protection, six independent
 data-domain certifications and the safe eventual finalizer. This route
 does not implement or enable production account / R2 / Firebase Auth
 deletion and no merge or deploy is implied.
+
+
+## Separately provisioned Cloudflare R2 erasure TEST-bucket evidence
+
+A MANUAL-ONLY GitHub Action, `.github/workflows/account-erasure-isolated-r2-proof.yml`,
+runs `cloudflare-worker/scripts/account-erasure-isolated-r2-smoke.mjs`
+only after explicit confirmation. It NEVER runs for PRs, pushes, a
+timer or production deployment. It does not import any erasure executor.
+The script refuses every bucket except **`shadow-live-erasure-test`**;
+the production `shadow-live-storage` bucket is not an allowed value,
+including with disguised slash/path suffixes.
+
+The user must separately provision this isolated test bucket and **two
+test-only** repository secrets, `R2_ERASURE_TEST_ACCESS_KEY_ID` and
+`R2_ERASURE_TEST_SECRET_ACCESS_KEY`, scoped to that bucket, not the
+production credential pair. The existing `CLOUDFLARE_ACCOUNT_ID`
+is reused only to locate the Cloudflare S3 endpoint. Trigger inputs:
+
+- `bucket` exactly `shadow-live-erasure-test`
+- `confirmation` exactly `TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE`
+
+Only a cryptographically fresh, run-specific
+`erasure-fixture/github-<run-id>/<random-uuid>.bin` may be created or
+deleted. Provider operations: HEAD (404 required), PUT nonce payload,
+HEAD with exact length + ETag, GET to compare exact bytes, a **single**
+DELETE, then HEAD (404 required). An unknown timeout after DELETE is
+NEVER retried; the generated fixture key is logged for manual
+reconciliation. Failed pre-delete verification never invokes DELETE.
+No list, wildcard, multi-delete, user-provided key, existing account
+asset, Firebase Auth action, certificate, stage status or success
+receipt occurs here. Offline stub tests cover production-bucket name
+rejection, missing test credentials, metadata mismatch, one-shot DELETE
+and unknown-outcome handling.
+
+**Important distinction:** a successful test-bucket smoke is
+*provider-function evidence only*. It is not evidence that the
+stopped account's actual R2 operation happened, that shared objects are
+erasable, that a Firebase deletion succeeded, or that Gate 1 can release
+a stop. The real-world execution order, independent provider logs,
+account asset/owner ownership, stale signed-off domain writers, and
+human finalizer are still blocked until independently certified.
+
+This workflow is intentionally NOT invoked automatically. If dedicated
+test-bucket credentials do not exist, it cannot run; a successful
+production R2 smoke on the unrelated `shadow-live-storage` bucket
+must never be mistaken for the isolated Gate 1 test.
