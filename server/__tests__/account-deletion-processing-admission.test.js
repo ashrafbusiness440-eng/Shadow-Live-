@@ -341,7 +341,10 @@ test("closure review is wired only to authenticated Owner and fresh auth",()=>{
   const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
   const gate=source.indexOf('if (["accountDeletionCompletedLogs"');
   const closureRoute=source.indexOf('if (action === "accountDeletionClosureReadiness")');
-  const recent=source.indexOf('throw new AdminInboxError("recent_auth_required"');
+  // The independent admin reviewer has its OWN fresh-auth gate before
+  // the Owner-only block. Assert this Owner gate's own check, not the first
+  // occurrence elsewhere in the file.
+  const recent=source.indexOf('throw new AdminInboxError("recent_auth_required"',gate);
   assert.ok(gate>=0 && closureRoute>gate && recent>gate && closureRoute>recent);
   assert.match(source.slice(gate,closureRoute),/if \(!actor\.owner\)/);
   const helper=readFileSync("cloudflare-worker/src/account-deletion-closure-readiness.js","utf8");
