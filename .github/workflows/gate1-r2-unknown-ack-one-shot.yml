@@ -1,0 +1,46 @@
+name: Gate1 One-time TEST Bucket Lost-ACK Rehearsal
+
+# Exact branch and exact commit message; no PR, cron, default-branch deploy.
+on:
+  push:
+    branches:
+      - gate1-r2-unknown-ack-proof-20261026
+    paths:
+      - .github/workflows/gate1-r2-unknown-ack-one-shot.yml
+      - cloudflare-worker/scripts/account-erasure-r2-unknown-outcome-smoke.mjs
+
+permissions:
+  contents: read
+concurrency:
+  group: gate1-r2-unknown-ack-once
+  cancel-in-progress: false
+
+jobs:
+  isolated-unknown-ack:
+    if: >-
+      ${{ github.repository == 'ashrafbusiness440-eng/Shadow-Live-' && github.ref == 'refs/heads/gate1-r2-unknown-ack-proof-20261026' && github.event.head_commit.message == 'test(gate1): one isolated R2 lost ACK rehearsal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: cloudflare-worker
+    env:
+      R2_ERASURE_TEST_BUCKET: shadow-live-erasure-test
+      R2_ERASURE_TEST_CONFIRMATION: TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE
+      R2_AMBIGUOUS_DELETE_TEST_CONFIRMATION: SIMULATE_LOST_DELETE_ACK_TEST_BUCKET_ONLY
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_ERASURE_TEST_ACCESS_KEY_ID: ${{ secrets.R2_ERASURE_TEST_ACCESS_KEY_ID }}
+      R2_ERASURE_TEST_SECRET_ACCESS_KEY: ${{ secrets.R2_ERASURE_TEST_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline strict bucket guard and no-retry tests
+        run: |
+          node --check scripts/account-erasure-r2-unknown-outcome-smoke.mjs
+          node --test ../server/__tests__/account-deletion-r2-unknown-outcome-smoke.test.js
+      - name: Install test-only S3 request signing library
+        run: npm install --omit=dev --no-audit --no-fund --ignore-scripts
+      - name: Test bucket only - one DELETE acknowledgment lost, independent HEAD
+        run: node scripts/account-erasure-r2-unknown-outcome-smoke.mjs
