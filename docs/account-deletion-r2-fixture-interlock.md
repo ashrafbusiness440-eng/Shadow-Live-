@@ -346,3 +346,27 @@ This workflow is intentionally NOT invoked automatically. If dedicated
 test-bucket credentials do not exist, it cannot run; a successful
 production R2 smoke on the unrelated `shadow-live-storage` bucket
 must never be mistaken for the isolated Gate 1 test.
+
+
+### Failure-stage diagnostics and explicit no-retry matrix
+
+The manual isolated test-bucket smoke records a non-sensitive
+`ISOLATED_R2_FIXTURE_PHASE` when an operation is interrupted:
+`initial_head`, `put_fixture`, `head_after_put`,
+`get_roundtrip`, `delete_once`, or `head_after_delete`.
+It also logs its run-specific synthetic key for manually resolving
+an interrupted attempt in the TEST bucket. It never retries a failed
+or ambiguous DELETE, never treats an HTTP delete acknowledgement as
+account-erasure completion, and cannot delete production objects.
+
+Primary security CI now exercises failures at every test-provider
+boundary. HEAD or PUT or GET failures and GET-content discrepancies
+must result in **zero** DELETE attempts. HTTP 503 or a timeout during
+DELETE must produce **exactly one** attempted DELETE, an unresolved
+outcome and no subsequent HEAD. A post-delete HEAD that reports
+the object present or fails with a provider 5xx must also fail, without
+a second DELETE. A workflow source guard ensures the manual-only job
+does not run on push/PR/cron and uses test-only S3 secret identifiers.
+These tests use a memory fixture and do not replace the isolated,
+independently authorized Cloudflare R2 live-bucket test, provider-side
+object-generation/operation history, or final data-owner signoff.

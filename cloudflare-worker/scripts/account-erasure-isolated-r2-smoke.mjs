@@ -51,6 +51,9 @@ export async function runIsolatedR2ErasureFixture({
   }
   if(typeof client.fetch!=="function")throw Error("invalid_isolated_r2_client");
   let putSucceeded=false,deleteAttempted=false;
+  // Diagnostic only. The exact phase matters when determining whether a
+  // request MAY have reached R2; never infer success from any exception.
+  let phase="before_initial_head";
   const evidence={bucket,key,headBefore:0,put:0,headAfterPut:0,
     get:0,delete:0,headAfterDelete:0,payloadSha256:createHash("sha256")
       .update(payload).digest("hex")};
@@ -58,10 +61,12 @@ export async function runIsolatedR2ErasureFixture({
     ...options,method,signal:AbortSignal.timeout(12000),
   });
   try{
+    phase="initial_head";
     const before=await request("HEAD");
     evidence.headBefore=before.status;
     if(before.status!==404)
       throw Error("isolated_r2_fixture_key_not_empty");
+    phase="put_fixture";
     const written=await request("PUT",{
       headers:{"Content-Type":"application/octet-stream"},
       body:payload,
@@ -69,6 +74,7 @@ export async function runIsolatedR2ErasureFixture({
     evidence.put=written.status;
     verify(written,"isolated_r2_put_failed");
     putSucceeded=true;
+    phase="head_after_put";
     const head=await request("HEAD");
     evidence.headAfterPut=head.status;
     verify(head,"isolated_r2_head_after_put_failed");
@@ -77,6 +83,7 @@ export async function runIsolatedR2ErasureFixture({
     if(expectedBytes!==payload.length||!etag)
       throw Error("isolated_r2_provider_metadata_missing");
     // Verify exact contents before any deletion: this is ONLY our nonce.
+    phase="get_roundtrip";
     const loaded=await request("GET");
     evidence.get=loaded.status;
     verify(loaded,"isolated_r2_get_failed");
@@ -84,6 +91,7 @@ export async function runIsolatedR2ErasureFixture({
     if(content.length!==payload.length||
       content.some((v,i)=>v!==payload[i]))
       throw Error("isolated_r2_roundtrip_mismatch");
+    phase="delete_once";
     deleteAttempted=true;
     // No retry, even if the transport times out: external history may
     // be ambiguous. Never invoke this on a production/shared bucket.
@@ -92,6 +100,7 @@ export async function runIsolatedR2ErasureFixture({
     catch{throw Error("isolated_r2_delete_outcome_unknown_no_retry");}
     evidence.delete=removed.status;
     verify(removed,"isolated_r2_delete_response_unverified");
+    phase="head_after_delete";
     const after=await request("HEAD");
     evidence.headAfterDelete=after.status;
     if(after.status!==404)
@@ -107,6 +116,7 @@ export async function runIsolatedR2ErasureFixture({
     error.isolatedFixtureKey=key;
     error.putSucceeded=putSucceeded;
     error.deleteAttempted=deleteAttempted;
+    error.isolatedFixturePhase=phase;
     throw error;
   }
 }
@@ -116,6 +126,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
     process.stdout.write(JSON.stringify(result)+"\n");
   }).catch(error=>{
     console.error("ISOLATED_R2_FIXTURE_FAILED:"+error.message);
+    console.error("ISOLATED_R2_FIXTURE_PHASE:"+
+      (error.isolatedFixturePhase||"validation_before_network"));
     if(error.isolatedFixtureKey)console.error(
       "ISOLATED_R2_FIXTURE_KEY_FOR_MANUAL_RECONCILIATION:"+
       error.isolatedFixtureKey);
