@@ -192,3 +192,32 @@ test("independent review HTTP action requires live admin capability and recent F
   assert.match(section,/actor: \{uid: actor\.uid, evidenceReviewer: true\}/);
   assert.doesNotMatch(section,/body\.actor|body\.evidenceReviewer|body\.owner/);
 });
+
+test("Owner emergency R2 stop route is freshly authenticated and never destructive",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
+  const start=source.indexOf('if (["accountDeletionCompletedLogs"');
+  const stop=source.indexOf('if (action === "accountErasureR2EmergencyStop")',start);
+  const closure=source.indexOf('if (action === "accountDeletionClosureReadiness")',stop);
+  assert.ok(start>=0&&stop>start&&closure>stop);
+  const segment=source.slice(start,closure);
+  assert.match(segment,/if \(!actor\.owner\)/);
+  assert.match(segment,/throw new AdminInboxError\("recent_auth_required", 401\)/);
+  assert.match(segment,/requestAccountErasureExternalIoRevocationIntent\(db/);
+  assert.match(segment,/uid: targetUid/);
+  assert.match(segment,/requestId: body\.requestId/);
+  assert.match(segment,/actor,/);
+  assert.doesNotMatch(segment,/body\.owner|body\.actor|body\.destructiveAllowed/);
+  const helper=readFileSync(
+    "cloudflare-worker/src/account-deletion-external-io-reservation.js","utf8");
+  const stopStart=helper.indexOf(
+    "export async function requestAccountErasureExternalIoRevocationIntent");
+  const stopEnd=helper.indexOf(
+    "export async function reserveAccountErasureExternalIo",stopStart);
+  assert.ok(stopEnd>stopStart);
+  const code=helper.slice(stopStart,stopEnd);
+  assert.match(code,/revocationEffective:false/);
+  assert.match(code,/externalIoAllowed:false/);
+  assert.match(code,/pendingReconciliation:true/);
+  assert.doesNotMatch(code,/bucket\.delete\(|deleteAuthUser\(|writeDelete\(/);
+});

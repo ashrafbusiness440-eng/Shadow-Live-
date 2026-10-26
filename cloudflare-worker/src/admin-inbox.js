@@ -19,6 +19,10 @@ import {
   recordAccountErasureExternalIoIndependentReview,
   AccountErasureIndependentReviewError,
 } from "./account-deletion-external-io-review.js";
+import {
+  requestAccountErasureExternalIoRevocationIntent,
+  AccountErasureIoReservationError,
+} from "./account-deletion-external-io-reservation.js";
 import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
@@ -711,6 +715,7 @@ export async function adminInbox(request, env) {
          "accountDeletionClosureReadiness",
          "accountErasureR2ReviewerGrant",
          "accountErasureR2ReviewerRevoke",
+         "accountErasureR2EmergencyStop",
          "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
@@ -742,6 +747,17 @@ export async function adminInbox(request, env) {
       // This is a strictly non-destructive Owner operation. The same
       // already-verified Firebase session + <=10min auth_time protects it.
       // Never let request bodies supply actor/issuer authority.
+      // Emergency STOP is an immutable, one-way Owner request. It can
+      // prevent later reservations but CANNOT prove any in-flight external
+      // R2.delete has been canceled; the outcome remains unresolved.
+      if (action === "accountErasureR2EmergencyStop") {
+        return json(request, env,
+          await requestAccountErasureExternalIoRevocationIntent(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            actor,
+          }));
+      }
       if (action === "accountErasureR2ReviewerGrant" ||
           action === "accountErasureR2ReviewerRevoke") {
         const params = {
@@ -788,6 +804,7 @@ export async function adminInbox(request, env) {
          error instanceof AccountErasureCheckpointError ||
          error instanceof AccountErasureReviewerGrantError ||
          error instanceof AccountErasureIndependentReviewError ||
+         error instanceof AccountErasureIoReservationError ||
          error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }

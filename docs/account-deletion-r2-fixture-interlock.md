@@ -370,3 +370,27 @@ does not run on push/PR/cron and uses test-only S3 secret identifiers.
 These tests use a memory fixture and do not replace the isolated,
 independently authorized Cloudflare R2 live-bucket test, provider-side
 object-generation/operation history, or final data-owner signoff.
+
+
+### Owner emergency stop via the already authenticated control route
+
+An additional Owner-only action
+`accountErasureR2EmergencyStop` is now routed through the existing
+`adminInbox` API. Inputs: `targetUid` and `requestId`.
+The route authenticates the **Firebase ID token**, checks the current
+Owner privileges and requires authentication from the last 10 minutes.
+The server binds `actor.uid` and `owner` from the verified account;
+neither comes from the request body. The action calls the previously
+tested `requestAccountErasureExternalIoRevocationIntent` transaction
+and creates **only** an immutable stop intent plus its audit entry.
+These records have `revocationEffective:false`,
+`externalIoAllowed:false`, and require human reconciliation.
+
+This emergency action blocks *later* reservations and other guarded
+admissions, but cannot undo a request already sent to R2, recover an
+unknown outcome, bypass other domain approvals or permit any erasure.
+A duplicate/stale stop remains a conflict requiring reconciliation.
+It is intentionally not made into a destructive account-delete or R2
+worker endpoint. Unit assertions keep Owner/recent-auth and
+non-destructive stop invariants, while existing Firestore Emulator REST
+tests cover the actual stop-first and dispatch-first state transitions.
