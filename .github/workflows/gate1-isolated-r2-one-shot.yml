@@ -1,0 +1,45 @@
+name: Gate1 One-time Isolated R2 Provider Proof
+
+# Only this exact test-only branch and exact one-time commit message run.
+# Do NOT add production credentials or a push/PR trigger for general branches.
+on:
+  push:
+    branches:
+      - gate1-r2-isolated-proof-20261026
+    paths:
+      - .github/workflows/gate1-isolated-r2-one-shot.yml
+      - cloudflare-worker/scripts/account-erasure-isolated-r2-smoke.mjs
+
+permissions:
+  contents: read
+concurrency:
+  group: gate1-r2-once
+  cancel-in-progress: false
+
+jobs:
+  isolated-provider-proof:
+    if: ${{ github.repository == 'ashrafbusiness440-eng/Shadow-Live-' && github.ref == 'refs/heads/gate1-r2-isolated-proof-20261026' && github.event.head_commit.message == 'test(gate1): execute one isolated R2 fixture proof only' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: cloudflare-worker
+    env:
+      R2_ERASURE_TEST_BUCKET: shadow-live-erasure-test
+      R2_ERASURE_TEST_CONFIRMATION: TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_ERASURE_TEST_ACCESS_KEY_ID: ${{ secrets.R2_ERASURE_TEST_ACCESS_KEY_ID }}
+      R2_ERASURE_TEST_SECRET_ACCESS_KEY: ${{ secrets.R2_ERASURE_TEST_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preflight test bucket and no production bucket
+        run: |
+          node --check scripts/account-erasure-isolated-r2-smoke.mjs
+          node --input-type=module -e "import('./scripts/account-erasure-isolated-r2-smoke.mjs').then(m => { m.assertIsolatedR2ErasureFixtureTarget({bucket: 'shadow-live-erasure-test', confirmation: 'TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE', runId: process.env.GITHUB_RUN_ID}); try { m.assertIsolatedR2ErasureFixtureTarget({bucket: 'shadow-live-storage', confirmation: 'TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE', runId: process.env.GITHUB_RUN_ID}); process.exit(2); } catch(e) { if(e.message !== 'isolated_r2_bucket_name_required') process.exit(3); } })"
+      - name: Install S3 signing package only
+        run: npm install --omit=dev --no-audit --no-fund --ignore-scripts
+      - name: TEST bucket only - own unique nonce PUT HEAD GET one DELETE HEAD
+        run: node scripts/account-erasure-isolated-r2-smoke.mjs
