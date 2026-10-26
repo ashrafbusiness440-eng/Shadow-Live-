@@ -24,7 +24,8 @@ concurrency:
 
 jobs:
   isolated-provider-proof:
-    if: ${{ inputs.bucket == 'shadow-live-erasure-test' && inputs.confirmation == 'TEST_BUCKET_ONLY_DELETE_EPHEMERAL_FIXTURE' }}
+    # Never silently skip a bad request as a green workflow.
+    # The script validates both exact strings BEFORE constructing a client.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
