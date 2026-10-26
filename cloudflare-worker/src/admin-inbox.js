@@ -678,9 +678,9 @@ export async function adminInbox(request, env) {
     if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
          "accountDeletionHold", "accountDeletionReleaseHold",
          "accountDeletionClosureReadiness",
-         "accountDeletionPreflightCheckpoint",
          "accountErasureR2ReviewerGrant",
-         "accountErasureR2ReviewerRevoke"].includes(action)) {
+         "accountErasureR2ReviewerRevoke",
+         "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
         return json(request, env, await listCompletedAccountDeletionLogs(db));
