@@ -253,3 +253,50 @@ without a bucket operation. Actual simultaneous worker conflicts
 remain tested by a dedicated native Firestore Emulator race; real REST
 stop-first vs dispatch-first ordering remains tested with the synthetic
 R2 fixture. No user data, R2 bucket deletion or production switch changed.
+
+
+## Owner-authenticated reviewer grant issuance and immutable revocation
+
+An existing Owner-only `adminInbox` route now recognizes two strictly
+**non-destructive** actions, both subject to the same existing verified
+Firebase ID token, current Owner profile and recent authentication
+(maximum 10 minutes) as other account-deletion Owner actions:
+
+- `accountErasureR2ReviewerGrant`
+- `accountErasureR2ReviewerRevoke`
+
+Arguments: `targetUid`, `requestId`, `objectId`, `reviewerUid`.
+The authenticated Owner actor/issuer is **never taken from the request
+body**. These actions create no account-erasure certificates or permission
+to dispatch R2. They grant only an evidence **assessment** on an existing
+post-stop reconciliation case.
+
+`issueAccountErasureExternalIoReviewerGrant` validates the currently
+active Owner and reviewer (who needs the specific
+`reviewAccountErasureR2Evidence` capability) in one bounded Firestore
+transaction. It checks the exact stopped, non-permissive reconciliation
+case and creates the one-hour single-case grant and immutable matching
+Owner audit atomically. A duplicate or any prior revocation fails closed;
+no timer or new request can renew the same grant ID.
+
+`revokeAccountErasureExternalIoReviewerGrant` is an emergency Owner
+operation that requires neither unexpired permission nor current reviewer
+rights: it updates the grant to revoked and atomically creates an
+**immutable tombstone audit**. The independent reviewer reads the
+tombstone in its own review transaction alongside all other case/Owner
+evidence, so restoring `grant.status="active"` cannot permit a review
+after withdrawal. Neither operation changes the R2 stop, uncertain
+journal, case completion, account status or external file state.
+
+Tests exercise Owner/admin boundaries, wrong target, duplicate issue,
+expired/revoked/missing grants, illegal case state, permanent revocation,
+and actual Cloudflare REST + disposable Firestore Emulator issue/review/
+revoke flow. Browser-provided `actor.owner` or `actor.evidenceReviewer`
+cannot bypass the HTTP session and current-role checks.
+
+**Remaining release gates:** authorized human assessment of real R2
+provider logs and object generation, data-owner evidence and real
+sanctioned isolated test bucket, credential protection, six independent
+data-domain certifications and the safe eventual finalizer. This route
+does not implement or enable production account / R2 / Firebase Auth
+deletion and no merge or deploy is implied.

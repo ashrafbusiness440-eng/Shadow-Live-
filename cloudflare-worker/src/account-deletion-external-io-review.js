@@ -83,6 +83,9 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     uid+"__"+requestId+"__"+reviewer;
   const grantAuditPath="admin_audit_logs/erasure_external_io_reviewer_grant_"+
     requestId+"__"+reviewer;
+  const revokeAuditPath=
+    "admin_audit_logs/erasure_external_io_reviewer_grant_revoked_"+
+    requestId+"__"+reviewer;
   const paths=[
     casePath,caseAuditPath,
     path("account_erasure_external_io_revocation_intents",uid,requestId),
@@ -94,7 +97,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     "account_deletion_erasure_checkpoints/"+uid,
     reviewPath,reviewAuditPath,
     reviewerProfilePath,grantPath,grantAuditPath,
-    "users/"+grantIssuerUid,
+    "users/"+grantIssuerUid,revokeAuditPath,
   ];
   const tx=await db.beginTransaction();
   try{
@@ -107,7 +110,7 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     }
     const [caseDoc,caseAudit,stop,stopAudit,journal,hold,reservation,
       request,checkpoint,previousReview,previousAudit,
-      reviewerProfile,grant,grantAudit,issuerRow]=rows;
+      reviewerProfile,grant,grantAudit,issuerRow,revocation]=rows;
     if(previousReview.exists||previousAudit.exists)
       fail("independent_external_io_review_already_recorded");
     const c=caseDoc.data||{},s=stop.data||{},j=journal.data||{};
@@ -119,7 +122,10 @@ export async function recordAccountErasureExternalIoIndependentReview(db,{
     // A flag from a caller cannot grant reviewer authority. A real,
     // current, non-deleted admin profile PLUS explicit capability PLUS
     // per-case Owner grant and matching immutable audit are required.
-    if(!reviewerProfile.exists||!grant.exists||!grantAudit.exists||
+    // Immutable revocation tombstone overrides a forged restoration of
+    // mutable grant.status="active" / grant.revoked=false.
+    if(revocation.exists||
+      !reviewerProfile.exists||!grant.exists||!grantAudit.exists||
       clean(currentReviewer.uid)!==reviewer||
       currentReviewer.adminEnabled!==true||
       !Array.isArray(currentReviewer.capabilities)||

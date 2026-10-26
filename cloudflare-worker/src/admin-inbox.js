@@ -10,6 +10,11 @@ import {
   AccountDeletionReviewControlError,
 } from "./account-deletion-review-control.js";
 import { inspectAccountErasureInventory } from "./account-deletion-erasure-inventory.js";
+import {
+  issueAccountErasureExternalIoReviewerGrant,
+  revokeAccountErasureExternalIoReviewerGrant,
+  AccountErasureReviewerGrantError,
+} from "./account-deletion-external-io-reviewer-grants.js";
 import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
@@ -673,7 +678,9 @@ export async function adminInbox(request, env) {
     if (["accountDeletionCompletedLogs", "accountDeletionDetails", "accountDeletionInventory",
          "accountDeletionHold", "accountDeletionReleaseHold",
          "accountDeletionClosureReadiness",
-         "accountDeletionPreflightCheckpoint"].includes(action)) {
+         "accountDeletionPreflightCheckpoint",
+         "accountErasureR2ReviewerGrant",
+         "accountErasureR2ReviewerRevoke"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
         return json(request, env, await listCompletedAccountDeletionLogs(db));
@@ -700,6 +707,23 @@ export async function adminInbox(request, env) {
         Number(decoded?.auth_time);
       if (!Number.isFinite(age) || age < -60 || age > 600) {
         throw new AdminInboxError("recent_auth_required", 401);
+      }
+      // This is a strictly non-destructive Owner operation. The same
+      // already-verified Firebase session + <=10min auth_time protects it.
+      // Never let request bodies supply actor/issuer authority.
+      if (action === "accountErasureR2ReviewerGrant" ||
+          action === "accountErasureR2ReviewerRevoke") {
+        const params = {
+          uid: targetUid,
+          requestId: body.requestId,
+          objectId: body.objectId,
+          reviewerUid: body.reviewerUid,
+          actor,
+        };
+        return json(request, env,
+          action === "accountErasureR2ReviewerGrant"
+            ? await issueAccountErasureExternalIoReviewerGrant(db, params)
+            : await revokeAccountErasureExternalIoReviewerGrant(db, params));
       }
       if (action === "accountDeletionClosureReadiness") {
         return json(request, env,
@@ -731,6 +755,7 @@ export async function adminInbox(request, env) {
     if (error instanceof AdminInboxError ||
         error instanceof AccountDeletionReviewControlError ||
          error instanceof AccountErasureCheckpointError ||
+         error instanceof AccountErasureReviewerGrantError ||
          error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }

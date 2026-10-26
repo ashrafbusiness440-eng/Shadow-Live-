@@ -860,3 +860,23 @@ test("caller evidenceReviewer flag alone cannot replace current audited case-sco
       uid+"__"+requestId),false);
   }
 });
+
+test("immutable revoked-grant tombstone overrides restored active mutable grant",async()=>{
+  const db=new Db();await readyReviewCase(db);
+  const revoked="admin_audit_logs/erasure_external_io_reviewer_grant_revoked_"+
+    requestId+"__"+independentReviewer;
+  db.docs.set(revoked,{
+    action:"accountErasureExternalIoReviewerGrantRevoked",
+    targetId:uid,requestId,reviewerUid:independentReviewer,
+  });
+  // Maliciously restored mutable fields are insufficient.
+  const mutable=db.docs.get("account_erasure_external_io_reviewer_grants/"+
+    uid+"__"+requestId+"__"+independentReviewer);
+  mutable.status="active";mutable.revoked=false;
+  await assert.rejects(reviewCase(db,externalReviewOpts()),
+    e=>e.code==="independent_external_io_review_grant_invalid");
+  assert.equal(db.docs.has("account_erasure_external_io_independent_reviews/"+
+    uid+"__"+requestId),false);
+  assert.equal(db.docs.get("account_erasure_external_io_revocation_intents/"+
+    uid+"__"+requestId).revocationEffective,false);
+});

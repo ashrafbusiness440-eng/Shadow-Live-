@@ -22,6 +22,10 @@ import {openAccountErasureExternalIoReconciliationCase as openReconciliation}
   from "../../cloudflare-worker/src/account-deletion-external-io-reconciliation.js";
 import {recordAccountErasureExternalIoIndependentReview as reviewExternalIo}
   from "../../cloudflare-worker/src/account-deletion-external-io-review.js";
+import {
+  issueAccountErasureExternalIoReviewerGrant as issueGrant,
+  revokeAccountErasureExternalIoReviewerGrant as revokeGrant,
+} from "../../cloudflare-worker/src/account-deletion-external-io-reviewer-grants.js";
 import {recheckErasureCertificatesInTransaction as recheckCerts}
   from "../../cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js";
 import {rehearseAccountErasureR2Dispatch as dispatchFixture}
@@ -297,21 +301,26 @@ test("emulator: REST durable reservation rejects duplicate after first commit",{
       uid+"__"+requestId+"__"+reviewerUid);
     const grantAudit=doc("admin_audit_logs/erasure_external_io_reviewer_grant_"+
       requestId+"__"+reviewerUid);
-    refs.push(reviewerProfile,issuerProfile,grant,grantAudit);
-    const issuedAt=new Date(nowMs+2000);
+    const revocationAudit=doc(
+      "admin_audit_logs/erasure_external_io_reviewer_grant_revoked_"+
+      requestId+"__"+reviewerUid);
+    refs.push(reviewerProfile,issuerProfile,grant,grantAudit,revocationAudit);
     await Promise.all([
       reviewerProfile.set({uid:reviewerUid,role:"admin",adminEnabled:true,
         capabilities:["reviewAccountErasureR2Evidence"],
         accountStatus:"active"}),
       issuerProfile.set({uid:owner,role:"owner",accountStatus:"active"}),
-      grant.set({uid,requestId,objectId,reviewerUid,
-        grantedByUid:owner,scope:"account_erasure_r2_reconciliation",
-        status:"active",revoked:false,grantedAt:issuedAt,
-        expiresAt:new Date(issuedAt.getTime()+3600_000)}),
-      grantAudit.set({action:"accountErasureExternalIoReviewerGrantRecorded",
-        targetId:uid,requestId,objectId,reviewerUid,
-        actorUid:owner,createdAt:issuedAt}),
     ]);
+    // The actual OWNER grant issuer uses the real Cloudflare Firestore
+    // REST adapter and creates an immutable audit, never a fixture grant.
+    const grantResult=await issueGrant(firestoreClient(env),{
+      uid,requestId,objectId,reviewerUid,
+      actor:{uid:owner,owner:true},nowMs:nowMs+2000,
+    });
+    assert.equal(grantResult.grantIssued,true);
+    assert.equal(grantResult.externalIoAllowed,false);
+    assert.equal((await grant.get()).data().status,"active");
+    assert.equal((await grantAudit.get()).exists,true);
     const reviewerArgs={
       uid,requestId,objectId,token:stored.data().operationToken,
       grantIssuerUid:owner,
@@ -339,6 +348,16 @@ test("emulator: REST durable reservation rejects duplicate after first commit",{
     assert.equal((await reviewAudit.get()).data().revocationEffective,false);
     await assert.rejects(reviewExternalIo(firestoreClient(env),reviewerArgs),
       e=>e.code==="independent_external_io_review_already_recorded");
+    const revokeResult=await revokeGrant(firestoreClient(env),{
+      uid,requestId,objectId,reviewerUid,
+      actor:{uid:owner,owner:true},nowMs:nowMs+4000,
+    });
+    assert.equal(revokeResult.grantRevoked,true);
+    assert.equal((await revocationAudit.get()).data().completionVerified,false);
+    // Even if the mutable grant is resurrected by a bad editor,
+    // the irreversible revocation audit MUST survive and deny review.
+    await grant.update({status:"active",revoked:false});
+    assert.equal((await revocationAudit.get()).exists,true);
     assert.equal((await intent.get()).data().revocationEffective,false);
     await assert.rejects(openReconciliation(firestoreClient(env),{
       ...args(stored.data().operationToken),objectId,
