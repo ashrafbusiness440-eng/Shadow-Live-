@@ -20,3 +20,11 @@ Read [docs/REUSE_FIRST_ENGINEERING_STANDARD.md](docs/REUSE_FIRST_ENGINEERING_STA
 - Do not rebuild APK on every edit. Keep review and CI batches focused.
 
 The reuse-first rule applies to **every future task**, not only account deletion. This file supplies agent guidance; human PR reviews and tests remain necessary.
+
+## Arabic-first localization readiness — future UI work
+- The only available language today is **Arabic (RTL)**. Keep the nonfunctional Language entry hidden in app settings until full English support is implemented and verified. Do not claim English is enabled.
+- For each **new or modified user-facing UI** (including errors, status labels, dialogs, and notification copy), record a short `Localization readiness` decision in the PR and update the dedicated [language/localization Trello card](https://trello.com/c/KctYywyQ) with genuinely new strings, placeholders, direction-sensitive layout or open translation work. Do not duplicate every old screen or generate a separate feature checklist card.
+- Prefer existing shared string/localization facilities when present. Keep machine-facing status/permission/API values stable and independent of Arabic text; do not branch logic on display strings. Avoid stitching grammatical sentences together; leave room for placeholders, pluralization, and reordered English phrasing.
+- Use directional alignment/padding and responsive text for new layouts where practical, and check Arabic RTL now plus future English LTR concerns (icons, accessibility and long text). Do not reverse immutable IDs/numbers or unrelated imagery just to mirror the layout.
+- `intl` is already in `pubspec.yaml`; evaluate Flutter's standard ARB/`gen-l10n` mechanism **when localization is actually implemented**. Do not introduce a parallel localization service, switch app locale, refactor unrelated legacy screens or add expensive listeners as speculative preparation.
+- Language rollout stays a separate, later, tested task after current room/message reliability priorities; source of truth: https://trello.com/c/KctYywyQ .
