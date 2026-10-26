@@ -456,3 +456,31 @@ or enable Firebase Auth deletion. Real domain signoffs remain
 separately gated behind financial, ownership and retention
 reviews. The feature stays UNDEPLOYED until the entire system is
 safe for production.
+
+
+### 26 Oct 2026 — real isolated provider success and lost-ACK rehearsal
+
+A genuine test-bucket provider smoke ran once on a branch derived from main:
+[GitHub Actions #40274574300](https://github.com/ashrafbusiness440-eng/Shadow-Live-/actions/runs/40274574300).
+The actual provider returned HEAD 404 before creation, PUT 200, HEAD
+200 plus metadata, GET 200 with exact payload equality, one DELETE 204,
+then HEAD 404. The fixture was randomly generated in
+`shadow-live-erasure-test` only, not the production bucket; the
+one-shot workflow was retired after a successful run. This proves
+test-bucket API operations, NOT an account's historic deletion or
+an effective production stop.
+
+A second independently guarded test-only module now rehearses an
+ambiguous outcome: a single test-bucket DELETE is sent and the returned
+success acknowledgment is deliberately **suppressed** from the simulated
+reconciler. It may issue only one subsequent HEAD, which describes
+absence **at the point of observation**, never the historic cause.
+Its output always retains `simulatedOutcome:"unknown_no_ack"`,
+`originalDeleteHistoryVerified:false`, `retryAllowed:false`,
+`stopRevocationEffective:false`, `externalIoAllowed:false` and
+`accountErasureCompletionVerified:false`. A lost response or 5xx
+never triggers another DELETE. CI tests enforce exactly one
+DELETE, no destructive operation on non-test buckets, and no
+completion claim even after read-only HEAD 404. This is an
+explicitly labeled simulated ACK loss, not proof of a real network
+timeout or an authorization to resolve an actual account.
