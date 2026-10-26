@@ -27,6 +27,10 @@ import {
   openAccountErasureExternalIoReconciliationCase,
   AccountErasureExternalIoReconciliationError,
 } from "./account-deletion-external-io-reconciliation.js";
+import {
+  withdrawAccountErasureDomainWithExternalIoStop,
+  AccountErasureDomainWithdrawalError,
+} from "./account-deletion-domain-withdrawal-interlock.js";
 import { inspectAccountDeletionClosureReadiness, AccountClosureReadinessError } from "./account-deletion-closure-readiness.js";
 import { listCompletedAccountDeletionLogs } from "./account-deletion-completed-logs.js";
 import { recordErasurePreflightCheckpoint, AccountErasureCheckpointError } from "./account-deletion-erasure-checkpoint.js";
@@ -721,6 +725,7 @@ export async function adminInbox(request, env) {
          "accountErasureR2ReviewerRevoke",
          "accountErasureR2EmergencyStop",
          "accountErasureR2OpenReconciliation",
+         "accountErasureR2WithdrawDomain",
          "accountDeletionPreflightCheckpoint"].includes(action)) {
       if (!actor.owner) throw new AdminInboxError("forbidden", 403);
       if (action === "accountDeletionCompletedLogs") {
@@ -779,6 +784,20 @@ export async function adminInbox(request, env) {
             actor,
           }));
       }
+      // Emergency withdrawal of ONE certified domain atomically records
+      // its immutable withdrawal tombstone AND blocks NEW R2 operations.
+      // In-flight external I/O can still be unknown; never report it
+      // canceled or complete. The selected domain is validated against
+      // the six enumerated signoff domains inside the transaction writer.
+      if (action === "accountErasureR2WithdrawDomain") {
+        return json(request, env,
+          await withdrawAccountErasureDomainWithExternalIoStop(db, {
+            uid: targetUid,
+            requestId: body.requestId,
+            domain: body.domain,
+            actor,
+          }));
+      }
       if (action === "accountErasureR2ReviewerGrant" ||
           action === "accountErasureR2ReviewerRevoke") {
         const params = {
@@ -827,6 +846,7 @@ export async function adminInbox(request, env) {
          error instanceof AccountErasureIndependentReviewError ||
          error instanceof AccountErasureIoReservationError ||
          error instanceof AccountErasureExternalIoReconciliationError ||
+         error instanceof AccountErasureDomainWithdrawalError ||
          error instanceof AccountClosureReadinessError) {
       return json(request, env, { ok: false, code: error.code }, error.status);
     }

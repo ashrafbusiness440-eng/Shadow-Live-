@@ -10,9 +10,13 @@ const uidOk=value=>/^[A-Za-z0-9_-]{3,128}$/.test(clean(value));
 const requestOk=value=>/^[A-Za-z0-9_-]{12,180}$/.test(clean(value));
 const path=(collection,uid,requestId)=>
   collection+"/"+uid+"__"+requestId;
+export class AccountErasureDomainWithdrawalError extends Error {
+  constructor(code,status=409){
+    super(code);this.code=code;this.status=status;
+  }
+}
 const reject=(code,status=409)=>{
-  const error=new Error(code);error.code=code;error.status=status;
-  throw error;
+  throw new AccountErasureDomainWithdrawalError(code,status);
 };
 export async function withdrawAccountErasureDomainWithExternalIoStop(db,{
   uid,requestId,domain,actor,nowMs=Date.now(),

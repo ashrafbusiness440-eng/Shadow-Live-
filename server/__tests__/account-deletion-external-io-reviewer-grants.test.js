@@ -262,3 +262,38 @@ test("reconciliation opener cannot certify R2 deletion or remove a stop",async()
   assert.match(section,/externalIoAllowed:false/);
   assert.doesNotMatch(section,/bucket\.delete\(|writeDelete\(|deleteAuthUser\(|writeUpdate\(stopPath/);
 });
+
+test("Owner domain withdrawal route requires recent auth, exact account/domain, and no bucket I/O",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync("cloudflare-worker/src/admin-inbox.js","utf8");
+  const ownerStart=source.indexOf('if (["accountDeletionCompletedLogs"');
+  const handler=source.indexOf('if (action === "accountErasureR2WithdrawDomain")',ownerStart);
+  const grantStart=source.indexOf('if (action === "accountErasureR2ReviewerGrant"',handler);
+  assert.ok(ownerStart>=0&&handler>ownerStart&&grantStart>handler);
+  const segment=source.slice(ownerStart,grantStart);
+  assert.match(segment,/if \(!actor\.owner\)/);
+  assert.match(segment,/throw new AdminInboxError\("recent_auth_required", 401\)/);
+  assert.match(segment,/withdrawAccountErasureDomainWithExternalIoStop\(db/);
+  assert.match(segment,/uid: targetUid/);
+  assert.match(segment,/requestId: body\.requestId/);
+  assert.match(segment,/domain: body\.domain/);
+  assert.match(segment,/actor,/);
+  assert.doesNotMatch(segment,/body\.owner|body\.actor|body\.destructiveAllowed/);
+  assert.doesNotMatch(segment,/bucket\.delete\(|deleteAuthUser\(/);
+});
+test("certification withdrawal remains an immutable stop, never an erasure authorization",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const code=readFileSync(
+    "cloudflare-worker/src/account-deletion-domain-withdrawal-interlock.js",
+    "utf8");
+  assert.match(code,/REQUIRED_ERASURE_ADMISSION_DOMAINS\.includes\(domain\)/);
+  assert.match(code,/db\.writeUpdate\(approvalPath/);
+  assert.match(code,/db\.writeCreate\(withdrawalPath/);
+  assert.match(code,/db\.writeCreate\(stopPath/);
+  assert.match(code,/db\.writeCreate\(stopAuditPath/);
+  assert.match(code,/revocationEffective:false/);
+  assert.match(code,/retryAllowed:false/);
+  assert.match(code,/externalIoAllowed:false/);
+  assert.match(code,/externalIoOutcome:"requires_reconciliation"/);
+  assert.doesNotMatch(code,/bucket\.delete\(|deleteAuthUser\(|writeDelete\(/);
+});

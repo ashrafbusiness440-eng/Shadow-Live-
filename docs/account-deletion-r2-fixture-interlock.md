@@ -424,3 +424,35 @@ reconciliation can be considered final, the separate authorized test
 bucket, independent Cloudflare operation logs/object-generation
 corroboration, real owner-specific asset inventory and the six-domain
 signoff/withdrawal writers remain release blockers.
+
+
+### Owner-triggered certified-domain withdrawal with an R2 stop
+
+A separate Owner-only, recent-Firebase-authenticated `adminInbox`
+action, `accountErasureR2WithdrawDomain`, now invokes the pre-existing
+Firestore transaction `withdrawAccountErasureDomainWithExternalIoStop`.
+Inputs are `targetUid`, `requestId`, and exactly one `domain` drawn
+from `REQUIRED_ERASURE_ADMISSION_DOMAINS`. Server-derived `actor`
+cannot be supplied by the client. The operation is **revoke-only**:
+it atomically changes an existing valid `approved` domain signoff
+to `revoked`, creates the immutable domain withdrawal audit tombstone
+and, if missing, creates a request-wide external-I/O stop and audit.
+
+After the transaction, the same certification check denies any
+future synthetic R2 dispatch even if the mutable approval were
+tampered back to `approved`. An already-started R2 request may
+have completed, failed, or have an unknown outcome; the withdrawal
+explicitly retains `revocationEffective:false`,
+`externalIoOutcome:"requires_reconciliation"` and
+`externalIoAllowed:false`. Existing stop cases do not
+require a duplicate stop document. Invalid/missing approvals,
+duplicate domain withdrawals, inconsistent audit, or malformed
+stop/journal state are rejected without partial writes.
+
+This administrative connection closes one **writer integration gap**;
+it does not create a certification *issuer*, authorize any external
+delete, release holds, verify Cloudflare deletion, finalize a request,
+or enable Firebase Auth deletion. Real domain signoffs remain
+separately gated behind financial, ownership and retention
+reviews. The feature stays UNDEPLOYED until the entire system is
+safe for production.
