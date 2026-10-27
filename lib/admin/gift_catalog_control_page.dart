@@ -39,6 +39,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String orderFilter = 'catalog';
   String? error;
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
+  List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
 
   Uri get apiUri => shadowEconomyEndpoint('gift-catalog');
 
@@ -83,6 +84,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
     if (code.contains('invalid_gift_price')) {
       return 'سعر الهدية غير صحيح. أدخل قيمة كوينز صحيحة.';
+    }
+    if (code.contains('gift_draft_already_published')) {
+      return 'رقم الهدية مستخدم في الهدايا المنشورة. اختر رقماً آخر.';
+    }
+    if (code.contains('gift_draft_not_found')) {
+      return 'المسودة غير موجودة. حدّث الصفحة وأعد المحاولة.';
+    }
+    if (code.contains('gift_draft_limit')) {
+      return 'وصلت للعدد الأقصى من المسودات. انشر مسودة أو احذف إحداها.';
     }
     if (code.contains('gift_catalog_conflict')) {
       return 'تم تعديل الهدايا من لوحة أخرى. احتفظنا بتعديلاتك هنا؛ لا تحفظ قبل مراجعة أحدث البيانات.';
@@ -150,6 +160,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final rawDrafts = config is Map ? config['drafts'] : null;
+      final loadedDrafts = rawDrafts is List
+          ? rawDrafts.whereType<Map>().map((item) =>
+              GiftCatalogItem.fromMap(Map<String, dynamic>.from(item))).toList()
+          : <GiftCatalogItem>[];
       final rawCategories = config is Map ? config['categoryDefinitions'] : null;
       final loadedCategories = rawCategories is List
           ? rawCategories.whereType<Map>().map((item) =>
@@ -163,6 +178,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           ? (config['revision'] as num).toInt() : 0;
       if (!mounted) return;
       setState(() {
+        drafts = loadedDrafts;
         gifts = loaded.isEmpty
             ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
             : loaded;
@@ -215,6 +231,94 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       if (!mounted) return;
       setState(() => saving = false);
       message(friendlyError(e));
+    }
+  }
+
+  bool get canManageDrafts =>
+      !saving && !loading && !loadFailed && !editing &&
+      !hasUnsavedChanges && !categoryUnsaved;
+
+  Future<void> storeDraft(GiftCatalogItem gift) async {
+    if (!canManageDrafts) {
+      message('احفظ التغييرات الحالية قبل العمل على المسودات.');
+      return;
+    }
+    setState(() => saving = true);
+    try {
+      await post({
+        'action': 'saveDraft',
+        'gift': gift.toMap(),
+        'expectedRevision': catalogRevision,
+      });
+      if (!mounted) return;
+      await load();
+      message('تم حفظ الهدية كمسودة، ولن تظهر للمستخدمين حتى نشرها.');
+    } catch (e) {
+      if (mounted) message(friendlyError(e));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> publishDraft(GiftCatalogItem gift) async {
+    if (!canManageDrafts) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('نشر الهدية؟'),
+        content: Text('سيتم نقل «${gift.nameAr}» من المسودات إلى الهدايا المنشورة. تحقق من سعرها وصورتها وشروطها قبل المتابعة.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('نشر الهدية')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !canManageDrafts) return;
+    setState(() => saving = true);
+    try {
+      await post({
+        'action': 'publishDraft',
+        'giftId': gift.id,
+        'expectedRevision': catalogRevision,
+      });
+      if (!mounted) return;
+      await load();
+      message('تم نشر الهدية بنجاح.');
+    } catch (e) {
+      if (mounted) message(friendlyError(e));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> discardDraft(GiftCatalogItem gift) async {
+    if (!canManageDrafts) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف المسودة؟'),
+        content: Text('سيتم حذف مسودة «${gift.nameAr}» فقط دون المساس بالهدايا المنشورة.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف المسودة')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !canManageDrafts) return;
+    setState(() => saving = true);
+    try {
+      await post({
+        'action': 'discardDraft',
+        'giftId': gift.id,
+        'expectedRevision': catalogRevision,
+      });
+      if (!mounted) return;
+      await load();
+      message('تم حذف المسودة.');
+    } catch (e) {
+      if (mounted) message(friendlyError(e));
+    } finally {
+      if (mounted) setState(() => saving = false);
     }
   }
 
