@@ -392,6 +392,58 @@ test("vehicles, entrance effects, and frames preserve animated WebP and GIF acro
   assert.ok(worker.includes("canonicalTemplateIdForAssetIdentity"));
 });
 
+test("gift picker thumbnails are static and gift room effects are separately animated", () => {
+  const templates = new Map(ASSET_STUDIO_TEMPLATES.map((value) => [value.id, value]));
+  const icon = templates.get("gift.icon.base.v1");
+  const effect = templates.get("gift.effect.base.v1");
+  assert.ok(icon);
+  assert.ok(effect);
+  assert.equal(icon.type, "gift_icon");
+  assert.equal(icon.motion, "static");
+  assert.equal(icon.transparency, "required");
+  assert.deepEqual(icon.extensions, ["webp", "png"]);
+  assert.equal(effect.type, "gift_effect");
+  assert.equal(effect.motion, "animated");
+  assert.equal(effect.transparency, "required");
+  assert.deepEqual(effect.extensions, ["webp", "gif"]);
+  for (const item of [icon, effect]) {
+    assert.ok(item.directories.includes("assets/images/gifts"));
+    assert.ok(item.directories.includes("assets/images/store"));
+    assert.equal(item.maxBytes, 2500000);
+  }
+
+  function validateGift(template, fileName, directory = "assets/images/gifts/royal") {
+    return validateAssetStudioMetadata({
+      studioVersion: 1,
+      assetKey: template === icon ? "gifts.dragon.icon" : "gifts.dragon.effect",
+      templateId: template.id,
+      assetType: template.type,
+      channels: ["system"],
+      directory,
+      fileName,
+      byteSize: 1750000,
+    });
+  }
+  assert.equal(validateGift(icon, "dragon_icon.webp").ok, true);
+  assert.equal(validateGift(icon, "dragon_icon.png").ok, true);
+  assert.equal(validateGift(effect, "dragon_effect.webp").ok, true);
+  assert.equal(validateGift(effect, "dragon_effect.gif").ok, true);
+  assert.equal(validateGift(icon, "dragon_icon.gif").code, "template_extension_mismatch");
+  assert.equal(validateGift(effect, "dragon_effect.png").code, "template_extension_mismatch");
+  assert.equal(validateGift(effect, "dragon_effect.jpg").code, "template_extension_mismatch");
+  assert.equal(validateGift(effect, "dragon_effect.webp", "assets/images/rooms").code,
+    "template_directory_mismatch");
+
+  // Existing prices, asset keys and entitlement rules remain owned by the
+  // Gift Catalog; only the shared asset-store presentation templates change.
+  const manager = source("lib/admin/control_asset_manager_page.dart");
+  const giftCatalog = source("lib/features/gift/services/gift_catalog_service.dart");
+  assert.ok(manager.includes("template.motion == 'animated' && !_preparedAnimated"));
+  assert.ok(manager.includes("template.motion == 'static' && _preparedAnimated"));
+  assert.ok(giftCatalog.includes("final String effectAssetKey;"));
+  assert.ok(giftCatalog.includes("final String assetKey;"));
+});
+
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
   const template = ASSET_STUDIO_TEMPLATES.find(
     (item) => item.id === "auth_screen.base.v1",
