@@ -86,6 +86,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (code.contains('invalid_gift_price')) {
       return 'سعر الهدية غير صحيح. أدخل قيمة كوينز صحيحة.';
     }
+    if (code.contains('invalid_gift_contexts')) {
+      return 'اختر مكانًا واحدًا على الأقل لظهور الهدية.';
+    }
+    if (code.contains('invalid_gift_schedule')) {
+      return 'تأكد أن موعد نهاية الهدية بعد بداية ظهورها.';
+    }
     if (code.contains('gift_draft_already_published')) {
       return 'رقم الهدية مستخدم في الهدايا المنشورة. اختر رقماً آخر.';
     }
@@ -636,6 +642,39 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
   }
 
+  String giftMomentLabel(DateTime? moment) {
+    if (moment == null) return 'بدون تحديد';
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${moment.year}-${two(moment.month)}-${two(moment.day)}  ${two(moment.hour)}:${two(moment.minute)}';
+  }
+
+  Future<DateTime?> chooseGiftMoment(BuildContext context, DateTime? current) async {
+    final today = DateTime.now();
+    final initial = current ?? today;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(DateTime(2100)) ? DateTime(2100) :
+          initial.isBefore(DateTime(2020)) ? DateTime(2020) : initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: 'اختر اليوم',
+      cancelText: 'إلغاء',
+      confirmText: 'التالي',
+    );
+    if (date == null || !context.mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: current == null ? TimeOfDay.now() : TimeOfDay.fromDateTime(current),
+      helpText: 'اختر الساعة',
+      cancelText: 'إلغاء',
+      confirmText: 'اعتماد',
+    );
+    if (time == null) return null;
+    // Store an absolute instant. The user selects local date/time; the server
+    // checks the instant regardless of client device time zone.
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
   Future<void> editGift([int? index, GiftCatalogItem? template, bool editSavedDraft = false]) async {
     if (editing || saving || loading || loadFailed) return;
     if (editSavedDraft && (hasUnsavedChanges || categoryUnsaved)) {
@@ -662,6 +701,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
     var enabled = template == null || editSavedDraft ? (current?.enabled ?? true) : false;
     var featured = current?.featured ?? false;
+    final allowedContexts = (current?.allowedContexts ?? const ['room', 'chat', 'diary']).toSet();
+    DateTime? visibleFrom = (current?.visibleFromMs ?? 0) > 0
+        ? DateTime.fromMillisecondsSinceEpoch(current!.visibleFromMs) : null;
+    DateTime? visibleUntil = (current?.visibleUntilMs ?? 0) > 0
+        ? DateTime.fromMillisecondsSinceEpoch(current!.visibleUntilMs) : null;
     var category = current?.category ?? 'general';
     var minVipLevel = current?.effectiveMinVipLevel ?? 0;
     var isAnimated = template == null || editSavedDraft ? (current?.isAnimated ?? false) : false;
@@ -950,6 +994,82 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       subtitle: const Text('لا تظهر الهدية للمستخدمين إلا بعد نشرها من قسم المسودات.'),
                       contentPadding: EdgeInsets.zero,
                     ),
+                  const SizedBox(height: 12),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('أماكن ظهور الهدية'),
+                    subtitle: Text('حدد أين يمكن للمستخدم إرسال هذه الهدية.'),
+                  ),
+                  for (final place in const [
+                    ('room', 'الغرف الصوتية'),
+                    ('chat', 'الرسائل الخاصة'),
+                    ('diary', 'اليوميات'),
+                  ])
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(place.$2),
+                      value: allowedContexts.contains(place.$1),
+                      onChanged: (selected) => setLocal(() {
+                        if (selected == true) {
+                          allowedContexts.add(place.$1);
+                        } else {
+                          allowedContexts.remove(place.$1);
+                        }
+                      }),
+                    ),
+                  const SizedBox(height: 10),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('موعد إظهار الهدية'),
+                    subtitle: Text('اترك الموعدين بدون تحديد لتكون الهدية متاحة دائمًا. المواعيد حسب توقيت جهازك.'),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('بداية الظهور'),
+                    subtitle: Text(giftMomentLabel(visibleFrom)),
+                    trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+                      if (visibleFrom != null)
+                        IconButton(
+                          tooltip: 'إلغاء موعد البداية',
+                          onPressed: () => setLocal(() => visibleFrom = null),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      IconButton(
+                        tooltip: 'تحديد بداية الظهور',
+                        onPressed: () async {
+                          final selected = await chooseGiftMoment(dialogContext, visibleFrom);
+                          if (selected != null && dialogContext.mounted) {
+                            setLocal(() => visibleFrom = selected);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                      ),
+                    ]),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('نهاية الظهور'),
+                    subtitle: Text(giftMomentLabel(visibleUntil)),
+                    trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+                      if (visibleUntil != null)
+                        IconButton(
+                          tooltip: 'إلغاء موعد النهاية',
+                          onPressed: () => setLocal(() => visibleUntil = null),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      IconButton(
+                        tooltip: 'تحديد نهاية الظهور',
+                        onPressed: () async {
+                          final selected = await chooseGiftMoment(dialogContext, visibleUntil);
+                          if (selected != null && dialogContext.mounted) {
+                            setLocal(() => visibleUntil = selected);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_outlined),
+                      ),
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
                   SwitchListTile(
                     value: enabled,
                     onChanged: (value) => setLocal(() => enabled = value),
@@ -1086,7 +1206,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     parsedPremiumBannerMin > 777 ||
                     (relationshipGift &&
                         (parsedAffinity < 2 || parsedAffinity.isOdd)) ||
-                    (!relationshipGift && parsedAffinity != 0)) {
+                    (!relationshipGift && parsedAffinity != 0) ||
+                    allowedContexts.isEmpty ||
+                    (visibleFrom != null && visibleUntil != null &&
+                        !visibleUntil!.isAfter(visibleFrom!))) {
                   message('راجع بيانات الهدية والمؤثر ونقاط العلاقة.');
                   return;
                 }
@@ -1112,6 +1235,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     effectSize: parsedEffectSize,
                     premiumBannerMinQuantity: parsedPremiumBannerMin,
                     affinityBasePoints: parsedAffinity,
+                    allowedContexts: [
+                      for (final value in const ['room', 'chat', 'diary'])
+                        if (allowedContexts.contains(value)) value,
+                    ],
+                    visibleFromMs: visibleFrom?.millisecondsSinceEpoch ?? 0,
+                    visibleUntilMs: visibleUntil?.millisecondsSinceEpoch ?? 0,
                   ),
                 );
               },
