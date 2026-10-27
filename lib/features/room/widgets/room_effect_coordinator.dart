@@ -24,6 +24,7 @@ class RoomVisualEffect {
     required this.mode,
     required this.assetKey,
     required this.imageUrl,
+    this.fallbackAssetKey = '',
     required this.durationMs,
     required this.recipientUids,
     this.size = 0,
@@ -38,6 +39,7 @@ class RoomVisualEffect {
   final String mode;
   final String assetKey;
   final String imageUrl;
+  final String fallbackAssetKey;
   final int durationMs;
   final List<String> recipientUids;
   final int size;
@@ -282,6 +284,7 @@ class RoomEffectCoordinator extends ChangeNotifier {
       mode: mode,
       assetKey: assetKey,
       imageUrl: '',
+      fallbackAssetKey: (message['assetKey'] ?? '').toString().trim(),
       durationMs: durationMs,
       recipientUids: recipients,
       size: size,
@@ -496,6 +499,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                     child: CosmeticAssetVisual(
                       assetKey: event.assetKey,
                       imageUrl: event.imageUrl,
+                      fallbackAssetKey: event.fallbackAssetKey,
                       fit: BoxFit.contain,
                     ),
                   ),
