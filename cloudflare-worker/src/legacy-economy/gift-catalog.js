@@ -3,6 +3,7 @@ import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
 import { giftAdminAccess } from "../gift-admin-permissions.js";
+import { catalogGiftRankingPage } from "../gift-ranking-policy.js";
 import { giftPeriodBounds, giftCustomRangeBounds } from "../gift-totals-aggregation-policy.js";
 import { GIFT_STATS_PAGE_LIMIT, safeGiftTransactionRow, summarizeRecentGiftTransactions } from "../gift-recent-stats-policy.js";
 import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
@@ -366,6 +367,51 @@ export async function handler(req, res) {
         { ttlMs: 5 * 60_000, staleMs: 10 * 60_000 },
       );
       return out(res, 200, { ok: true, ...totals, ...(bounds ? { period, ...(period === "range" ? { startDate, endDate } : {date}), bounds } : {}) });
+    }
+
+    if (action === "statsGiftRanking") {
+      // Reads exactly six immutable catalog IDs per request at most. Each
+      // gift is aggregated through Firestore indexes, not downloaded receipts.
+      // No writes to financial ledgers, counters or payment operations.
+      const offset = req.body?.offset ?? 0;
+      const expectedRevision = req.body?.expectedRevision ?? null;
+      if (typeof offset !== "number" ||
+          (expectedRevision !== null && typeof expectedRevision !== "number")) {
+        throw Error("invalid_gift_ranking_offset");
+      }
+      const state = await cachedCatalogState(db);
+      if (!state.exists) throw Error("gift_catalog_not_initialized");
+      const page = catalogGiftRankingPage(state.config, offset, expectedRevision);
+      const rows = [];
+      for (let i = 0; i < page.page.length; i += 2) {
+        const slice = page.page.slice(i, i + 2);
+        const results = await Promise.all(slice.map(async (gift) => {
+          const totals = await readThroughConfigCache(
+            "report:gift_transactions:gift:" + gift.giftId,
+            () => db.client.readGiftTransactionTotals(null, gift.giftId),
+            { ttlMs: 15 * 60_000, staleMs: 15 * 60_000 },
+          );
+          return {
+            ...gift,
+            entries: totals.receipts,
+            quantity: totals.gifts,
+            totalCoins: totals.faceCoins,
+            paidCoins: totals.paidCoins,
+          };
+        }));
+        rows.push(...results);
+      }
+      return out(res, 200, {
+        ok: true,
+        scope: "catalog_gifts_only",
+        source: "gift_transactions",
+        revision: page.revision,
+        offset: page.offset,
+        totalCatalogGifts: page.total,
+        nextOffset: page.nextOffset,
+        hasMore: page.hasMore,
+        rows,
+      });
     }
 
     if (action === "statsRecent") {
