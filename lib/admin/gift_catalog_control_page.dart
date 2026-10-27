@@ -1160,23 +1160,22 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             leading: categoryThumbnail((categoryDefinitions[i]['assetKey'] ?? '').toString()),
             title: Text(labelForCategory(categoryDefinitions[i]['id'].toString())),
             subtitle: Text('${counts[categoryDefinitions[i]['id']] ?? 0} هدية • ${categoryDefinitions[i]['enabled'] == false ? 'مخفية' : 'ظاهرة'}'),
-            trailing: Wrap(mainAxisSize: MainAxisSize.min, spacing: 0, children: [
-              IconButton(
-                tooltip: 'رفع الفئة',
-                onPressed: i == 0 || saving ? null : () => moveCategory(i, -1),
-                icon: const Icon(Icons.arrow_upward_rounded),
-              ),
-              IconButton(
-                tooltip: 'خفض الفئة',
-                onPressed: i == categoryDefinitions.length - 1 || saving ? null : () => moveCategory(i, 1),
-                icon: const Icon(Icons.arrow_downward_rounded),
-              ),
-              IconButton(
-                tooltip: 'تعديل الفئة',
-                onPressed: saving ? null : () => editCategory(i),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ]),
+            trailing: PopupMenuButton<String>(
+              tooltip: 'خيارات الفئة',
+              enabled: !saving,
+              onSelected: (value) {
+                if (value == 'edit') editCategory(i);
+                if (value == 'up') moveCategory(i, -1);
+                if (value == 'down') moveCategory(i, 1);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'edit', child: Text('تعديل الفئة')),
+                if (i > 0)
+                  const PopupMenuItem(value: 'up', child: Text('رفع الفئة')),
+                if (i < categoryDefinitions.length - 1)
+                  const PopupMenuItem(value: 'down', child: Text('خفض الفئة')),
+              ],
+            ),
             onTap: () => setState(() {
               categoryFilter = categoryDefinitions[i]['id'].toString();
               selectedSection = 0;
