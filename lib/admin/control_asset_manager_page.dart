@@ -132,7 +132,7 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     return slash >= 0 ? fullPath.substring(slash + 1) : fullPath;
   }
 
-  String _effectiveAssetType(Map<String, dynamic> asset) {
+  String? _canonicalTemplateIdForAsset(Map<String, dynamic> asset) {
     final source = _assetSource(asset);
     final key = (asset['assetKey'] ?? '').toString().trim().toLowerCase();
     final fullPath = (source['fullPath'] ?? asset['fullPath'] ?? '')
@@ -143,8 +143,22 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (key.endsWith('.profileframe') ||
         fileName.contains('_profile_frame.') ||
         fullPath.contains('_profile_frame.')) {
-      return 'frame';
+      return 'frame.base.v1';
     }
+    if (key != 'mysterious.vehicle' &&
+        (key.endsWith('.vehicle') ||
+            fileName.contains('_vehicle.') ||
+            fullPath.contains('_vehicle.'))) {
+      return 'vehicle.base.v1';
+    }
+    return null;
+  }
+
+  String _effectiveAssetType(Map<String, dynamic> asset) {
+    final canonical = _canonicalTemplateIdForAsset(asset);
+    if (canonical == 'frame.base.v1') return 'frame';
+    if (canonical == 'vehicle.base.v1') return 'vehicle';
+    final source = _assetSource(asset);
     return (source['assetType'] ?? asset['assetType'] ?? '')
         .toString()
         .trim();
@@ -245,9 +259,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
   void _beginEditAsset(Map<String, dynamic> asset) {
     final source = _assetSource(asset);
     final templateId = (source['templateId'] ?? asset['templateId'] ?? '').toString();
-    final preferredTemplateId = _effectiveAssetType(asset) == 'frame'
-        ? 'frame.base.v1'
-        : templateId;
+    final preferredTemplateId =
+        _canonicalTemplateIdForAsset(asset) ?? templateId;
     final channels = (source['channels'] ?? asset['channels']);
     final key = (asset['assetKey'] ?? '').toString().trim();
     setState(() {
@@ -301,7 +314,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
       _directory.text = _assetDirectory(asset);
       _fileName.text = '${base}_copy$ext';
       _mode = (source['mode'] ?? asset['mode']) == 'bundled' ? 'bundled' : 'remote';
-      final templateId = (source['templateId'] ?? asset['templateId'] ?? '').toString();
+      final templateId = _canonicalTemplateIdForAsset(asset) ??
+          (source['templateId'] ?? asset['templateId'] ?? '').toString();
       if (templateId.isNotEmpty &&
           _templates.any((template) => template.id == templateId)) {
         _selectedTemplateId = templateId;
@@ -1703,8 +1717,17 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
         try {
           final prepared = await _prepareBatchFile(file, item);
-          final templateId = (item['templateId'] ?? '').toString().trim();
-          final assetType = (item['assetType'] ?? '').toString().trim();
+          // Old wealth vehicle manifests may still point to a static badge.
+          // Resolve those identities through the shared animated vehicle type.
+          final assetKey = (item['assetKey'] ?? '').toString().trim().toLowerCase();
+          final isVehicle = assetKey != 'mysterious.vehicle' &&
+              assetKey.endsWith('.vehicle');
+          final templateId = isVehicle
+              ? 'vehicle.base.v1'
+              : (item['templateId'] ?? '').toString().trim();
+          final assetType = isVehicle
+              ? 'vehicle'
+              : (item['assetType'] ?? '').toString().trim();
           final channels = item['channels'] is List
               ? (item['channels'] as List).map((e) => e.toString()).toList()
               : <String>[];
