@@ -66,7 +66,8 @@ async function actor(req, action) {
   assertUserDocumentSessionState(decoded, user);
   const access = giftAdminAccess(user, action);
   if (!access.allowed) throw Error("forbidden");
-  return { uid: decoded.uid, db, statsOnly: access.statsOnly };
+  return { uid: decoded.uid, db, statsOnly: access.statsOnly,
+    canGrantBag: giftAdminAccess(user, "grantBagGift").allowed };
 }
 
 async function cachedCatalogState(db) {
@@ -335,7 +336,7 @@ export async function handler(req, res) {
       });
     }
 
-    const { uid, db, statsOnly } = await actor(req, action);
+    const { uid, db, statsOnly, canGrantBag } = await actor(req, action);
     const ref = db.collection("system_config").doc("gift_catalog");
 
     if (action === "statsRecent") {
@@ -387,6 +388,7 @@ export async function handler(req, res) {
       const snap = await ref.get();
       return out(res, 200, {
         ok: true,
+        canGrantBag,
         exists: snap.exists,
         config: snap.exists ? snap.data() : null,
       });
