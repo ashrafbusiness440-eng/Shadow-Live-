@@ -24,7 +24,7 @@ export function giftVisualPolicy(gift = {}, quantity = 1) {
     count > 0 &&
     effectMinQuantity > 0 &&
     count >= effectMinQuantity &&
-    (effectMode === "seat" || effectMode === "cinematic");
+    (effectMode === "seat" || effectMode === "cinematic" || effectMode === "legendary");
   const premiumEligible =
     count > 0 &&
     premiumBannerMinQuantity > 0 &&
