@@ -54,3 +54,14 @@ test("reject duplicate and unsafe IDs or malformed images", () => {
     ));
   }
 });
+
+test("all paid gift contexts enforce hidden categories in server transaction paths", async () => {
+  const { readFileSync } = await import("node:fs");
+  const base = new URL("../../cloudflare-worker/src/", import.meta.url);
+  const room = readFileSync(new URL("room-gift.js", base), "utf8");
+  const direct = readFileSync(new URL("chat-safety-actions.js", base), "utf8");
+  const catalog = readFileSync(new URL("legacy-economy/gift-catalog.js", base), "utf8");
+  assert.match(room, /giftCategoryEnabled\(catalogSnap\.data/);
+  assert.match(direct, /giftCategoryEnabled\(catalog\.data/);
+  assert.match(catalog, /giftCategoryEnabled\(config/);
+});
