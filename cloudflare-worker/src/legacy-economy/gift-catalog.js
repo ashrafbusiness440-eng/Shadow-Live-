@@ -399,6 +399,9 @@ export async function handler(req, res) {
       await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         const previous = snap.exists ? snap.data() : null;
+        if (!Array.isArray(previous?.gifts) || previous.gifts.length === 0) {
+          throw Error("gift_catalog_not_initialized");
+        }
         const version = Number(previous?.revision ?? 0);
         if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
           throw Error("invalid_catalog_revision");
@@ -530,6 +533,7 @@ export async function handler(req, res) {
               "invalid_gift_category_asset",
               "gift_category_missing",
               "gift_category_in_use",
+              "gift_catalog_not_initialized",
               "invalid_gifts",
               "invalid_catalog_revision",
               "gift_catalog_existing_id_missing",
