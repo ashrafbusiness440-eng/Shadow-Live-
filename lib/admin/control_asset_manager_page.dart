@@ -1555,8 +1555,11 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
           'الملف متحرك؛ يجب أن يطابق امتداد الهدف للحفاظ على الحركة.',
         );
       }
-      if (sourceBytes.length > ControlAssetPolicy.maxBytes) {
-        throw StateError('حجم الملف المتحرك أكبر من الحد.');
+      final longest = decoded.width > decoded.height
+          ? decoded.width
+          : decoded.height;
+      if (longest > 2048 || sourceBytes.length > ControlAssetPolicy.maxBytes) {
+        throw StateError('الملف المتحرك أكبر من حد الاستديو (2048px / 2.5MB).');
       }
       output = sourceBytes;
       width = decoded.width;
