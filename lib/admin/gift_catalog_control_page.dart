@@ -272,7 +272,29 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 const SizedBox(height: 10),
                 field(name, 'اسم الفئة', 'هدايا رمضان'),
                 const SizedBox(height: 10),
-                field(asset, 'صورة الفئة — اختياري', 'gifts.category.ramadan'),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final code = id.text.trim();
+                    if (!RegExp(r'^[a-z][a-z0-9_]{1,31}$').hasMatch(code)) {
+                      message('اكتب رمز الفئة الصحيح أولًا.');
+                      return;
+                    }
+                    if (asset.text.trim().isEmpty) {
+                      asset.text = 'gifts.categories.$code.icon';
+                    }
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => ControlAssetManagerPage(
+                        initialSearch: asset.text.trim(),
+                        initialTemplateId: 'gift.icon.base.v1',
+                        initialAssetKey: asset.text.trim(),
+                        initialDirectory: 'assets/images/gifts',
+                        initialFileName: '${code}_category.webp',
+                      ),
+                    ));
+                  },
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('إضافة/تغيير صورة الفئة'),
+                ),
                 const SizedBox(height: 10),
                 SwitchListTile(
                   title: const Text('الفئة ظاهرة'),
@@ -574,13 +596,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       labelText: 'الفئة',
                       border: OutlineInputBorder(),
                     ),
-                    items: GiftCatalogService.categories
+                    items: categoryDefinitions
                         .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(
-                              GiftCatalogService.categoryLabel(value),
-                            ),
+                          (item) => DropdownMenuItem<String>(
+                            value: item['id'] as String,
+                            child: Text((item['nameAr'] ?? item['id']).toString()),
                           ),
                         )
                         .toList(),
@@ -1087,27 +1107,75 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
   }
 
+  Widget categoryThumbnail(String assetKey) {
+    if (assetKey.isEmpty) return const Icon(Icons.category_outlined);
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(assetKey),
+        builder: (_, snapshot) {
+          final url = snapshot.data;
+          if (url == null) return const Icon(Icons.category_outlined);
+          return Image.network(url.toString(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.category_outlined),
+          );
+        },
+      ),
+    );
+  }
+
   Widget categoryOverview() {
     final counts = <String, int>{};
     for (final gift in gifts) {
       counts[gift.category] = (counts[gift.category] ?? 0) + 1;
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const ListTile(
-          title: Text('الفئات الحالية'),
-          subtitle: Text('يمكنك اختيار فئة لاستعراض هداياها. إدارة إنشاء الفئات وتغييرها ستتاح بعد تفعيل الحماية اللازمة.'),
+        ListTile(
+          title: const Text('إدارة فئات الهدايا'),
+          subtitle: const Text('يمكن إضافة الفئات وتغيير ترتيبها وصورها وظهورها دون حذف الهدايا السابقة.'),
+          trailing: FilledButton.icon(
+            onPressed: saving || categoryDefinitions.length >= 30 ? null : () => editCategory(),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة فئة'),
+          ),
         ),
-        ...counts.entries.map((entry) => Card(child: ListTile(
-          leading: const Icon(Icons.category_outlined),
-          title: Text(GiftCatalogService.categoryLabel(entry.key)),
-          subtitle: Text('${entry.value} هدية'),
-          trailing: const Icon(Icons.chevron_left),
-          onTap: () => setState(() {
-            categoryFilter = entry.key;
-            selectedSection = 0;
-          }),
-        ))),
+        for (var i = 0; i < categoryDefinitions.length; i++)
+          Card(child: ListTile(
+            leading: categoryThumbnail((categoryDefinitions[i]['assetKey'] ?? '').toString()),
+            title: Text(labelForCategory(categoryDefinitions[i]['id'].toString())),
+            subtitle: Text('${counts[categoryDefinitions[i]['id']] ?? 0} هدية • ${categoryDefinitions[i]['enabled'] == false ? 'مخفية' : 'ظاهرة'}'),
+            trailing: Wrap(mainAxisSize: MainAxisSize.min, spacing: 0, children: [
+              IconButton(
+                tooltip: 'رفع الفئة',
+                onPressed: i == 0 || saving ? null : () => moveCategory(i, -1),
+                icon: const Icon(Icons.arrow_upward_rounded),
+              ),
+              IconButton(
+                tooltip: 'خفض الفئة',
+                onPressed: i == categoryDefinitions.length - 1 || saving ? null : () => moveCategory(i, 1),
+                icon: const Icon(Icons.arrow_downward_rounded),
+              ),
+              IconButton(
+                tooltip: 'تعديل الفئة',
+                onPressed: saving ? null : () => editCategory(i),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ]),
+            onTap: () => setState(() {
+              categoryFilter = categoryDefinitions[i]['id'].toString();
+              selectedSection = 0;
+            }),
+          )),
+        if (categoryUnsaved)
+          FilledButton.icon(
+            onPressed: saving || hasUnsavedChanges ? null : saveCategories,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('حفظ تغييرات الفئات'),
+          ),
       ],
     );
   }
@@ -1151,7 +1219,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   );
 
   Widget catalogFilters() {
-    final categories = <String>{'all', ...gifts.map((gift) => gift.category)};
+    final categories = <String>{'all', ...categoryDefinitions.map((item) => item['id'].toString()), ...gifts.map((gift) => gift.category)};
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1176,7 +1244,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   value: categoryFilter,
                   items: categories.map((category) => DropdownMenuItem(
                     value: category,
-                    child: Text(category == 'all' ? 'كل الفئات' : GiftCatalogService.categoryLabel(category)),
+                    child: Text(category == 'all' ? 'كل الفئات' : labelForCategory(category)),
                   )).toList(),
                   onChanged: (value) => setState(() => categoryFilter = value ?? 'all'),
                 ),
@@ -1278,7 +1346,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       subtitle: Text(error!),
                     ),
                   ),
-                if (hasUnsavedChanges)
+                if (hasUnsavedChanges || categoryUnsaved)
                   const Card(child: ListTile(
                     leading: Icon(Icons.edit_note_rounded, color: Colors.amberAccent),
                     title: Text('هناك تغييرات لم تُحفظ بعد'),
@@ -1356,9 +1424,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             '🪙 ' +
                                 formatCompactAmount(item.priceCoins) +
                                 ' • ' +
-                                GiftCatalogService.categoryLabel(
-                                  item.category,
-                                ) +
+                                labelForCategory(item.category) +
                                 (item.effectiveMinVipLevel > 0
                                     ? ' • VIP' +
                                         item.effectiveMinVipLevel.toString() +
