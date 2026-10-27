@@ -2,6 +2,7 @@ import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacy
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
+import { GIFT_STATS_PAGE_LIMIT, safeGiftTransactionRow, summarizeRecentGiftTransactions } from "../gift-recent-stats-policy.js";
 import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
 import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
@@ -339,6 +340,41 @@ export async function handler(req, res) {
     const { uid, db } = await actor(req);
     const ref = db.collection("system_config").doc("gift_catalog");
 
+    if (action === "statsRecent") {
+      // Admin only (actor above), index-backed single-page query. No global
+      // collection scan, no write, no per-user aggregation and no polling.
+      const cursor = clean(req.body?.cursor);
+      if (cursor && !/^[A-Za-z0-9_-]{1,180}$/.test(cursor)) {
+        throw Error("invalid_stats_cursor");
+      }
+      const collection = db.collection("gift_transactions");
+      let query = collection
+        .orderBy("createdAt", "desc")
+        .limit(GIFT_STATS_PAGE_LIMIT + 1);
+      if (cursor) {
+        const anchor = await collection.doc(cursor).get();
+        if (!anchor.exists || !anchor.get("createdAt")) {
+          throw Error("invalid_stats_cursor");
+        }
+        query = query.startAfter(anchor);
+      }
+      const snapshot = await query.get();
+      const documents = snapshot.docs.slice(0, GIFT_STATS_PAGE_LIMIT);
+      const rows = documents.map((doc) =>
+        safeGiftTransactionRow(doc.id, doc.data()),
+      );
+      return out(res, 200, {
+        ok: true,
+        scope: "recent_transaction_entries_only",
+        pageLimit: GIFT_STATS_PAGE_LIMIT,
+        hasMore: snapshot.docs.length > GIFT_STATS_PAGE_LIMIT,
+        nextCursor: snapshot.docs.length > GIFT_STATS_PAGE_LIMIT &&
+            documents.length > 0 ? documents[documents.length - 1].id : null,
+        rows,
+        summary: summarizeRecentGiftTransactions(rows),
+      });
+    }
+
     if (action === "state") {
       // Administrative editing must see the current revision, not a stale cache.
       const snap = await ref.get();
@@ -646,6 +682,7 @@ export async function handler(req, res) {
               "gift_draft_limit",
               "invalid_gift_contexts",
               "invalid_gift_schedule",
+              "invalid_stats_cursor",
               "invalid_gifts",
               "invalid_catalog_revision",
               "gift_catalog_existing_id_missing",
