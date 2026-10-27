@@ -47,15 +47,23 @@ export function giftCustomRangeBounds(firstDate, lastDate, now = new Date()) {
   return {start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString()};
 }
 
-export function giftTotalsAggregationRequest(bounds = null) {
+export function giftTotalsAggregationRequest(bounds = null, giftId = null) {
+  if (giftId != null && !/^[a-z0-9_]{2,64}$/.test(giftId)) {
+    throw Error("invalid_gift_id");
+  }
+  const filters = [
+    ...(bounds ? [
+      {fieldFilter: {field: {fieldPath: "createdAt"}, op: "GREATER_THAN_OR_EQUAL", value: {timestampValue: bounds.start}}},
+      {fieldFilter: {field: {fieldPath: "createdAt"}, op: "LESS_THAN", value: {timestampValue: bounds.end}}},
+    ] : []),
+    ...(giftId ? [{fieldFilter: {field: {fieldPath: "giftId"}, op: "EQUAL", value: {stringValue: giftId}}}] : []),
+  ];
   return {
     structuredAggregationQuery: {
       structuredQuery: {
         from: [{ collectionId: GIFT_TOTALS_COLLECTION }],
-        ...(bounds ? {where: {compositeFilter: {op: "AND", filters: [
-          {fieldFilter: {field: {fieldPath: "createdAt"}, op: "GREATER_THAN_OR_EQUAL", value: {timestampValue: bounds.start}}},
-          {fieldFilter: {field: {fieldPath: "createdAt"}, op: "LESS_THAN", value: {timestampValue: bounds.end}}},
-        ]}}} : {}),
+        ...(filters.length === 1 ? {where: filters[0]} :
+          filters.length > 1 ? {where: {compositeFilter: {op: "AND", filters}}} : {}),
       },
       aggregations: [
         { alias: "receipts", count: {} },
