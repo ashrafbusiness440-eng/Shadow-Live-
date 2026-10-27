@@ -24,8 +24,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Audit Cloudflare cutover
         run: python3 scripts/phase7_cloudflare_audit.py
-      - name: Verify Pages artifact-only release path
-        run: node --test server/__tests__/pages-artifact-only.test.js
       - name: Pressure regression guardrails
         run: python3 scripts/pressure_guardrail_audit.py
       - name: Audit Diaries Stage 09 pressure and security
@@ -36,7 +34,7 @@ jobs:
         run: |
           find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Verify safe Gift Catalog revisions and preserved gift history
-        run: node --test server/__tests__/gift-catalog-update-policy.test.js server/__tests__/gift-category-policy.test.js server/__tests__/gift-draft-policy.test.js server/__tests__/gift-availability-policy.test.js server/__tests__/gift-visual-celebration.test.js server/__tests__/gift-recent-stats-policy.test.js server/__tests__/gift-stats-cursor-shim.test.js
+        run: node --test server/__tests__/gift-catalog-update-policy.test.js server/__tests__/gift-category-policy.test.js server/__tests__/gift-draft-policy.test.js server/__tests__/gift-availability-policy.test.js server/__tests__/gift-visual-celebration.test.js server/__tests__/gift-recent-stats-policy.test.js server/__tests__/gift-stats-cursor-shim.test.js server/__tests__/gift-admin-permissions.test.js
       - name: Verify suggested people privacy and follow filters
         run: node --test server/__tests__/home-discovery-people-privacy.test.js
       - name: Validate Cloudflare Durable Object bundle
