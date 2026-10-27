@@ -2,6 +2,7 @@ import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacy
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
+import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
 import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
 
 const EFFECT_MODES = new Set(["none", "seat", "cinematic"]);
@@ -441,6 +442,106 @@ export async function handler(req, res) {
       });
     }
 
+    if (action === "saveDraft") {
+      const expectedRevision = req.body?.expectedRevision;
+      const auditRef = db.collection("admin_audit_logs").doc();
+      let saved;
+      await db.runTransaction(async (tx) => {
+        const snapshot = await tx.get(ref);
+        const previous = snapshot.exists ? snapshot.data() : null;
+        // Validate again on the server, not against the admin form.
+        const draft = validateGifts([req.body?.gift], giftCategoryIdSet(previous))[0];
+        const transition = saveCatalogGiftDraft(previous, draft, expectedRevision);
+        saved = { gift: draft, revision: transition.revision };
+        tx.set(ref, {
+          drafts: transition.drafts,
+          revision: transition.revision,
+          updatedBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.create(auditRef, {
+          actorUid: uid,
+          action: "saveGiftDraft",
+          targetType: "giftDraft",
+          targetId: draft.id,
+          revisionAfter: transition.revision,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
+      invalidateConfigCache("config:gift_catalog");
+      return out(res, 200, { ok: true, ...saved });
+    }
+
+    if (action === "publishDraft") {
+      const draftId = clean(req.body?.giftId);
+      if (!/^[a-z0-9_]{2,64}$/.test(draftId)) throw Error("invalid_gift_id");
+      const expectedRevision = req.body?.expectedRevision;
+      const auditRef = db.collection("admin_audit_logs").doc();
+      let saved;
+      await db.runTransaction(async (tx) => {
+        const snapshot = await tx.get(ref);
+        const previous = snapshot.exists ? snapshot.data() : null;
+        const choice = chooseGiftDraftForPublication(previous, draftId, expectedRevision);
+        const active = Array.isArray(previous?.gifts) ? previous.gifts : [];
+        const next = validateGifts(
+          [...active, { ...choice.gift, sortOrder: active.length }],
+          giftCategoryIdSet(previous),
+        );
+        // Keep historical gift IDs and restricted categories protected.
+        const transition = validateGiftCatalogUpdate(previous, next, expectedRevision);
+        if (transition.revision !== choice.revision) throw Error("gift_catalog_conflict");
+        tx.set(ref, {
+          gifts: next,
+          drafts: choice.drafts,
+          revision: choice.revision,
+          updatedBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.create(auditRef, {
+          actorUid: uid,
+          action: "publishGiftDraft",
+          targetType: "gift",
+          targetId: draftId,
+          revisionAfter: choice.revision,
+          changes: transition.changes,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        saved = { giftId: draftId, revision: choice.revision };
+      });
+      invalidateConfigCache("config:gift_catalog");
+      return out(res, 200, { ok: true, ...saved });
+    }
+
+    if (action === "discardDraft") {
+      const draftId = clean(req.body?.giftId);
+      if (!/^[a-z0-9_]{2,64}$/.test(draftId)) throw Error("invalid_gift_id");
+      const expectedRevision = req.body?.expectedRevision;
+      const auditRef = db.collection("admin_audit_logs").doc();
+      let revision;
+      await db.runTransaction(async (tx) => {
+        const snapshot = await tx.get(ref);
+        const previous = snapshot.exists ? snapshot.data() : null;
+        const transition = removeCatalogGiftDraft(previous, draftId, expectedRevision);
+        revision = transition.revision;
+        tx.set(ref, {
+          drafts: transition.drafts,
+          revision,
+          updatedBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.create(auditRef, {
+          actorUid: uid,
+          action: "discardGiftDraft",
+          targetType: "giftDraft",
+          targetId: draftId,
+          revisionAfter: revision,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
+      invalidateConfigCache("config:gift_catalog");
+      return out(res, 200, { ok: true, giftId: draftId, revision });
+    }
+
     if (action === "grantBagGift") {
       const targetUserId = clean(
         req.body?.targetUserId || req.body?.targetUid,
@@ -534,6 +635,9 @@ export async function handler(req, res) {
               "gift_category_missing",
               "gift_category_in_use",
               "gift_catalog_not_initialized",
+              "gift_draft_already_published",
+              "gift_draft_not_found",
+              "gift_draft_limit",
               "invalid_gifts",
               "invalid_catalog_revision",
               "gift_catalog_existing_id_missing",
