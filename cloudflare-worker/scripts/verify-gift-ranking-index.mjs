@@ -60,8 +60,8 @@ if(!response.ok){
   const upstreamStatus=String(failure?.error?.status||"UNKNOWN")
     .replace(/[^A-Z_]/g,"").slice(0,80);
   const upstreamMessage=String(failure?.error?.message||"")
-    .replace(/https?:\\/\\/\\S+/g,"[index_link]")
-    .replace(/Bearer\\s+[^\\s]+/g,"Bearer [redacted]")
+    .replace(/https?:\/\/\S+/g,"[index_link]")
+    .replace(/Bearer +[^ ]+/g,"Bearer [redacted]")
     .slice(0,450);
   console.error("Gift index aggregate rejection:",JSON.stringify({
     httpCode:code,upstreamStatus,message:upstreamMessage,
@@ -81,7 +81,7 @@ if(!response.ok){
     httpCode:diagnosis.status,
     upstreamStatus:String(diagnosisBody?.error?.status||"OK").slice(0,80),
     message:String(diagnosisBody?.error?.message||"")
-      .replace(/https?:\\/\\/\\S+/g,"[index_link]").slice(0,300),
+      .replace(/https?:\/\/\S+/g,"[index_link]").slice(0,300),
   }));
   throw Error("gift_ranking_index_aggregation_http_"+code);
 }
