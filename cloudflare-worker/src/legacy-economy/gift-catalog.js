@@ -2,6 +2,7 @@ import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacy
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
+import { giftAdminAccess } from "../gift-admin-permissions.js";
 import { GIFT_STATS_PAGE_LIMIT, safeGiftTransactionRow, summarizeRecentGiftTransactions } from "../gift-recent-stats-policy.js";
 import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
@@ -56,19 +57,16 @@ async function authenticatedUser(req) {
   return getAuth().verifyIdToken(authorization.slice(7), {checkUserState:false});
 }
 
-async function actor(req) {
+async function actor(req, action) {
   const decoded = await authenticatedUser(req);
   const db = getFirestore();
   const snap = await db.collection("users").doc(decoded.uid).get();
   if (!snap.exists) throw Error("forbidden");
   const user = snap.data() || {};
   assertUserDocumentSessionState(decoded, user);
-  const caps = Array.isArray(user.capabilities) ? user.capabilities : [];
-  const allowed =
-    user.role === "owner" ||
-    (user.adminEnabled === true && caps.includes("manageEconomy"));
-  if (!allowed) throw Error("forbidden");
-  return { uid: decoded.uid, db };
+  const access = giftAdminAccess(user, action);
+  if (!access.allowed) throw Error("forbidden");
+  return { uid: decoded.uid, db, statsOnly: access.statsOnly };
 }
 
 async function cachedCatalogState(db) {
@@ -337,7 +335,7 @@ export async function handler(req, res) {
       });
     }
 
-    const { uid, db } = await actor(req);
+    const { uid, db, statsOnly } = await actor(req, action);
     const ref = db.collection("system_config").doc("gift_catalog");
 
     if (action === "statsRecent") {
@@ -376,6 +374,15 @@ export async function handler(req, res) {
     }
 
     if (action === "state") {
+      if (statsOnly) {
+        // Do not disclose unpublished gifts or draft prices to report viewers.
+        return out(res, 200, {
+          ok: true,
+          statsOnly: true,
+          exists: false,
+          config: null,
+        });
+      }
       // Administrative editing must see the current revision, not a stale cache.
       const snap = await ref.get();
       return out(res, 200, {
