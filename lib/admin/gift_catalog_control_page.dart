@@ -48,6 +48,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool statsTotalsLoading = false;
   String statsPeriod = "all";
   DateTime statsDate = DateTime.now().toUtc();
+  DateTimeRange? statsCustomRange;
   Map<String, dynamic>? statsTotals;
   String? statsTotalsError;
   bool statsLoading = false;
@@ -1430,12 +1431,20 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       statsTotalsError = null;
     });
     try {
-      final now = statsDate;
-      final date = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      String reportDate(DateTime value) =>
+          '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+      if (statsPeriod == 'range' && statsCustomRange == null) {
+        throw StateError('اختر الفترة أولاً');
+      }
       final payload = await post({
         'action': 'statsTotals',
         if (statsPeriod != 'all') 'period': statsPeriod,
-        if (statsPeriod != 'all') 'date': date,
+        if (statsPeriod == 'day' || statsPeriod == 'month')
+          'date': reportDate(statsDate),
+        if (statsPeriod == 'range')
+          'startDate': reportDate(statsCustomRange!.start),
+        if (statsPeriod == 'range')
+          'endDate': reportDate(statsCustomRange!.end),
       });
       if (!mounted) return;
       setState(() {
@@ -1668,11 +1677,34 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 ('all', 'كل الفترة'),
                 ('day', 'حسب اليوم'),
                 ('month', 'حسب الشهر'),
+                ('range', 'فترة محددة'),
               ])
                 ChoiceChip(
                   label: Text(item.$2),
                   selected: statsPeriod == item.$1,
-                  onSelected: statsTotalsLoading ? null : (_) {
+                  onSelected: statsTotalsLoading ? null : (_) async {
+                    if (item.$1 == 'range') {
+                      final today = DateTime.now().toUtc();
+                      final chosen = await showDateRangePicker(
+                        context: context,
+                        firstDate: today.subtract(const Duration(days: 365)),
+                        lastDate: today,
+                        initialDateRange: statsCustomRange,
+                        helpText: 'اختر فترة لا تتجاوز 31 يوماً',
+                      );
+                      if (!mounted || chosen == null) return;
+                      if (chosen.end.difference(chosen.start).inDays >= 31) {
+                        message('الحد الأقصى للفترة 31 يوماً');
+                        return;
+                      }
+                      setState(() {
+                        statsPeriod = 'range';
+                        statsCustomRange = chosen;
+                        statsTotals = null;
+                      });
+                      loadVerifiedTotals();
+                      return;
+                    }
                     setState(() {
                       statsPeriod = item.$1;
                       statsDate = DateTime.now().toUtc();
@@ -1682,7 +1714,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   },
                 ),
             ]),
-            if (statsPeriod != 'all')
+            if (statsPeriod == 'range' && statsCustomRange != null)
+              Text('الفترة: ${statsCustomRange!.start.day}/${statsCustomRange!.start.month}/${statsCustomRange!.start.year} إلى ${statsCustomRange!.end.day}/${statsCustomRange!.end.month}/${statsCustomRange!.end.year}'),
+            if (statsPeriod == 'day' || statsPeriod == 'month')
               TextButton.icon(
                 icon: const Icon(Icons.calendar_month_outlined),
                 label: Text('اختيار التاريخ: ${statsDate.year.toString().padLeft(4, '0')}/${statsDate.month.toString().padLeft(2, '0')}/${statsDate.day.toString().padLeft(2, '0')}'),
