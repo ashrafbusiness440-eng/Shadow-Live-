@@ -1027,7 +1027,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     contentPadding: EdgeInsets.zero,
                     title: const Text('بداية الظهور'),
                     subtitle: Text(giftMomentLabel(visibleFrom)),
-                    trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (visibleFrom != null)
                         IconButton(
                           tooltip: 'إلغاء موعد البداية',
@@ -1050,7 +1050,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     contentPadding: EdgeInsets.zero,
                     title: const Text('نهاية الظهور'),
                     subtitle: Text(giftMomentLabel(visibleUntil)),
-                    trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (visibleUntil != null)
                         IconButton(
                           tooltip: 'إلغاء موعد النهاية',
