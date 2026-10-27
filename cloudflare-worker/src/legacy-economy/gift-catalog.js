@@ -339,6 +339,17 @@ export async function handler(req, res) {
     const { uid, db, statsOnly, canGrantBag } = await actor(req, action);
     const ref = db.collection("system_config").doc("gift_catalog");
 
+    if (action === "statsTotals") {
+      // Read-only index aggregation with 5-minute shared cache and
+      // single-flight deduplication. No raw financial identities exposed.
+      const totals = await readThroughConfigCache(
+        "report:gift_transactions:all_time_totals",
+        () => db.client.readGiftTransactionTotals(),
+        { ttlMs: 5 * 60_000, staleMs: 10 * 60_000 },
+      );
+      return out(res, 200, { ok: true, ...totals });
+    }
+
     if (action === "statsRecent") {
       // Admin only (actor above), index-backed single-page query. No global
       // collection scan, no write, no per-user aggregation and no polling.

@@ -45,6 +45,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   GiftCatalogItem? pendingDraft;
   bool statsOnly = false;
   bool canGrantBag = false;
+  bool statsTotalsLoading = false;
+  Map<String, dynamic>? statsTotals;
+  String? statsTotalsError;
   bool statsLoading = false;
   bool statsLoaded = false;
   bool statsHasMore = false;
@@ -215,6 +218,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       });
       if (isStatsOnly && mounted) {
         await loadRecentStats(reset: true);
+        if (mounted) await loadVerifiedTotals();
       }
     } catch (e) {
       if (!mounted) return;
@@ -1417,6 +1421,28 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
   }
 
+  Future<void> loadVerifiedTotals() async {
+    if (statsTotalsLoading) return;
+    setState(() {
+      statsTotalsLoading = true;
+      statsTotalsError = null;
+    });
+    try {
+      final payload = await post({'action': 'statsTotals'});
+      if (!mounted) return;
+      setState(() {
+        statsTotals = payload;
+        statsTotalsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        statsTotalsLoading = false;
+        statsTotalsError = friendlyError(error);
+      });
+    }
+  }
+
   Future<void> loadRecentStats({bool reset = false}) async {
     if (statsLoading) return;
     if (!reset && statsLoaded && (!statsHasMore || statsPagesLoaded >= 5)) return;
@@ -1475,8 +1501,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           selected: selectedSection == i,
           onSelected: (_) {
             setState(() => selectedSection = i);
-            if (i == 3 && !statsLoaded && !statsLoading) {
-              loadRecentStats(reset: true);
+            if (i == 3) {
+              if (!statsLoaded && !statsLoading) loadRecentStats(reset: true);
+              if (statsTotals == null && !statsTotalsLoading) {
+                loadVerifiedTotals();
+              }
             }
           },
         )),
@@ -1619,9 +1648,44 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               leading: Icon(Icons.bar_chart_outlined),
               title: Text('إحصاءات الهدايا الفعلية'),
               subtitle: Text(
-                'الأرقام التالية محسوبة من أحدث سجلات الإرسال التي تم تحميلها فقط، وليست إجمالي التطبيق أو جميع المبيعات.',
+                'الإجماليات تشمل جميع السجلات الموجودة في دفتر إرسال الهدايا، والتفاصيل أدناه تخص السجلات المحمّلة فقط.',
               ),
             ),
+            const SizedBox(height: 8),
+            const Text('إجماليات سجل الهدايا',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'تشمل سجلات إرسال الهدايا المالية المحفوظة، وقد لا تتضمن هدايا قديمة من أنظمة سابقة.',
+              style: TextStyle(fontSize: 11),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: statsTotalsLoading ? null : loadVerifiedTotals,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('تحديث الإجماليات'),
+              ),
+            ),
+            if (statsTotalsLoading) const LinearProgressIndicator(),
+            if (statsTotalsError != null)
+              ListTile(
+                leading: const Icon(Icons.error_outline_rounded),
+                title: Text('تعذر جلب الإجماليات: $statsTotalsError'),
+              ),
+            if (statsTotals != null) ...[
+              Text('عدد سجلات الإرسال: ${amount(statsTotals!, 'receipts')}'),
+              Text('عدد الهدايا: ${amount(statsTotals!, 'gifts')}'),
+              Text('القيمة الإجمالية: ${amount(statsTotals!, 'faceCoins')} كوينز'),
+              Text('الكوينز المدفوعة: ${amount(statsTotals!, 'paidCoins')}'),
+              Text('قيمة غير مدفوعة من الرصيد: ${amount(statsTotals!, 'nonPaidCoins')}'),
+              const Text(
+                'قد تكون القيمة غير المدفوعة من هدايا الحقيبة أو ميزات أخرى؛ لا تُعامل كإيراد نقدي.',
+                style: TextStyle(fontSize: 11),
+              ),
+            ],
+            const Divider(),
+            const Text('تفاصيل أحدث عمليات الإرسال المحمّلة',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             Align(
               alignment: Alignment.centerRight,
               child: OutlinedButton.icon(

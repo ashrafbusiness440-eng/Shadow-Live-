@@ -19,7 +19,7 @@ export function giftAdminAccess(user = {}, action = "") {
 
   let allowed = false;
   if (action === "state") allowed = viewer;
-  else if (action === "statsRecent") allowed = viewer;
+  else if (action === "statsRecent" || action === "statsTotals") allowed = viewer;
   else if (EDIT_ACTIONS.has(action)) allowed = editor;
   else if (action === "grantBagGift") allowed = finance;
   return {
