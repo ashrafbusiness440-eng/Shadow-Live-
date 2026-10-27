@@ -74,7 +74,7 @@ test("only existing gift-report privileges may request aggregate totals", () => 
 test("admin endpoint caches read-only aggregate; no payment path modifications", () => {
   const source=readFileSync(new URL("../../cloudflare-worker/src/legacy-economy/gift-catalog.js",import.meta.url),"utf8");
   assert.match(source,/if \(action === "statsTotals"\)/);
-  assert.match(source,/db\.client\.readGiftTransactionTotals\(\)/);
+  assert.match(source,/db\.client\.readGiftTransactionTotals\(bounds\)/);
   assert.match(source,/ttlMs: 5 \* 60_000/);
   const room=readFileSync(new URL("../../cloudflare-worker/src/room-gift.js",import.meta.url),"utf8");
   assert.doesNotMatch(room,/readGiftTransactionTotals/);
