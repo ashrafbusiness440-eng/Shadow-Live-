@@ -23,3 +23,5 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node cloudflare-worker/scripts/verify-gift-ranking-index.mjs
+
+# Re-run detailed COUNT and SUM isolation after HTTP 400.
