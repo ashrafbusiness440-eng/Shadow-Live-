@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_asset_manager_page.dart';
 import 'control_firebase.dart';
+import '../core/assets/shadow_asset_registry.dart';
 
 import '../features/gift/services/gift_catalog_service.dart';
 import '../utils/compact_number.dart';
@@ -22,6 +23,17 @@ class GiftCatalogControlPage extends StatefulWidget {
 class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool loading = true;
   bool saving = false;
+  bool loadFailed = false;
+  bool editing = false;
+  bool grantDialogOpen = false;
+  bool hasUnsavedChanges = false;
+  int catalogRevision = 0;
+  int visibleLimit = 20;
+  int selectedSection = 0;
+  String query = '';
+  String categoryFilter = 'all';
+  String visibilityFilter = 'all';
+  String orderFilter = 'catalog';
   String? error;
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
 
@@ -61,10 +73,54 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     return decoded;
   }
 
+  String friendlyError(Object failure) {
+    final code = failure.toString();
+    if (code.contains('duplicate_gift_id')) {
+      return 'رقم الهدية مستخدم من قبل. اختر رقمًا مختلفًا.';
+    }
+    if (code.contains('invalid_gift_price')) {
+      return 'سعر الهدية غير صحيح. أدخل قيمة كوينز صحيحة.';
+    }
+    if (code.contains('gift_catalog_conflict')) {
+      return 'تم تعديل الهدايا من لوحة أخرى. احتفظنا بتعديلاتك هنا؛ لا تحفظ قبل مراجعة أحدث البيانات.';
+    }
+    if (code.contains('gift_catalog_existing_id_missing')) {
+      return 'لا يمكن حذف هدية قديمة أو تغيير رقمها. يمكنك إخفاؤها بدلًا من ذلك.';
+    }
+    if (code.contains('gift_catalog_restricted_category')) {
+      return 'لا يمكن نقل هدايا الامتياز أو العلاقات إلى فئة أخرى بهذه الطريقة.';
+    }
+    if (code.contains('invalid_catalog_revision')) {
+      return 'تعذر التحقق من نسخة الهدايا. أعد تحميل القائمة قبل الحفظ.';
+    }
+    if (code.contains('forbidden')) return 'لا توجد صلاحية لإدارة الهدايا.';
+    return 'تعذر إتمام العملية. تحقق من البيانات والاتصال ثم حاول مجددًا.';
+  }
+
+  Future<void> refreshCatalog() async {
+    if (saving || editing) return;
+    if (hasUnsavedChanges) {
+      final accept = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('إعادة تحميل الهدايا؟'),
+          content: const Text('لديك تغييرات لم تحفظها. ستفقدها عند إعادة التحميل.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('إعادة التحميل')),
+          ],
+        ),
+      );
+      if (accept != true || !mounted) return;
+    }
+    await load();
+  }
+
   Future<void> load() async {
     setState(() {
       loading = true;
       error = null;
+      loadFailed = false;
     });
     try {
       final body = await post({'action': 'state'});
@@ -81,24 +137,35 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final revision = config is Map && config['revision'] is num
+          ? (config['revision'] as num).toInt() : 0;
       if (!mounted) return;
       setState(() {
         gifts = loaded.isEmpty
             ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
             : loaded;
         loading = false;
+        loadFailed = false;
+        hasUnsavedChanges = false;
+        catalogRevision = revision;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         gifts = List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts);
         loading = false;
-        error = e.toString();
+        error = friendlyError(e);
+        loadFailed = true;
       });
     }
   }
 
   Future<void> save() async {
+    if (saving || loading) return;
+    if (loadFailed) {
+      message('تعذر تحميل الهدايا المحفوظة. أعد المحاولة قبل الحفظ لحماية بياناتك.');
+      return;
+    }
     if (gifts.isEmpty) {
       message('يجب أن توجد هدية واحدة على الأقل.');
       return;
@@ -112,7 +179,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             'sortOrder': i,
           },
       ];
-      await post({'action': 'save', 'gifts': payload});
+      await post({'action': 'save', 'gifts': payload, 'expectedRevision': catalogRevision});
       if (!mounted) return;
       setState(() => saving = false);
       message('تم حفظ كتالوج الهدايا بنجاح.');
@@ -120,7 +187,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => saving = false);
-      message('تعذر الحفظ: ' + e.toString());
+      message(friendlyError(e));
     }
   }
 
@@ -131,6 +198,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   }
 
   Future<void> grantBagGift() async {
+    if (grantDialogOpen || saving || loading || loadFailed) return;
+    grantDialogOpen = true;
+    try {
     final enabledGifts =
         gifts.where((item) => item.enabled).toList(growable: false);
     if (enabledGifts.isEmpty) {
@@ -274,40 +344,47 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => saving = false);
-      message('تعذر منح الهدية: ' + e.toString());
+      message(friendlyError(e));
+    }
+    } finally {
+      grantDialogOpen = false;
     }
   }
 
-  Future<void> editGift([int? index]) async {
-    final current = index == null ? null : gifts[index];
-    final id = TextEditingController(text: current?.id ?? '');
-    final nameAr = TextEditingController(text: current?.nameAr ?? '');
+  Future<void> editGift([int? index, GiftCatalogItem? template]) async {
+    if (editing || saving || loading || loadFailed) return;
+    editing = true;
+    final current = index == null ? template : gifts[index];
+    final id = TextEditingController(
+      text: template == null ? (current?.id ?? '') : '',
+    );
+    final nameAr = TextEditingController(
+      text: template == null ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
+    );
     final price = TextEditingController(
       text: current?.priceCoins.toString() ?? '',
     );
     final assetKey = TextEditingController(
-      text: current?.assetKey ?? 'gifts.placeholder.default',
+      text: template == null ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
     );
     final placeholder = TextEditingController(
       text: current?.localPlaceholder ??
           'assets/images/gifts/gift_placeholder.webp',
     );
-    var enabled = current?.enabled ?? true;
+    var enabled = template == null ? (current?.enabled ?? true) : false;
     var featured = current?.featured ?? false;
     var category = current?.category ?? 'general';
     var minVipLevel = current?.effectiveMinVipLevel ?? 0;
-    var isAnimated = current?.isAnimated ?? false;
-    var effectMode = current?.effectMode ?? 'none';
+    var isAnimated = template == null ? (current?.isAnimated ?? false) : false;
+    var effectMode = template == null ? (current?.effectMode ?? 'none') : 'none';
     final effectAssetKey = TextEditingController(
-      text: current?.effectiveEffectAssetKey ??
-          current?.assetKey ??
-          'gifts.placeholder.default',
+      text: template == null ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
     );
     final effectSoundAssetKey = TextEditingController(
-      text: current?.effectSoundAssetKey ?? '',
+      text: template == null ? (current?.effectSoundAssetKey ?? '') : '',
     );
     final effectMinQuantity = TextEditingController(
-      text: (current?.effectMinQuantity ?? 0).toString(),
+      text: (template == null ? (current?.effectMinQuantity ?? 0) : 0).toString(),
     );
     final effectDurationMs = TextEditingController(
       text: (current?.effectDurationMs ?? 2200).toString(),
@@ -322,21 +399,32 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       text: (current?.affinityBasePoints ?? 0).toString(),
     );
 
+    bool previewOpen = false;
     final result = await showDialog<GiftCatalogItem>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setLocal) => AlertDialog(
-          title: Text(index == null ? 'إضافة هدية' : 'تعديل الهدية'),
+          title: Text(index == null ? (template == null ? 'إضافة هدية' : 'نسخ هدية جديدة') : 'تعديل الهدية'),
           content: SizedBox(
             width: 540,
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  field(id, 'معرّف الهدية', 'rose'),
+                  if (index != null)
+                    TextFormField(
+                      initialValue: current!.id,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'رقم الهدية (ثابت للحفاظ على السجلات)',
+                        border: OutlineInputBorder(),
+                      ),
+                    )
+                  else field(id, 'رقم الهدية الجديدة', 'rose'),
                   const SizedBox(height: 10),
                   field(nameAr, 'اسم الهدية بالعربي', 'وردة'),
                   const SizedBox(height: 10),
-                  field(price, 'السعر Coins', '100', numeric: true),
+                  field(price, 'السعر بالكوينز', '100', numeric: true),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: category,
@@ -418,7 +506,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         );
                       },
                       icon: const Icon(Icons.image_outlined, size: 18),
-                      label: const Text('استديو صورة الهدية'),
+                      label: const Text('إضافة/تغيير صورة الهدية'),
                     ),
                   ),
                   const Text(
@@ -512,7 +600,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         );
                       },
                       icon: const Icon(Icons.animation_outlined, size: 18),
-                      label: const Text('استديو مؤثر الهدية'),
+                      label: const Text('إضافة/تغيير مؤثر الهدية'),
                     ),
                   ),
                   const Text(
@@ -584,6 +672,74 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('إلغاء'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () async {
+                if (previewOpen) return;
+                previewOpen = true;
+                final previewName = nameAr.text.trim();
+                final previewPrice = price.text.trim();
+                final previewAsset = assetKey.text.trim();
+                final previewMode = effectMode;
+                try {
+                  await showDialog<void>(
+                    context: dialogContext,
+                    builder: (previewContext) => AlertDialog(
+                      title: const Text('معاينة الهدية'),
+                      content: SizedBox(
+                        width: 320,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 110,
+                              height: 110,
+                              child: FutureBuilder<Uri?>(
+                                future: ShadowAssetRegistry.remoteUrl(previewAsset),
+                                builder: (_, snapshot) {
+                                  final url = snapshot.data;
+                                  if (url == null) {
+                                    return const Icon(Icons.card_giftcard_rounded, size: 70);
+                                  }
+                                  return Image.network(
+                                    url.toString(),
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.card_giftcard_rounded, size: 70),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(previewName.isEmpty ? 'اسم الهدية' : previewName,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text('${previewPrice.isEmpty ? '—' : previewPrice} كوينز'),
+                            const SizedBox(height: 8),
+                            Text(previewMode == 'none'
+                              ? 'بدون مؤثر'
+                              : previewMode == 'seat' ? 'مؤثر خفيف على المايك'
+                              : 'مؤثر سينمائي داخل الغرفة'),
+                            const SizedBox(height: 8),
+                            const Text('هذه معاينة للصورة المنشورة والإعدادات، وليست اختبارًا لتشغيل المؤثر.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        FilledButton(
+                          onPressed: () => Navigator.pop(previewContext),
+                          child: const Text('إغلاق'),
+                        ),
+                      ],
+                    ),
+                  );
+                } finally {
+                  previewOpen = false;
+                }
+              },
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              label: const Text('معاينة'),
             ),
             FilledButton(
               onPressed: () {
@@ -681,8 +837,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     premiumBannerMinQuantity.dispose();
     affinityBasePoints.dispose();
 
+    editing = false;
     if (result == null || !mounted) return;
     setState(() {
+      hasUnsavedChanges = true;
       if (index == null) {
         gifts.add(result);
       } else {
@@ -712,31 +870,224 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     final next = index + delta;
     if (next < 0 || next >= gifts.length) return;
     setState(() {
+      hasUnsavedChanges = true;
       final item = gifts.removeAt(index);
       gifts.insert(next, item);
     });
+  }
+
+  List<int> get visibleIndices {
+    final term = query.trim().toLowerCase();
+    final indexes = <int>[];
+    for (var i = 0; i < gifts.length; i++) {
+      final item = gifts[i];
+      if (term.isNotEmpty &&
+          !item.nameAr.toLowerCase().contains(term) &&
+          !item.id.toLowerCase().contains(term)) continue;
+      if (categoryFilter != 'all' && item.category != categoryFilter) continue;
+      if (visibilityFilter == 'shown' && !item.enabled) continue;
+      if (visibilityFilter == 'hidden' && item.enabled) continue;
+      indexes.add(i);
+    }
+    if (orderFilter == 'priceAsc') {
+      indexes.sort((a, b) => gifts[a].priceCoins.compareTo(gifts[b].priceCoins));
+    } else if (orderFilter == 'priceDesc') {
+      indexes.sort((a, b) => gifts[b].priceCoins.compareTo(gifts[a].priceCoins));
+    } else if (orderFilter == 'name') {
+      indexes.sort((a, b) => gifts[a].nameAr.compareTo(gifts[b].nameAr));
+    }
+    return indexes;
+  }
+
+  Widget giftThumbnail(GiftCatalogItem gift) {
+    final fallback = Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF261A45),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A)),
+    );
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(gift.assetKey),
+        builder: (_, snapshot) {
+          final url = snapshot.data;
+          if (url == null) return fallback;
+          return Image.network(
+            url.toString(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => fallback,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget sectionSelector() {
+    const labels = ['كل الهدايا', 'الفئات', 'المؤثرات', 'الإحصاءات'];
+    const icons = [Icons.card_giftcard_outlined, Icons.category_outlined, Icons.auto_awesome_outlined, Icons.bar_chart_outlined];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: List.generate(labels.length, (i) => ChoiceChip(
+          avatar: Icon(icons[i], size: 18),
+          label: Text(labels[i]),
+          selected: selectedSection == i,
+          onSelected: (_) => setState(() => selectedSection = i),
+        )),
+      ),
+    );
+  }
+
+  Widget categoryOverview() {
+    final counts = <String, int>{};
+    for (final gift in gifts) {
+      counts[gift.category] = (counts[gift.category] ?? 0) + 1;
+    }
+    return Column(
+      children: [
+        const ListTile(
+          title: Text('الفئات الحالية'),
+          subtitle: Text('يمكنك اختيار فئة لاستعراض هداياها. إدارة إنشاء الفئات وتغييرها ستتاح بعد تفعيل الحماية اللازمة.'),
+        ),
+        ...counts.entries.map((entry) => Card(child: ListTile(
+          leading: const Icon(Icons.category_outlined),
+          title: Text(GiftCatalogService.categoryLabel(entry.key)),
+          subtitle: Text('${entry.value} هدية'),
+          trailing: const Icon(Icons.chevron_left),
+          onTap: () => setState(() {
+            categoryFilter = entry.key;
+            selectedSection = 0;
+          }),
+        ))),
+      ],
+    );
+  }
+
+  Widget effectsOverview() {
+    final indices = <int>[
+      for (var i = 0; i < gifts.length; i++)
+        if (gifts[i].effectMode != 'none') i,
+    ];
+    return Column(
+      children: [
+        const ListTile(
+          title: Text('مؤثرات الهدايا'),
+          subtitle: Text('تعديل المؤثر الحالي والمدة والحجم والكمية من إعدادات كل هدية.'),
+        ),
+        if (indices.isEmpty) const ListTile(title: Text('لا توجد مؤثرات مفعّلة حالياً')),
+        ...indices.map((i) => Card(child: ListTile(
+          leading: const Icon(Icons.auto_awesome_outlined),
+          title: Text(gifts[i].nameAr),
+          subtitle: Text(gifts[i].effectMode == 'seat' ? 'خفيف على المايك' : 'سينمائي داخل الغرفة'),
+          trailing: const Icon(Icons.edit_outlined),
+          onTap: saving ? null : () => editGift(i),
+        ))),
+      ],
+    );
+  }
+
+  Widget statisticsOverview() => const Card(
+    child: Padding(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Icon(Icons.bar_chart_outlined, size: 42),
+          SizedBox(height: 12),
+          Text('إحصاءات الهدايا'),
+          SizedBox(height: 8),
+          Text('لا تتوفر بيانات إحصائية موثوقة في هذا القسم بعد. سيتم عرض العمليات الفعلية بعد ربط التقارير بالسجلات المعتمدة، دون أرقام تقديرية.', textAlign: TextAlign.center),
+        ],
+      ),
+    ),
+  );
+
+  Widget catalogFilters() {
+    final categories = <String>{'all', ...gifts.map((gift) => gift.category)};
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              onChanged: (value) => setState(() => query = value),
+              decoration: const InputDecoration(
+                labelText: 'البحث عن هدية',
+                hintText: 'اسم الهدية أو رقمها',
+                prefixIcon: Icon(Icons.search_rounded),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                DropdownButton<String>(
+                  value: categoryFilter,
+                  items: categories.map((category) => DropdownMenuItem(
+                    value: category,
+                    child: Text(category == 'all' ? 'كل الفئات' : GiftCatalogService.categoryLabel(category)),
+                  )).toList(),
+                  onChanged: (value) => setState(() => categoryFilter = value ?? 'all'),
+                ),
+                DropdownButton<String>(
+                  value: visibilityFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('كل الحالات')),
+                    DropdownMenuItem(value: 'shown', child: Text('الظاهرة')),
+                    DropdownMenuItem(value: 'hidden', child: Text('المخفية')),
+                  ],
+                  onChanged: (value) => setState(() => visibilityFilter = value ?? 'all'),
+                ),
+                DropdownButton<String>(
+                  value: orderFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'catalog', child: Text('ترتيب العرض')),
+                    DropdownMenuItem(value: 'name', child: Text('الاسم')),
+                    DropdownMenuItem(value: 'priceAsc', child: Text('السعر: الأقل أولاً')),
+                    DropdownMenuItem(value: 'priceDesc', child: Text('السعر: الأعلى أولاً')),
+                  ],
+                  onChanged: (value) => setState(() => orderFilter = value ?? 'catalog'),
+                ),
+              ],
+            ),
+            Text('النتائج: ${visibleIndices.length} من ${gifts.length}'),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('كتالوج الهدايا'),
+        title: const Text('الهدايا'),
         actions: [
           IconButton(
-            onPressed: loading ? null : load,
+            onPressed: loading || saving || editing ? null : refreshCatalog,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: loading ? null : () => editGift(),
+        onPressed: loading || saving || loadFailed || selectedSection != 0 ? null : () => editGift(),
         icon: const Icon(Icons.add),
         label: const Text('إضافة هدية'),
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
+          : Directionality(
+              textDirection: TextDirection.rtl,
+              child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               children: [
                 const Card(
@@ -768,10 +1119,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       'للإدارة والفعاليات والهدايا المجانية — بدون خصم كوينز من المستلم.',
                     ),
                     trailing: FilledButton(
-                      onPressed: saving ? null : grantBagGift,
+                      onPressed: saving || loadFailed ? null : grantBagGift,
                       child: const Text('منح'),
                     ),
-                    onTap: saving ? null : grantBagGift,
+                    onTap: saving || loadFailed ? null : grantBagGift,
                   ),
                 ),
                 if (error != null)
@@ -781,12 +1132,24 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         Icons.info_outline,
                         color: Colors.orangeAccent,
                       ),
-                      title: const Text('تم تحميل القيم الافتراضية'),
+                      title: const Text('تعذر تحميل الهدايا المحفوظة'),
                       subtitle: Text(error!),
                     ),
                   ),
+                if (hasUnsavedChanges)
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.edit_note_rounded, color: Colors.amberAccent),
+                    title: Text('هناك تغييرات لم تُحفظ بعد'),
+                    subtitle: Text('اضغط «حفظ كتالوج الهدايا» لتطبيقها.'),
+                  )),
+                sectionSelector(),
+                if (selectedSection == 1) categoryOverview(),
+                if (selectedSection == 2) effectsOverview(),
+                if (selectedSection == 3) statisticsOverview(),
+                if (selectedSection == 0) ...[
                 const SizedBox(height: 10),
-                ...List.generate(gifts.length, (index) {
+                catalogFilters(),
+                ...visibleIndices.take(visibleLimit).map((index) {
                   final item = gifts[index];
                   return Card(
                     child: Padding(
@@ -800,6 +1163,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                 value: item.enabled,
                                 onChanged: (value) {
                                   setState(() {
+                                    hasUnsavedChanges = true;
                                     gifts[index] = GiftCatalogItem(
                                       id: item.id,
                                       nameAr: item.nameAr,
@@ -828,13 +1192,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                 },
                               ),
                               const SizedBox(width: 8),
-                              const CircleAvatar(
-                                backgroundColor: Color(0xFF261A45),
-                                child: Icon(
-                                  Icons.card_giftcard_rounded,
-                                  color: Color(0xFFFFD54A),
-                                ),
-                              ),
+                              giftThumbnail(item),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -865,45 +1223,44 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                         '+'
                                     : ''),
                           ),
-                          Directionality(
-                            textDirection: TextDirection.ltr,
-                            child: Text(
-                              'Asset: ' + item.assetKey,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFAAA3B8),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
+
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 2,
                             runSpacing: 2,
                             children: [
                               IconButton(
-                                onPressed: index > 0 ? () => move(index, -1) : null,
+                                onPressed: orderFilter == 'catalog' && query.isEmpty && categoryFilter == 'all' && visibilityFilter == 'all' && index > 0 ? () => move(index, -1) : null,
                                 icon: const Icon(Icons.arrow_upward_rounded),
                               ),
                               IconButton(
-                                onPressed: index < gifts.length - 1
+                                onPressed: orderFilter == 'catalog' && query.isEmpty && categoryFilter == 'all' && visibilityFilter == 'all' && index < gifts.length - 1
                                     ? () => move(index, 1)
                                     : null,
                                 icon: const Icon(Icons.arrow_downward_rounded),
                               ),
                               IconButton(
-                                onPressed: () => editGift(index),
+                                tooltip: 'نسخ الهدية',
+                                onPressed: saving ? null : () => editGift(null, item),
+                                icon: const Icon(Icons.copy_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'تعديل الهدية',
+                                onPressed: saving ? null : () => editGift(index),
                                 icon: const Icon(Icons.edit_outlined),
                               ),
                               IconButton(
-                                onPressed: gifts.length <= 1
+                                tooltip: 'إخفاء الهدية دون حذف سجلها',
+                                onPressed: saving || !item.enabled
                                     ? null
-                                    : () => setState(() => gifts.removeAt(index)),
-                                icon: const Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.redAccent,
-                                ),
+                                    : () => setState(() {
+                                          hasUnsavedChanges = true;
+                                          gifts[index] = GiftCatalogItem.fromMap({
+                                            ...item.toMap(),
+                                            'enabled': false,
+                                          });
+                                        }),
+                                icon: const Icon(Icons.visibility_off_outlined),
                               ),
                             ],
                           ),
@@ -912,9 +1269,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     ),
                   );
                 }),
-                const SizedBox(height: 14),
-                FilledButton.icon(
-                  onPressed: saving ? null : save,
+                if (visibleIndices.length > visibleLimit)
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() => visibleLimit += 20),
+                    icon: const Icon(Icons.expand_more_rounded),
+                    label: Text('عرض المزيد (${visibleIndices.length - visibleLimit} متبقية)'),
+                  ),
+                ],
+                if (selectedSection == 0) const SizedBox(height: 14),
+                if (selectedSection == 0) FilledButton.icon(
+                  onPressed: saving || loadFailed ? null : save,
                   icon: saving
                       ? const SizedBox(
                           width: 18,
@@ -928,6 +1292,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                 ),
               ],
+            ),
             ),
     );
   }
