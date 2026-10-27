@@ -12,6 +12,18 @@ const parent="projects/"+projectId+"/databases/(default)/collectionGroups/"+grou
 const root="https://firestore.googleapis.com/v1/projects/"+encodeURIComponent(projectId)+"/databases/(default)";
 const expected=["giftId","quantity","totalCost","paidCost"];
 const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+function suggestedIndexFields(rawBody){
+  try{
+    const doc=JSON.parse(rawBody);
+    const message=String((Array.isArray(doc)?doc[0]:doc)?.error?.message||"");
+    const match=message.match(/create_composite=([A-Za-z0-9_-]+)/);
+    if(!match)return [];
+    const text=Buffer.from(match[1],"base64url").toString("utf8");
+    return [...text.matchAll(/giftId|quantity|totalCost|paidCost|__name__/g)]
+      .map(m=>m[0]);
+  }catch{return [];}
+}
+
 function matching(index){
   if(index.queryScope!=="COLLECTION")return false;
   const fields=(index.fields||[]).filter(f=>f.fieldPath!=="__name__");
@@ -62,6 +74,7 @@ if(!response.ok){
   console.error("Aggregate error content:",JSON.stringify({
     contentType:response.headers.get("content-type"),
     bodyBytes:rawFailure.length,
+    suggestedFields:suggestedIndexFields(rawFailure),
     bodyHead:rawFailure.slice(0,500)
       .replace(/https?:\/\/\S+/g,"[index_link]"),
   }));
@@ -105,7 +118,7 @@ if(!response.ok){
     });
     const checkText=await check.text();
     console.error("SUM field diagnosis:",JSON.stringify({
-      field,httpCode:check.status,
+      field,httpCode:check.status,suggestedFields:suggestedIndexFields(checkText),
       bodyHead:check.ok?"":checkText.slice(0,300),
     }));
   }
