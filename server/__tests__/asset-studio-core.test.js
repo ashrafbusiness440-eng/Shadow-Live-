@@ -321,10 +321,11 @@ test("level profile frames use the frame template and stay searchable as frames"
   assert.equal(frame.directories.includes("assets/images/levels"), true);
 
   const worker = source("cloudflare-worker/src/manage-app-asset.js");
+  const definitions = source("cloudflare-worker/src/asset-studio-templates.js");
   const control = source("lib/admin/control_asset_manager_page.dart");
   assert.equal(worker.includes("assetStudioEffectiveType"), true);
-  assert.equal(worker.includes(".profileframe"), true);
-  assert.equal(worker.includes("_profile_frame."), true);
+  assert.equal(definitions.includes(".profileframe"), true);
+  assert.equal(definitions.includes("_profile_frame."), true);
   assert.equal(control.includes("_effectiveAssetType"), true);
   assert.equal(control.includes("'frame.base.v1'"), true);
   assert.equal(control.includes("preferredTemplateId"), true);
