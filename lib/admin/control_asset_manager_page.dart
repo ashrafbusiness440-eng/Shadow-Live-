@@ -151,6 +151,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             fullPath.contains('_vehicle.'))) {
       return 'vehicle.base.v1';
     }
+    if (key.startsWith('gifts.') &&
+        (key.endsWith('.icon') || key.startsWith('gifts.icon.'))) {
+      return 'gift.icon.base.v1';
+    }
+    if (key.startsWith('gifts.') &&
+        (key.endsWith('.effect') || key.startsWith('gifts.effect.'))) {
+      return 'gift.effect.base.v1';
+    }
     return null;
   }
 
@@ -158,6 +166,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     final canonical = _canonicalTemplateIdForAsset(asset);
     if (canonical == 'frame.base.v1') return 'frame';
     if (canonical == 'vehicle.base.v1') return 'vehicle';
+    if (canonical == 'gift.icon.base.v1') return 'gift_icon';
+    if (canonical == 'gift.effect.base.v1') return 'gift_effect';
     final source = _assetSource(asset);
     return (source['assetType'] ?? asset['assetType'] ?? '')
         .toString()
