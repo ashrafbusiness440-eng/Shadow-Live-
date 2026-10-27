@@ -9,14 +9,40 @@ class CosmeticAssetVisual extends StatelessWidget {
     super.key,
     this.assetKey = '',
     this.imageUrl = '',
+    this.fallbackAssetKey = '',
     this.fit = BoxFit.contain,
     this.alignment = Alignment.center,
   });
 
   final String assetKey;
   final String imageUrl;
+  /// Only the shared gift player supplies this static fallback. The viewer
+  /// never changes the result of a confirmed server-side gift transaction.
+  final String fallbackAssetKey;
   final BoxFit fit;
   final Alignment alignment;
+
+  Widget _fallback() {
+    final key = fallbackAssetKey.trim();
+    if (key.isEmpty || key == assetKey.trim()) {
+      return const SizedBox.shrink();
+    }
+    return FutureBuilder<Uri?>(
+      future: ShadowAssetRegistry.remoteUrl(key),
+      builder: (context, snapshot) {
+        final uri = snapshot.data;
+        if (uri == null) return const SizedBox.shrink();
+        return Image.network(
+          uri.toString(),
+          fit: fit,
+          alignment: alignment,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.low,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        );
+      },
+    );
+  }
 
   Widget _network(String url) => Image.network(
         url,
@@ -24,7 +50,7 @@ class CosmeticAssetVisual extends StatelessWidget {
         alignment: alignment,
         gaplessPlayback: true,
         filterQuality: FilterQuality.high,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        errorBuilder: (_, __, ___) => _fallback(),
       );
 
   @override
@@ -33,13 +59,13 @@ class CosmeticAssetVisual extends StatelessWidget {
     if (direct.isNotEmpty) return _network(direct);
 
     final key = assetKey.trim();
-    if (key.isEmpty) return const SizedBox.shrink();
+    if (key.isEmpty) return _fallback();
 
     return FutureBuilder<Uri?>(
       future: ShadowAssetRegistry.remoteUrl(key),
       builder: (context, snapshot) {
         final uri = snapshot.data;
-        if (uri == null) return const SizedBox.shrink();
+        if (uri == null) return _fallback();
         return _network(uri.toString());
       },
     );
