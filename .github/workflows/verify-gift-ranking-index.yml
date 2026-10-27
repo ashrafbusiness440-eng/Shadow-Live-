@@ -1,0 +1,36 @@
+name: Verify Gift Ranking Firestore Index
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/scripts/verify-gift-ranking-index.mjs'
+      - '.github/workflows/verify-gift-ranking-index.yml'
+  workflow_run:
+    workflows: ['Deploy Firestore Rules + Indexes']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-live-gift-ranking-index-readiness
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    # Never run after a failed index deployment.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify production Firestore index and per-gift totals
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node cloudflare-worker/scripts/verify-gift-ranking-index.mjs
