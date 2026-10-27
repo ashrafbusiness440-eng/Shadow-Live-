@@ -24,6 +24,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Audit Cloudflare cutover
         run: python3 scripts/phase7_cloudflare_audit.py
+      - name: Verify Pages artifact-only release path
+        run: node --test server/__tests__/pages-artifact-only.test.js
       - name: Pressure regression guardrails
         run: python3 scripts/pressure_guardrail_audit.py
       - name: Audit Diaries Stage 09 pressure and security

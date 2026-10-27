@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout exact production commit
         uses: actions/checkout@v6
@@ -244,20 +245,10 @@ jobs:
           cp /tmp/flutter_service_worker.js site/live/flutter_service_worker.js
           cp /tmp/flutter_service_worker.js site/control/flutter_service_worker.js
 
-      - name: Publish verified static snapshot to gh-pages branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd site
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B gh-pages
-          git add -A
-          git commit -m "Publish isolated Shadow Live PWAs ${GITHUB_SHA}"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin gh-pages
-
+      # GitHub Pages is deployed by the official upload-pages-artifact/deploy-pages
+      # pair below. Force-pushing a duplicate Flutter build to gh-pages can
+      # block release for hours and provides no deployment guarantee. Keep
+      # only the verified artifact used by the Pages deployment environment.
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
