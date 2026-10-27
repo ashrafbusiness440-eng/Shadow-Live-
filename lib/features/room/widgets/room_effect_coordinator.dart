@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 
 import 'cosmetic_effect_widgets.dart';
+import 'legendary_gift_visual.dart';
 
 /// Presentation only. Entitlements and selection are decided by the existing
 /// server-side entrance event, never by a filename or the viewer.
@@ -256,7 +257,7 @@ class RoomEffectCoordinator extends ChangeNotifier {
     if (!_visualEnabled) return;
 
     final mode = (message['giftEffectMode'] ?? 'none').toString();
-    if (mode != 'seat' && mode != 'cinematic') return;
+    if (mode != 'seat' && mode != 'cinematic' && mode != 'legendary') return;
     final assetKey =
         (message['giftEffectAssetKey'] ?? '').toString().trim();
     if (assetKey.isEmpty) return;
@@ -291,7 +292,7 @@ class RoomEffectCoordinator extends ChangeNotifier {
       displayName: (message['displayName'] ?? '').toString(),
       profileImageUrl: (message['profileImageUrl'] ?? '').toString(),
     );
-    if (mode == 'cinematic') {
+    if (mode == 'cinematic' || mode == 'legendary') {
       _enqueueCinematic(event);
     } else {
       _showSeatEffect(event);
@@ -491,7 +492,20 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (event != null && event.kind != 'entrance')
+              if (event != null && event.kind == 'gift' &&
+                  event.mode == 'legendary')
+                Positioned.fill(
+                  child: LegendaryGiftVisual(
+                    key: ValueKey('legendary-${event.eventId}'),
+                    assetKey: event.assetKey,
+                    imageUrl: event.imageUrl,
+                    fallbackAssetKey: event.fallbackAssetKey,
+                    durationMs: event.durationMs,
+                    size: event.size,
+                  ),
+                ),
+              if (event != null && event.kind != 'entrance' &&
+                  !(event.kind == 'gift' && event.mode == 'legendary'))
                 Center(
                   child: SizedBox(
                     width: event.size > 0 ? event.size.toDouble() : 320,
