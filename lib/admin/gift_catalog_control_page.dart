@@ -93,6 +93,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (code.contains('gift_catalog_restricted_category')) {
       return 'لا يمكن نقل هدايا الامتياز أو العلاقات إلى فئة أخرى بهذه الطريقة.';
     }
+    if (code.contains('gift_catalog_not_initialized')) {
+      return 'احفظ كتالوج الهدايا الأساسي أولًا، ثم عد إلى إدارة الفئات.';
+    }
+    if (code.contains('gift_category_missing')) {
+      return 'لا يمكن إزالة الفئات الأساسية أو فئة مستخدمة. أخفها بدلًا من حذفها.';
+    }
+    if (code.contains('invalid_gift_categories') ||
+        code.contains('invalid_gift_category_')) {
+      return 'راجع أسماء الفئات ورموزها وصورها ثم حاول الحفظ.';
+    }
     if (code.contains('invalid_catalog_revision')) {
       return 'تعذر التحقق من نسخة الهدايا. أعد تحميل القائمة قبل الحفظ.';
     }
@@ -365,8 +375,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (grantDialogOpen || saving || loading || loadFailed) return;
     grantDialogOpen = true;
     try {
-    final enabledGifts =
-        gifts.where((item) => item.enabled).toList(growable: false);
+    final enabledGifts = gifts.where((item) =>
+      item.enabled && categoryDefinitions.any((category) =>
+        category['id'] == item.category && category['enabled'] != false,
+      )).toList(growable: false);
     if (enabledGifts.isEmpty) {
       message('لا توجد هدايا مفعلة متاحة للمنح.');
       return;
