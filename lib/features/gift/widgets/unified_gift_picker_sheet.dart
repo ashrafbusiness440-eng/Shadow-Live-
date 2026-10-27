@@ -325,6 +325,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   Future<void> _send() async {
     final gift = _selected;
     if (gift == null || !widget.canSend || _sending) return;
+    if (!gift.isAvailableIn(widget.giftContext)) {
+      setState(() {
+        _selected = null;
+        _error = 'هذه الهدية غير متاحة في هذا المكان أو انتهى موعد عرضها.';
+      });
+      return;
+    }
     setState(() => _sending = true);
     final useGiftBag = _category == 'bag';
     GiftPickerSendResult? confirmed;
@@ -340,6 +347,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           : '';
       final message = switch (failureCode) {
         'insufficient_balance' => 'رصيد العملات غير كافٍ.',
+        'gift_inactive' => 'انتهى موعد الهدية أو لم تعد متاحة هنا.',
         'receiver_not_in_room' => 'أحد المستلمين غادر الغرفة.',
         'recipient_not_in_room' => 'أحد المستلمين غادر الغرفة.',
         'sender_not_in_room' => 'تعذر تأكيد وجودك داخل الغرفة.',
