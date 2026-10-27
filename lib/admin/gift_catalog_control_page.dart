@@ -58,6 +58,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String? statsCursor;
   int statsPagesLoaded = 0;
   final List<Map<String, dynamic>> statsRows = <Map<String, dynamic>>[];
+  bool giftRankingLoading = false;
+  bool giftRankingCompleted = false;
+  int giftRankingNextOffset = 0;
+  int giftRankingTotal = 0;
+  int? giftRankingRevision;
+  String? giftRankingError;
+  String giftRankingMetric = 'quantity';
+  final List<Map<String, dynamic>> giftRankingRows = <Map<String, dynamic>>[];
+
 
   Uri get apiUri => shadowEconomyEndpoint('gift-catalog');
 
@@ -1460,6 +1469,73 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
   }
 
+  Future<void> loadGiftRanking({bool reset = false}) async {
+    if (giftRankingLoading) return;
+    if (!reset && giftRankingCompleted) return;
+    setState(() {
+      giftRankingLoading = true;
+      giftRankingError = null;
+      if (reset) {
+        giftRankingRows.clear();
+        giftRankingCompleted = false;
+        giftRankingNextOffset = 0;
+        giftRankingTotal = 0;
+        giftRankingRevision = null;
+      }
+    });
+    try {
+      final expectedOffset = giftRankingNextOffset;
+      final data = await post({
+        'action': 'statsGiftRanking',
+        'offset': expectedOffset,
+        if (giftRankingRevision != null)
+          'expectedRevision': giftRankingRevision,
+      });
+      final entries = data['rows'];
+      final revision = data['revision'];
+      final nextOffset = data['nextOffset'];
+      final total = data['totalCatalogGifts'];
+      if (data['scope'] != 'catalog_gifts_only' ||
+          entries is! List || revision is! int ||
+          nextOffset is! int || total is! int ||
+          total < 0 || total > 100 ||
+          entries.length > 6 || nextOffset != expectedOffset + entries.length ||
+          nextOffset > total ||
+          (giftRankingRevision != null && giftRankingRevision != revision)) {
+        throw StateError('تقرير الترتيب غير مكتمل');
+      }
+      final newRows = entries.whereType<Map>().map(
+        (row) => Map<String, dynamic>.from(row),
+      ).toList();
+      if (newRows.length != entries.length ||
+          newRows.any((row) =>
+            row['giftId'] is! String ||
+            row['quantity'] is! num ||
+            row['totalCoins'] is! num ||
+            row['entries'] is! num)) {
+        throw StateError('بيانات تقرير الهدايا غير صحيحة');
+      }
+      if (!mounted) return;
+      setState(() {
+        giftRankingRevision = revision;
+        giftRankingTotal = total;
+        giftRankingNextOffset = nextOffset;
+        giftRankingRows.addAll(newRows);
+        giftRankingCompleted = data['hasMore'] == false &&
+            giftRankingRows.length == total;
+        giftRankingLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        giftRankingError = error.toString().contains('gift_catalog_conflict')
+            ? 'تغير كتالوج الهدايا. اضغط إعادة الحساب.'
+            : 'تعذر حساب ترتيب هذه الدفعة. أعد المحاولة.';
+        giftRankingLoading = false;
+      });
+    }
+  }
+
   Future<void> loadRecentStats({bool reset = false}) async {
     if (statsLoading) return;
     if (!reset && statsLoaded && (!statsHasMore || statsPagesLoaded >= 5)) return;
@@ -1770,6 +1846,72 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 style: TextStyle(fontSize: 11),
               ),
             ],
+            const Divider(),
+            const ListTile(
+              leading: Icon(Icons.leaderboard_outlined),
+              title: Text('ترتيب الهدايا حسب العدد والقيمة'),
+              subtitle: Text(
+                'حسابات دقيقة لهدايا الكتالوج المحفوظة، بما فيها المخفية. لا يشمل هدايا قديمة خارج الكتالوج.',
+              ),
+            ),
+            if (giftRankingRows.isNotEmpty)
+              Text('تم حساب ${giftRankingRows.length} من ${giftRankingTotal} هدية'),
+            if (!giftRankingCompleted && giftRankingRows.isNotEmpty)
+              const Text(
+                'الترتيب الشامل للكتالوج لم يكتمل بعد.',
+                style: TextStyle(fontSize: 12),
+              ),
+            if (giftRankingError != null)
+              ListTile(
+                leading: const Icon(Icons.error_outline),
+                title: Text(giftRankingError!),
+              ),
+            if (giftRankingLoading) const LinearProgressIndicator(),
+            if (giftRankingCompleted) ...[
+              Wrap(spacing: 8, children: [
+                ChoiceChip(
+                  label: const Text('الأكثر عدداً'),
+                  selected: giftRankingMetric == 'quantity',
+                  onSelected: (_) => setState(() => giftRankingMetric = 'quantity'),
+                ),
+                ChoiceChip(
+                  label: const Text('الأعلى قيمة'),
+                  selected: giftRankingMetric == 'totalCoins',
+                  onSelected: (_) => setState(() => giftRankingMetric = 'totalCoins'),
+                ),
+              ]),
+              for (final item in (
+                  List<Map<String, dynamic>>.from(giftRankingRows)
+                    ..sort((a, b) {
+                      final left = (a[giftRankingMetric] as num?) ?? 0;
+                      final right = (b[giftRankingMetric] as num?) ?? 0;
+                      final cmp = right.compareTo(left);
+                      return cmp != 0 ? cmp :
+                        a['giftId'].toString().compareTo(b['giftId'].toString());
+                    })
+                ).take(20))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.card_giftcard_outlined),
+                  title: Text((item['giftName'] ?? 'هدية').toString()),
+                  subtitle: Text('${item['entries']} سجلات • ${item['quantity']} هدية'),
+                  trailing: Text('${item['totalCoins']} كوينز'),
+                ),
+            ],
+            if (!giftRankingLoading)
+              Wrap(spacing: 8, children: [
+                OutlinedButton.icon(
+                  onPressed: () => loadGiftRanking(reset: true),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(giftRankingRows.isEmpty ? 'حساب ترتيب الهدايا' : 'إعادة الحساب'),
+                ),
+                if (giftRankingRows.isNotEmpty && !giftRankingCompleted)
+                  FilledButton.icon(
+                    onPressed: () => loadGiftRanking(),
+                    icon: const Icon(Icons.add_chart_outlined),
+                    label: const Text('حساب 6 هدايا أخرى'),
+                  ),
+              ]),
             const Divider(),
             const Text('تفاصيل أحدث عمليات الإرسال المحمّلة',
                 style: TextStyle(fontWeight: FontWeight.bold)),
