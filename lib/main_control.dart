@@ -25,6 +25,7 @@ import 'admin/general_reports_control_page.dart'
 import 'admin/admin_notifications_page.dart';
 import 'admin/deleted_account_logs_page.dart';
 import 'admin/economy_control_page.dart';
+import 'admin/gift_catalog_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
 import 'admin/system_health_card.dart';
@@ -239,7 +240,7 @@ class _ControlShellState extends State<ControlShell> {
   @override
   void initState() {
     super.initState();
-    index = widget.initialNavIndex.clamp(0, 6);
+    index = widget.initialNavIndex.clamp(0, 7);
     _loadInboxBadge();
   }
 
@@ -276,6 +277,7 @@ class _ControlShellState extends State<ControlShell> {
       const IdManagementPage(),
       const MorePage(),
       const UserLevelControlPage(),
+      const GiftCatalogControlPage(),
     ];
     return Scaffold(
       appBar: AppBar(
@@ -363,6 +365,7 @@ class _ControlShellState extends State<ControlShell> {
           NavigationDestination(icon:Icon(Icons.badge_outlined),selectedIcon:Icon(Icons.badge),label:'IDs'),
           NavigationDestination(icon:Icon(Icons.more_horiz),label:'المزيد'),
           NavigationDestination(icon:Icon(Icons.military_tech_outlined),selectedIcon:Icon(Icons.military_tech),label:'المستوى'),
+          NavigationDestination(icon:Icon(Icons.card_giftcard_outlined),selectedIcon:Icon(Icons.card_giftcard),label:'الهدايا'),
         ],
       ),
     );
