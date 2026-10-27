@@ -146,7 +146,7 @@ function compileData(client, data = {}) {
   };
 }
 
-class LegacyDocumentSnapshot {
+export class LegacyDocumentSnapshot {
   constructor(ref, raw) {
     this.ref = ref;
     this.id = ref.id;
@@ -209,13 +209,14 @@ class LegacyDocumentReference {
   }
 }
 
-class LegacyQuery {
+export class LegacyQuery {
   constructor(store, path, state = {}) {
     this._store = store;
     this.path = path;
     this._filters = state.filters || [];
     this._orderBy = state.orderBy || [];
     this._limit = state.limit || 100;
+    this._startAfter = state.startAfter || [];
   }
 
   where(field, op, value) {
@@ -223,6 +224,7 @@ class LegacyQuery {
       filters: [...this._filters, { field, op, value }],
       orderBy: this._orderBy,
       limit: this._limit,
+      startAfter: this._startAfter,
     });
   }
 
@@ -231,6 +233,7 @@ class LegacyQuery {
       filters: this._filters,
       orderBy: [...this._orderBy, { field, direction }],
       limit: this._limit,
+      startAfter: this._startAfter,
     });
   }
 
@@ -239,6 +242,37 @@ class LegacyQuery {
       filters: this._filters,
       orderBy: this._orderBy,
       limit: Math.max(1, Math.min(1000, Number(value || 100))),
+      startAfter: this._startAfter,
+    });
+  }
+
+  // Cursor is derived from a verified document snapshot and all explicitly
+  // ordered fields, including __name__. The REST client supports startAfter,
+  // so this remains bounded without skipping equal-timestamp gift receipts.
+  startAfter(document) {
+    if (!(document instanceof LegacyDocumentSnapshot) ||
+        !document.exists || document.ref?._store !== this._store ||
+        this._orderBy.length === 0) {
+      throw new Error("invalid_query_cursor");
+    }
+    const fields = document.data() || {};
+    const values = this._orderBy.map(({ field }) => {
+      if (field === "__name__") {
+        return { referencePath: document.ref.path };
+      }
+      const value = field.split(".").reduce(
+        (current, segment) => current?.[segment], fields,
+      );
+      if (value === undefined || value === null) {
+        throw new Error("invalid_query_cursor");
+      }
+      return { value: value instanceof LegacyTimestamp ? value.toDate() : value };
+    });
+    return new LegacyQuery(this._store, this.path, {
+      filters: this._filters,
+      orderBy: this._orderBy,
+      limit: this._limit,
+      startAfter: values,
     });
   }
 
@@ -247,6 +281,7 @@ class LegacyQuery {
       filters: this._filters,
       orderBy: this._orderBy,
       limit: this._limit,
+      startAfter: this._startAfter,
     });
     return new LegacyQuerySnapshot(
       rows.map((row) => {
