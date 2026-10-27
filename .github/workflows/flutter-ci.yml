@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-flutter-ci-${{ github.ref }}
+  group: shadow-live-flutter-ci-headless-v2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
