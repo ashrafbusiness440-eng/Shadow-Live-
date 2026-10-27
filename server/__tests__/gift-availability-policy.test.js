@@ -36,3 +36,15 @@ test("invalid schedule and invalid context fail closed", () => {
   }
   assert.equal(giftAvailableFor({ enabled: false }, "chat", 1000), false);
 });
+
+test("policy is enforced by room, chat and diary sending on authoritative server clock", async () => {
+  const { readFileSync } = await import("node:fs");
+  const root = new URL("../../cloudflare-worker/src/", import.meta.url);
+  const room = readFileSync(new URL("room-gift.js", root), "utf8");
+  const direct = readFileSync(new URL("chat-safety-actions.js", root), "utf8");
+  const catalog = readFileSync(new URL("legacy-economy/gift-catalog.js", root), "utf8");
+  assert.match(room, /giftAvailableFor\(gift, "room", nowMs\)/);
+  assert.match(direct, /giftAvailableFor\(giftData, contextType, now\.getTime\(\)\)/);
+  assert.match(catalog, /giftAvailableFor\(item\)/);
+  assert.match(catalog, /validateGiftAvailability\(item\)/);
+});
