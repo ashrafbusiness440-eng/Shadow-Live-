@@ -40,6 +40,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String? error;
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
   List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
+  GiftCatalogItem? pendingDraft;
 
   Uri get apiUri => shadowEconomyEndpoint('gift-catalog');
 
@@ -122,7 +123,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
 
   Future<void> refreshCatalog() async {
     if (saving || editing) return;
-    if (hasUnsavedChanges || categoryUnsaved) {
+    if (hasUnsavedChanges || categoryUnsaved || pendingDraft != null) {
       final accept = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -179,6 +180,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       if (!mounted) return;
       setState(() {
         drafts = loadedDrafts;
+        pendingDraft = null;
         gifts = loaded.isEmpty
             ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
             : loaded;
@@ -254,7 +256,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       await load();
       message('تم حفظ الهدية كمسودة، ولن تظهر للمستخدمين حتى نشرها.');
     } catch (e) {
-      if (mounted) message(friendlyError(e));
+      if (mounted) {
+        setState(() => pendingDraft = gift);
+        message('${friendlyError(e)} — احتفظنا بالمسودة هنا لإعادة المحاولة.');
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -633,6 +638,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
 
   Future<void> editGift([int? index, GiftCatalogItem? template, bool editSavedDraft = false]) async {
     if (editing || saving || loading || loadFailed) return;
+    if (editSavedDraft && (hasUnsavedChanges || categoryUnsaved)) {
+      message('احفظ التغييرات الحالية قبل تعديل المسودة.');
+      return;
+    }
     editing = true;
     final current = index == null ? template : gifts[index];
     final id = TextEditingController(
@@ -934,7 +943,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   if (index == null)
                     SwitchListTile(
                       value: saveAsDraft,
-                      onChanged: editSavedDraft
+                      onChanged: editSavedDraft || hasUnsavedChanges || categoryUnsaved
                           ? null
                           : (value) => setLocal(() => saveAsDraft = value),
                       title: const Text('حفظ الهدية كمسودة'),
@@ -1362,6 +1371,17 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ? 'لا توجد مسودات محفوظة.'
                   : '${drafts.length} مسودة محفوظة — غير ظاهرة للمستخدمين'),
             ),
+            if (pendingDraft != null)
+              ListTile(
+                leading: const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+                title: Text('مسودة لم يُؤكَّد حفظها: ${pendingDraft!.nameAr}'),
+                subtitle: const Text('يمكن إعادة المحاولة دون إعادة إدخال البيانات.'),
+                trailing: TextButton(
+                  onPressed: canManageDrafts ? () => storeDraft(pendingDraft!) : null,
+                  child: const Text('إعادة الحفظ'),
+                ),
+                onTap: canManageDrafts ? () => editGift(null, pendingDraft, true) : null,
+              ),
             for (final draft in drafts)
               ListTile(
                 leading: giftThumbnail(draft),
