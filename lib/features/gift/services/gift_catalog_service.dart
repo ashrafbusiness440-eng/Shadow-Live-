@@ -61,7 +61,7 @@ class GiftCatalogItem {
 
   bool get isRelationshipGift => category == 'cp' || category == 'friends';
   bool get hasRoomEffect =>
-      effectMode == 'seat' || effectMode == 'cinematic';
+      effectMode == 'seat' || effectMode == 'cinematic' || effectMode == 'legendary';
   String get effectiveEffectAssetKey =>
       effectAssetKey.trim().isEmpty ? assetKey : effectAssetKey;
 
