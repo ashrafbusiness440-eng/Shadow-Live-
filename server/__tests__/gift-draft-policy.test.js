@@ -15,6 +15,10 @@ test("storing a draft never changes published gifts", () => {
   assert.deepEqual(config.drafts, []);
   assert.deepEqual(next.drafts.map((x) => x.id), ["seasonal"]);
 });
+test("an uninitialized catalog cannot be converted to a drafts-only document", () => {
+  assert.throws(() => saveCatalogGiftDraft(null, gift("sample"), 0), /gift_catalog_not_initialized/);
+  assert.throws(() => saveCatalogGiftDraft({ drafts: [] }, gift("sample"), 0), /gift_catalog_not_initialized/);
+});
 test("published IDs and stale revision cannot be saved as new drafts", () => {
   const state = { revision: 2, gifts: [gift("rose")], drafts: [] };
   assert.throws(() => saveCatalogGiftDraft(state, gift("rose"), 2), /gift_draft_already_published/);
