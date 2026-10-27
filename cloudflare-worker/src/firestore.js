@@ -1,5 +1,6 @@
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 import { recordFirestoreTelemetry } from "./pressure-telemetry.js";
+import { giftTotalsAggregationRequest, parseGiftTotalsAggregationResponse } from "./gift-totals-aggregation-policy.js";
 
 // Firestore documents:batchGet returns newline-delimited JSON responses,
 // not necessarily a JSON array. A JSON-only parse silently loses scores.
@@ -569,6 +570,26 @@ export function firestoreClient(env) {
         data: decodeFields(doc.fields || {}),
         updateTime: doc.updateTime || null,
       }));
+    },
+
+    async readGiftTransactionTotals() {
+      // Firestore's indexed COUNT/SUM aggregation does not download ledger
+      // documents or mutate them. Administrative permission is verified in
+      // gift-catalog before this method is invoked.
+      const { body } = await call(
+        `${root}/documents:runAggregationQuery`,
+        {
+          method: "POST",
+          body: JSON.stringify(giftTotalsAggregationRequest()),
+        },
+        {
+          retryTransient: true,
+          operation: "run_gift_aggregate",
+          readMode: "query",
+          resource: "gift_transactions",
+        },
+      );
+      return parseGiftTotalsAggregationResponse(body);
     },
 
     async runQuery(collectionPath, {
