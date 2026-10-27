@@ -1348,6 +1348,46 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     ),
   );
 
+  Widget draftsOverview() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_note_outlined),
+              title: const Text('مسودات الهدايا'),
+              subtitle: Text(drafts.isEmpty
+                  ? 'لا توجد مسودات محفوظة.'
+                  : '${drafts.length} مسودة محفوظة — غير ظاهرة للمستخدمين'),
+            ),
+            for (final draft in drafts)
+              ListTile(
+                leading: giftThumbnail(draft),
+                title: Text(draft.nameAr),
+                subtitle: Text('${draft.priceCoins} كوينز • ${labelForCategory(draft.category)}'),
+                trailing: PopupMenuButton<String>(
+                  tooltip: 'خيارات المسودة',
+                  enabled: canManageDrafts,
+                  onSelected: (choice) {
+                    if (choice == 'edit') editGift(null, draft, true);
+                    if (choice == 'publish') publishDraft(draft);
+                    if (choice == 'discard') discardDraft(draft);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('تعديل المسودة')),
+                    PopupMenuItem(value: 'publish', child: Text('نشر الهدية')),
+                    PopupMenuItem(value: 'discard', child: Text('حذف المسودة')),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget catalogFilters() {
     final categories = <String>{'all', ...categoryDefinitions.map((item) => item['id'].toString()), ...gifts.map((gift) => gift.category)};
     return Card(
@@ -1487,6 +1527,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 if (selectedSection == 2) effectsOverview(),
                 if (selectedSection == 3) statisticsOverview(),
                 if (selectedSection == 0) ...[
+                draftsOverview(),
                 const SizedBox(height: 10),
                 catalogFilters(),
                 ...visibleIndices.take(visibleLimit).map((index) {
