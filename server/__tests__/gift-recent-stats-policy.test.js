@@ -61,7 +61,7 @@ test("malformed optional values do not create negative totals", () => {
 test("read-only query stays bounded and owner/admin verified", async () => {
   const {readFileSync}=await import("node:fs");
   const source=readFileSync(new URL("../../cloudflare-worker/src/legacy-economy/gift-catalog.js",import.meta.url),"utf8");
-  assert.match(source,/const \\{ uid, db, statsOnly, canGrantBag, canManageCatalog \\} = await actor\\(req, action\\)/);
+  assert.match(source,/const \{ uid, db, statsOnly, canGrantBag, canManageCatalog \} = await actor\(req, action\)/);
   assert.match(source,/if \(action === "statsRecent"\)/);
   assert.match(source,/\.orderBy\("createdAt", "desc"\)/);
   assert.match(source,/\.limit\(GIFT_STATS_PAGE_LIMIT \+ 1\)/);
