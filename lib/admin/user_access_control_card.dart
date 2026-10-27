@@ -93,7 +93,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageRooms', 'globalRoomControl', 'canCreateHiddenRoom', 'manageIds', 'manageSpecialIds',
     ],
     'الاقتصاد والألعاب': [
-      'manageEconomy', 'adjustBalances', 'manageGames', 'manageWithdrawals', 'manageSettlements',
+      'manageEconomy', 'manageGiftCatalog', 'viewGiftStats', 'adjustBalances', 'manageGames', 'manageWithdrawals', 'manageSettlements',
     ],
     'الوكالات': [
       'manageAgencies', 'reviewAgencyApplications', 'manageAgencyMemberships',
