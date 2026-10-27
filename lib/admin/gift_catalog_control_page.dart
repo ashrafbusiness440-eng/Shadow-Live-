@@ -25,6 +25,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool saving = false;
   bool loadFailed = false;
   bool editing = false;
+  bool grantDialogOpen = false;
   bool hasUnsavedChanges = false;
   int catalogRevision = 0;
   int visibleLimit = 20;
@@ -74,6 +75,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
 
   String friendlyError(Object failure) {
     final code = failure.toString();
+    if (code.contains('duplicate_gift_id')) {
+      return 'رقم الهدية مستخدم من قبل. اختر رقمًا مختلفًا.';
+    }
+    if (code.contains('invalid_gift_price')) {
+      return 'سعر الهدية غير صحيح. أدخل قيمة كوينز صحيحة.';
+    }
     if (code.contains('gift_catalog_conflict')) {
       return 'تم تعديل الهدايا من لوحة أخرى. احتفظنا بتعديلاتك هنا؛ لا تحفظ قبل مراجعة أحدث البيانات.';
     }
@@ -191,6 +198,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   }
 
   Future<void> grantBagGift() async {
+    if (grantDialogOpen || saving || loading || loadFailed) return;
+    grantDialogOpen = true;
+    try {
     final enabledGifts =
         gifts.where((item) => item.enabled).toList(growable: false);
     if (enabledGifts.isEmpty) {
@@ -334,7 +344,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => saving = false);
-      message('تعذر منح الهدية: ' + e.toString());
+      message(friendlyError(e));
+    }
+    } finally {
+      grantDialogOpen = false;
     }
   }
 
