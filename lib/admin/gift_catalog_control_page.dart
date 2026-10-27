@@ -1568,20 +1568,122 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
   }
 
-  Widget statisticsOverview() => const Card(
-    child: Padding(
-      padding: EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Icon(Icons.bar_chart_outlined, size: 42),
-          SizedBox(height: 12),
-          Text('إحصاءات الهدايا'),
-          SizedBox(height: 8),
-          Text('لا تتوفر بيانات إحصائية موثوقة في هذا القسم بعد. سيتم عرض العمليات الفعلية بعد ربط التقارير بالسجلات المعتمدة، دون أرقام تقديرية.', textAlign: TextAlign.center),
-        ],
+  Widget statisticsOverview() {
+    int amount(Map<String, dynamic> row, String key) =>
+        (row[key] as num?)?.toInt() ?? 0;
+    final items = <String, Map<String, dynamic>>{};
+    var paid = 0;
+    var total = 0;
+    var quantity = 0;
+    final contexts = <String, int>{'room': 0, 'chat': 0, 'diary': 0};
+    for (final row in statsRows) {
+      paid += amount(row, 'paidCoins');
+      total += amount(row, 'totalCoins');
+      quantity += amount(row, 'quantity');
+      final contextType = (row['context'] ?? '').toString();
+      if (contexts.containsKey(contextType)) {
+        contexts[contextType] = contexts[contextType]! + 1;
+      }
+      final id = (row['giftId'] ?? '').toString();
+      if (id.isEmpty) continue;
+      final old = items[id];
+      items[id] = {
+        'name': (row['giftName'] ?? id).toString(),
+        'quantity': (old?['quantity'] as int? ?? 0) + amount(row, 'quantity'),
+        'entries': (old?['entries'] as int? ?? 0) + 1,
+      };
+    }
+    final leaders = items.values.toList()
+      ..sort((a, b) => (b['quantity'] as int).compareTo(a['quantity'] as int));
+    const contextNames = {
+      'room': 'الغرف', 'chat': 'الرسائل', 'diary': 'اليوميات',
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ListTile(
+              leading: Icon(Icons.bar_chart_outlined),
+              title: Text('إحصاءات الهدايا الفعلية'),
+              subtitle: Text(
+                'الأرقام التالية محسوبة من أحدث سجلات الإرسال التي تم تحميلها فقط، وليست إجمالي التطبيق أو جميع المبيعات.',
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: statsLoading ? null : () => loadRecentStats(reset: true),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('تحديث التقرير'),
+              ),
+            ),
+            if (statsLoading && statsRows.isEmpty)
+              const Center(child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              )),
+            if (statsError != null)
+              ListTile(
+                leading: const Icon(Icons.error_outline_rounded),
+                title: Text('تعذر تحميل الإحصاءات: $statsError'),
+                trailing: TextButton(
+                  onPressed: statsLoading ? null :
+                      () => loadRecentStats(reset: statsRows.isEmpty),
+                  child: const Text('إعادة المحاولة'),
+                ),
+              ),
+            if (statsLoaded) ...[
+              const Divider(),
+              Text('ضمن ${statsRows.length} سجل إرسال مُحمّل',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text('عدد الهدايا المرسلة: $quantity'),
+              Text('قيمة الهدايا: $total كوينز'),
+              Text('كوينز مدفوعة: $paid'),
+              Text('أماكن الإرسال: الغرف ${contexts['room']} • الرسائل ${contexts['chat']} • اليوميات ${contexts['diary']}'),
+              const Divider(),
+              const Text('أكثر الهدايا إرسالاً ضمن السجلات المحملة',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+              if (leaders.isEmpty)
+                const ListTile(title: Text('لا توجد سجلات إرسال في هذه الدفعة.')),
+              for (final item in leaders.take(10))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.card_giftcard_outlined),
+                  title: Text(item['name'].toString()),
+                  subtitle: Text('${item['entries']} سجلات إرسال'),
+                  trailing: Text('${item['quantity']} هدية'),
+                ),
+              if (statsRows.isNotEmpty) ...[
+                const Divider(),
+                const Text('آخر عمليات الإرسال',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+                for (final row in statsRows.take(8))
+                  ListTile(
+                    dense: true,
+                    title: Text((row['giftName'] ?? 'هدية').toString()),
+                    subtitle: Text(contextNames[row['context']] ?? 'مكان آخر'),
+                    trailing: Text('${amount(row, 'quantity')} × ${amount(row, 'totalCoins')} كوينز'),
+                  ),
+              ],
+              if (statsHasMore && statsPagesLoaded < 5)
+                OutlinedButton.icon(
+                  onPressed: statsLoading ? null : () => loadRecentStats(),
+                  icon: const Icon(Icons.expand_more_rounded),
+                  label: const Text('تحميل 30 سجلاً آخر'),
+                ),
+              if (statsPagesLoaded >= 5 && statsHasMore)
+                const Text('تم الوصول لحد المعاينة الآمن (150 سجلاً).',
+                  textAlign: TextAlign.center),
+              if (statsLoading) const LinearProgressIndicator(),
+            ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget draftsOverview() {
     return Card(
