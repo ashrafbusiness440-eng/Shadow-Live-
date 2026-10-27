@@ -171,10 +171,20 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     prompt: "Voice-room background for Shadow Live. Keep microphone seats, room title, IDs, chat feed, and controls readable.",
   }),
   template({
+    id: "vehicle.base.v1",
+    type: "vehicle",
+    labelAr: "مركبة دخول متحركة / ثابتة",
+    directories: ["assets/images/levels", "assets/images/entrances", "assets/images/vip", "assets/images/store"],
+    extensions: ALPHA_IMAGE_EXTS,
+    transparency: "required",
+    motion: "static_or_animated",
+    prompt: "Transparent entrance vehicle for Shadow Live wealth levels, VIP or store cosmetics. Animated WebP or GIF may include movement; keep name, ID and entitlement data outside the artwork. Use the existing stable asset key when replacing a vehicle.",
+  }),
+  template({
     id: "entrance.base.v1",
     type: "entrance",
     labelAr: "دخوليّة",
-    directories: ["assets/images/entrances", "assets/images/vip", "assets/images/store"],
+    directories: ["assets/images/entrances", "assets/images/levels", "assets/images/vip", "assets/images/store"],
     extensions: ALPHA_IMAGE_EXTS,
     transparency: "required",
     prompt: "Entrance effect for Shadow Live. Use transparent background where appropriate and do not bake user names or IDs into the effect.",
@@ -322,16 +332,25 @@ function safeDirectoryWithinRoot(value, root) {
     directory.startsWith(`${normalizedRoot}/`);
 }
 
-function canonicalTemplateIdForAssetIdentity({ assetKey, fileName, directory }) {
+// Central canonical identity for existing published assets as well as new uploads.
+// Never reinterpret the separate, fixed-size Mysterious Person vehicle template.
+export function canonicalTemplateIdForAssetIdentity({ assetKey, fileName, directory, fullPath }) {
   const key = clean(assetKey).toLowerCase();
   const name = clean(fileName).toLowerCase();
-  const path = `${clean(directory).toLowerCase()}/${name}`;
+  const path = clean(fullPath || `${clean(directory)}/${name}`).toLowerCase();
   if (
     key.endsWith(".profileframe") ||
     name.includes("_profile_frame.") ||
     path.includes("_profile_frame.")
   ) {
     return "frame.base.v1";
+  }
+  if (key !== "mysterious.vehicle" && (
+    key.endsWith(".vehicle") ||
+    name.includes("_vehicle.") ||
+    path.includes("_vehicle.")
+  )) {
+    return "vehicle.base.v1";
   }
   return "";
 }
