@@ -6,7 +6,7 @@ import { giftAvailableFor, validateGiftAvailability } from "../gift-availability
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
 import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
 
-const EFFECT_MODES = new Set(["none", "seat", "cinematic"]);
+const EFFECT_MODES = new Set(["none", "seat", "cinematic", "legendary"]);
 
 function clean(value) {
   return String(value ?? "").trim();
