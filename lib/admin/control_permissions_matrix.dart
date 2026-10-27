@@ -15,7 +15,7 @@ abstract final class ControlPermissionsMatrix {
     ControlCapabilities.manageAgencyPolicies,ControlCapabilities.manageAgencySettlements,
     ControlCapabilities.suspendAgencies,ControlCapabilities.manageVip,ControlCapabilities.manageMysteriousPerson,ControlCapabilities.revealMysteriousIdentity,
     ControlCapabilities.manageSpecialIds,ControlCapabilities.manageIds,ControlCapabilities.manageStore,ControlCapabilities.manageGames,
-    ControlCapabilities.manageEconomy,ControlCapabilities.adjustBalances,ControlCapabilities.manageWithdrawals,ControlCapabilities.manageSettlements,
+    ControlCapabilities.manageEconomy,ControlCapabilities.manageGiftCatalog,ControlCapabilities.viewGiftStats,ControlCapabilities.adjustBalances,ControlCapabilities.manageWithdrawals,ControlCapabilities.manageSettlements,
     ControlCapabilities.manageCampaigns,ControlCapabilities.manageRoles,ControlCapabilities.viewAuditLog,
     ControlCapabilities.emergencyLock,
    };
