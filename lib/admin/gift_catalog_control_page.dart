@@ -58,6 +58,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String? statsCursor;
   int statsPagesLoaded = 0;
   final List<Map<String, dynamic>> statsRows = <Map<String, dynamic>>[];
+  int giftRankingEpoch = 0;
   bool giftRankingLoading = false;
   bool giftRankingCompleted = false;
   int giftRankingNextOffset = 0;
@@ -177,6 +178,14 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       loading = true;
       error = null;
       loadFailed = false;
+      giftRankingEpoch++;
+      giftRankingRows.clear();
+      giftRankingLoading = false;
+      giftRankingCompleted = false;
+      giftRankingRevision = null;
+      giftRankingNextOffset = 0;
+      giftRankingTotal = 0;
+      giftRankingError = null;
     });
     try {
       final body = await post({'action': 'state'});
@@ -1483,6 +1492,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         giftRankingRevision = null;
       }
     });
+    final requestEpoch = giftRankingEpoch;
     try {
       final expectedOffset = giftRankingNextOffset;
       final data = await post({
@@ -1515,7 +1525,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             row['entries'] is! num)) {
         throw StateError('بيانات تقرير الهدايا غير صحيحة');
       }
-      if (!mounted) return;
+      if (!mounted || requestEpoch != giftRankingEpoch) return;
       setState(() {
         giftRankingRevision = revision;
         giftRankingTotal = total;
@@ -1526,7 +1536,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         giftRankingLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestEpoch != giftRankingEpoch) return;
       setState(() {
         giftRankingError = error.toString().contains('gift_catalog_conflict')
             ? 'تغير كتالوج الهدايا. اضغط إعادة الحساب.'
