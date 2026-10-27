@@ -224,9 +224,10 @@ jobs:
           cat /tmp/shadow-e2e-server.log
           exit 1
       - name: Install Playwright Chromium
+        timeout-minutes: 8
         run: |
-          npm install --no-save playwright@latest
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps --only-shell chromium
       - name: Run main-tab browser E2E
         run: node .github/scripts/e2e_tabs.mjs
       - name: Upload E2E screenshots
@@ -265,9 +266,10 @@ jobs:
           cat /tmp/shadow-room-e2e-server.log
           exit 1
       - name: Install Playwright Chromium
+        timeout-minutes: 8
         run: |
-          npm install --no-save playwright@latest
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps --only-shell chromium
       - name: Run voice-room browser E2E
         run: node .github/scripts/e2e_voice_room.mjs
       - name: Upload voice-room E2E screenshot
@@ -318,9 +320,10 @@ jobs:
           cat /tmp/shadow-control-e2e-server.log
           exit 1
       - name: Install Playwright Chromium
+        timeout-minutes: 8
         run: |
-          npm install --no-save playwright@latest
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps --only-shell chromium
       - name: Run Shadow Control browser E2E
         run: node .github/scripts/e2e_control_rooms.mjs
       - name: Upload Shadow Control E2E screenshot
