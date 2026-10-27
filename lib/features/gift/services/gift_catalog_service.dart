@@ -24,6 +24,9 @@ class GiftCatalogItem {
     this.effectSize = 0,
     this.premiumBannerMinQuantity = 0,
     this.affinityBasePoints = 0,
+    this.allowedContexts = const ['room', 'chat', 'diary'],
+    this.visibleFromMs = 0,
+    this.visibleUntilMs = 0,
   });
 
   final String id;
@@ -45,6 +48,16 @@ class GiftCatalogItem {
   final int effectSize;
   final int premiumBannerMinQuantity;
   final int affinityBasePoints;
+  final List<String> allowedContexts;
+  final int visibleFromMs;
+  final int visibleUntilMs;
+
+  bool isAvailableIn(String context, {DateTime? at}) {
+    if (!enabled || !allowedContexts.contains(context)) return false;
+    final now = (at ?? DateTime.now()).millisecondsSinceEpoch;
+    return (visibleFromMs == 0 || now >= visibleFromMs) &&
+        (visibleUntilMs == 0 || now < visibleUntilMs);
+  }
 
   bool get isRelationshipGift => category == 'cp' || category == 'friends';
   bool get hasRoomEffect =>
@@ -84,6 +97,11 @@ class GiftCatalogItem {
           (map['premiumBannerMinQuantity'] as num?)?.toInt() ?? 0,
       affinityBasePoints:
           (map['affinityBasePoints'] as num?)?.toInt() ?? 0,
+      allowedContexts: map['allowedContexts'] is List
+          ? (map['allowedContexts'] as List).whereType<String>().toList()
+          : const ['room', 'chat', 'diary'],
+      visibleFromMs: (map['visibleFromMs'] as num?)?.toInt() ?? 0,
+      visibleUntilMs: (map['visibleUntilMs'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -107,6 +125,9 @@ class GiftCatalogItem {
         'effectSize': effectSize,
         'premiumBannerMinQuantity': premiumBannerMinQuantity,
         'affinityBasePoints': affinityBasePoints,
+        'allowedContexts': allowedContexts,
+        'visibleFromMs': visibleFromMs,
+        'visibleUntilMs': visibleUntilMs,
       };
 }
 
