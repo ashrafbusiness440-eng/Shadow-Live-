@@ -631,40 +631,40 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
   }
 
-  Future<void> editGift([int? index, GiftCatalogItem? template]) async {
+  Future<void> editGift([int? index, GiftCatalogItem? template, bool editSavedDraft = false]) async {
     if (editing || saving || loading || loadFailed) return;
     editing = true;
     final current = index == null ? template : gifts[index];
     final id = TextEditingController(
-      text: template == null ? (current?.id ?? '') : '',
+      text: template == null || editSavedDraft ? (current?.id ?? '') : '',
     );
     final nameAr = TextEditingController(
-      text: template == null ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
+      text: template == null || editSavedDraft ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
     );
     final price = TextEditingController(
       text: current?.priceCoins.toString() ?? '',
     );
     final assetKey = TextEditingController(
-      text: template == null ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
+      text: template == null || editSavedDraft ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
     );
     final placeholder = TextEditingController(
       text: current?.localPlaceholder ??
           'assets/images/gifts/gift_placeholder.webp',
     );
-    var enabled = template == null ? (current?.enabled ?? true) : false;
+    var enabled = template == null || editSavedDraft ? (current?.enabled ?? true) : false;
     var featured = current?.featured ?? false;
     var category = current?.category ?? 'general';
     var minVipLevel = current?.effectiveMinVipLevel ?? 0;
-    var isAnimated = template == null ? (current?.isAnimated ?? false) : false;
-    var effectMode = template == null ? (current?.effectMode ?? 'none') : 'none';
+    var isAnimated = template == null || editSavedDraft ? (current?.isAnimated ?? false) : false;
+    var effectMode = template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none';
     final effectAssetKey = TextEditingController(
-      text: template == null ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
+      text: template == null || editSavedDraft ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
     );
     final effectSoundAssetKey = TextEditingController(
-      text: template == null ? (current?.effectSoundAssetKey ?? '') : '',
+      text: template == null || editSavedDraft ? (current?.effectSoundAssetKey ?? '') : '',
     );
     final effectMinQuantity = TextEditingController(
-      text: (template == null ? (current?.effectMinQuantity ?? 0) : 0).toString(),
+      text: (template == null || editSavedDraft ? (current?.effectMinQuantity ?? 0) : 0).toString(),
     );
     final effectDurationMs = TextEditingController(
       text: (current?.effectDurationMs ?? 2200).toString(),
@@ -680,18 +680,19 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
 
     bool previewOpen = false;
+    var saveAsDraft = editSavedDraft;
     final result = await showDialog<GiftCatalogItem>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setLocal) => AlertDialog(
-          title: Text(index == null ? (template == null ? 'إضافة هدية' : 'نسخ هدية جديدة') : 'تعديل الهدية'),
+          title: Text(editSavedDraft ? 'تعديل المسودة' : index == null ? (template == null ? 'إضافة هدية' : 'نسخ هدية جديدة') : 'تعديل الهدية'),
           content: SizedBox(
             width: 540,
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  if (index != null)
+                  if (index != null || editSavedDraft)
                     TextFormField(
                       initialValue: current!.id,
                       readOnly: true,
@@ -930,6 +931,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       numeric: true,
                     ),
                   ],
+                  if (index == null)
+                    SwitchListTile(
+                      value: saveAsDraft,
+                      onChanged: editSavedDraft
+                          ? null
+                          : (value) => setLocal(() => saveAsDraft = value),
+                      title: const Text('حفظ الهدية كمسودة'),
+                      subtitle: const Text('لا تظهر الهدية للمستخدمين إلا بعد نشرها من قسم المسودات.'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   SwitchListTile(
                     value: enabled,
                     onChanged: (value) => setLocal(() => enabled = value),
@@ -1117,6 +1128,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
 
     editing = false;
     if (result == null || !mounted) return;
+    if (saveAsDraft) {
+      await storeDraft(result);
+      return;
+    }
     setState(() {
       hasUnsavedChanges = true;
       if (index == null) {
