@@ -350,10 +350,11 @@ export async function handler(req, res) {
       const collection = db.collection("gift_transactions");
       let query = collection
         .orderBy("createdAt", "desc")
+        .orderBy("__name__", "desc")
         .limit(GIFT_STATS_PAGE_LIMIT + 1);
       if (cursor) {
         const anchor = await collection.doc(cursor).get();
-        if (!anchor.exists || !anchor.get("createdAt")) {
+        if (!anchor.exists || !anchor.data()?.createdAt) {
           throw Error("invalid_stats_cursor");
         }
         query = query.startAfter(anchor);
