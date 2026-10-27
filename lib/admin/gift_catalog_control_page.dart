@@ -47,6 +47,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool canGrantBag = false;
   bool statsTotalsLoading = false;
   String statsPeriod = "all";
+  DateTime statsDate = DateTime.now().toUtc();
   Map<String, dynamic>? statsTotals;
   String? statsTotalsError;
   bool statsLoading = false;
@@ -1429,7 +1430,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       statsTotalsError = null;
     });
     try {
-      final now = DateTime.now().toUtc();
+      final now = statsDate;
       final date = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       final payload = await post({
         'action': 'statsTotals',
@@ -1680,7 +1681,30 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   },
                 ),
             ]),
-            const Text('اليوم والشهر بالتوقيت العالمي (UTC).',
+            if (statsPeriod != 'all')
+              TextButton.icon(
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: Text('اختيار التاريخ: ${statsDate.year.toString().padLeft(4, '0')}/${statsDate.month.toString().padLeft(2, '0')}/${statsDate.day.toString().padLeft(2, '0')}'),
+                onPressed: statsTotalsLoading ? null : () async {
+                  final today = DateTime.now().toUtc();
+                  final earliest = statsPeriod == 'month'
+                      ? DateTime.utc(today.year, today.month - 11, 1)
+                      : today.subtract(const Duration(days: 365));
+                  final selected = await showDatePicker(
+                    context: context,
+                    initialDate: statsDate.isBefore(earliest) ? earliest : statsDate,
+                    firstDate: earliest,
+                    lastDate: today,
+                  );
+                  if (!mounted || selected == null) return;
+                  setState(() {
+                    statsDate = DateTime.utc(selected.year, selected.month, selected.day);
+                    statsTotals = null;
+                  });
+                  loadVerifiedTotals();
+                },
+              ),
+            const Text('يُحسب اليوم والشهر حسب التوقيت العالمي.',
                 style: TextStyle(fontSize: 11)),
             const Text(
               'تشمل سجلات إرسال الهدايا المالية المحفوظة، وقد لا تتضمن هدايا قديمة من أنظمة سابقة.',
