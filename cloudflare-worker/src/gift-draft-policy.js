@@ -21,6 +21,8 @@ export function saveCatalogGiftDraft(config, gift, expectedRevision) {
   const id = String(gift?.id ?? "");
   if (!id) throw Error("invalid_gift_id");
   const published = Array.isArray(config?.gifts) ? config.gifts : [];
+  // Never create a drafts-only catalog document: that would hide legacy seed gifts.
+  if (published.length === 0) throw Error("gift_catalog_not_initialized");
   if (published.some((item) => item?.id === id)) throw Error("gift_draft_already_published");
   const previous = giftDraftList(config);
   const existingIndex = previous.findIndex((item) => item?.id === id);
