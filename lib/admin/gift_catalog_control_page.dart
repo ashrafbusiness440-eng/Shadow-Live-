@@ -23,6 +23,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool loading = true;
   bool saving = false;
   bool loadFailed = false;
+  bool editing = false;
+  bool hasUnsavedChanges = false;
+  int catalogRevision = 0;
   int selectedSection = 0;
   String query = '';
   String categoryFilter = 'all';
@@ -67,6 +70,43 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     return decoded;
   }
 
+  String friendlyError(Object failure) {
+    final code = failure.toString();
+    if (code.contains('gift_catalog_conflict')) {
+      return 'تم تعديل الهدايا من لوحة أخرى. احتفظنا بتعديلاتك هنا؛ لا تحفظ قبل مراجعة أحدث البيانات.';
+    }
+    if (code.contains('gift_catalog_existing_id_missing')) {
+      return 'لا يمكن حذف هدية قديمة أو تغيير رقمها. يمكنك إخفاؤها بدلًا من ذلك.';
+    }
+    if (code.contains('gift_catalog_restricted_category')) {
+      return 'لا يمكن نقل هدايا الامتياز أو العلاقات إلى فئة أخرى بهذه الطريقة.';
+    }
+    if (code.contains('invalid_catalog_revision')) {
+      return 'تعذر التحقق من نسخة الهدايا. أعد تحميل القائمة قبل الحفظ.';
+    }
+    if (code.contains('forbidden')) return 'لا توجد صلاحية لإدارة الهدايا.';
+    return 'تعذر إتمام العملية. تحقق من البيانات والاتصال ثم حاول مجددًا.';
+  }
+
+  Future<void> refreshCatalog() async {
+    if (saving || editing) return;
+    if (hasUnsavedChanges) {
+      final accept = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('إعادة تحميل الهدايا؟'),
+          content: const Text('لديك تغييرات لم تحفظها. ستفقدها عند إعادة التحميل.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('إعادة التحميل')),
+          ],
+        ),
+      );
+      if (accept != true || !mounted) return;
+    }
+    await load();
+  }
+
   Future<void> load() async {
     setState(() {
       loading = true;
@@ -88,6 +128,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final revision = config is Map && config['revision'] is num
+          ? (config['revision'] as num).toInt() : 0;
       if (!mounted) return;
       setState(() {
         gifts = loaded.isEmpty
@@ -95,13 +137,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             : loaded;
         loading = false;
         loadFailed = false;
+        hasUnsavedChanges = false;
+        catalogRevision = revision;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         gifts = List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts);
         loading = false;
-        error = e.toString();
+        error = friendlyError(e);
         loadFailed = true;
       });
     }
@@ -126,7 +170,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             'sortOrder': i,
           },
       ];
-      await post({'action': 'save', 'gifts': payload});
+      await post({'action': 'save', 'gifts': payload, 'expectedRevision': catalogRevision});
       if (!mounted) return;
       setState(() => saving = false);
       message('تم حفظ كتالوج الهدايا بنجاح.');
@@ -134,7 +178,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => saving = false);
-      message('تعذر الحفظ: ' + e.toString());
+      message(friendlyError(e));
     }
   }
 
@@ -292,36 +336,40 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
   }
 
-  Future<void> editGift([int? index]) async {
-    final current = index == null ? null : gifts[index];
-    final id = TextEditingController(text: current?.id ?? '');
-    final nameAr = TextEditingController(text: current?.nameAr ?? '');
+  Future<void> editGift([int? index, GiftCatalogItem? template]) async {
+    if (editing || saving || loading || loadFailed) return;
+    editing = true;
+    final current = index == null ? template : gifts[index];
+    final id = TextEditingController(
+      text: template == null ? (current?.id ?? '') : '',
+    );
+    final nameAr = TextEditingController(
+      text: template == null ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
+    );
     final price = TextEditingController(
       text: current?.priceCoins.toString() ?? '',
     );
     final assetKey = TextEditingController(
-      text: current?.assetKey ?? 'gifts.placeholder.default',
+      text: template == null ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
     );
     final placeholder = TextEditingController(
       text: current?.localPlaceholder ??
           'assets/images/gifts/gift_placeholder.webp',
     );
-    var enabled = current?.enabled ?? true;
+    var enabled = template == null ? (current?.enabled ?? true) : false;
     var featured = current?.featured ?? false;
     var category = current?.category ?? 'general';
     var minVipLevel = current?.effectiveMinVipLevel ?? 0;
-    var isAnimated = current?.isAnimated ?? false;
-    var effectMode = current?.effectMode ?? 'none';
+    var isAnimated = template == null ? (current?.isAnimated ?? false) : false;
+    var effectMode = template == null ? (current?.effectMode ?? 'none') : 'none';
     final effectAssetKey = TextEditingController(
-      text: current?.effectiveEffectAssetKey ??
-          current?.assetKey ??
-          'gifts.placeholder.default',
+      text: template == null ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
     );
     final effectSoundAssetKey = TextEditingController(
-      text: current?.effectSoundAssetKey ?? '',
+      text: template == null ? (current?.effectSoundAssetKey ?? '') : '',
     );
     final effectMinQuantity = TextEditingController(
-      text: (current?.effectMinQuantity ?? 0).toString(),
+      text: (template == null ? (current?.effectMinQuantity ?? 0) : 0).toString(),
     );
     final effectDurationMs = TextEditingController(
       text: (current?.effectDurationMs ?? 2200).toString(),
@@ -340,17 +388,26 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setLocal) => AlertDialog(
-          title: Text(index == null ? 'إضافة هدية' : 'تعديل الهدية'),
+          title: Text(index == null ? (template == null ? 'إضافة هدية' : 'نسخ هدية جديدة') : 'تعديل الهدية'),
           content: SizedBox(
             width: 540,
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  field(id, 'معرّف الهدية', 'rose'),
+                  if (index != null)
+                    TextFormField(
+                      initialValue: current!.id,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'رقم الهدية (ثابت للحفاظ على السجلات)',
+                        border: OutlineInputBorder(),
+                      ),
+                    )
+                  else field(id, 'رقم الهدية الجديدة', 'rose'),
                   const SizedBox(height: 10),
                   field(nameAr, 'اسم الهدية بالعربي', 'وردة'),
                   const SizedBox(height: 10),
-                  field(price, 'السعر Coins', '100', numeric: true),
+                  field(price, 'السعر بالكوينز', '100', numeric: true),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: category,
@@ -432,7 +489,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         );
                       },
                       icon: const Icon(Icons.image_outlined, size: 18),
-                      label: const Text('استديو صورة الهدية'),
+                      label: const Text('إضافة/تغيير صورة الهدية'),
                     ),
                   ),
                   const Text(
@@ -526,7 +583,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         );
                       },
                       icon: const Icon(Icons.animation_outlined, size: 18),
-                      label: const Text('استديو مؤثر الهدية'),
+                      label: const Text('إضافة/تغيير مؤثر الهدية'),
                     ),
                   ),
                   const Text(
@@ -695,8 +752,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     premiumBannerMinQuantity.dispose();
     affinityBasePoints.dispose();
 
+    editing = false;
     if (result == null || !mounted) return;
     setState(() {
+      hasUnsavedChanges = true;
       if (index == null) {
         gifts.add(result);
       } else {
@@ -726,6 +785,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     final next = index + delta;
     if (next < 0 || next >= gifts.length) return;
     setState(() {
+      hasUnsavedChanges = true;
       final item = gifts.removeAt(index);
       gifts.insert(next, item);
     });
@@ -900,7 +960,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         title: const Text('الهدايا'),
         actions: [
           IconButton(
-            onPressed: loading ? null : load,
+            onPressed: loading || saving || editing ? null : refreshCatalog,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -946,10 +1006,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       'للإدارة والفعاليات والهدايا المجانية — بدون خصم كوينز من المستلم.',
                     ),
                     trailing: FilledButton(
-                      onPressed: saving ? null : grantBagGift,
+                      onPressed: saving || loadFailed ? null : grantBagGift,
                       child: const Text('منح'),
                     ),
-                    onTap: saving ? null : grantBagGift,
+                    onTap: saving || loadFailed ? null : grantBagGift,
                   ),
                 ),
                 if (error != null)
@@ -984,6 +1044,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                 value: item.enabled,
                                 onChanged: (value) {
                                   setState(() {
+                                    hasUnsavedChanges = true;
                                     gifts[index] = GiftCatalogItem(
                                       id: item.id,
                                       nameAr: item.nameAr,
@@ -1077,17 +1138,27 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                 icon: const Icon(Icons.arrow_downward_rounded),
                               ),
                               IconButton(
-                                onPressed: () => editGift(index),
+                                tooltip: 'نسخ الهدية',
+                                onPressed: saving ? null : () => editGift(null, item),
+                                icon: const Icon(Icons.copy_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'تعديل الهدية',
+                                onPressed: saving ? null : () => editGift(index),
                                 icon: const Icon(Icons.edit_outlined),
                               ),
                               IconButton(
-                                onPressed: gifts.length <= 1
+                                tooltip: 'إخفاء الهدية دون حذف سجلها',
+                                onPressed: saving || !item.enabled
                                     ? null
-                                    : () => setState(() => gifts.removeAt(index)),
-                                icon: const Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.redAccent,
-                                ),
+                                    : () => setState(() {
+                                          hasUnsavedChanges = true;
+                                          gifts[index] = GiftCatalogItem.fromMap({
+                                            ...item.toMap(),
+                                            'enabled': false,
+                                          });
+                                        }),
+                                icon: const Icon(Icons.visibility_off_outlined),
                               ),
                             ],
                           ),
