@@ -434,6 +434,37 @@ test("gift picker thumbnails are static and gift room effects are separately ani
   assert.equal(validateGift(effect, "dragon_effect.webp", "assets/images/rooms").code,
     "template_directory_mismatch");
 
+  // Migrating old badge/static asset records must keep their canonical keys,
+  // just like Wealth vehicles and profile frames already do.
+  for (const { key, expected } of [
+    { key: "gifts.rose.icon", expected: "gift.icon.base.v1" },
+    { key: "gifts.rose.effect", expected: "gift.effect.base.v1" },
+    { key: "gifts.effect.rose", expected: "gift.effect.base.v1" },
+  ]) {
+    const migrated = validateAssetStudioMetadata({
+      studioVersion: 1,
+      assetKey: key,
+      assetType: "badge",
+      templateId: "badge.base.v1",
+      channels: ["system"],
+      directory: "assets/images/gifts",
+      fileName: key.endsWith(".icon") ? "rose_icon.webp" : "rose_effect.webp",
+      byteSize: 1750000,
+    });
+    assert.equal(migrated.template?.id, expected, key);
+    assert.equal(migrated.ok, true, key);
+  }
+  assert.equal(canonicalTemplateIdForAssetIdentity({
+    assetKey: "gifts.placeholder.default",
+    directory: "assets/images/gifts",
+    fileName: "placeholder.webp",
+  }), "");
+  assert.equal(canonicalTemplateIdForAssetIdentity({
+    assetKey: "store.royal.effect",
+    directory: "assets/images/store",
+    fileName: "royal.webp",
+  }), "");
+
   // Existing prices, asset keys and entitlement rules remain owned by the
   // Gift Catalog; only the shared asset-store presentation templates change.
   const manager = source("lib/admin/control_asset_manager_page.dart");
