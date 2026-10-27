@@ -25,3 +25,5 @@ jobs:
         run: node cloudflare-worker/scripts/verify-gift-ranking-index.mjs
 
 # Re-run detailed COUNT and SUM isolation after HTTP 400.
+
+# Inspect Firestore-generated composite-index field order.
