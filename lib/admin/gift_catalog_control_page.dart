@@ -43,6 +43,13 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
   List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
   GiftCatalogItem? pendingDraft;
+  bool statsLoading = false;
+  bool statsLoaded = false;
+  bool statsHasMore = false;
+  String? statsError;
+  String? statsCursor;
+  int statsPagesLoaded = 0;
+  final List<Map<String, dynamic>> statsRows = <Map<String, dynamic>>[];
 
   Uri get apiUri => shadowEconomyEndpoint('gift-catalog');
 
@@ -1400,6 +1407,49 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
   }
 
+  Future<void> loadRecentStats({bool reset = false}) async {
+    if (statsLoading) return;
+    if (!reset && statsLoaded && (!statsHasMore || statsPagesLoaded >= 5)) return;
+    setState(() {
+      statsLoading = true;
+      statsError = null;
+      if (reset) {
+        statsRows.clear();
+        statsCursor = null;
+        statsHasMore = false;
+        statsPagesLoaded = 0;
+        statsLoaded = false;
+      }
+    });
+    try {
+      final payload = await post({
+        'action': 'statsRecent',
+        if (statsCursor != null) 'cursor': statsCursor,
+      });
+      if (!mounted) return;
+      final raw = payload['rows'];
+      final next = raw is List
+          ? raw.whereType<Map>().map((item) =>
+              Map<String, dynamic>.from(item)).toList(growable: false)
+          : <Map<String, dynamic>>[];
+      setState(() {
+        statsRows.addAll(next);
+        statsCursor = payload['nextCursor']?.toString();
+        statsHasMore = payload['hasMore'] == true &&
+            statsCursor != null && statsCursor!.isNotEmpty;
+        statsLoaded = true;
+        statsPagesLoaded += 1;
+        statsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        statsLoading = false;
+        statsError = friendlyError(error);
+      });
+    }
+  }
+
   Widget sectionSelector() {
     const labels = ['كل الهدايا', 'الفئات', 'المؤثرات', 'الإحصاءات'];
     const icons = [Icons.card_giftcard_outlined, Icons.category_outlined, Icons.auto_awesome_outlined, Icons.bar_chart_outlined];
@@ -1412,7 +1462,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           avatar: Icon(icons[i], size: 18),
           label: Text(labels[i]),
           selected: selectedSection == i,
-          onSelected: (_) => setState(() => selectedSection = i),
+          onSelected: (_) {
+            setState(() => selectedSection = i);
+            if (i == 3 && !statsLoaded && !statsLoading) {
+              loadRecentStats(reset: true);
+            }
+          },
         )),
       ),
     );
