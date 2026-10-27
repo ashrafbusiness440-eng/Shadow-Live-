@@ -2,6 +2,20 @@ import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 import { recordFirestoreTelemetry } from "./pressure-telemetry.js";
 import { giftTotalsAggregationRequest, parseGiftTotalsAggregationResponse } from "./gift-totals-aggregation-policy.js";
 
+export function parseFirestoreAggregationRows(payload) {
+  const content = String(payload ?? "").trim();
+  if (!content) throw Error("gift_aggregate_response_missing");
+  try {
+    const decoded = JSON.parse(content);
+    return Array.isArray(decoded) ? decoded : [decoded];
+  } catch (_) {
+    // Some Firestore streaming REST responses are newline-delimited JSON.
+    return content.split("\n").filter((line) => line.trim()).map(JSON.parse);
+  }
+}
+
+
+
 // Firestore documents:batchGet returns newline-delimited JSON responses,
 // not necessarily a JSON array. A JSON-only parse silently loses scores.
 export function parseFirestoreBatchGetRows(payload, maxRows = 100) {
@@ -356,7 +370,9 @@ export function firestoreClient(env) {
       if (response) {
         body = response.ok && readMode === "batch"
           ? parseFirestoreBatchGetRows(await response.text())
-          : await response.json().catch(() => ({}));
+          : response.ok && operation === "run_gift_aggregate"
+            ? parseFirestoreAggregationRows(await response.text())
+            : await response.json().catch(() => ({}));
         if (response.ok) {
           if (retryTransient) resetFirestoreQuotaCircuit(firestoreQuotaCircuit);
           observe({ status: response.status, body });
