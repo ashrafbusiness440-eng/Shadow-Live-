@@ -1666,8 +1666,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             Wrap(spacing: 8, children: [
               for (final item in const [
                 ('all', 'كل الفترة'),
-                ('day', 'اليوم'),
-                ('month', 'الشهر الحالي'),
+                ('day', 'حسب اليوم'),
+                ('month', 'حسب الشهر'),
               ])
                 ChoiceChip(
                   label: Text(item.$2),
@@ -1675,6 +1675,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   onSelected: statsTotalsLoading ? null : (_) {
                     setState(() {
                       statsPeriod = item.$1;
+                      statsDate = DateTime.now().toUtc();
                       statsTotals = null;
                     });
                     loadVerifiedTotals();
