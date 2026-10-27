@@ -46,6 +46,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool statsOnly = false;
   bool canGrantBag = false;
   bool statsTotalsLoading = false;
+  String statsPeriod = "all";
   Map<String, dynamic>? statsTotals;
   String? statsTotalsError;
   bool statsLoading = false;
@@ -1428,7 +1429,13 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       statsTotalsError = null;
     });
     try {
-      final payload = await post({'action': 'statsTotals'});
+      final now = DateTime.now().toUtc();
+      final date = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final payload = await post({
+        'action': 'statsTotals',
+        if (statsPeriod != 'all') 'period': statsPeriod,
+        if (statsPeriod != 'all') 'date': date,
+      });
       if (!mounted) return;
       setState(() {
         statsTotals = payload;
@@ -1654,6 +1661,27 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             const SizedBox(height: 8),
             const Text('إجماليات سجل الهدايا',
                 style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, children: [
+              for (final item in const [
+                ('all', 'كل الفترة'),
+                ('day', 'اليوم'),
+                ('month', 'الشهر الحالي'),
+              ])
+                ChoiceChip(
+                  label: Text(item.$2),
+                  selected: statsPeriod == item.$1,
+                  onSelected: statsTotalsLoading ? null : (_) {
+                    setState(() {
+                      statsPeriod = item.$1;
+                      statsTotals = null;
+                    });
+                    loadVerifiedTotals();
+                  },
+                ),
+            ]),
+            const Text('اليوم والشهر بالتوقيت العالمي (UTC).',
+                style: TextStyle(fontSize: 11)),
             const Text(
               'تشمل سجلات إرسال الهدايا المالية المحفوظة، وقد لا تتضمن هدايا قديمة من أنظمة سابقة.',
               style: TextStyle(fontSize: 11),
