@@ -2,17 +2,7 @@ import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacy
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
-
-const CATEGORIES = new Set([
-  "general",
-  "countries",
-  "celebrities",
-  "vip",
-  "lucky",
-  "activities",
-  "cp",
-  "friends",
-]);
+import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
 
 const EFFECT_MODES = new Set(["none", "seat", "cinematic"]);
 
@@ -125,7 +115,7 @@ async function publicGiftBag(db, uid) {
 function publicCatalog(config) {
   const raw = Array.isArray(config?.gifts) ? config.gifts : [];
   return raw
-    .filter((item) => item && item.enabled !== false)
+    .filter((item) => item && item.enabled !== false && giftCategoryEnabled(config, clean(item.category || 'general')))
     .map((item) => ({
       id: clean(item.id),
       nameAr: clean(item.nameAr),
@@ -167,12 +157,12 @@ function publicCatalog(config) {
       item.nameAr &&
       Number.isSafeInteger(item.priceCoins) &&
       item.priceCoins > 0 &&
-      CATEGORIES.has(item.category)
+      giftCategoryIdSet(config).has(item.category)
     )
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function validateGifts(raw) {
+function validateGifts(raw, categoryIds) {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > 100) {
     throw Error("invalid_gifts");
   }
@@ -219,8 +209,8 @@ function validateGifts(raw) {
     ) {
       throw Error("invalid_gift_price");
     }
-    if (!CATEGORIES.has(category)) throw Error("invalid_gift_category");
-    if (minVipLevel < 0) throw Error("invalid_gift_vip_level");
+    if (!categoryIds.has(category)) throw Error("invalid_gift_category");
+    if (minVipLevel < 0 || (category === "vip" && minVipLevel < 4)) throw Error("invalid_gift_vip_level");
     if (!/^[a-z0-9][a-z0-9._-]{2,119}$/.test(assetKey)) {
       throw Error("invalid_asset_key");
     }
@@ -333,6 +323,7 @@ export async function handler(req, res) {
       return out(res, 200, {
         ok: true,
         gifts: publicCatalog(state.config),
+        categories: giftCategoryDefinitions(state.config).filter((cat) => cat.enabled),
         bag,
         balance: Number.isSafeInteger(balance) ? balance : 0,
       });
@@ -352,23 +343,25 @@ export async function handler(req, res) {
     }
 
     if (action === "save") {
-      const gifts = validateGifts(req.body?.gifts);
       const expectedRevision = req.body?.expectedRevision;
       const auditRef = db.collection("admin_audit_logs").doc();
       let nextRevision = 0;
+      let savedGifts = [];
 
       await db.runTransaction(async (tx) => {
         // Read inside the same transaction to prevent competing admin saves
         // from silently overwriting prices, visibility or eligibility.
         const previous = await tx.get(ref);
         const priorConfig = previous.exists ? previous.data() : null;
+        const gifts = validateGifts(req.body?.gifts, giftCategoryIdSet(priorConfig));
         const transition = validateGiftCatalogUpdate(
           priorConfig, gifts, expectedRevision,
         );
+        savedGifts = gifts;
         nextRevision = transition.revision;
         tx.set(ref, {
           gifts,
-          categories: Array.from(CATEGORIES),
+          categories: Array.from(giftCategoryIdSet(priorConfig)),
           revision: transition.revision,
           updatedBy: uid,
           updatedAt: FieldValue.serverTimestamp(),
@@ -395,7 +388,54 @@ export async function handler(req, res) {
       });
 
       invalidateConfigCache("config:gift_catalog");
-      return out(res, 200, { ok: true, gifts, revision: nextRevision });
+      return out(res, 200, { ok: true, gifts: savedGifts, revision: nextRevision });
+    }
+
+    if (action === "saveCategories") {
+      const expectedRevision = req.body?.expectedRevision;
+      const auditRef = db.collection("admin_audit_logs").doc();
+      let savedCategories = [];
+      let nextRevision = 0;
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const previous = snap.exists ? snap.data() : null;
+        const version = Number(previous?.revision ?? 0);
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+          throw Error("invalid_catalog_revision");
+        }
+        if (expectedRevision !== version) throw Error("gift_catalog_conflict");
+        const definitions = validateGiftCategoryDefinitions(
+          req.body?.categories, previous,
+          Array.isArray(previous?.gifts) ? previous.gifts : [],
+        );
+        const before = giftCategoryDefinitions(previous);
+        savedCategories = definitions;
+        nextRevision = version + 1;
+        tx.set(ref, {
+          categoryDefinitions: definitions,
+          categories: definitions.map((category) => category.id),
+          revision: nextRevision,
+          updatedBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.create(auditRef, {
+          actorUid: uid,
+          action: "updateGiftCategories",
+          targetType: "system_config",
+          targetId: "gift_catalog",
+          revisionBefore: version,
+          revisionAfter: nextRevision,
+          before,
+          after: definitions,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
+      invalidateConfigCache("config:gift_catalog");
+      return out(res, 200, {
+        ok: true,
+        categories: savedCategories,
+        revision: nextRevision,
+      });
     }
 
     if (action === "grantBagGift") {
@@ -484,6 +524,12 @@ export async function handler(req, res) {
           : code === "gift_catalog_conflict"
             ? 409
             : [
+              "invalid_gift_categories",
+              "invalid_gift_category_id",
+              "invalid_gift_category_name",
+              "invalid_gift_category_asset",
+              "gift_category_missing",
+              "gift_category_in_use",
               "invalid_gifts",
               "invalid_catalog_revision",
               "gift_catalog_existing_id_missing",
