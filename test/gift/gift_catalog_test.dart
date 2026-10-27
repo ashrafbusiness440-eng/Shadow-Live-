@@ -83,6 +83,47 @@ void main() {
     ]), isEmpty);
   });
 
+  test('gift context and schedule apply at start/end boundaries', () {
+    final gift = GiftCatalogItem.fromMap({
+      'id': 'seasonal_chat',
+      'nameAr': 'هدية للمحادثة',
+      'priceCoins': 700,
+      'category': 'general',
+      'enabled': true,
+      'allowedContexts': ['chat'],
+      'visibleFromMs': 100000,
+      'visibleUntilMs': 200000,
+    });
+    expect(gift.isAvailableIn('chat',
+        at: DateTime.fromMillisecondsSinceEpoch(99999)), isFalse);
+    expect(gift.isAvailableIn('chat',
+        at: DateTime.fromMillisecondsSinceEpoch(100000)), isTrue);
+    expect(gift.isAvailableIn('chat',
+        at: DateTime.fromMillisecondsSinceEpoch(199999)), isTrue);
+    expect(gift.isAvailableIn('chat',
+        at: DateTime.fromMillisecondsSinceEpoch(200000)), isFalse);
+    expect(gift.isAvailableIn('room',
+        at: DateTime.fromMillisecondsSinceEpoch(150000)), isFalse);
+    expect(gift.isAvailableIn('diary',
+        at: DateTime.fromMillisecondsSinceEpoch(150000)), isFalse);
+    expect(gift.toMap()['allowedContexts'], ['chat']);
+    expect(gift.toMap()['visibleFromMs'], 100000);
+    expect(gift.toMap()['visibleUntilMs'], 200000);
+  });
+
+  test('legacy gift keeps default visibility in all supported contexts', () {
+    final gift = GiftCatalogItem.fromMap({
+      'id': 'rose',
+      'nameAr': 'وردة',
+      'priceCoins': 100,
+      'category': 'general',
+    });
+    expect(gift.allowedContexts, ['room', 'chat', 'diary']);
+    for (final context in ['room', 'chat', 'diary']) {
+      expect(gift.isAvailableIn(context), isTrue);
+    }
+  });
+
   test('default gift prices match approved starter table', () {
     expect(
       GiftCatalogService.fallbackGifts
