@@ -63,7 +63,7 @@ if(!response.ok){
     contentType:response.headers.get("content-type"),
     bodyBytes:rawFailure.length,
     bodyHead:rawFailure.slice(0,500)
-      .replace(/https?:\\/\\/\\S+/g,"[index_link]"),
+      .replace(/https?:\/\/\S+/g,"[index_link]"),
   }));
   const upstreamStatus=String(failure?.error?.status||"UNKNOWN")
     .replace(/[^A-Z_]/g,"").slice(0,80);
