@@ -10,6 +10,8 @@ import 'control_firebase.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 import '../features/gift/services/gift_catalog_service.dart';
+import '../features/room/widgets/cosmetic_effect_widgets.dart';
+import '../features/room/widgets/legendary_gift_visual.dart';
 import '../utils/compact_number.dart';
 
 class GiftCatalogControlPage extends StatefulWidget {
@@ -886,6 +888,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         value: 'cinematic',
                         child: Text('سينمائي فوق الغرفة'),
                       ),
+                      DropdownMenuItem(
+                        value: 'legendary',
+                        child: Text('أسطوري فاخر داخل الغرفة'),
+                      ),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -1099,6 +1105,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 final previewPrice = price.text.trim();
                 final previewAsset = assetKey.text.trim();
                 final previewMode = effectMode;
+                final previewEffect = effectAssetKey.text.trim();
+                final previewDuration = int.tryParse(effectDurationMs.text.trim()) ?? 4000;
+                final previewSize = int.tryParse(effectSize.text.trim()) ?? 0;
                 try {
                   await showDialog<void>(
                     context: dialogContext,
@@ -1134,13 +1143,46 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             Text('${previewPrice.isEmpty ? '—' : previewPrice} كوينز'),
                             const SizedBox(height: 8),
                             Text(previewMode == 'none'
-                              ? 'بدون مؤثر'
-                              : previewMode == 'seat' ? 'مؤثر خفيف على المايك'
-                              : 'مؤثر سينمائي داخل الغرفة'),
+                                ? 'بدون مؤثر'
+                                : previewMode == 'seat'
+                                    ? 'مؤثر خفيف على المايك'
+                                    : previewMode == 'legendary'
+                                        ? 'مؤثر أسطوري فاخر'
+                                        : 'مؤثر سينمائي داخل الغرفة'),
+                            if (previewMode != 'none') ...[
+                              const SizedBox(height: 6),
+                              const Text('معاينة مؤثر الهدية المتحرك',
+                                  style: TextStyle(fontSize: 12)),
+                              const SizedBox(height: 6),
+                              SizedBox(
+                                width: 280,
+                                height: 230,
+                                child: previewMode == 'legendary'
+                                    ? LegendaryGiftVisual(
+                                        key: ValueKey('gift-preview-$previewEffect'),
+                                        assetKey: previewEffect,
+                                        fallbackAssetKey: previewAsset,
+                                        durationMs: previewDuration,
+                                        size: previewSize,
+                                      )
+                                    : Center(
+                                        child: SizedBox(
+                                          width: previewMode == 'seat' ? 135 : 220,
+                                          height: previewMode == 'seat' ? 135 : 220,
+                                          child: CosmeticAssetVisual(
+                                            assetKey: previewEffect,
+                                            fallbackAssetKey: previewAsset,
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ],
                             const SizedBox(height: 8),
-                            const Text('هذه معاينة للصورة المنشورة والإعدادات، وليست اختبارًا لتشغيل المؤثر.',
+                            const Text(
+                              'هذه معاينة بصرية من نفس ملف الاستديو دون إرسال هدية أو خصم كوينز. الصوت لا يُشغّل هنا.',
                               textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 11)),
+                              style: TextStyle(fontSize: 11),
+                            ),
                           ],
                         ),
                       ),
@@ -1463,7 +1505,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         ...indices.map((i) => Card(child: ListTile(
           leading: const Icon(Icons.auto_awesome_outlined),
           title: Text(gifts[i].nameAr),
-          subtitle: Text(gifts[i].effectMode == 'seat' ? 'خفيف على المايك' : 'سينمائي داخل الغرفة'),
+          subtitle: Text(gifts[i].effectMode == 'seat' ? 'خفيف على المايك' : gifts[i].effectMode == 'legendary' ? 'أسطوري فاخر' : 'سينمائي داخل الغرفة'),
           trailing: const Icon(Icons.edit_outlined),
           onTap: saving ? null : () => editGift(i),
         ))),

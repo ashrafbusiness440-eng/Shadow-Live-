@@ -103,3 +103,29 @@ test("shared celebration feed accepts game and relationship level-up payloads", 
   assert.equal(relation.relationshipLevel, 4);
   assert.equal(relation.secondaryUid, "u2");
 });
+
+test("legendary gift effects reuse price-safe cinematic policy and obey quantity", () => {
+  const gift = {
+    id: "dragon",
+    effectMode: "legendary",
+    assetKey: "gifts.dragon.icon",
+    effectAssetKey: "gifts.dragon.effect",
+    effectSoundAssetKey: "gifts.dragon.sound",
+    effectMinQuantity: 3,
+    effectDurationMs: 4400,
+    effectSize: 340,
+    premiumBannerMinQuantity: 30,
+  };
+  assert.equal(giftVisualPolicy(gift, 2).roomEffect, null);
+  assert.deepEqual(giftVisualPolicy(gift, 3).roomEffect, {
+    mode: "legendary",
+    assetKey: "gifts.dragon.effect",
+    soundAssetKey: "gifts.dragon.sound",
+    size: 340,
+    durationMs: 4400,
+    minQuantity: 3,
+  });
+  assert.equal(giftVisualPolicy(gift, 3).premiumBanner, null);
+  assert.equal(giftVisualPolicy(gift, 30).premiumBanner.minQuantity, 30);
+  assert.equal(giftVisualPolicy({ ...gift, effectMode: "none" }, 100).roomEffect, null);
+});
