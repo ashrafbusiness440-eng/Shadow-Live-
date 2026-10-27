@@ -77,6 +77,28 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "gift_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "giftId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "quantity",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalCost",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paidCost",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
