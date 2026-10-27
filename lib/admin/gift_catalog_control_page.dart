@@ -43,6 +43,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
   List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
   GiftCatalogItem? pendingDraft;
+  bool statsOnly = false;
+  bool canGrantBag = false;
   bool statsLoading = false;
   bool statsLoaded = false;
   bool statsHasMore = false;
@@ -163,6 +165,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     });
     try {
       final body = await post({'action': 'state'});
+      final isStatsOnly = body['statsOnly'] == true;
       final config = body['config'];
       final raw = config is Map ? config['gifts'] : null;
       final loaded = raw is List
@@ -194,11 +197,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           ? (config['revision'] as num).toInt() : 0;
       if (!mounted) return;
       setState(() {
-        drafts = loadedDrafts;
+        statsOnly = isStatsOnly;
+        canGrantBag = body['canGrantBag'] == true;
+        if (isStatsOnly) selectedSection = 3;
+        drafts = isStatsOnly ? <GiftCatalogItem>[] : loadedDrafts;
         pendingDraft = null;
-        gifts = loaded.isEmpty
-            ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
-            : loaded;
+        gifts = isStatsOnly ? <GiftCatalogItem>[] :
+            loaded.isEmpty
+                ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
+                : loaded;
         loading = false;
         loadFailed = false;
         hasUnsavedChanges = false;
@@ -206,6 +213,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         categoryDefinitions = loadedCategories;
         catalogRevision = revision;
       });
+      if (isStatsOnly && mounted) {
+        await loadRecentStats(reset: true);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1451,6 +1461,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   }
 
   Widget sectionSelector() {
+    if (statsOnly) return const SizedBox.shrink();
     const labels = ['كل الهدايا', 'الفئات', 'المؤثرات', 'الإحصاءات'];
     const icons = [Icons.card_giftcard_outlined, Icons.category_outlined, Icons.auto_awesome_outlined, Icons.bar_chart_outlined];
     return Padding(
@@ -1806,7 +1817,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: statsOnly ? null : FloatingActionButton.extended(
         onPressed: loading || saving || loadFailed || selectedSection != 0 ? null : () => editGift(),
         icon: const Icon(Icons.add),
         label: const Text('إضافة هدية'),
@@ -1818,7 +1829,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               children: [
-                const Card(
+                if (!statsOnly) const Card(
                   child: ListTile(
                     leading: Icon(
                       Icons.card_giftcard_rounded,
@@ -1833,7 +1844,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     ),
                   ),
                 ),
-                Card(
+                if (!statsOnly && canGrantBag) Card(
                   child: ListTile(
                     leading: const Icon(
                       Icons.shopping_bag_rounded,
@@ -1864,17 +1875,23 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       subtitle: Text(error!),
                     ),
                   ),
-                if (hasUnsavedChanges || categoryUnsaved)
+                if (!statsOnly && (hasUnsavedChanges || categoryUnsaved))
                   const Card(child: ListTile(
                     leading: Icon(Icons.edit_note_rounded, color: Colors.amberAccent),
                     title: Text('هناك تغييرات لم تُحفظ بعد'),
                     subtitle: Text('اضغط «حفظ كتالوج الهدايا» لتطبيقها.'),
                   )),
+                if (statsOnly)
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.bar_chart_outlined),
+                    title: Text('إحصاءات الهدايا'),
+                    subtitle: Text('صلاحيتك تسمح بعرض التقرير فقط، دون تعديل الهدايا أو منح هدايا من الحقيبة.'),
+                  )),
                 sectionSelector(),
-                if (selectedSection == 1) categoryOverview(),
-                if (selectedSection == 2) effectsOverview(),
-                if (selectedSection == 3) statisticsOverview(),
-                if (selectedSection == 0) ...[
+                if (!statsOnly && selectedSection == 1) categoryOverview(),
+                if (!statsOnly && selectedSection == 2) effectsOverview(),
+                if (statsOnly || selectedSection == 3) statisticsOverview(),
+                if (!statsOnly && selectedSection == 0) ...[
                 draftsOverview(),
                 const SizedBox(height: 10),
                 catalogFilters(),
@@ -1916,6 +1933,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                           item.premiumBannerMinQuantity,
                                       affinityBasePoints:
                                           item.affinityBasePoints,
+                                      allowedContexts: item.allowedContexts,
+                                      visibleFromMs: item.visibleFromMs,
+                                      visibleUntilMs: item.visibleUntilMs,
                                     );
                                   });
                                 },
