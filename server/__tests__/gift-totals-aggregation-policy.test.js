@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   giftTotalsAggregationRequest,
   giftPeriodBounds,
+  giftCustomRangeBounds,
   parseGiftTotalsAggregationResponse,
 } from "../../cloudflare-worker/src/gift-totals-aggregation-policy.js";
 import { parseFirestoreAggregationRows } from "../../cloudflare-worker/src/firestore.js";
@@ -103,4 +104,32 @@ test("period totals apply indexed half-open timestamps without scanning document
       {fieldFilter:{field:{fieldPath:"createdAt"},op:"LESS_THAN",value:{timestampValue:"2026-11-01T00:00:00.000Z"}}},
     ]},
   });
+});
+
+test("custom gift totals date range is inclusive and capped to 31 days", () => {
+  const now = new Date("2026-10-27T20:00:00Z");
+  assert.deepEqual(giftCustomRangeBounds("2026-10-01", "2026-10-27", now), {
+    start: "2026-10-01T00:00:00.000Z",
+    end: "2026-10-28T00:00:00.000Z",
+  });
+  assert.deepEqual(giftCustomRangeBounds("2026-02-28", "2026-03-01", now), {
+    start: "2026-02-28T00:00:00.000Z",
+    end: "2026-03-02T00:00:00.000Z",
+  });
+  for (const [start, end] of [
+    ["2026-10-20","2026-10-19"], ["2026-09-01","2026-10-27"],
+    ["2027-01-01","2027-01-01"], ["2026-02-30","2026-03-01"],
+    ["2024-05-01","2024-05-03"], ["2026-10-27","2026-10-28"],
+  ]) assert.throws(() => giftCustomRangeBounds(start, end, now));
+});
+
+test("custom period reuses permission-checked, cached, read-only receipt totals", () => {
+  const source = readFileSync(new URL("../../cloudflare-worker/src/legacy-economy/gift-catalog.js", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf('if (action === "statsTotals")'), source.indexOf('if (action === "statsRecent")'));
+  assert.match(handler, /giftCustomRangeBounds\(startDate, endDate\)/);
+  assert.match(handler, /readGiftTransactionTotals\(bounds\)/);
+  assert.match(handler, /ttlMs: 5 \* 60_000/);
+  assert.doesNotMatch(handler, /collection\("gift_transactions"\)\.get\(/);
+  const request = giftTotalsAggregationRequest(giftCustomRangeBounds("2026-10-03","2026-10-04",new Date("2026-10-27T20:00:00Z")));
+  assert.equal(request.structuredAggregationQuery.structuredQuery.where.compositeFilter.filters.length, 2);
 });
