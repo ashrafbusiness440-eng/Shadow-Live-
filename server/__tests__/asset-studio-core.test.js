@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   ASSET_STUDIO_CHANNELS,
   ASSET_STUDIO_TEMPLATES,
+  canonicalTemplateIdForAssetIdentity,
   validateAssetStudioMetadata,
 } from "../../cloudflare-worker/src/asset-studio-templates.js";
 
@@ -320,13 +321,75 @@ test("level profile frames use the frame template and stay searchable as frames"
   assert.equal(frame.directories.includes("assets/images/levels"), true);
 
   const worker = source("cloudflare-worker/src/manage-app-asset.js");
+  const definitions = source("cloudflare-worker/src/asset-studio-templates.js");
   const control = source("lib/admin/control_asset_manager_page.dart");
   assert.equal(worker.includes("assetStudioEffectiveType"), true);
-  assert.equal(worker.includes(".profileframe"), true);
-  assert.equal(worker.includes("_profile_frame."), true);
+  assert.equal(definitions.includes(".profileframe"), true);
+  assert.equal(definitions.includes("_profile_frame."), true);
   assert.equal(control.includes("_effectiveAssetType"), true);
   assert.equal(control.includes("'frame.base.v1'"), true);
   assert.equal(control.includes("preferredTemplateId"), true);
+});
+
+test("vehicles, entrance effects, and frames preserve animated WebP and GIF across asset families", () => {
+  const templates = new Map(ASSET_STUDIO_TEMPLATES.map((item) => [item.id, item]));
+  for (const id of ["vehicle.base.v1", "entrance.base.v1", "frame.base.v1"]) {
+    const template = templates.get(id);
+    assert.ok(template, id);
+    assert.equal(template.motion, "static_or_animated");
+    assert.equal(template.transparency, "required");
+    assert.ok(template.extensions.includes("webp"));
+    assert.ok(template.extensions.includes("gif"));
+    assert.ok(template.directories.includes("assets/images/vip"));
+    assert.ok(template.directories.includes("assets/images/store"));
+  }
+  assert.ok(templates.get("vehicle.base.v1").directories.includes("assets/images/levels"));
+  assert.ok(templates.get("entrance.base.v1").directories.includes("assets/images/levels"));
+  assert.equal(templates.get("badge.base.v1").motion, "static");
+
+  for (const { assetKey, directory, fileName } of [
+    { assetKey: "levels.wealth.lv21_25.vehicle", directory: "assets/images/levels/wealth/lv21_25", fileName: "wealth_lv21_25_vehicle.webp" },
+    { assetKey: "levels.wealth.lv26_30.vehicle", directory: "assets/images/levels/wealth/lv26_30", fileName: "wealth_lv26_30_vehicle.webp" },
+    { assetKey: "levels.wealth.lv31_35.vehicle", directory: "assets/images/levels/wealth/lv31_35", fileName: "wealth_lv31_35_vehicle.gif" },
+    { assetKey: "store.royal.vehicle", directory: "assets/images/store", fileName: "royal_vehicle.webp" },
+    { assetKey: "vip.v8.vehicle", directory: "assets/images/vip", fileName: "vip_vehicle.webp" },
+  ]) {
+    // Legacy assets can have stale badge template metadata. No new asset key is needed.
+    const result = validateAssetStudioMetadata({
+      studioVersion: 1,
+      assetKey,
+      assetType: "badge",
+      templateId: "badge.base.v1",
+      channels: ["system"],
+      directory,
+      fileName,
+      byteSize: 2499999,
+    });
+    assert.equal(result.ok, true, assetKey);
+    assert.equal(result.template.id, "vehicle.base.v1", assetKey);
+    assert.equal(result.template.type, "vehicle", assetKey);
+  }
+
+  assert.equal(canonicalTemplateIdForAssetIdentity({assetKey: "mysterious.vehicle", fileName:"mysterious_vehicle.webp", directory:"assets/images/mysterious"}), "");
+  assert.equal(validateAssetStudioMetadata({
+    studioVersion: 1,
+    assetKey: "mysterious.vehicle",
+    assetType: "system_cosmetic",
+    templateId: "mysterious.vehicle.v1",
+    channels: ["system"],
+    directory: "assets/images/mysterious",
+    fileName: "mysterious_vehicle.webp",
+    byteSize: 2400000,
+  }).template?.id, "mysterious.vehicle.v1");
+
+  const manager = source("lib/admin/control_asset_manager_page.dart");
+  const worker = source("cloudflare-worker/src/manage-app-asset.js");
+  assert.ok(manager.includes("_canonicalTemplateIdForAsset(asset) ?? templateId"));
+  assert.ok(manager.includes("'vehicle.base.v1'"));
+  assert.ok(manager.includes("_preparedAnimated = true"));
+  assert.ok(manager.includes("_bytes = sourceBytes"));
+  assert.ok(manager.includes("template.motion == 'static' && _preparedAnimated"));
+  assert.ok(worker.includes("canonicalTemplateIdForAssetIdentity"));
 });
 
 test("login header is a first-class Asset Studio surface with bundled fallback", () => {
