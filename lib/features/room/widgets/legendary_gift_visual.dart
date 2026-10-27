@@ -15,7 +15,6 @@ class LegendaryGiftVisual extends StatefulWidget {
     this.imageUrl = '',
     this.durationMs = 4000,
     this.size = 0,
-    this.preview = false,
   });
 
   final String assetKey;
@@ -23,7 +22,6 @@ class LegendaryGiftVisual extends StatefulWidget {
   final String imageUrl;
   final int durationMs;
   final int size;
-  final bool preview;
 
   @override
   State<LegendaryGiftVisual> createState() => _LegendaryGiftVisualState();
@@ -84,7 +82,7 @@ class _LegendaryGiftVisualState extends State<LegendaryGiftVisual>
     return LayoutBuilder(builder: (context, limits) {
       final available = limits.maxWidth.isFinite ? limits.maxWidth : 360.0;
       final wanted = widget.size <= 0 ? available * .80 : widget.size.toDouble();
-      final width = math.min(available, wanted.clamp(140.0, 420.0));
+      final width = math.min(available, wanted.clamp(140.0, 420.0)).toDouble();
       final visual = RepaintBoundary(
         child: SizedBox(
           width: width,
@@ -127,8 +125,8 @@ class _LegendaryGiftVisualState extends State<LegendaryGiftVisual>
           final progress = _controller.value;
           // One finite entrance / exit. The uploaded Animated WebP/GIF
           // supplies detailed movement; no second expensive particle loop.
-          final appear = (progress / .17).clamp(0.0, 1.0);
-          final disappear = ((1 - progress) / .18).clamp(0.0, 1.0);
+          final appear = (progress / .17).clamp(0.0, 1.0).toDouble();
+          final disappear = ((1 - progress) / .18).clamp(0.0, 1.0).toDouble();
           final alpha = math.min(appear, disappear);
           final ease = Curves.easeOutCubic.transform(appear);
           final scale = .86 + .14 * ease;
