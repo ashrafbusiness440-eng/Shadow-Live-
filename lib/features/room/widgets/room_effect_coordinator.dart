@@ -602,7 +602,7 @@ class _AnimatedVehicleEntranceState extends State<_AnimatedVehicleEntrance>
                     ? ((1 - progress) / .12).clamp(0.0, 1.0)
                     : 1.0;
             return Opacity(
-              opacity: opacity,
+              opacity: opacity.toDouble(),
               child: Transform.translate(
                 // The vehicle enters from the left and exits to the right,
                 // leaving all room controls working below the visual overlay.
