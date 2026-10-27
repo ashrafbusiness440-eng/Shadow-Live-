@@ -10,7 +10,7 @@ const headers={authorization:"Bearer "+token};
 const group="gift_transactions";
 const parent="projects/"+projectId+"/databases/(default)/collectionGroups/"+group;
 const root="https://firestore.googleapis.com/v1/projects/"+encodeURIComponent(projectId)+"/databases/(default)";
-const expected=["giftId","quantity","totalCost","paidCost"];
+const expected=["giftId","paidCost","quantity","totalCost"];
 const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
 function suggestedIndexFields(rawBody){
   try{
