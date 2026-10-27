@@ -56,7 +56,15 @@ const response=await fetch(root+"/documents:runAggregationQuery",{
 });
 if(!response.ok){
   const code=response.status;
-  const failure=await response.json().catch(()=>({}));
+  const rawFailure=await response.text();
+  let failure={};
+  try{failure=JSON.parse(rawFailure);}catch{}
+  console.error("Aggregate error content:",JSON.stringify({
+    contentType:response.headers.get("content-type"),
+    bodyBytes:rawFailure.length,
+    bodyHead:rawFailure.slice(0,500)
+      .replace(/https?:\\/\\/\\S+/g,"[index_link]"),
+  }));
   const upstreamStatus=String(failure?.error?.status||"UNKNOWN")
     .replace(/[^A-Z_]/g,"").slice(0,80);
   const upstreamMessage=String(failure?.error?.message||"")
@@ -83,6 +91,24 @@ if(!response.ok){
     message:String(diagnosisBody?.error?.message||"")
       .replace(/https?:\/\/\S+/g,"[index_link]").slice(0,300),
   }));
+  for(const field of ["quantity","totalCost","paidCost"]){
+    const single={structuredAggregationQuery:{
+      structuredQuery:giftTotalsAggregationRequest(null,probeId).structuredAggregationQuery.structuredQuery,
+      aggregations:[
+        {alias:"receipts",count:{}},
+        {alias:"single",sum:{field:{fieldPath:field}}},
+      ],
+    }};
+    const check=await fetch(root+"/documents:runAggregationQuery",{
+      method:"POST",headers:{...headers,"content-type":"application/json"},
+      body:JSON.stringify(single),
+    });
+    const checkText=await check.text();
+    console.error("SUM field diagnosis:",JSON.stringify({
+      field,httpCode:check.status,
+      bodyHead:check.ok?"":checkText.slice(0,300),
+    }));
+  }
   throw Error("gift_ranking_index_aggregation_http_"+code);
 }
 const rawResult=await response.text();
