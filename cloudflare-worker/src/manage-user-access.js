@@ -69,6 +69,8 @@ const ALLOWED_CAPABILITIES = new Set([
   "manageStore",
   "manageGames",
   "manageEconomy",
+  "manageGiftCatalog",
+  "viewGiftStats",
   "adjustBalances",
   "manageWithdrawals",
   "manageSettlements",
