@@ -34,7 +34,7 @@ jobs:
         run: |
           find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Verify safe Gift Catalog revisions and preserved gift history
-        run: node --test server/__tests__/gift-catalog-update-policy.test.js server/__tests__/gift-category-policy.test.js server/__tests__/gift-draft-policy.test.js
+        run: node --test server/__tests__/gift-catalog-update-policy.test.js server/__tests__/gift-category-policy.test.js server/__tests__/gift-draft-policy.test.js server/__tests__/gift-availability-policy.test.js
       - name: Verify suggested people privacy and follow filters
         run: node --test server/__tests__/home-discovery-people-privacy.test.js
       - name: Validate Cloudflare Durable Object bundle
