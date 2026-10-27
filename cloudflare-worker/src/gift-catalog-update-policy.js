@@ -6,7 +6,7 @@ const auditedFields = [
   "minVipLevel", "sortOrder", "assetKey", "effectAssetKey",
   "effectMode", "effectMinQuantity", "effectDurationMs",
   "effectSize", "effectSoundAssetKey", "premiumBannerMinQuantity",
-  "affinityBasePoints",
+  "affinityBasePoints", "allowedContexts", "visibleFromMs", "visibleUntilMs",
 ];
 
 export function validateGiftCatalogUpdate(previousConfig, nextGifts, expectedRevision) {
@@ -42,7 +42,10 @@ export function validateGiftCatalogUpdate(previousConfig, nextGifts, expectedRev
     for (const field of auditedFields) {
       const before = oldGift?.[field] ?? null;
       const after = gift[field] ?? null;
-      if (before !== after) modified[field] = { before, after };
+      const same = Array.isArray(before) && Array.isArray(after)
+        ? before.length === after.length && before.every((value, i) => value === after[i])
+        : before === after;
+      if (!same) modified[field] = { before, after };
     }
     if (Object.keys(modified).length > 0) {
       changes.push({ giftId: gift.id, fields: modified });

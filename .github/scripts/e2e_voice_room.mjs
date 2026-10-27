@@ -3,7 +3,12 @@ import fs from 'node:fs';
 
 fs.mkdirSync('room-e2e-screenshots', { recursive: true });
 
-const browser = await chromium.launch({ headless: true });
+// CI runners already ship Google Chrome; avoid remote Chromium downloads.
+// Local development keeps the Playwright-managed browser as before.
+const browser = await chromium.launch({
+  headless: true,
+  channel: process.env.GITHUB_ACTIONS === 'true' ? 'chrome' : undefined,
+});
 const page = await browser.newPage({
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 1,

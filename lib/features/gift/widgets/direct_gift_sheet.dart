@@ -253,6 +253,7 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
   @override
   Widget build(BuildContext context) {
     return UnifiedGiftPickerSheet(
+      giftContext: widget.diaryId == null ? 'chat' : 'diary',
       title: widget.diaryId == null
           ? 'إرسال هدية إلى ${widget.receiverName}'
           : 'هدية ليوميات ${widget.receiverName}',

@@ -1,5 +1,6 @@
 import { json, readJson } from "./http.js";
 import { giftCategoryEnabled } from "./gift-category-policy.js";
+import { giftAvailableFor } from "./gift-availability-policy.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
@@ -750,6 +751,9 @@ export async function sendGift(db, uid, body, options = {}) {
       throw new ApiError("gift_inactive", 409);
     }
 
+    if (!giftAvailableFor(giftData, contextType, now.getTime())) {
+      throw new ApiError("gift_inactive", 409);
+    }
     let relationshipGiftContext = null;
     try {
       relationshipGiftContext = await prepareRelationshipGiftContext(

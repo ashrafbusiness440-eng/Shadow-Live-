@@ -56,3 +56,22 @@ test("new gifts may be added without deleting existing history", () => {
   assert.equal(value.revision, 1);
   assert.equal(value.changes[0].giftId, "coffee");
 });
+
+test("gift schedule and placement changes are audited, without false array diffs", () => {
+  const old = { ...gift("rose"), allowedContexts: ["room", "chat"], visibleFromMs: 0, visibleUntilMs: 0 };
+  const changed = { ...old, allowedContexts: ["chat"], visibleFromMs: 1000, visibleUntilMs: 2000 };
+  const diff = validateGiftCatalogUpdate({ revision: 3, gifts: [old] }, [changed], 3).changes;
+  assert.deepEqual(diff, [{
+    giftId: "rose",
+    fields: {
+      allowedContexts: { before: ["room", "chat"], after: ["chat"] },
+      visibleFromMs: { before: 0, after: 1000 },
+      visibleUntilMs: { before: 0, after: 2000 },
+    },
+  }]);
+  assert.deepEqual(
+    validateGiftCatalogUpdate({ revision: 3, gifts: [old] },
+      [{ ...old, allowedContexts: ["room", "chat"] }], 3).changes,
+    [],
+  );
+});

@@ -2,6 +2,7 @@ import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacy
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
+import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
 import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
 
@@ -116,7 +117,7 @@ async function publicGiftBag(db, uid) {
 function publicCatalog(config) {
   const raw = Array.isArray(config?.gifts) ? config.gifts : [];
   return raw
-    .filter((item) => item && item.enabled !== false && giftCategoryEnabled(config, clean(item.category || 'general')))
+    .filter((item) => item && giftAvailableFor(item) && giftCategoryEnabled(config, clean(item.category || 'general')))
     .map((item) => ({
       id: clean(item.id),
       nameAr: clean(item.nameAr),
@@ -152,6 +153,9 @@ function publicCatalog(config) {
         Number(item.premiumBannerMinQuantity || 0),
       ),
       affinityBasePoints: Math.max(0, Number(item.affinityBasePoints || 0)),
+      allowedContexts: validateGiftAvailability(item).allowedContexts,
+      visibleFromMs: Number(item.visibleFromMs ?? 0),
+      visibleUntilMs: Number(item.visibleUntilMs ?? 0),
     }))
     .filter((item) =>
       item.id &&
@@ -197,6 +201,7 @@ function validateGifts(raw, categoryIds) {
     );
     const affinityBasePoints = Number(item?.affinityBasePoints || 0);
     const relationshipGift = category === "cp" || category === "friends";
+    const availability = validateGiftAvailability(item);
 
     if (!/^[a-z0-9_]{2,64}$/.test(id)) throw Error("invalid_gift_id");
     if (ids.has(id)) throw Error("duplicate_gift_id");
@@ -295,6 +300,7 @@ function validateGifts(raw, categoryIds) {
       effectSize,
       premiumBannerMinQuantity,
       affinityBasePoints,
+      ...availability,
     };
   });
 }
@@ -638,6 +644,8 @@ export async function handler(req, res) {
               "gift_draft_already_published",
               "gift_draft_not_found",
               "gift_draft_limit",
+              "invalid_gift_contexts",
+              "invalid_gift_schedule",
               "invalid_gifts",
               "invalid_catalog_revision",
               "gift_catalog_existing_id_missing",

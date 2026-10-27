@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: shadow-live-flutter-ci-${{ github.ref }}
+  group: shadow-live-flutter-ci-headless-v2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
         run: |
           find cloudflare-worker/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Verify safe Gift Catalog revisions and preserved gift history
-        run: node --test server/__tests__/gift-catalog-update-policy.test.js server/__tests__/gift-category-policy.test.js server/__tests__/gift-draft-policy.test.js
+        run: node --test server/__tests__/gift-catalog-update-policy.test.js server/__tests__/gift-category-policy.test.js server/__tests__/gift-draft-policy.test.js server/__tests__/gift-availability-policy.test.js
       - name: Verify suggested people privacy and follow filters
         run: node --test server/__tests__/home-discovery-people-privacy.test.js
       - name: Validate Cloudflare Durable Object bundle
@@ -223,10 +223,12 @@ jobs:
           done
           cat /tmp/shadow-e2e-server.log
           exit 1
-      - name: Install Playwright Chromium
+      - name: Use runner Chrome with pinned Playwright
+        timeout-minutes: 5
         run: |
-          npm install --no-save playwright@latest
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          command -v google-chrome
+          google-chrome --version
       - name: Run main-tab browser E2E
         run: node .github/scripts/e2e_tabs.mjs
       - name: Upload E2E screenshots
@@ -264,10 +266,12 @@ jobs:
           done
           cat /tmp/shadow-room-e2e-server.log
           exit 1
-      - name: Install Playwright Chromium
+      - name: Use runner Chrome with pinned Playwright
+        timeout-minutes: 5
         run: |
-          npm install --no-save playwright@latest
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          command -v google-chrome
+          google-chrome --version
       - name: Run voice-room browser E2E
         run: node .github/scripts/e2e_voice_room.mjs
       - name: Upload voice-room E2E screenshot
@@ -317,10 +321,12 @@ jobs:
           done
           cat /tmp/shadow-control-e2e-server.log
           exit 1
-      - name: Install Playwright Chromium
+      - name: Use runner Chrome with pinned Playwright
+        timeout-minutes: 5
         run: |
-          npm install --no-save playwright@latest
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          command -v google-chrome
+          google-chrome --version
       - name: Run Shadow Control browser E2E
         run: node .github/scripts/e2e_control_rooms.mjs
       - name: Upload Shadow Control E2E screenshot

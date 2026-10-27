@@ -502,7 +502,15 @@ def main() -> int:
     if "fetchAuthStateResponse" not in auth:
         failures.append("Step 9 borrowed regression: auth-state path bypasses retry/backoff helper")
 
-    if "group: shadow-live-flutter-ci-${{ github.ref }}" not in flutter_ci:
+    # Both names retain isolation by github.ref and cancel duplicate runs;
+    # the second identifies the bounded headless Chromium browser install.
+    allowed_flutter_groups = (
+        "group: shadow-live-flutter-ci-${{ github.ref }}",
+        "group: shadow-live-flutter-ci-headless-v2-${{ github.ref }}",
+    )
+    if not any(group in flutter_ci for group in allowed_flutter_groups) or (
+        "cancel-in-progress: true" not in flutter_ci
+    ):
         failures.append("Step 9 borrowed regression: Flutter CI concurrency is not isolated per ref")
 
     standalone_production_workflows = (
