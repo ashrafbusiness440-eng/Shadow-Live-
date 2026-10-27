@@ -4,7 +4,7 @@
 export const GIFT_RANK_PAGE_LIMIT = 6;
 export const GIFT_RANK_CATALOG_LIMIT = 100;
 
-export function catalogGiftRankingPage(config, offset, expectedRevision = null) {
+export function catalogGiftRankingPage(config, offset, expectedRevision = null, includeHidden = false) {
   const raw = Array.isArray(config?.gifts) ? config.gifts : [];
   const revision = Number(config?.revision ?? 0);
   if (!Number.isSafeInteger(revision) || revision < 0 ||
@@ -19,7 +19,7 @@ export function catalogGiftRankingPage(config, offset, expectedRevision = null) 
   if (expectedRevision != null && expectedRevision !== revision) {
     throw Error("gift_catalog_conflict");
   }
-  const gifts = raw.map((gift) => ({
+  const gifts = raw.filter((gift) => includeHidden || gift?.enabled !== false).map((gift) => ({
     giftId: String(gift?.id ?? ""),
     giftName: String(gift?.nameAr || "هدية").slice(0, 80),
   }));
