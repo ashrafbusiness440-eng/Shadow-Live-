@@ -69,6 +69,34 @@ void main() {
     }
   });
 
+  test('legendary gifts reuse bounded cinematic queue and deduplicate events', () {
+    final coordinator = RoomEffectCoordinator();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final raw = <String, dynamic>{
+      'giftEffectEventId': 'legendary-burst-1',
+      'giftEffectMode': 'legendary',
+      'giftEffectAssetKey': 'gifts.dragon.effect',
+      'assetKey': 'gifts.dragon.icon',
+      'giftEffectDurationMs': 4400,
+      'giftEffectSize': 340,
+      'createdAtMs': now,
+    };
+    try {
+      coordinator.ingestGiftMessage(raw);
+      final playing = coordinator.currentCinematic;
+      expect(playing?.eventId, 'legendary-burst-1');
+      expect(playing?.mode, 'legendary');
+      expect(playing?.kind, 'gift');
+      expect(playing?.fallbackAssetKey, 'gifts.dragon.icon');
+      expect(playing?.durationMs, 4400);
+      coordinator.ingestGiftMessage(raw);
+      expect(coordinator.currentCinematic?.eventId, 'legendary-burst-1');
+      expect(RoomEffectCoordinator.maxCinematicQueue, 8);
+    } finally {
+      coordinator.dispose();
+    }
+  });
+
   test('vehicle events reuse bounded cinematic entrance queue', () {
     final coordinator = RoomEffectCoordinator();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
