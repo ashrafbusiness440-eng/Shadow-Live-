@@ -25,7 +25,7 @@ export function giftPeriodBounds(period, date, now = new Date()) {
 // A custom inclusive UTC date range, capped to 31 days. No unrestricted history scans.
 export function giftCustomRangeBounds(firstDate, lastDate, now = new Date()) {
   function validDay(value) {
-    if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+    if (typeof value !== "string" || /^\d{4}-\d{2}-\d{2}$/.test(value) === false) {
       throw Error("invalid_gift_report_date");
     }
     const day = new Date(value + "T00:00:00.000Z");
