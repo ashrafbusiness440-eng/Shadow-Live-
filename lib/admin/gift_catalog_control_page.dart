@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_asset_manager_page.dart';
 import 'control_firebase.dart';
+import '../core/assets/shadow_asset_registry.dart';
 
 import '../features/gift/services/gift_catalog_service.dart';
 import '../utils/compact_number.dart';
@@ -26,6 +27,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool editing = false;
   bool hasUnsavedChanges = false;
   int catalogRevision = 0;
+  int visibleLimit = 20;
   int selectedSection = 0;
   String query = '';
   String categoryFilter = 'all';
@@ -814,6 +816,34 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     return indexes;
   }
 
+  Widget giftThumbnail(GiftCatalogItem gift) {
+    final fallback = Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFF261A45),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFFD54A)),
+    );
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(gift.assetKey),
+        builder: (_, snapshot) {
+          final url = snapshot.data;
+          if (url == null) return fallback;
+          return Image.network(
+            url.toString(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => fallback,
+          );
+        },
+      ),
+    );
+  }
+
   Widget sectionSelector() {
     const labels = ['كل الهدايا', 'الفئات', 'المؤثرات', 'الإحصاءات'];
     const icons = [Icons.card_giftcard_outlined, Icons.category_outlined, Icons.auto_awesome_outlined, Icons.bar_chart_outlined];
@@ -1019,10 +1049,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         Icons.info_outline,
                         color: Colors.orangeAccent,
                       ),
-                      title: const Text('تم تحميل القيم الافتراضية'),
+                      title: const Text('تعذر تحميل الهدايا المحفوظة'),
                       subtitle: Text(error!),
                     ),
                   ),
+                if (hasUnsavedChanges)
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.edit_note_rounded, color: Colors.amberAccent),
+                    title: Text('هناك تغييرات لم تُحفظ بعد'),
+                    subtitle: Text('اضغط «حفظ كتالوج الهدايا» لتطبيقها.'),
+                  )),
                 sectionSelector(),
                 if (selectedSection == 1) categoryOverview(),
                 if (selectedSection == 2) effectsOverview(),
@@ -1030,7 +1066,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 if (selectedSection == 0) ...[
                 const SizedBox(height: 10),
                 catalogFilters(),
-                ...visibleIndices.map((index) {
+                ...visibleIndices.take(visibleLimit).map((index) {
                   final item = gifts[index];
                   return Card(
                     child: Padding(
@@ -1073,13 +1109,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                 },
                               ),
                               const SizedBox(width: 8),
-                              const CircleAvatar(
-                                backgroundColor: Color(0xFF261A45),
-                                child: Icon(
-                                  Icons.card_giftcard_rounded,
-                                  color: Color(0xFFFFD54A),
-                                ),
-                              ),
+                              giftThumbnail(item),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -1110,18 +1140,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                         '+'
                                     : ''),
                           ),
-                          Directionality(
-                            textDirection: TextDirection.ltr,
-                            child: Text(
-                              'Asset: ' + item.assetKey,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFAAA3B8),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
+
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 2,
@@ -1167,6 +1186,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     ),
                   );
                 }),
+                if (visibleIndices.length > visibleLimit)
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() => visibleLimit += 20),
+                    icon: const Icon(Icons.expand_more_rounded),
+                    label: Text('عرض المزيد (${visibleIndices.length - visibleLimit} متبقية)'),
+                  ),
                 ],
                 if (selectedSection == 0) const SizedBox(height: 14),
                 if (selectedSection == 0) FilledButton.icon(
