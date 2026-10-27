@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
+import 'control_asset_manager_page.dart';
 import 'control_firebase.dart';
 
 import '../features/gift/services/gift_catalog_service.dart';
@@ -388,8 +389,29 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   const SizedBox(height: 10),
                   field(
                     assetKey,
-                    'مفتاح الأصل',
-                    'gifts.placeholder.default',
+                    'مفتاح صورة الهدية الثابتة (Asset Key)',
+                    'gifts.rose.icon',
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(dialogContext).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ControlAssetManagerPage(
+                            initialSearch: assetKey.text.trim(),
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.image_outlined, size: 18),
+                      label: const Text('استديو صورة الهدية'),
+                    ),
+                  ),
+                  const Text(
+                    'من استديو الأصول اختر «هدية — صورة ثابتة في قائمة الإرسال» '
+                    'وارفع WebP أو PNG بخلفية شفافة؛ حافظ على نفس المفتاح '
+                    'عند الاستبدال. لا نعرض الفيديو داخل شبكة الهدايا.',
+                    style: TextStyle(fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 10),
                   field(
@@ -402,7 +424,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     value: isAnimated,
                     onChanged: (value) =>
                         setLocal(() => isAnimated = value),
-                    title: const Text('الأصل متحرك'),
+                    title: const Text('علامة الحركة القديمة في الكتالوج'),
+                    subtitle: const Text(
+                      'الصور الجديدة لقائمة الهدايا ثابتة؛ ملف الحركة مستقل '
+                      'في الحقل التالي.',
+                      style: TextStyle(fontSize: 10),
+                    ),
                     contentPadding: EdgeInsets.zero,
                   ),
                   const SizedBox(height: 4),
@@ -435,8 +462,29 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   const SizedBox(height: 10),
                   field(
                     effectAssetKey,
-                    'مفتاح أصل المؤثر',
-                    'gifts.effect.example',
+                    'مفتاح مؤثر الهدية المتحرك (مستقل عن الصورة)',
+                    'gifts.rose.effect',
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(dialogContext).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ControlAssetManagerPage(
+                            initialSearch: effectAssetKey.text.trim(),
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.animation_outlined, size: 18),
+                      label: const Text('استديو مؤثر الهدية'),
+                    ),
+                  ),
+                  const Text(
+                    'اختر «هدية — مؤثر متحرك عند الإرسال» وارفع Animated WebP '
+                    'أو GIF شفاف. المؤثر يبقى منفصلًا عن صورة الكتالوج؛ '
+                    'التحكم بالحجم والمدة والحد الأدنى للكمية من هنا.',
+                    style: TextStyle(fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 10),
                   field(
