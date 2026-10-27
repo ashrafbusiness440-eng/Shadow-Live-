@@ -1851,7 +1851,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               leading: Icon(Icons.leaderboard_outlined),
               title: Text('ترتيب الهدايا حسب العدد والقيمة'),
               subtitle: Text(
-                'حسابات دقيقة لهدايا الكتالوج المحفوظة، بما فيها المخفية. لا يشمل هدايا قديمة خارج الكتالوج.',
+                'حسابات دقيقة من سجل الإرسال لهدايا الكتالوج. تظهر المخفية للمسؤول المخوّل فقط. قد توجد هدايا قديمة خارج الكتالوج.',
               ),
             ),
             if (giftRankingRows.isNotEmpty)
@@ -1868,6 +1868,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               ),
             if (giftRankingLoading) const LinearProgressIndicator(),
             if (giftRankingCompleted) ...[
+              const Text('أفضل 20 هدية من الكتالوج المحسوب. تتجدد النتائج خلال نحو 15 دقيقة، وليست لقطة لحظية موحّدة.',
+                style: TextStyle(fontSize: 12)),
               Wrap(spacing: 8, children: [
                 ChoiceChip(
                   label: const Text('الأكثر عدداً'),
