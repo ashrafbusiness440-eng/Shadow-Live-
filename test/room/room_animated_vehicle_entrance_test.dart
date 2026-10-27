@@ -41,6 +41,34 @@ void main() {
     );
   });
 
+  test('gift cinematic overlay carries its distinct static image fallback', () {
+    final coordinator = RoomEffectCoordinator();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final message = <String, dynamic>{
+      'giftEffectEventId': 'gift-dragon-42',
+      'giftEffectMode': 'cinematic',
+      'giftEffectAssetKey': 'gifts.dragon.effect',
+      'assetKey': 'gifts.dragon.icon',
+      'giftEffectDurationMs': 4800,
+      'giftEffectSize': 360,
+      'giftEffectRecipientUids': ['one', 'two', 'three'],
+      'createdAtMs': now,
+    };
+    try {
+      coordinator.ingestGiftMessage(message);
+      final gift = coordinator.currentCinematic;
+      expect(gift?.kind, 'gift');
+      expect(gift?.assetKey, 'gifts.dragon.effect');
+      expect(gift?.fallbackAssetKey, 'gifts.dragon.icon');
+      expect(gift?.recipientUids, ['one', 'two', 'three']);
+      expect(gift?.durationMs, 4800);
+      coordinator.ingestGiftMessage(message);
+      expect(coordinator.currentCinematic?.eventId, 'gift-dragon-42');
+    } finally {
+      coordinator.dispose();
+    }
+  });
+
   test('vehicle events reuse bounded cinematic entrance queue', () {
     final coordinator = RoomEffectCoordinator();
     final nowMs = DateTime.now().millisecondsSinceEpoch;

@@ -14,6 +14,8 @@ export const ASSET_STUDIO_CHANNELS = Object.freeze([
 
 const COMMON_IMAGE_EXTS = Object.freeze(["webp", "png", "jpg", "jpeg", "gif"]);
 const ALPHA_IMAGE_EXTS = Object.freeze(["webp", "png", "gif"]);
+const GIFT_ICON_EXTS = Object.freeze(["webp", "png"]);
+const GIFT_ANIMATION_EXTS = Object.freeze(["webp", "gif"]);
 
 function template({
   id,
@@ -169,6 +171,28 @@ export const ASSET_STUDIO_TEMPLATES = Object.freeze([
     labelAr: "خلفية / ثيم الغرفة",
     directories: ["assets/images/rooms", "assets/images/backgrounds", "assets/images/store", "assets/images/vip"],
     prompt: "Voice-room background for Shadow Live. Keep microphone seats, room title, IDs, chat feed, and controls readable.",
+  }),
+  // Gift Catalog uses separate immutable identifiers for the small picker
+  // icon and the optional room effect. Both use the existing Asset Registry.
+  template({
+    id: "gift.icon.base.v1",
+    type: "gift_icon",
+    labelAr: "هدية — صورة ثابتة في قائمة الإرسال",
+    directories: ["assets/images/gifts", "assets/images/store"],
+    extensions: GIFT_ICON_EXTS,
+    transparency: "required",
+    motion: "static",
+    prompt: "One luxurious readable static gift thumbnail for Shadow Live's Gift Picker, on a genuinely transparent background. No text, price, sender name, coins or UI. Export as a single-frame WebP or PNG, to be linked as the gift's assetKey. The room animation is a distinct asset.",
+  }),
+  template({
+    id: "gift.effect.base.v1",
+    type: "gift_effect",
+    labelAr: "هدية — مؤثر متحرك عند الإرسال",
+    directories: ["assets/images/gifts", "assets/images/store"],
+    extensions: GIFT_ANIMATION_EXTS,
+    transparency: "required",
+    motion: "animated",
+    prompt: "Premium transparent animated gift effect for Shadow Live. Export a multi-frame Animated WebP or GIF (WebP preferred) with real transparency, a short bounded timeline and no baked user identity or prices. This separate asset is linked by effectAssetKey and shown by the shared Room Effect Coordinator. Keep the underlying room readable.",
   }),
   template({
     id: "vehicle.base.v1",
@@ -351,6 +375,17 @@ export function canonicalTemplateIdForAssetIdentity({ assetKey, fileName, direct
     path.includes("_vehicle.")
   )) {
     return "vehicle.base.v1";
+  }
+  // Canonical gift keys are intentionally constrained to the gift family.
+  // This safely upgrades a legacy static/badge registry record on replacement,
+  // without reclassifying unrelated store items, banners or cosmetics.
+  if (key.startsWith("gifts.") &&
+      (key.endsWith(".icon") || key.startsWith("gifts.icon."))) {
+    return "gift.icon.base.v1";
+  }
+  if (key.startsWith("gifts.") &&
+      (key.endsWith(".effect") || key.startsWith("gifts.effect."))) {
+    return "gift.effect.base.v1";
   }
   return "";
 }

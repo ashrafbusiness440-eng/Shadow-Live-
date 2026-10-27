@@ -16,9 +16,20 @@ import 'control_asset_studio_template.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 class ControlAssetManagerPage extends StatefulWidget {
-  const ControlAssetManagerPage({super.key, this.initialSearch = ''});
+  const ControlAssetManagerPage({
+    super.key,
+    this.initialSearch = '',
+    this.initialTemplateId = '',
+    this.initialAssetKey = '',
+    this.initialDirectory = '',
+    this.initialFileName = '',
+  });
 
   final String initialSearch;
+  final String initialTemplateId;
+  final String initialAssetKey;
+  final String initialDirectory;
+  final String initialFileName;
 
   @override
   State<ControlAssetManagerPage> createState() => _ControlAssetManagerPageState();
@@ -151,6 +162,14 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
             fullPath.contains('_vehicle.'))) {
       return 'vehicle.base.v1';
     }
+    if (key.startsWith('gifts.') &&
+        (key.endsWith('.icon') || key.startsWith('gifts.icon.'))) {
+      return 'gift.icon.base.v1';
+    }
+    if (key.startsWith('gifts.') &&
+        (key.endsWith('.effect') || key.startsWith('gifts.effect.'))) {
+      return 'gift.effect.base.v1';
+    }
     return null;
   }
 
@@ -158,6 +177,8 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     final canonical = _canonicalTemplateIdForAsset(asset);
     if (canonical == 'frame.base.v1') return 'frame';
     if (canonical == 'vehicle.base.v1') return 'vehicle';
+    if (canonical == 'gift.icon.base.v1') return 'gift_icon';
+    if (canonical == 'gift.effect.base.v1') return 'gift_effect';
     final source = _assetSource(asset);
     return (source['assetType'] ?? asset['assetType'] ?? '')
         .toString()
@@ -1720,17 +1741,29 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
 
         try {
           final prepared = await _prepareBatchFile(file, item);
-          // Old wealth vehicle manifests may still point to a static badge.
-          // Resolve those identities through the shared animated vehicle type.
+          // Reconcile legacy batch manifests to canonical gift/vehicle types
+          // before the motion check; do not rely on stale "badge/static" values.
           final assetKey = (item['assetKey'] ?? '').toString().trim().toLowerCase();
           final isVehicle = assetKey != 'mysterious.vehicle' &&
               assetKey.endsWith('.vehicle');
+          final isGiftIcon = assetKey.startsWith('gifts.') &&
+              (assetKey.endsWith('.icon') || assetKey.startsWith('gifts.icon.'));
+          final isGiftEffect = assetKey.startsWith('gifts.') &&
+              (assetKey.endsWith('.effect') || assetKey.startsWith('gifts.effect.'));
           final templateId = isVehicle
               ? 'vehicle.base.v1'
-              : (item['templateId'] ?? '').toString().trim();
+              : isGiftIcon
+                  ? 'gift.icon.base.v1'
+                  : isGiftEffect
+                      ? 'gift.effect.base.v1'
+                      : (item['templateId'] ?? '').toString().trim();
           final assetType = isVehicle
               ? 'vehicle'
-              : (item['assetType'] ?? '').toString().trim();
+              : isGiftIcon
+                  ? 'gift_icon'
+                  : isGiftEffect
+                      ? 'gift_effect'
+                      : (item['assetType'] ?? '').toString().trim();
           final channels = item['channels'] is List
               ? (item['channels'] as List).map((e) => e.toString()).toList()
               : <String>[];
@@ -5486,6 +5519,23 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (initialSearch.isNotEmpty) {
       _assetSearch.text = initialSearch;
       _debouncedSearch = initialSearch.toLowerCase();
+    }
+    // Presets only populate the *new* asset form. Existing matching assets
+    // are still edited through their registry row to preserve the same key.
+    if (widget.initialTemplateId.trim().isNotEmpty) {
+      _selectedTemplateId = widget.initialTemplateId.trim();
+      _selectedChannels
+        ..clear()
+        ..add('system');
+    }
+    if (widget.initialAssetKey.trim().isNotEmpty) {
+      _assetKey.text = widget.initialAssetKey.trim();
+    }
+    if (widget.initialDirectory.trim().isNotEmpty) {
+      _directory.text = widget.initialDirectory.trim();
+    }
+    if (widget.initialFileName.trim().isNotEmpty) {
+      _fileName.text = widget.initialFileName.trim();
     }
     _loadAssets();
   }

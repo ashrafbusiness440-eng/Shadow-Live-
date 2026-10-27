@@ -2668,6 +2668,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           child: CosmeticAssetVisual(
                             assetKey: giftEffect.assetKey,
                             imageUrl: giftEffect.imageUrl,
+                            fallbackAssetKey: giftEffect.fallbackAssetKey,
                             fit: BoxFit.contain,
                           ),
                         ),
