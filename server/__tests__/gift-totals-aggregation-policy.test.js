@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   giftTotalsAggregationRequest,
+  giftPeriodBounds,
   parseGiftTotalsAggregationResponse,
 } from "../../cloudflare-worker/src/gift-totals-aggregation-policy.js";
 import { parseFirestoreAggregationRows } from "../../cloudflare-worker/src/firestore.js";
@@ -77,4 +78,29 @@ test("admin endpoint caches read-only aggregate; no payment path modifications",
   assert.match(source,/ttlMs: 5 \* 60_000/);
   const room=readFileSync(new URL("../../cloudflare-worker/src/room-gift.js",import.meta.url),"utf8");
   assert.doesNotMatch(room,/readGiftTransactionTotals/);
+});
+
+test("UTC day and month calendar bounds are exact and enforce 366-day horizon", () => {
+  const now = new Date("2026-10-27T22:00:00Z");
+  assert.deepEqual(giftPeriodBounds("day", "2026-10-27", now), {
+    start: "2026-10-27T00:00:00.000Z", end: "2026-10-28T00:00:00.000Z",
+  });
+  assert.deepEqual(giftPeriodBounds("month", "2026-02-28", now), {
+    start: "2026-02-01T00:00:00.000Z", end: "2026-03-01T00:00:00.000Z",
+  });
+  for (const [period, date] of [["week","2026-10-27"],["day","2026-02-30"],
+    ["day","2027-01-01"],["month","2024-03-01"],["day","invalid"]]) {
+    assert.throws(() => giftPeriodBounds(period, date, now));
+  }
+});
+
+test("period totals apply indexed half-open timestamps without scanning documents", () => {
+  const bounds = giftPeriodBounds("month","2026-10-15",new Date("2026-10-27T22:00:00Z"));
+  const request = giftTotalsAggregationRequest(bounds);
+  assert.deepEqual(request.structuredAggregationQuery.structuredQuery.where, {
+    compositeFilter: {op:"AND",filters:[
+      {fieldFilter:{field:{fieldPath:"createdAt"},op:"GREATER_THAN_OR_EQUAL",value:{timestampValue:"2026-10-01T00:00:00.000Z"}}},
+      {fieldFilter:{field:{fieldPath:"createdAt"},op:"LESS_THAN",value:{timestampValue:"2026-11-01T00:00:00.000Z"}}},
+    ]},
+  });
 });
