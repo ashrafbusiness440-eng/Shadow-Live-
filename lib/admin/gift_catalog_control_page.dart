@@ -396,19 +396,27 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: OutlinedButton.icon(
-                      onPressed: () => Navigator.of(dialogContext).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ControlAssetManagerPage(
-                            initialSearch: assetKey.text.trim(),
-                            initialTemplateId: 'gift.icon.base.v1',
-                            initialAssetKey: assetKey.text.trim(),
-                            initialDirectory: 'assets/images/gifts',
-                            initialFileName: id.text.trim().isEmpty
-                                ? 'gift_icon.webp'
-                                : '${id.text.trim()}_icon.webp',
+                      onPressed: () {
+                        final giftId = id.text.trim();
+                        if (!RegExp(r'^[a-z0-9_]{2,64}$').hasMatch(giftId)) {
+                          message('اكتب معرّف الهدية الصحيح أولًا.');
+                          return;
+                        }
+                        if (assetKey.text.trim() == 'gifts.placeholder.default') {
+                          assetKey.text = 'gifts.$giftId.icon';
+                        }
+                        Navigator.of(dialogContext).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ControlAssetManagerPage(
+                              initialSearch: assetKey.text.trim(),
+                              initialTemplateId: 'gift.icon.base.v1',
+                              initialAssetKey: assetKey.text.trim(),
+                              initialDirectory: 'assets/images/gifts',
+                              initialFileName: '${giftId}_icon.webp',
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                       icon: const Icon(Icons.image_outlined, size: 18),
                       label: const Text('استديو صورة الهدية'),
                     ),
@@ -461,7 +469,14 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     ],
                     onChanged: (value) {
                       if (value != null) {
-                        setLocal(() => effectMode = value);
+                        setLocal(() {
+                          effectMode = value;
+                          if (value == 'none') {
+                            effectMinQuantity.text = '0';
+                          } else if ((int.tryParse(effectMinQuantity.text) ?? 0) < 1) {
+                            effectMinQuantity.text = '1';
+                          }
+                        });
                       }
                     },
                   ),
@@ -475,19 +490,27 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: OutlinedButton.icon(
-                      onPressed: () => Navigator.of(dialogContext).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ControlAssetManagerPage(
-                            initialSearch: effectAssetKey.text.trim(),
-                            initialTemplateId: 'gift.effect.base.v1',
-                            initialAssetKey: effectAssetKey.text.trim(),
-                            initialDirectory: 'assets/images/gifts',
-                            initialFileName: id.text.trim().isEmpty
-                                ? 'gift_effect.webp'
-                                : '${id.text.trim()}_effect.webp',
+                      onPressed: () {
+                        final giftId = id.text.trim();
+                        if (!RegExp(r'^[a-z0-9_]{2,64}$').hasMatch(giftId)) {
+                          message('اكتب معرّف الهدية الصحيح أولًا.');
+                          return;
+                        }
+                        if (effectAssetKey.text.trim() == 'gifts.placeholder.default' || effectAssetKey.text.trim() == assetKey.text.trim()) {
+                          effectAssetKey.text = 'gifts.$giftId.effect';
+                        }
+                        Navigator.of(dialogContext).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ControlAssetManagerPage(
+                              initialSearch: effectAssetKey.text.trim(),
+                              initialTemplateId: 'gift.effect.base.v1',
+                              initialAssetKey: effectAssetKey.text.trim(),
+                              initialDirectory: 'assets/images/gifts',
+                              initialFileName: '${giftId}_effect.webp',
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                       icon: const Icon(Icons.animation_outlined, size: 18),
                       label: const Text('استديو مؤثر الهدية'),
                     ),
