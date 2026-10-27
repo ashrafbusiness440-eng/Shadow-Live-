@@ -22,6 +22,31 @@ export function giftPeriodBounds(period, date, now = new Date()) {
   return {start: start.toISOString(), end: end.toISOString()};
 }
 
+// A custom inclusive UTC date range, capped to 31 days. No unrestricted history scans.
+export function giftCustomRangeBounds(firstDate, lastDate, now = new Date()) {
+  function validDay(value) {
+    if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+      throw Error("invalid_gift_report_date");
+    }
+    const day = new Date(value + "T00:00:00.000Z");
+    if (!Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== value) {
+      throw Error("invalid_gift_report_date");
+    }
+    return day;
+  }
+  const first = validDay(firstDate);
+  const last = validDay(lastDate);
+  const startMs = first.getTime();
+  const endMs = last.getTime() + 86400000;
+  const todayEndMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  if (endMs <= startMs || (endMs - startMs) / 86400000 > 31 ||
+      startMs > now.getTime() || now.getTime() - startMs > 366 * 86400000 ||
+      endMs > todayEndMs) {
+    throw Error("gift_report_period_out_of_range");
+  }
+  return {start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString()};
+}
+
 export function giftTotalsAggregationRequest(bounds = null) {
   return {
     structuredAggregationQuery: {
