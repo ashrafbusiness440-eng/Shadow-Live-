@@ -45,6 +45,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   GiftCatalogItem? pendingDraft;
   bool statsOnly = false;
   bool canGrantBag = false;
+  bool statsTotalsLoading = false;
+  Map<String, dynamic>? statsTotals;
+  String? statsTotalsError;
   bool statsLoading = false;
   bool statsLoaded = false;
   bool statsHasMore = false;
@@ -215,6 +218,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       });
       if (isStatsOnly && mounted) {
         await loadRecentStats(reset: true);
+        if (mounted) await loadVerifiedTotals();
       }
     } catch (e) {
       if (!mounted) return;
@@ -1417,6 +1421,28 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
   }
 
+  Future<void> loadVerifiedTotals() async {
+    if (statsTotalsLoading) return;
+    setState(() {
+      statsTotalsLoading = true;
+      statsTotalsError = null;
+    });
+    try {
+      final payload = await post({'action': 'statsTotals'});
+      if (!mounted) return;
+      setState(() {
+        statsTotals = payload;
+        statsTotalsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        statsTotalsLoading = false;
+        statsTotalsError = friendlyError(error);
+      });
+    }
+  }
+
   Future<void> loadRecentStats({bool reset = false}) async {
     if (statsLoading) return;
     if (!reset && statsLoaded && (!statsHasMore || statsPagesLoaded >= 5)) return;
@@ -1475,8 +1501,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           selected: selectedSection == i,
           onSelected: (_) {
             setState(() => selectedSection = i);
-            if (i == 3 && !statsLoaded && !statsLoading) {
-              loadRecentStats(reset: true);
+            if (i == 3) {
+              if (!statsLoaded && !statsLoading) loadRecentStats(reset: true);
+              if (statsTotals == null && !statsTotalsLoading) {
+                loadVerifiedTotals();
+              }
             }
           },
         )),
