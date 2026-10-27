@@ -7031,13 +7031,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ),
-                      Positioned.fill(
-                        child: RoomEffectCoordinatorHost(
-                          coordinator: _roomEffectCoordinator,
-                          entranceTop: (micTop - 20).clamp(0.0, 145.0).toDouble(),
-                          joinBottom: 106,
-                        ),
-                      ),
                       Positioned(
                         top: 0,
                         left: 0,
@@ -7175,6 +7168,16 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         // Lift only the composer over the IME, without moving seats.
                         bottom: MediaQuery.viewInsetsOf(context).bottom,
                         child: _buildRoomBottomBar(),
+                      ),
+                      // A visual-only layer ABOVE the room UI, so transparent
+                      // entrance vehicles can cross the whole stage. IgnorePointer
+                      // in RoomEffectCoordinatorHost preserves every room tap.
+                      Positioned.fill(
+                        child: RoomEffectCoordinatorHost(
+                          coordinator: _roomEffectCoordinator,
+                          entranceTop: (micTop - 20).clamp(0.0, 145.0).toDouble(),
+                          joinBottom: 106,
+                        ),
                       ),
                     ],
                   );
