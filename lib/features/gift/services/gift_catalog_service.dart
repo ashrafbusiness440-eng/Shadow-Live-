@@ -121,6 +121,10 @@ class GiftCatalogService {
   static const Duration _staleFor = Duration(minutes: 5);
   static List<GiftCatalogItem>? _cachedCatalog;
   static Map<String, String> _categoryNames = <String, String>{};
+  static Map<String, String> _categoryImageKeys = <String, String>{};
+  static List<String> _categoryOrder = <String>[];
+  static List<String> get categoryOrder => List<String>.unmodifiable(_categoryOrder);
+  static String categoryImageKey(String category) => _categoryImageKeys[category] ?? '';
   static DateTime? _loadedAt;
   static Future<List<GiftCatalogItem>>? _inflight;
   static int? _cachedBalanceCoins;
@@ -413,6 +417,8 @@ class GiftCatalogService {
       }
       _cachedBagQuantities = bag;
       final names = <String, String>{};
+      final assets = <String, String>{};
+      final order = <String>[];
       final allowed = <String>{};
       if (body['categories'] is List) {
         for (final raw in (body['categories'] as List).whereType<Map>()) {
@@ -421,10 +427,15 @@ class GiftCatalogService {
           if (id.isNotEmpty && label.isNotEmpty && raw['enabled'] != false) {
             names[id] = label;
             allowed.add(id);
+            order.add(id);
+            final asset = (raw['assetKey'] ?? '').toString().trim();
+            if (asset.isNotEmpty) assets[id] = asset;
           }
         }
       }
       _categoryNames = names;
+      _categoryImageKeys = assets;
+      _categoryOrder = order;
       return parseCatalog(body['gifts'],
         allowedCategoryIds: body['categories'] is List ? allowed : categories);
     } finally {
@@ -435,6 +446,8 @@ class GiftCatalogService {
   static void clearCacheForTests() {
     _cachedCatalog = null;
     _categoryNames = <String, String>{};
+    _categoryImageKeys = <String, String>{};
+    _categoryOrder = <String>[];
     _loadedAt = null;
     _inflight = null;
     _cachedBalanceCoins = null;
