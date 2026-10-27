@@ -47,7 +47,7 @@ export function parseGiftTotalsAggregationResponse(response) {
     gifts,
     faceCoins,
     paidCoins,
-    giftBagCoins: faceCoins - paidCoins,
+    nonPaidCoins: faceCoins - paidCoins,
     // These totals cover only the gift_transactions collection. They do NOT
     // imply all legacy gifts outside that financial ledger were counted.
     scope: "gift_transactions_collection",
