@@ -1002,7 +1002,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                   for (final place in const [
                     ('room', 'الغرف الصوتية'),
-                    ('chat', 'الرسائل الخاصة'),
+                    ('chat', 'الرسائل والملف الشخصي'),
                     ('diary', 'اليوميات'),
                   ])
                     CheckboxListTile(
