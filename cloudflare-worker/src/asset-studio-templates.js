@@ -376,6 +376,17 @@ export function canonicalTemplateIdForAssetIdentity({ assetKey, fileName, direct
   )) {
     return "vehicle.base.v1";
   }
+  // Canonical gift keys are intentionally constrained to the gift family.
+  // This safely upgrades a legacy static/badge registry record on replacement,
+  // without reclassifying unrelated store items, banners or cosmetics.
+  if (key.startsWith("gifts.") &&
+      (key.endsWith(".icon") || key.startsWith("gifts.icon."))) {
+    return "gift.icon.base.v1";
+  }
+  if (key.startsWith("gifts.") &&
+      (key.endsWith(".effect") || key.startsWith("gifts.effect."))) {
+    return "gift.effect.base.v1";
+  }
   return "";
 }
 
