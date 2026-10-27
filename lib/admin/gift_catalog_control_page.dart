@@ -22,6 +22,11 @@ class GiftCatalogControlPage extends StatefulWidget {
 class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool loading = true;
   bool saving = false;
+  bool loadFailed = false;
+  String query = '';
+  String categoryFilter = 'all';
+  String visibilityFilter = 'all';
+  String orderFilter = 'catalog';
   String? error;
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
 
@@ -65,6 +70,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     setState(() {
       loading = true;
       error = null;
+      loadFailed = false;
     });
     try {
       final body = await post({'action': 'state'});
@@ -87,6 +93,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
             : loaded;
         loading = false;
+        loadFailed = false;
       });
     } catch (e) {
       if (!mounted) return;
@@ -94,11 +101,17 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         gifts = List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts);
         loading = false;
         error = e.toString();
+        loadFailed = true;
       });
     }
   }
 
   Future<void> save() async {
+    if (saving || loading) return;
+    if (loadFailed) {
+      message('تعذر تحميل الهدايا المحفوظة. أعد المحاولة قبل الحفظ لحماية بياناتك.');
+      return;
+    }
     if (gifts.isEmpty) {
       message('يجب أن توجد هدية واحدة على الأقل.');
       return;
@@ -717,11 +730,92 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     });
   }
 
+  List<int> get visibleIndices {
+    final term = query.trim().toLowerCase();
+    final indexes = <int>[];
+    for (var i = 0; i < gifts.length; i++) {
+      final item = gifts[i];
+      if (term.isNotEmpty &&
+          !item.nameAr.toLowerCase().contains(term) &&
+          !item.id.toLowerCase().contains(term)) continue;
+      if (categoryFilter != 'all' && item.category != categoryFilter) continue;
+      if (visibilityFilter == 'shown' && !item.enabled) continue;
+      if (visibilityFilter == 'hidden' && item.enabled) continue;
+      indexes.add(i);
+    }
+    if (orderFilter == 'priceAsc') {
+      indexes.sort((a, b) => gifts[a].priceCoins.compareTo(gifts[b].priceCoins));
+    } else if (orderFilter == 'priceDesc') {
+      indexes.sort((a, b) => gifts[b].priceCoins.compareTo(gifts[a].priceCoins));
+    } else if (orderFilter == 'name') {
+      indexes.sort((a, b) => gifts[a].nameAr.compareTo(gifts[b].nameAr));
+    }
+    return indexes;
+  }
+
+  Widget catalogFilters() {
+    final categories = <String>{'all', ...gifts.map((gift) => gift.category)};
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              onChanged: (value) => setState(() => query = value),
+              decoration: const InputDecoration(
+                labelText: 'البحث عن هدية',
+                hintText: 'اسم الهدية أو رقمها',
+                prefixIcon: Icon(Icons.search_rounded),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                DropdownButton<String>(
+                  value: categoryFilter,
+                  items: categories.map((category) => DropdownMenuItem(
+                    value: category,
+                    child: Text(category == 'all' ? 'كل الفئات' : GiftCatalogService.categoryLabel(category)),
+                  )).toList(),
+                  onChanged: (value) => setState(() => categoryFilter = value ?? 'all'),
+                ),
+                DropdownButton<String>(
+                  value: visibilityFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('كل الحالات')),
+                    DropdownMenuItem(value: 'shown', child: Text('الظاهرة')),
+                    DropdownMenuItem(value: 'hidden', child: Text('المخفية')),
+                  ],
+                  onChanged: (value) => setState(() => visibilityFilter = value ?? 'all'),
+                ),
+                DropdownButton<String>(
+                  value: orderFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'catalog', child: Text('ترتيب العرض')),
+                    DropdownMenuItem(value: 'name', child: Text('الاسم')),
+                    DropdownMenuItem(value: 'priceAsc', child: Text('السعر: الأقل أولاً')),
+                    DropdownMenuItem(value: 'priceDesc', child: Text('السعر: الأعلى أولاً')),
+                  ],
+                  onChanged: (value) => setState(() => orderFilter = value ?? 'catalog'),
+                ),
+              ],
+            ),
+            Text('النتائج: ${visibleIndices.length} من ${gifts.length}'),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('كتالوج الهدايا'),
+        title: const Text('الهدايا'),
         actions: [
           IconButton(
             onPressed: loading ? null : load,
@@ -730,13 +824,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: loading ? null : () => editGift(),
+        onPressed: loading || saving || loadFailed ? null : () => editGift(),
         icon: const Icon(Icons.add),
         label: const Text('إضافة هدية'),
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
+          : Directionality(
+              textDirection: TextDirection.rtl,
+              child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               children: [
                 const Card(
@@ -786,7 +882,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     ),
                   ),
                 const SizedBox(height: 10),
-                ...List.generate(gifts.length, (index) {
+                catalogFilters(),
+                ...visibleIndices.map((index) {
                   final item = gifts[index];
                   return Card(
                     child: Padding(
@@ -883,11 +980,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             runSpacing: 2,
                             children: [
                               IconButton(
-                                onPressed: index > 0 ? () => move(index, -1) : null,
+                                onPressed: orderFilter == 'catalog' && query.isEmpty && categoryFilter == 'all' && visibilityFilter == 'all' && index > 0 ? () => move(index, -1) : null,
                                 icon: const Icon(Icons.arrow_upward_rounded),
                               ),
                               IconButton(
-                                onPressed: index < gifts.length - 1
+                                onPressed: orderFilter == 'catalog' && query.isEmpty && categoryFilter == 'all' && visibilityFilter == 'all' && index < gifts.length - 1
                                     ? () => move(index, 1)
                                     : null,
                                 icon: const Icon(Icons.arrow_downward_rounded),
@@ -914,7 +1011,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 }),
                 const SizedBox(height: 14),
                 FilledButton.icon(
-                  onPressed: saving ? null : save,
+                  onPressed: saving || loadFailed ? null : save,
                   icon: saving
                       ? const SizedBox(
                           width: 18,
@@ -928,6 +1025,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                 ),
               ],
+            ),
             ),
     );
   }
