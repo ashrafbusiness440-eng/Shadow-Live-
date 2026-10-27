@@ -588,7 +588,7 @@ export function firestoreClient(env) {
       }));
     },
 
-    async readGiftTransactionTotals() {
+    async readGiftTransactionTotals(bounds = null) {
       // Firestore's indexed COUNT/SUM aggregation does not download ledger
       // documents or mutate them. Administrative permission is verified in
       // gift-catalog before this method is invoked.
@@ -596,7 +596,7 @@ export function firestoreClient(env) {
         `${root}/documents:runAggregationQuery`,
         {
           method: "POST",
-          body: JSON.stringify(giftTotalsAggregationRequest()),
+          body: JSON.stringify(giftTotalsAggregationRequest(bounds)),
         },
         {
           retryTransient: true,
