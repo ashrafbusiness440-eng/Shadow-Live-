@@ -69,7 +69,8 @@ async function actor(req, action) {
   const access = giftAdminAccess(user, action);
   if (!access.allowed) throw Error("forbidden");
   return { uid: decoded.uid, db, statsOnly: access.statsOnly,
-    canGrantBag: giftAdminAccess(user, "grantBagGift").allowed };
+    canGrantBag: giftAdminAccess(user, "grantBagGift").allowed,
+    canManageCatalog: giftAdminAccess(user, "save").allowed };
 }
 
 async function cachedCatalogState(db) {
@@ -338,7 +339,7 @@ export async function handler(req, res) {
       });
     }
 
-    const { uid, db, statsOnly, canGrantBag } = await actor(req, action);
+    const { uid, db, statsOnly, canGrantBag, canManageCatalog } = await actor(req, action);
     const ref = db.collection("system_config").doc("gift_catalog");
 
     if (action === "statsTotals") {
@@ -381,7 +382,7 @@ export async function handler(req, res) {
       }
       const state = await cachedCatalogState(db);
       if (!state.exists) throw Error("gift_catalog_not_initialized");
-      const page = catalogGiftRankingPage(state.config, offset, expectedRevision);
+      const page = catalogGiftRankingPage(state.config, offset, expectedRevision, canManageCatalog);
       const rows = [];
       for (let i = 0; i < page.page.length; i += 2) {
         const slice = page.page.slice(i, i + 2);
