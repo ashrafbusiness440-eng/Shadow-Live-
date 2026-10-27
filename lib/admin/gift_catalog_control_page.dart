@@ -400,6 +400,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         MaterialPageRoute<void>(
                           builder: (_) => ControlAssetManagerPage(
                             initialSearch: assetKey.text.trim(),
+                            initialTemplateId: 'gift.icon.base.v1',
+                            initialAssetKey: assetKey.text.trim(),
+                            initialDirectory: 'assets/images/gifts',
+                            initialFileName: id.text.trim().isEmpty
+                                ? 'gift_icon.webp'
+                                : '${id.text.trim()}_icon.webp',
                           ),
                         ),
                       ),
@@ -473,6 +479,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         MaterialPageRoute<void>(
                           builder: (_) => ControlAssetManagerPage(
                             initialSearch: effectAssetKey.text.trim(),
+                            initialTemplateId: 'gift.effect.base.v1',
+                            initialAssetKey: effectAssetKey.text.trim(),
+                            initialDirectory: 'assets/images/gifts',
+                            initialFileName: id.text.trim().isEmpty
+                                ? 'gift_effect.webp'
+                                : '${id.text.trim()}_effect.webp',
                           ),
                         ),
                       ),
