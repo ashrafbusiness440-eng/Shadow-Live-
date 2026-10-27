@@ -35,7 +35,11 @@ void main() {
     expect(shell, contains("import 'admin/control_user_level.dart';"));
     expect(shell, contains('const UserLevelControlPage()'));
     expect(shell, contains("label:'المستوى'"));
-    expect(shell, contains('initialNavIndex.clamp(0, 6)'));
+    expect(shell, contains('initialNavIndex.clamp(0, 7)'));
+    // Preserve the existing level tab while introducing a separate gifts tab.
+    expect(shell, contains("import 'admin/gift_catalog_control_page.dart';"));
+    expect(shell, contains('const GiftCatalogControlPage()'));
+    expect(shell, contains("label:'الهدايا'"));
 
     for (final capability in <String>[
       'manageUserLevels',
