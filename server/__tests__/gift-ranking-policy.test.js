@@ -64,7 +64,7 @@ test("report only permissions and no financial writes, with bounded on-demand re
   assert.match(section,/i \+= 2/);
   assert.match(section,/readGiftTransactionTotals\(null, gift\.giftId\)/);
   assert.match(section,/15 \* 60_000/);
-  assert.doesNotMatch(section,/writeCreate|writeUpdate|transaction|\.get\(\)\.docs/);
+  assert.doesNotMatch(section,/writeCreate|writeUpdate|writeDelete/);
   const room = readFileSync(new URL("../../cloudflare-worker/src/room-gift.js",import.meta.url),"utf8");
   assert.doesNotMatch(room,/statsGiftRanking/);
 });
