@@ -70,6 +70,8 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageStore': 'إدارة المتجر',
     'manageGames': 'إدارة الألعاب',
     'manageEconomy': 'إدارة الاقتصاد',
+    'manageGiftCatalog': 'إضافة وتعديل ونشر الهدايا (بدون منح رصيد)',
+    'viewGiftStats': 'عرض إحصاءات الهدايا فقط',
     'adjustBalances': 'تعديل Coins و Diamonds',
     'manageWithdrawals': 'إدارة السحب',
     'manageSettlements': 'إدارة التسويات',
