@@ -37,12 +37,14 @@ class UnifiedGiftPickerSheet extends StatefulWidget {
     required this.recipientArea,
     required this.canSend,
     required this.onSend,
+    this.giftContext = 'room',
   });
 
   final String title;
   final Widget recipientArea;
   final bool canSend;
   final GiftPickerSender onSend;
+  final String giftContext;
 
   @override
   State<UnifiedGiftPickerSheet> createState() => _UnifiedGiftPickerSheetState();
@@ -176,8 +178,9 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     try {
       final catalog = await GiftCatalogService.loadCatalog();
       if (!mounted) return;
-      final categories =
-          catalog.map(_uiCategoryForGift).toSet();
+      final categories = catalog
+          .where((gift) => gift.isAvailableIn(widget.giftContext))
+          .map(_uiCategoryForGift).toSet();
       final initialCategory = categories.contains('general')
           ? 'general'
           : (categories.isEmpty ? 'general' : categories.first);
@@ -200,9 +203,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   String _uiCategoryForGift(GiftCatalogItem gift) =>
       gift.isRelationshipGift ? 'relationship' : gift.category;
 
+  List<GiftCatalogItem> get _availableCatalog => _catalog
+      .where((gift) => gift.isAvailableIn(widget.giftContext))
+      .toList(growable: false);
+
   List<String> get _categories {
     final values = <String>['bag'];
-    final available = _catalog.map(_uiCategoryForGift).toSet();
+    final available = _availableCatalog.map(_uiCategoryForGift).toSet();
     // Category order comes from the same cached Gift Catalog response.
     for (final category in GiftCatalogService.categoryOrder) {
       final value = category == 'cp' || category == 'friends'
@@ -211,7 +218,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       if (available.contains(value) && !values.contains(value)) values.add(value);
     }
     // Legacy/offline catalogs continue to show every valid category.
-    for (final gift in _catalog) {
+    for (final gift in _availableCatalog) {
       final value = _uiCategoryForGift(gift);
       if (!values.contains(value)) values.add(value);
     }
@@ -220,11 +227,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   List<GiftCatalogItem> get _visible {
     if (_category == 'bag') {
-      return _catalog
+      return _availableCatalog
           .where((gift) => (_bagQuantities[gift.id] ?? 0) > 0)
           .toList(growable: false);
     }
-    return _catalog
+    return _availableCatalog
         .where((gift) => _uiCategoryForGift(gift) == _category)
         .toList(growable: false);
   }
