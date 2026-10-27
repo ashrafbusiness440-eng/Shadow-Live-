@@ -1,6 +1,7 @@
 import { getApps, initializeApp, cert, getAuth, FieldValue, getFirestore, legacyEnv } from "../legacy-firebase-admin-shim.js";
 import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
+import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
 
 const CATEGORIES = new Set([
   "general",
@@ -341,38 +342,47 @@ export async function handler(req, res) {
     const ref = db.collection("system_config").doc("gift_catalog");
 
     if (action === "state") {
-      const state = await cachedCatalogState(db);
+      // Administrative editing must see the current revision, not a stale cache.
+      const snap = await ref.get();
       return out(res, 200, {
         ok: true,
-        exists: state.exists,
-        config: state.config,
+        exists: snap.exists,
+        config: snap.exists ? snap.data() : null,
       });
     }
 
     if (action === "save") {
       const gifts = validateGifts(req.body?.gifts);
-      const previous = await ref.get();
+      const expectedRevision = req.body?.expectedRevision;
       const auditRef = db.collection("admin_audit_logs").doc();
-      const next = {
-        gifts,
-        categories: Array.from(CATEGORIES),
-        updatedBy: uid,
-        updatedAt: FieldValue.serverTimestamp(),
-      };
+      let nextRevision = 0;
 
       await db.runTransaction(async (tx) => {
-        tx.set(ref, next, { merge: true });
+        // Read inside the same transaction to prevent competing admin saves
+        // from silently overwriting prices, visibility or eligibility.
+        const previous = await tx.get(ref);
+        const priorConfig = previous.exists ? previous.data() : null;
+        const transition = validateGiftCatalogUpdate(
+          priorConfig, gifts, expectedRevision,
+        );
+        nextRevision = transition.revision;
+        tx.set(ref, {
+          gifts,
+          categories: Array.from(CATEGORIES),
+          revision: transition.revision,
+          updatedBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
         tx.create(auditRef, {
           actorUid: uid,
           action: "updateGiftCatalog",
           targetType: "system_config",
           targetId: "gift_catalog",
-          before: previous.exists
-            ? {
-                giftCount: Array.isArray(previous.data()?.gifts)
-                  ? previous.data().gifts.length
-                  : 0,
-              }
+          revisionBefore: transition.revision - 1,
+          revisionAfter: transition.revision,
+          changes: transition.changes,
+          before: priorConfig
+            ? { giftCount: Array.isArray(priorConfig.gifts) ? priorConfig.gifts.length : 0 }
             : null,
           after: {
             giftCount: gifts.length,
@@ -385,7 +395,7 @@ export async function handler(req, res) {
       });
 
       invalidateConfigCache("config:gift_catalog");
-      return out(res, 200, { ok: true, gifts });
+      return out(res, 200, { ok: true, gifts, revision: nextRevision });
     }
 
     if (action === "grantBagGift") {
@@ -471,8 +481,13 @@ export async function handler(req, res) {
         ? 401
         : code === "forbidden"
           ? 403
-          : [
+          : code === "gift_catalog_conflict"
+            ? 409
+            : [
               "invalid_gifts",
+              "invalid_catalog_revision",
+              "gift_catalog_existing_id_missing",
+              "gift_catalog_restricted_category",
               "invalid_gift_id",
               "duplicate_gift_id",
               "invalid_gift_name",
