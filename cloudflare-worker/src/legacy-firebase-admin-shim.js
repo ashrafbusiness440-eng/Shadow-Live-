@@ -146,7 +146,7 @@ function compileData(client, data = {}) {
   };
 }
 
-class LegacyDocumentSnapshot {
+export class LegacyDocumentSnapshot {
   constructor(ref, raw) {
     this.ref = ref;
     this.id = ref.id;
@@ -209,7 +209,7 @@ class LegacyDocumentReference {
   }
 }
 
-class LegacyQuery {
+export class LegacyQuery {
   constructor(store, path, state = {}) {
     this._store = store;
     this.path = path;
