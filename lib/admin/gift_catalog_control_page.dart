@@ -23,6 +23,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool loading = true;
   bool saving = false;
   bool loadFailed = false;
+  int selectedSection = 0;
   String query = '';
   String categoryFilter = 'all';
   String visibilityFilter = 'all';
@@ -753,6 +754,87 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     return indexes;
   }
 
+  Widget sectionSelector() {
+    const labels = ['كل الهدايا', 'الفئات', 'المؤثرات', 'الإحصاءات'];
+    const icons = [Icons.card_giftcard_outlined, Icons.category_outlined, Icons.auto_awesome_outlined, Icons.bar_chart_outlined];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: List.generate(labels.length, (i) => ChoiceChip(
+          avatar: Icon(icons[i], size: 18),
+          label: Text(labels[i]),
+          selected: selectedSection == i,
+          onSelected: (_) => setState(() => selectedSection = i),
+        )),
+      ),
+    );
+  }
+
+  Widget categoryOverview() {
+    final counts = <String, int>{};
+    for (final gift in gifts) {
+      counts[gift.category] = (counts[gift.category] ?? 0) + 1;
+    }
+    return Column(
+      children: [
+        const ListTile(
+          title: Text('الفئات الحالية'),
+          subtitle: Text('يمكنك اختيار فئة لاستعراض هداياها. إدارة إنشاء الفئات وتغييرها ستتاح بعد تفعيل الحماية اللازمة.'),
+        ),
+        ...counts.entries.map((entry) => Card(child: ListTile(
+          leading: const Icon(Icons.category_outlined),
+          title: Text(GiftCatalogService.categoryLabel(entry.key)),
+          subtitle: Text('${entry.value} هدية'),
+          trailing: const Icon(Icons.chevron_left),
+          onTap: () => setState(() {
+            categoryFilter = entry.key;
+            selectedSection = 0;
+          }),
+        ))),
+      ],
+    );
+  }
+
+  Widget effectsOverview() {
+    final indices = <int>[
+      for (var i = 0; i < gifts.length; i++)
+        if (gifts[i].effectMode != 'none') i,
+    ];
+    return Column(
+      children: [
+        const ListTile(
+          title: Text('مؤثرات الهدايا'),
+          subtitle: Text('تعديل المؤثر الحالي والمدة والحجم والكمية من إعدادات كل هدية.'),
+        ),
+        if (indices.isEmpty) const ListTile(title: Text('لا توجد مؤثرات مفعّلة حالياً')),
+        ...indices.map((i) => Card(child: ListTile(
+          leading: const Icon(Icons.auto_awesome_outlined),
+          title: Text(gifts[i].nameAr),
+          subtitle: Text(gifts[i].effectMode == 'seat' ? 'خفيف على المايك' : 'سينمائي داخل الغرفة'),
+          trailing: const Icon(Icons.edit_outlined),
+          onTap: saving ? null : () => editGift(i),
+        ))),
+      ],
+    );
+  }
+
+  Widget statisticsOverview() => const Card(
+    child: Padding(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Icon(Icons.bar_chart_outlined, size: 42),
+          SizedBox(height: 12),
+          Text('إحصاءات الهدايا'),
+          SizedBox(height: 8),
+          Text('لا تتوفر بيانات إحصائية موثوقة في هذا القسم بعد. سيتم عرض العمليات الفعلية بعد ربط التقارير بالسجلات المعتمدة، دون أرقام تقديرية.', textAlign: TextAlign.center),
+        ],
+      ),
+    ),
+  );
+
   Widget catalogFilters() {
     final categories = <String>{'all', ...gifts.map((gift) => gift.category)};
     return Card(
@@ -881,6 +963,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       subtitle: Text(error!),
                     ),
                   ),
+                sectionSelector(),
+                if (selectedSection == 1) categoryOverview(),
+                if (selectedSection == 2) effectsOverview(),
+                if (selectedSection == 3) statisticsOverview(),
+                if (selectedSection == 0) ...[
                 const SizedBox(height: 10),
                 catalogFilters(),
                 ...visibleIndices.map((index) {
@@ -1009,6 +1096,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     ),
                   );
                 }),
+                ],
                 const SizedBox(height: 14),
                 FilledButton.icon(
                   onPressed: saving || loadFailed ? null : save,
