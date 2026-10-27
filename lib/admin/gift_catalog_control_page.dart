@@ -906,7 +906,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: loading || saving || loadFailed ? null : () => editGift(),
+        onPressed: loading || saving || loadFailed || selectedSection != 0 ? null : () => editGift(),
         icon: const Icon(Icons.add),
         label: const Text('إضافة هدية'),
       ),
@@ -1097,8 +1097,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   );
                 }),
                 ],
-                const SizedBox(height: 14),
-                FilledButton.icon(
+                if (selectedSection == 0) const SizedBox(height: 14),
+                if (selectedSection == 0) FilledButton.icon(
                   onPressed: saving || loadFailed ? null : save,
                   icon: saving
                       ? const SizedBox(
