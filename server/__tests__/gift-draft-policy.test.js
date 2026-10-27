@@ -50,3 +50,17 @@ test("discarding draft cannot delete active catalog entries", () => {
   assert.equal(config.gifts.length, 1);
   assert.equal(giftDraftList(config).length, 1);
 });
+
+test("drafts are isolated from public catalogue and paid sending code paths", async () => {
+  const { readFileSync } = await import("node:fs");
+  const root = new URL("../../cloudflare-worker/src/", import.meta.url);
+  const admin = readFileSync(new URL("legacy-economy/gift-catalog.js", root), "utf8");
+  const room = readFileSync(new URL("room-gift.js", root), "utf8");
+  const chats = readFileSync(new URL("chat-safety-actions.js", root), "utf8");
+  assert.match(admin, /Array\.isArray\(config\?\.gifts\)/);
+  assert.match(room, /catalogSnap\.data\?\.gifts/);
+  assert.match(chats, /catalog\.data\?\.gifts/);
+  assert.match(admin, /action === "saveDraft"/);
+  assert.match(admin, /action === "publishDraft"/);
+  assert.match(admin, /action === "discardDraft"/);
+});
