@@ -3,6 +3,7 @@ import { assertUserDocumentSessionState } from "../firebase-auth.js";
 import { invalidateConfigCache, readThroughConfigCache } from "../config-cache.js";
 import { validateGiftCatalogUpdate } from "../gift-catalog-update-policy.js";
 import { giftAdminAccess } from "../gift-admin-permissions.js";
+import { giftPeriodBounds } from "../gift-totals-aggregation-policy.js";
 import { GIFT_STATS_PAGE_LIMIT, safeGiftTransactionRow, summarizeRecentGiftTransactions } from "../gift-recent-stats-policy.js";
 import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
@@ -342,12 +343,19 @@ export async function handler(req, res) {
     if (action === "statsTotals") {
       // Read-only index aggregation with 5-minute shared cache and
       // single-flight deduplication. No raw financial identities exposed.
+      const period = clean(req.body?.period);
+      const date = clean(req.body?.date);
+      if ((!period && date) || (period && !date)) throw Error("invalid_gift_report_period");
+      const bounds = period ? giftPeriodBounds(period, date) : null;
+      const key = bounds
+        ? `report:gift_transactions:${period}:${bounds.start}`
+        : "report:gift_transactions:all_time_totals";
       const totals = await readThroughConfigCache(
-        "report:gift_transactions:all_time_totals",
-        () => db.client.readGiftTransactionTotals(),
+        key,
+        () => db.client.readGiftTransactionTotals(bounds),
         { ttlMs: 5 * 60_000, staleMs: 10 * 60_000 },
       );
-      return out(res, 200, { ok: true, ...totals });
+      return out(res, 200, { ok: true, ...totals, ...(bounds ? { period, date, bounds } : {}) });
     }
 
     if (action === "statsRecent") {
