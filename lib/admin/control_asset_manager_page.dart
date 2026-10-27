@@ -16,9 +16,20 @@ import 'control_asset_studio_template.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 class ControlAssetManagerPage extends StatefulWidget {
-  const ControlAssetManagerPage({super.key, this.initialSearch = ''});
+  const ControlAssetManagerPage({
+    super.key,
+    this.initialSearch = '',
+    this.initialTemplateId = '',
+    this.initialAssetKey = '',
+    this.initialDirectory = '',
+    this.initialFileName = '',
+  });
 
   final String initialSearch;
+  final String initialTemplateId;
+  final String initialAssetKey;
+  final String initialDirectory;
+  final String initialFileName;
 
   @override
   State<ControlAssetManagerPage> createState() => _ControlAssetManagerPageState();
@@ -5508,6 +5519,23 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (initialSearch.isNotEmpty) {
       _assetSearch.text = initialSearch;
       _debouncedSearch = initialSearch.toLowerCase();
+    }
+    // Presets only populate the *new* asset form. Existing matching assets
+    // are still edited through their registry row to preserve the same key.
+    if (widget.initialTemplateId.trim().isNotEmpty) {
+      _selectedTemplateId = widget.initialTemplateId.trim();
+      _selectedChannels
+        ..clear()
+        ..add('system');
+    }
+    if (widget.initialAssetKey.trim().isNotEmpty) {
+      _assetKey.text = widget.initialAssetKey.trim();
+    }
+    if (widget.initialDirectory.trim().isNotEmpty) {
+      _directory.text = widget.initialDirectory.trim();
+    }
+    if (widget.initialFileName.trim().isNotEmpty) {
+      _fileName.text = widget.initialFileName.trim();
     }
     _loadAssets();
   }
