@@ -87,15 +87,15 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "paidCost",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "quantity",
           "order": "ASCENDING"
         },
         {
           "fieldPath": "totalCost",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "paidCost",
           "order": "ASCENDING"
         }
       ]
