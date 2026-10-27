@@ -399,8 +399,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       text: (current?.affinityBasePoints ?? 0).toString(),
     );
 
+    bool previewOpen = false;
     final result = await showDialog<GiftCatalogItem>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setLocal) => AlertDialog(
           title: Text(index == null ? (template == null ? 'إضافة هدية' : 'نسخ هدية جديدة') : 'تعديل الهدية'),
@@ -670,6 +672,74 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('إلغاء'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () async {
+                if (previewOpen) return;
+                previewOpen = true;
+                final previewName = nameAr.text.trim();
+                final previewPrice = price.text.trim();
+                final previewAsset = assetKey.text.trim();
+                final previewMode = effectMode;
+                try {
+                  await showDialog<void>(
+                    context: dialogContext,
+                    builder: (previewContext) => AlertDialog(
+                      title: const Text('معاينة الهدية'),
+                      content: SizedBox(
+                        width: 320,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 110,
+                              height: 110,
+                              child: FutureBuilder<Uri?>(
+                                future: ShadowAssetRegistry.remoteUrl(previewAsset),
+                                builder: (_, snapshot) {
+                                  final url = snapshot.data;
+                                  if (url == null) {
+                                    return const Icon(Icons.card_giftcard_rounded, size: 70);
+                                  }
+                                  return Image.network(
+                                    url.toString(),
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.card_giftcard_rounded, size: 70),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(previewName.isEmpty ? 'اسم الهدية' : previewName,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text('${previewPrice.isEmpty ? '—' : previewPrice} كوينز'),
+                            const SizedBox(height: 8),
+                            Text(previewMode == 'none'
+                              ? 'بدون مؤثر'
+                              : previewMode == 'seat' ? 'مؤثر خفيف على المايك'
+                              : 'مؤثر سينمائي داخل الغرفة'),
+                            const SizedBox(height: 8),
+                            const Text('هذه معاينة للصورة المنشورة والإعدادات، وليست اختبارًا لتشغيل المؤثر.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        FilledButton(
+                          onPressed: () => Navigator.pop(previewContext),
+                          child: const Text('إغلاق'),
+                        ),
+                      ],
+                    ),
+                  );
+                } finally {
+                  previewOpen = false;
+                }
+              },
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              label: const Text('معاينة'),
             ),
             FilledButton(
               onPressed: () {
