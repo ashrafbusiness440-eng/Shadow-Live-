@@ -8,6 +8,7 @@ import { invalidateConfigCache } from "./config-cache.js";
 import {
   ASSET_STUDIO_CHANNELS,
   ASSET_STUDIO_VERSION,
+  canonicalTemplateIdForAssetIdentity,
   publicAssetStudioTemplates,
   validateAssetStudioMetadata,
 } from "./asset-studio-templates.js";
@@ -154,16 +155,13 @@ async function verifyOwner(request, env) {
 }
 
 function assetStudioEffectiveType(asset, source = asset) {
-  const assetKey = clean(asset?.assetKey).toLowerCase();
-  const fullPath = clean(source?.fullPath || asset?.fullPath).toLowerCase();
-  const fileName = clean(source?.fileName || asset?.fileName).toLowerCase();
-  if (
-    assetKey.endsWith(".profileframe") ||
-    fileName.includes("_profile_frame.") ||
-    fullPath.includes("_profile_frame.")
-  ) {
-    return "frame";
-  }
+  const canonical = canonicalTemplateIdForAssetIdentity({
+    assetKey: asset?.assetKey,
+    fullPath: source?.fullPath || asset?.fullPath,
+    fileName: source?.fileName || asset?.fileName,
+  });
+  if (canonical === "frame.base.v1") return "frame";
+  if (canonical === "vehicle.base.v1") return "vehicle";
   return clean(source?.assetType || asset?.assetType);
 }
 
