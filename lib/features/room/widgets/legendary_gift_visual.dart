@@ -39,7 +39,7 @@ class _LegendaryGiftVisualState extends State<LegendaryGiftVisual>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: widget.durationMs.clamp(300, 12000)),
+      duration: Duration(milliseconds: widget.durationMs.clamp(300, 12000).toInt()),
     )..forward();
   }
 
@@ -54,7 +54,7 @@ class _LegendaryGiftVisualState extends State<LegendaryGiftVisual>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.durationMs != widget.durationMs) {
       _controller.duration =
-          Duration(milliseconds: widget.durationMs.clamp(300, 12000));
+          Duration(milliseconds: widget.durationMs.clamp(300, 12000).toInt());
     }
     if (oldWidget.assetKey != widget.assetKey ||
         oldWidget.imageUrl != widget.imageUrl ||
