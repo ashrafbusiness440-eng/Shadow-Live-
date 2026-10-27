@@ -5,6 +5,18 @@ import 'package:flutter/material.dart';
 
 import 'cosmetic_effect_widgets.dart';
 
+/// Presentation only. Entitlements and selection are decided by the existing
+/// server-side entrance event, never by a filename or the viewer.
+bool isVehicleEntranceAsset({required String assetKey, String imageUrl = ''}) {
+  final key = assetKey.trim().toLowerCase();
+  if (key == 'mysterious.vehicle' || key.endsWith('.vehicle')) return true;
+  // Existing legacy URLs may not have an asset key; accept only the filename.
+  final path = Uri.tryParse(imageUrl)?.path.toLowerCase() ?? '';
+  final fileName = path.split('/').last;
+  return fileName.contains('_vehicle.') ||
+      fileName.startsWith('vehicle_');
+}
+
 class RoomVisualEffect {
   const RoomVisualEffect({
     required this.eventId,
@@ -33,6 +45,10 @@ class RoomVisualEffect {
   final String profileImageUrl;
   final String badgeLabel;
   final String levelLabel;
+
+  bool get isVehicleEntrance =>
+      kind == 'entrance' &&
+      isVehicleEntranceAsset(assetKey: assetKey, imageUrl: imageUrl);
 }
 
 class RoomEffectCoordinator extends ChangeNotifier {
@@ -421,7 +437,15 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (event != null && event.kind == 'entrance')
+              if (event != null && event.isVehicleEntrance)
+                Positioned.fill(
+                  child: _AnimatedVehicleEntrance(
+                    key: ValueKey('vehicle-${event.eventId}'),
+                    event: event,
+                  ),
+                ),
+              if (event != null && event.kind == 'entrance' &&
+                  !event.isVehicleEntrance)
                 Positioned(
                   top: entranceTop,
                   left: 12,
@@ -490,6 +514,103 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                 ),
             ],
           ),
+        );
+      },
+    );
+  }
+}
+
+/// A single overlay for Wealth, VIP and store vehicles once the authorized
+/// room.entrance event supplies their existing asset key/URL. It reuses the
+/// coordinator's bounded queue and lifetime; there are no room subscriptions.
+class _AnimatedVehicleEntrance extends StatefulWidget {
+  const _AnimatedVehicleEntrance({super.key, required this.event});
+
+  final RoomVisualEffect event;
+
+  @override
+  State<_AnimatedVehicleEntrance> createState() =>
+      _AnimatedVehicleEntranceState();
+}
+
+class _AnimatedVehicleEntranceState extends State<_AnimatedVehicleEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: widget.event.durationMs),
+    )..forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedVehicleEntrance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.event.eventId != widget.event.eventId) {
+      _controller
+        ..duration = Duration(milliseconds: widget.event.durationMs)
+        ..forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final width = (bounds.maxWidth * 0.82).clamp(180.0, 370.0).toDouble();
+        final imageHeight =
+            (bounds.maxHeight * 0.36).clamp(155.0, 300.0).toDouble();
+        final travel = (bounds.maxWidth + width) / 2;
+        final content = Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: width,
+                height: imageHeight,
+                child: CosmeticAssetVisual(
+                  assetKey: widget.event.assetKey,
+                  imageUrl: widget.event.imageUrl,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _EntranceWelcomeStrip(event: widget.event),
+            ],
+          ),
+        );
+        if (reduceMotion) return content;
+        return AnimatedBuilder(
+          key: const Key('room-cinematic-vehicle'),
+          animation: _controller,
+          child: content,
+          builder: (context, child) {
+            final progress = _controller.value;
+            final opacity = progress < .12
+                ? (progress / .12).clamp(0.0, 1.0)
+                : progress > .88
+                    ? ((1 - progress) / .12).clamp(0.0, 1.0)
+                    : 1.0;
+            return Opacity(
+              opacity: opacity,
+              child: Transform.translate(
+                // The vehicle enters from the left and exits to the right,
+                // leaving all room controls working below the visual overlay.
+                offset: Offset(-travel + 2 * travel * progress, 0),
+                child: child,
+              ),
+            );
+          },
         );
       },
     );
