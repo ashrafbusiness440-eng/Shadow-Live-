@@ -27,6 +27,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   bool editing = false;
   bool grantDialogOpen = false;
   bool hasUnsavedChanges = false;
+  bool categoryUnsaved = false;
+  bool categoryEditorOpen = false;
+  List<Map<String, dynamic>> categoryDefinitions = [];
   int catalogRevision = 0;
   int visibleLimit = 20;
   int selectedSection = 0;
@@ -90,6 +93,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (code.contains('gift_catalog_restricted_category')) {
       return 'لا يمكن نقل هدايا الامتياز أو العلاقات إلى فئة أخرى بهذه الطريقة.';
     }
+    if (code.contains('gift_catalog_not_initialized')) {
+      return 'احفظ كتالوج الهدايا الأساسي أولًا، ثم عد إلى إدارة الفئات.';
+    }
+    if (code.contains('gift_category_missing')) {
+      return 'لا يمكن إزالة الفئات الأساسية أو فئة مستخدمة. أخفها بدلًا من حذفها.';
+    }
+    if (code.contains('invalid_gift_categories') ||
+        code.contains('invalid_gift_category_')) {
+      return 'راجع أسماء الفئات ورموزها وصورها ثم حاول الحفظ.';
+    }
     if (code.contains('invalid_catalog_revision')) {
       return 'تعذر التحقق من نسخة الهدايا. أعد تحميل القائمة قبل الحفظ.';
     }
@@ -99,7 +112,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
 
   Future<void> refreshCatalog() async {
     if (saving || editing) return;
-    if (hasUnsavedChanges) {
+    if (hasUnsavedChanges || categoryUnsaved) {
       final accept = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -137,6 +150,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final rawCategories = config is Map ? config['categoryDefinitions'] : null;
+      final loadedCategories = rawCategories is List
+          ? rawCategories.whereType<Map>().map((item) =>
+              Map<String, dynamic>.from(item)).toList()
+          : <Map<String, dynamic>>[
+              for (final id in GiftCatalogService.categories)
+                {'id': id, 'nameAr': GiftCatalogService.categoryLabel(id),
+                 'assetKey': '', 'enabled': true},
+            ];
       final revision = config is Map && config['revision'] is num
           ? (config['revision'] as num).toInt() : 0;
       if (!mounted) return;
@@ -147,6 +169,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         loading = false;
         loadFailed = false;
         hasUnsavedChanges = false;
+        categoryUnsaved = false;
+        categoryDefinitions = loadedCategories;
         catalogRevision = revision;
       });
     } catch (e) {
@@ -161,7 +185,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   }
 
   Future<void> save() async {
-    if (saving || loading) return;
+    if (saving || loading || categoryUnsaved) {
+      if (categoryUnsaved) message('احفظ تغييرات الفئات أو ألغها أولًا.');
+      return;
+    }
     if (loadFailed) {
       message('تعذر تحميل الهدايا المحفوظة. أعد المحاولة قبل الحفظ لحماية بياناتك.');
       return;
@@ -191,6 +218,153 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
   }
 
+  String labelForCategory(String id) {
+    for (final item in categoryDefinitions) {
+      if (item['id'] == id) return (item['nameAr'] ?? id).toString();
+    }
+    return GiftCatalogService.categoryLabel(id);
+  }
+
+  Future<void> saveCategories() async {
+    if (saving || loading || loadFailed || editing || !categoryUnsaved) return;
+    if (hasUnsavedChanges) {
+      message('احفظ تغييرات الهدايا أو ألغها قبل حفظ الفئات.');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حفظ تغييرات الفئات؟'),
+        content: const Text('إخفاء فئة سيوقف ظهور هداياها وإرسالها الجديد، دون تغيير العمليات السابقة.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حفظ الفئات')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => saving = true);
+    try {
+      await post({
+        'action': 'saveCategories',
+        'categories': categoryDefinitions,
+        'expectedRevision': catalogRevision,
+      });
+      if (!mounted) return;
+      message('تم حفظ الفئات بنجاح.');
+      await load();
+    } catch (e) {
+      if (mounted) message(friendlyError(e));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> editCategory([int? index]) async {
+    if (categoryEditorOpen || saving || loading || loadFailed) return;
+    categoryEditorOpen = true;
+    final current = index == null ? null : categoryDefinitions[index];
+    final id = TextEditingController(text: (current?['id'] ?? '').toString());
+    final name = TextEditingController(text: (current?['nameAr'] ?? '').toString());
+    final asset = TextEditingController(text: (current?['assetKey'] ?? '').toString());
+    var enabled = current?['enabled'] != false;
+    try {
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => StatefulBuilder(
+          builder: (context, refresh) => AlertDialog(
+            title: Text(index == null ? 'إضافة فئة' : 'تعديل الفئة'),
+            content: SizedBox(width: 420, child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (index == null) field(id, 'رمز الفئة (حروف إنجليزية صغيرة)', 'ramadan')
+                else ListTile(title: Text(name.text), subtitle: const Text('رقم الفئة ثابت لحماية الهدايا')),
+                const SizedBox(height: 10),
+                field(name, 'اسم الفئة', 'هدايا رمضان'),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final code = id.text.trim();
+                    if (!RegExp(r'^[a-z][a-z0-9_]{1,31}$').hasMatch(code)) {
+                      message('اكتب رمز الفئة الصحيح أولًا.');
+                      return;
+                    }
+                    if (asset.text.trim().isEmpty) {
+                      asset.text = 'gifts.categories.$code.icon';
+                    }
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => ControlAssetManagerPage(
+                        initialSearch: asset.text.trim(),
+                        initialTemplateId: 'gift.icon.base.v1',
+                        initialAssetKey: asset.text.trim(),
+                        initialDirectory: 'assets/images/gifts',
+                        initialFileName: '${code}_category.webp',
+                      ),
+                    ));
+                  },
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('إضافة/تغيير صورة الفئة'),
+                ),
+                const SizedBox(height: 10),
+                SwitchListTile(
+                  title: const Text('الفئة ظاهرة'),
+                  value: enabled,
+                  onChanged: (value) => refresh(() => enabled = value),
+                ),
+              ]),
+            )),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+              FilledButton(
+                onPressed: () {
+                  final code = id.text.trim();
+                  final label = name.text.trim();
+                  final image = asset.text.trim();
+                  if (!RegExp(r'^[a-z][a-z0-9_]{1,31}$').hasMatch(code) ||
+                      label.isEmpty || label.length > 64 ||
+                      (image.isNotEmpty && !RegExp(r'^[a-z0-9][a-z0-9._-]{2,119}$').hasMatch(image))) {
+                    message('راجع رمز الفئة واسمها والصورة.');
+                    return;
+                  }
+                  if (index == null && categoryDefinitions.any((e) => e['id'] == code)) {
+                    message('رمز الفئة مستخدم. اختر رمزًا مختلفًا.');
+                    return;
+                  }
+                  Navigator.pop(context, {
+                    'id': code,
+                    'nameAr': label,
+                    'assetKey': image,
+                    'enabled': enabled,
+                  });
+                },
+                child: const Text('اعتماد التعديل'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (result == null || !mounted) return;
+      setState(() {
+        categoryUnsaved = true;
+        if (index == null) { categoryDefinitions.add(result); }
+        else { categoryDefinitions[index] = result; }
+      });
+    } finally {
+      id.dispose(); name.dispose(); asset.dispose();
+      categoryEditorOpen = false;
+    }
+  }
+
+  void moveCategory(int index, int offset) {
+    final target = index + offset;
+    if (saving || target < 0 || target >= categoryDefinitions.length) return;
+    setState(() {
+      categoryUnsaved = true;
+      final category = categoryDefinitions.removeAt(index);
+      categoryDefinitions.insert(target, category);
+    });
+  }
+
   void message(String value) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -201,8 +375,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (grantDialogOpen || saving || loading || loadFailed) return;
     grantDialogOpen = true;
     try {
-    final enabledGifts =
-        gifts.where((item) => item.enabled).toList(growable: false);
+    final enabledGifts = gifts.where((item) =>
+      item.enabled && categoryDefinitions.any((category) =>
+        category['id'] == item.category && category['enabled'] != false,
+      )).toList(growable: false);
     if (enabledGifts.isEmpty) {
       message('لا توجد هدايا مفعلة متاحة للمنح.');
       return;
@@ -432,13 +608,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       labelText: 'الفئة',
                       border: OutlineInputBorder(),
                     ),
-                    items: GiftCatalogService.categories
+                    items: categoryDefinitions
                         .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(
-                              GiftCatalogService.categoryLabel(value),
-                            ),
+                          (item) => DropdownMenuItem<String>(
+                            value: item['id'] as String,
+                            child: Text((item['nameAr'] ?? item['id']).toString()),
                           ),
                         )
                         .toList(),
@@ -945,27 +1119,74 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
   }
 
+  Widget categoryThumbnail(String assetKey) {
+    if (assetKey.isEmpty) return const Icon(Icons.category_outlined);
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(assetKey),
+        builder: (_, snapshot) {
+          final url = snapshot.data;
+          if (url == null) return const Icon(Icons.category_outlined);
+          return Image.network(url.toString(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.category_outlined),
+          );
+        },
+      ),
+    );
+  }
+
   Widget categoryOverview() {
     final counts = <String, int>{};
     for (final gift in gifts) {
       counts[gift.category] = (counts[gift.category] ?? 0) + 1;
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const ListTile(
-          title: Text('الفئات الحالية'),
-          subtitle: Text('يمكنك اختيار فئة لاستعراض هداياها. إدارة إنشاء الفئات وتغييرها ستتاح بعد تفعيل الحماية اللازمة.'),
+        ListTile(
+          title: const Text('إدارة فئات الهدايا'),
+          subtitle: const Text('يمكن إضافة الفئات وتغيير ترتيبها وصورها وظهورها دون حذف الهدايا السابقة.'),
+          trailing: FilledButton.icon(
+            onPressed: saving || categoryDefinitions.length >= 30 ? null : () => editCategory(),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('إضافة فئة'),
+          ),
         ),
-        ...counts.entries.map((entry) => Card(child: ListTile(
-          leading: const Icon(Icons.category_outlined),
-          title: Text(GiftCatalogService.categoryLabel(entry.key)),
-          subtitle: Text('${entry.value} هدية'),
-          trailing: const Icon(Icons.chevron_left),
-          onTap: () => setState(() {
-            categoryFilter = entry.key;
-            selectedSection = 0;
-          }),
-        ))),
+        for (var i = 0; i < categoryDefinitions.length; i++)
+          Card(child: ListTile(
+            leading: categoryThumbnail((categoryDefinitions[i]['assetKey'] ?? '').toString()),
+            title: Text(labelForCategory(categoryDefinitions[i]['id'].toString())),
+            subtitle: Text('${counts[categoryDefinitions[i]['id']] ?? 0} هدية • ${categoryDefinitions[i]['enabled'] == false ? 'مخفية' : 'ظاهرة'}'),
+            trailing: PopupMenuButton<String>(
+              tooltip: 'خيارات الفئة',
+              enabled: !saving,
+              onSelected: (value) {
+                if (value == 'edit') editCategory(i);
+                if (value == 'up') moveCategory(i, -1);
+                if (value == 'down') moveCategory(i, 1);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'edit', child: Text('تعديل الفئة')),
+                if (i > 0)
+                  const PopupMenuItem(value: 'up', child: Text('رفع الفئة')),
+                if (i < categoryDefinitions.length - 1)
+                  const PopupMenuItem(value: 'down', child: Text('خفض الفئة')),
+              ],
+            ),
+            onTap: () => setState(() {
+              categoryFilter = categoryDefinitions[i]['id'].toString();
+              selectedSection = 0;
+            }),
+          )),
+        if (categoryUnsaved)
+          FilledButton.icon(
+            onPressed: saving || hasUnsavedChanges ? null : saveCategories,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('حفظ تغييرات الفئات'),
+          ),
       ],
     );
   }
@@ -1009,7 +1230,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   );
 
   Widget catalogFilters() {
-    final categories = <String>{'all', ...gifts.map((gift) => gift.category)};
+    final categories = <String>{'all', ...categoryDefinitions.map((item) => item['id'].toString()), ...gifts.map((gift) => gift.category)};
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1034,7 +1255,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   value: categoryFilter,
                   items: categories.map((category) => DropdownMenuItem(
                     value: category,
-                    child: Text(category == 'all' ? 'كل الفئات' : GiftCatalogService.categoryLabel(category)),
+                    child: Text(category == 'all' ? 'كل الفئات' : labelForCategory(category)),
                   )).toList(),
                   onChanged: (value) => setState(() => categoryFilter = value ?? 'all'),
                 ),
@@ -1136,7 +1357,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       subtitle: Text(error!),
                     ),
                   ),
-                if (hasUnsavedChanges)
+                if (hasUnsavedChanges || categoryUnsaved)
                   const Card(child: ListTile(
                     leading: Icon(Icons.edit_note_rounded, color: Colors.amberAccent),
                     title: Text('هناك تغييرات لم تُحفظ بعد'),
@@ -1214,9 +1435,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             '🪙 ' +
                                 formatCompactAmount(item.priceCoins) +
                                 ' • ' +
-                                GiftCatalogService.categoryLabel(
-                                  item.category,
-                                ) +
+                                labelForCategory(item.category) +
                                 (item.effectiveMinVipLevel > 0
                                     ? ' • VIP' +
                                         item.effectiveMinVipLevel.toString() +

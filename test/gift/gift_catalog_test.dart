@@ -56,6 +56,33 @@ void main() {
     expect(gifts.map((gift) => gift.id).toList(), <String>['first', 'later']);
   });
 
+  test('dynamic categories are parsed when authorized by the server', () {
+    final gifts = GiftCatalogService.parseCatalog([
+      {
+        'id': 'seasonal_gift',
+        'nameAr': 'هدية موسمية',
+        'priceCoins': 700,
+        'category': 'ramadan',
+        'enabled': true,
+        'sortOrder': 0,
+      },
+    ], allowedCategoryIds: {'general', 'ramadan'});
+    expect(gifts.single.category, 'ramadan');
+  });
+
+  test('server-hidden entire catalog stays empty, never resurrects demo gifts', () {
+    expect(GiftCatalogService.parseCatalog([]), isEmpty);
+    expect(GiftCatalogService.parseCatalog([
+      {
+        'id': 'rose',
+        'nameAr': 'وردة',
+        'priceCoins': 100,
+        'category': 'general',
+        'enabled': false,
+      },
+    ]), isEmpty);
+  });
+
   test('default gift prices match approved starter table', () {
     expect(
       GiftCatalogService.fallbackGifts

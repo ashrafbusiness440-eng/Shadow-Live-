@@ -1,4 +1,5 @@
 import { json, readJson } from "./http.js";
+import { giftCategoryEnabled } from "./gift-category-policy.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
@@ -745,6 +746,9 @@ export async function sendGift(db, uid, body, options = {}) {
     const giftData = rawCatalog.find((item) => clean(item?.id) === giftId);
     if (!giftData) throw new ApiError("not_found", 404);
     if (giftData.enabled === false) throw new ApiError("gift_inactive", 409);
+    if (!giftCategoryEnabled(catalog.data || {}, clean(giftData.category || "general"))) {
+      throw new ApiError("gift_inactive", 409);
+    }
 
     let relationshipGiftContext = null;
     try {

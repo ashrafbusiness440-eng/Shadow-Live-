@@ -202,6 +202,15 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   List<String> get _categories {
     final values = <String>['bag'];
+    final available = _catalog.map(_uiCategoryForGift).toSet();
+    // Category order comes from the same cached Gift Catalog response.
+    for (final category in GiftCatalogService.categoryOrder) {
+      final value = category == 'cp' || category == 'friends'
+          ? 'relationship'
+          : category;
+      if (available.contains(value) && !values.contains(value)) values.add(value);
+    }
+    // Legacy/offline catalogs continue to show every valid category.
     for (final gift in _catalog) {
       final value = _uiCategoryForGift(gift);
       if (!values.contains(value)) values.add(value);
@@ -225,6 +234,38 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         'relationship' => 'علاقة',
         _ => GiftCatalogService.categoryLabel(value),
       };
+
+  Widget _categoryVisual(String category, IconData? fallbackIcon, bool selected) {
+    final assetKey = GiftCatalogService.categoryImageKey(category);
+    final iconColor = selected ? const Color(0xFFFFD54A) : Colors.white54;
+    if (assetKey.isEmpty) {
+      return fallbackIcon == null
+          ? const SizedBox.shrink()
+          : Icon(fallbackIcon, size: category == 'bag' ? 20 : 14, color: iconColor);
+    }
+    return SizedBox(
+      width: 16,
+      height: 16,
+      child: FutureBuilder<Uri?>(
+        future: ShadowAssetRegistry.remoteUrl(assetKey),
+        builder: (_, snapshot) {
+          final uri = snapshot.data;
+          if (uri == null) {
+            return Icon(fallbackIcon ?? Icons.card_giftcard_outlined,
+                size: 14, color: iconColor);
+          }
+          return Image.network(uri.toString(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Icon(
+              fallbackIcon ?? Icons.card_giftcard_outlined,
+              size: 14,
+              color: iconColor,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   IconData? _categoryIcon(String value) => switch (value) {
         'bag' => Icons.shopping_bag_rounded,
@@ -540,16 +581,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (icon != null)
-                    Icon(
-                      icon,
-                      size: value == 'bag' ? 20 : 14,
-                      color: selected
-                          ? const Color(0xFFFFD54A)
-                          : Colors.white54,
-                    ),
+                  if (icon != null || GiftCatalogService.categoryImageKey(value).isNotEmpty)
+                    _categoryVisual(value, icon, selected),
                   if (_categoryLabel(value).isNotEmpty) ...[
-                    if (icon != null) const SizedBox(width: 3),
+                    if (icon != null || GiftCatalogService.categoryImageKey(value).isNotEmpty)
+                      const SizedBox(width: 3),
                     Text(
                       _categoryLabel(value),
                       style: TextStyle(

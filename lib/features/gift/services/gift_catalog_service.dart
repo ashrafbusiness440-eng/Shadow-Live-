@@ -120,6 +120,11 @@ class GiftCatalogService {
   static const Duration _freshFor = Duration(seconds: 30);
   static const Duration _staleFor = Duration(minutes: 5);
   static List<GiftCatalogItem>? _cachedCatalog;
+  static Map<String, String> _categoryNames = <String, String>{};
+  static Map<String, String> _categoryImageKeys = <String, String>{};
+  static List<String> _categoryOrder = <String>[];
+  static List<String> get categoryOrder => List<String>.unmodifiable(_categoryOrder);
+  static String categoryImageKey(String category) => _categoryImageKeys[category] ?? '';
   static DateTime? _loadedAt;
   static Future<List<GiftCatalogItem>>? _inflight;
   static int? _cachedBalanceCoins;
@@ -155,7 +160,7 @@ class GiftCatalogService {
     'friends',
   };
 
-  static String categoryLabel(String category) => switch (category) {
+  static String categoryLabel(String category) => _categoryNames[category] ?? (switch (category) {
         'general' => 'هدايا',
         'countries' => 'دول',
         'celebrities' => 'مشاهير',
@@ -164,8 +169,8 @@ class GiftCatalogService {
         'activities' => 'أنشطة',
         'cp' => 'CP',
         'friends' => 'أصدقاء',
-        _ => 'هدايا',
-      };
+        _ => category,
+      });
 
   static const List<GiftCatalogItem> fallbackGifts = <GiftCatalogItem>[
     GiftCatalogItem(
@@ -302,7 +307,7 @@ class GiftCatalogService {
     ),
   ];
 
-  static List<GiftCatalogItem> parseCatalog(dynamic raw) {
+  static List<GiftCatalogItem> parseCatalog(dynamic raw, {Set<String>? allowedCategoryIds}) {
     if (raw is! List) return fallbackGifts;
     final items = raw
         .whereType<Map>()
@@ -317,11 +322,12 @@ class GiftCatalogService {
               item.id.isNotEmpty &&
               item.nameAr.isNotEmpty &&
               item.priceCoins > 0 &&
-              categories.contains(item.category),
+              (allowedCategoryIds ?? categories).contains(item.category),
         )
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    return items.isEmpty ? fallbackGifts : items;
+    // A valid empty public catalog means everything is deliberately hidden.
+    return items;
   }
 
   static Future<List<GiftCatalogItem>> loadCatalog({
@@ -410,7 +416,28 @@ class GiftCatalogService {
         }
       }
       _cachedBagQuantities = bag;
-      return parseCatalog(body['gifts']);
+      final names = <String, String>{};
+      final assets = <String, String>{};
+      final order = <String>[];
+      final allowed = <String>{};
+      if (body['categories'] is List) {
+        for (final raw in (body['categories'] as List).whereType<Map>()) {
+          final id = (raw['id'] ?? '').toString().trim();
+          final label = (raw['nameAr'] ?? '').toString().trim();
+          if (id.isNotEmpty && label.isNotEmpty && raw['enabled'] != false) {
+            names[id] = label;
+            allowed.add(id);
+            order.add(id);
+            final asset = (raw['assetKey'] ?? '').toString().trim();
+            if (asset.isNotEmpty) assets[id] = asset;
+          }
+        }
+      }
+      _categoryNames = names;
+      _categoryImageKeys = assets;
+      _categoryOrder = order;
+      return parseCatalog(body['gifts'],
+        allowedCategoryIds: body['categories'] is List ? allowed : categories);
     } finally {
       if (ownedClient) httpClient.close();
     }
@@ -418,6 +445,9 @@ class GiftCatalogService {
 
   static void clearCacheForTests() {
     _cachedCatalog = null;
+    _categoryNames = <String, String>{};
+    _categoryImageKeys = <String, String>{};
+    _categoryOrder = <String>[];
     _loadedAt = null;
     _inflight = null;
     _cachedBalanceCoins = null;
