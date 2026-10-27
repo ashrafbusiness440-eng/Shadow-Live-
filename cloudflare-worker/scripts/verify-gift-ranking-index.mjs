@@ -56,6 +56,33 @@ const response=await fetch(root+"/documents:runAggregationQuery",{
 });
 if(!response.ok){
   const code=response.status;
+  const failure=await response.json().catch(()=>({}));
+  const upstreamStatus=String(failure?.error?.status||"UNKNOWN")
+    .replace(/[^A-Z_]/g,"").slice(0,80);
+  const upstreamMessage=String(failure?.error?.message||"")
+    .replace(/https?:\\/\\/\\S+/g,"[index_link]")
+    .replace(/Bearer\\s+[^\\s]+/g,"Bearer [redacted]")
+    .slice(0,450);
+  console.error("Gift index aggregate rejection:",JSON.stringify({
+    httpCode:code,upstreamStatus,message:upstreamMessage,
+  }));
+  // Count-only comparison isolates basic collection filtering from multi-field sums.
+  const countOnly={structuredAggregationQuery:{
+    structuredQuery:giftTotalsAggregationRequest(null,probeId).structuredAggregationQuery.structuredQuery,
+    aggregations:[{alias:"receipts",count:{}}],
+  }};
+  const diagnosis=await fetch(root+"/documents:runAggregationQuery",{
+    method:"POST",
+    headers:{...headers,"content-type":"application/json"},
+    body:JSON.stringify(countOnly),
+  });
+  const diagnosisBody=await diagnosis.json().catch(()=>({}));
+  console.error("Count-only index diagnosis:",JSON.stringify({
+    httpCode:diagnosis.status,
+    upstreamStatus:String(diagnosisBody?.error?.status||"OK").slice(0,80),
+    message:String(diagnosisBody?.error?.message||"")
+      .replace(/https?:\\/\\/\\S+/g,"[index_link]").slice(0,300),
+  }));
   throw Error("gift_ranking_index_aggregation_http_"+code);
 }
 const rawResult=await response.text();
