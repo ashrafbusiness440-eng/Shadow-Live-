@@ -1655,7 +1655,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             const Text('إجماليات سجل الهدايا',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             const Text(
-              'تشمل مستندات gift_transactions الموجودة في قاعدة البيانات؛ قد لا تشمل هدايا قديمة حُفظت خارج هذا السجل.',
+              'تشمل سجلات إرسال الهدايا المالية المحفوظة، وقد لا تتضمن هدايا قديمة من أنظمة سابقة.',
               style: TextStyle(fontSize: 11),
             ),
             Align(
