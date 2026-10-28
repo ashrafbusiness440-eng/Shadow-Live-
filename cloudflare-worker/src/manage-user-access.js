@@ -70,6 +70,7 @@ const ALLOWED_CAPABILITIES = new Set([
   "viewStoreInventory",
   "viewStoreAudit",
   "viewStorePurchases",
+  "previewStoreGrants",
   "manageStore",
   "manageGames",
   "manageEconomy",
@@ -113,7 +114,8 @@ async function execute(db, actorPayload, body) {
   if ((capabilities.includes("viewStore") ||
        capabilities.includes("viewStoreInventory") ||
        capabilities.includes("viewStoreAudit") ||
-       capabilities.includes("viewStorePurchases")) &&
+       capabilities.includes("viewStorePurchases") ||
+       capabilities.includes("previewStoreGrants")) &&
       role !== "admin" && role !== "super_admin") {
     throw new ApiError("invalid_store_capability_role", 400);
   }
