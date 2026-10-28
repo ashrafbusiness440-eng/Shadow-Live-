@@ -18,7 +18,8 @@ const item={
 function fakeDb(currentActor=actor) {
   const reads=[],docs=new Map([
     ["users/admin_uid",currentActor],
-    ["users/target_uid",{role:"user",accountStatus:"active"}],
+    ["users/target_uid",{role:"user",publicId:"123456",accountStatus:"active"}],
+    ["public_ids/123456",{uid:"target_uid"}],
     ["system_config/store_catalog",{revision:9,items:[{
       id:"200001",nameAr:"PRIVATE_HIDDEN_CATALOG",enabled:false,
     }]}],
@@ -66,6 +67,7 @@ test("admin can inspect only one target's bounded entitlements with sanitized fi
   assert.equal(view.ok,true);
   assert.equal(view.purchasingEnabled,false);
   assert.equal(view.targetUid,"target_uid");
+  assert.equal(view.searchedId,"target_uid");
   assert.equal(view.items.length,1);
   assert.equal(view.items[0].active,true);
   assert.equal(view.resultLimit,100);
@@ -132,6 +134,30 @@ test("admin inventory API accepts no unauthenticated GET or mutating verbs",asyn
   const code=readFileSync(new URL(
     "../../cloudflare-worker/src/manage-store-inventory.js",import.meta.url),"utf8");
   assert.match(code,/Cache-Control":"no-store/);
-  assert.match(code,/validStoreEntitlementDocument\(doc\.data,targetUid,nowMs\)/);
+  assert.match(code,/validStoreEntitlementDocument\(doc\.data,resolvedUid,nowMs\)/);
   assert.doesNotMatch(code,/walletBalance|adjustBalance|grantItem|updateEntitlement/);
+});
+
+test("public user ID and Arabic digits resolve safely without global user scans",async()=>{
+  const db=fakeDb();
+  const latin=await loadStoreUserInventory(db,token,"123456",2000);
+  assert.equal(latin.searchedId,"123456");
+  assert.equal(latin.targetUid,"target_uid");
+  assert.equal(latin.items.length,1);
+  const arabic=await loadStoreUserInventory(db,token,"١٢٣٤٥٦",2000);
+  assert.equal(arabic.searchedId,"١٢٣٤٥٦");
+  assert.equal(arabic.targetUid,"target_uid");
+  assert.ok(db.reads.includes("public_ids/123456"));
+  assert.ok(db.reads.includes("user_store_entitlements/target_uid/items?limit=100"));
+  const moved=fakeDb();
+  moved.docs.set("users/target_uid",{
+    role:"user",accountStatus:"active",publicId:"654321",
+  });
+  await assert.rejects(()=>loadStoreUserInventory(
+    moved,token,"123456"),/not_found/);
+  assert.ok(!moved.reads.some(x=>x.startsWith("user_store_entitlements/")));
+  const missing=fakeDb();
+  missing.docs.delete("public_ids/123456");
+  await assert.rejects(()=>loadStoreUserInventory(missing,token,"123456"),
+    /not_found/);
 });
