@@ -21,6 +21,15 @@ export function validateGiftCatalogUpdate(previousConfig, nextGifts, expectedRev
     ? previousConfig.gifts : [];
   const nextById = new Map(nextGifts.map((gift) => [gift.id, gift]));
   const previousById = new Map(previousGifts.map((gift) => [gift.id, gift]));
+  const reservedDraftIds = new Set(
+    (Array.isArray(previousConfig?.drafts) ? previousConfig.drafts : [])
+      .map((gift) => gift?.id).filter(Boolean),
+  );
+  for (const gift of nextGifts) {
+    if (!previousById.has(gift.id) && reservedDraftIds.has(gift.id)) {
+      throw Error("gift_catalog_draft_id_conflict");
+    }
+  }
 
   // Old IDs are immutable because bags, feeds, and ledger rows refer to them.
   // To discontinue a gift, disable it instead of deleting or renaming it.

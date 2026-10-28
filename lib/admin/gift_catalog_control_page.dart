@@ -10,6 +10,7 @@ import 'control_firebase.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 import '../features/gift/services/gift_catalog_service.dart';
+import 'gift_catalog_numeric_id.dart';
 import '../features/room/widgets/cosmetic_effect_widgets.dart';
 import '../features/room/widgets/legendary_gift_visual.dart';
 import '../utils/compact_number.dart';
@@ -108,7 +109,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String friendlyError(Object failure) {
     final code = failure.toString();
     if (code.contains('duplicate_gift_id')) {
-      return 'رقم الهدية مستخدم من قبل. اختر رقمًا مختلفًا.';
+      return 'رقم الهدية موجود مسبقًا. حدّث القائمة ثم أضف الهدية ليُختار رقم جديد تلقائيًا.';
     }
     if (code.contains('invalid_gift_price')) {
       return 'سعر الهدية غير صحيح. أدخل قيمة كوينز صحيحة.';
@@ -120,13 +121,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       return 'تأكد أن موعد نهاية الهدية بعد بداية ظهورها.';
     }
     if (code.contains('gift_draft_already_published')) {
-      return 'رقم الهدية مستخدم في الهدايا المنشورة. اختر رقماً آخر.';
+      return 'رقم الهدية مستخدم في هدية منشورة. حدّث القائمة ثم أعد الإضافة.';
     }
     if (code.contains('gift_draft_not_found')) {
       return 'المسودة غير موجودة. حدّث الصفحة وأعد المحاولة.';
     }
     if (code.contains('gift_draft_limit')) {
       return 'وصلت للعدد الأقصى من المسودات. انشر مسودة أو احذف إحداها.';
+    }
+    if (code.contains('gift_catalog_draft_id_conflict')) {
+      return 'الرقم محجوز لمسودة محفوظة. حدّث القائمة ثم أضف الهدية ليُختار رقم جديد تلقائيًا.';
     }
     if (code.contains('gift_catalog_conflict')) {
       return 'تم تعديل الهدايا من لوحة أخرى. احتفظنا بتعديلاتك هنا؛ لا تحفظ قبل مراجعة أحدث البيانات.';
@@ -727,8 +731,17 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
     editing = true;
     final current = index == null ? template : gifts[index];
+    // Never reuse an ID already in the catalog, saved drafts or an unsaved
+    // draft. Existing gift IDs remain immutable for historical ledgers.
+    final generatedId = index == null && !editSavedDraft
+        ? nextGiftNumericId([
+            ...gifts.map((gift) => gift.id),
+            ...drafts.map((gift) => gift.id),
+            if (pendingDraft != null) pendingDraft!.id,
+          ])
+        : null;
     final id = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.id ?? '') : '',
+      text: generatedId ?? (current?.id ?? ''),
     );
     final nameAr = TextEditingController(
       text: template == null || editSavedDraft ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
@@ -789,16 +802,20 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  if (index != null || editSavedDraft)
-                    TextFormField(
-                      initialValue: current!.id,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم الهدية (ثابت للحفاظ على السجلات)',
-                        border: OutlineInputBorder(),
-                      ),
-                    )
-                  else field(id, 'رقم الهدية الجديدة', 'rose'),
+                  TextFormField(
+                    initialValue: id.text,
+                    readOnly: true,
+                    textDirection: TextDirection.ltr,
+                    decoration: InputDecoration(
+                      labelText: generatedId == null
+                          ? 'رقم الهدية (ثابت للحفاظ على السجلات)'
+                          : 'رقم الهدية — تلقائي',
+                      helperText: generatedId == null
+                          ? 'لا يمكن تغييره لحماية الهدايا المرسلة'
+                          : 'اختير تلقائياً. يُثبّت عند حفظ الهدية.',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   field(nameAr, 'اسم الهدية بالعربي', 'وردة'),
                   const SizedBox(height: 10),
