@@ -858,6 +858,60 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     }
   }
 
+  // Gift Control links to an existing registry identity, not to a file.
+  // Resolve it by exact key; the paginated search can legitimately be empty.
+  Future<void> _loadLinkedGiftAsset() async {
+    await _loadAssets();
+    if (!mounted) return;
+    final key = widget.initialAssetKey.trim();
+    if (key.isEmpty || widget.initialTemplateId.trim().isEmpty ||
+        _hasUnsavedChanges || _showStudioForm) return;
+    try {
+      final uri = _endpoint.replace(queryParameters: {'assetKey': key});
+      final response = await http.get(
+        uri,
+        headers: {'authorization': 'Bearer ${await _token()}'},
+      );
+      if (!mounted || _hasUnsavedChanges || _showStudioForm) return;
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+      final body = decoded is Map<String, dynamic>
+          ? decoded : <String, dynamic>{};
+      if (response.statusCode == 200 && body['ok'] == true &&
+          body['asset'] is Map) {
+        final asset = Map<String, dynamic>.from(body['asset'] as Map);
+        if (asset['assetKey'] != key) {
+          setState(() => _message = 'تعذر التحقق من مفتاح الصورة.');
+          return;
+        }
+        if (!_assets.any((item) => item['assetKey'] == key)) {
+          setState(() {
+            _assets = [asset, ..._assets];
+          });
+        }
+        _beginEditAsset(asset);
+      } else if (response.statusCode == 404 &&
+          body['code'] == 'asset_not_found') {
+        // The gift already has a key but no uploaded file. Preserve all
+        // presets and offer the new-asset form without touching the gift.
+        _startNewAsset();
+        setState(() {
+          _message = 'لم تُرفع صورة لهذا المفتاح بعد. اختر الصورة ثم احفظها وانشرها.';
+        });
+      } else {
+        setState(() {
+          _message = 'تعذر التحقق من الصورة. حدّث السجل ثم حاول مجددًا.';
+        });
+      }
+    } catch (_) {
+      if (!mounted || _hasUnsavedChanges || _showStudioForm) return;
+      setState(() {
+        _message = 'تعذر الاتصال بسجل الصور. حاول مرة أخرى.';
+      });
+    }
+  }
+
   Future<void> _loadAssets({bool append = false}) async {
     if (_loadingMoreRegistry) return;
     if (append && !_hasMoreRegistry) return;
@@ -5185,17 +5239,19 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
                 color: Colors.white.withValues(alpha: .03),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Column(
+              child: Column(
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.inventory_2_outlined,
                     color: Colors.white38,
                     size: 36,
                   ),
-                  SizedBox(height: 7),
+                  const SizedBox(height: 7),
                   Text(
-                    'لا توجد أصول مسجلة بعد',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                    _debouncedSearch.isEmpty
+                        ? 'لا توجد أصول مسجلة بعد'
+                        : 'لا توجد صورة مسجلة تطابق البحث',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ],
               ),
@@ -5537,7 +5593,12 @@ class _ControlAssetManagerPageState extends State<ControlAssetManagerPage> {
     if (widget.initialFileName.trim().isNotEmpty) {
       _fileName.text = widget.initialFileName.trim();
     }
-    _loadAssets();
+    if (widget.initialAssetKey.trim().isNotEmpty &&
+        widget.initialTemplateId.trim().isNotEmpty) {
+      unawaited(_loadLinkedGiftAsset());
+    } else {
+      unawaited(_loadAssets());
+    }
   }
 
   @override
