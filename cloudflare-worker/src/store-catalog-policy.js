@@ -32,6 +32,7 @@ export function normalizeStoreCatalogItems(raw) {
     const priceCoins = value.priceCoins;
     const durationDays = value.durationDays;
     const sortOrder = value.sortOrder;
+    const minVipLevel = value.minVipLevel;
     if (!/^[1-9][0-9]{5,8}$/.test(id) || used.has(id)) {
       throw Error("invalid_store_item_id");
     }
@@ -45,6 +46,7 @@ export function normalizeStoreCatalogItems(raw) {
         !Number.isSafeInteger(durationDays) ||
         !STORE_DURATIONS.includes(durationDays) ||
         !Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 10000 ||
+        !Number.isSafeInteger(minVipLevel) || minVipLevel < 0 || minVipLevel > 10 ||
         !RARITIES.has(rarity)) {
       throw Error("invalid_store_item_details");
     }
@@ -56,7 +58,7 @@ export function normalizeStoreCatalogItems(raw) {
       throw Error("invalid_store_item_details");
     }
     return { id, nameAr, category, priceCoins, durationDays,
-      sortOrder, rarity, enabled: value.enabled, assetKey };
+      sortOrder, rarity, minVipLevel, enabled: value.enabled, assetKey };
   });
 }
 
