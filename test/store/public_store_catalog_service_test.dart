@@ -27,7 +27,9 @@ void main() {
             'minVipLevel': 0,
             'assetKey': 'store.item.200001.icon',
           }],
-        }), 200);
+        }), 200, headers: const {
+          'content-type': 'application/json; charset=utf-8',
+        });
       }),
     );
     final catalog = await service.load();
