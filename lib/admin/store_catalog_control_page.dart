@@ -11,6 +11,7 @@ import 'control_firebase.dart';
 import 'store_user_inventory_panel.dart';
 import 'store_audit_history_panel.dart';
 import 'store_catalog_statistics_panel.dart';
+import 'store_purchase_history_panel.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 const storeCategories = <String, String>{
@@ -64,6 +65,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool canEdit = false;
   bool canViewInventory = false;
   bool canViewAudit = false;
+  bool canViewPurchases = false;
   bool canViewCatalog = false;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
@@ -162,6 +164,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         canEdit = result['canEdit'] == true;
         canViewInventory = result['canViewInventory'] == true;
         canViewAudit = result['canViewAudit'] == true;
+        canViewPurchases = result['canViewPurchases'] == true;
         canViewCatalog = result['canViewCatalog'] == true;
         items = raw.map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
@@ -644,6 +647,15 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   );
 
   Widget _sectionPanel() {
+    if (activeSection == 2) {
+      return canViewPurchases
+          ? const StorePurchaseHistoryPanel()
+          : const Card(child: ListTile(
+              leading: Icon(Icons.lock_outline),
+              title: Text('سجل المشتريات'),
+              subtitle: Text('هذا القسم يتطلب صلاحية مستقلة من المالك.'),
+            ));
+    }
     if (activeSection == 5) {
       if (!canViewCatalog) {
         return const Card(child: ListTile(
