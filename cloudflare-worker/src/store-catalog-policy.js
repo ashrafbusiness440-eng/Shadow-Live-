@@ -33,6 +33,10 @@ export function normalizeStoreCatalogItems(raw) {
     const durationDays = value.durationDays;
     const sortOrder = value.sortOrder;
     const minVipLevel = value.minVipLevel;
+    const minWealthLevel = value.minWealthLevel ?? 0;
+    // Absolute UTC milliseconds. A null bound means no scheduled restriction.
+    const visibleFromMs = value.visibleFromMs ?? null;
+    const visibleUntilMs = value.visibleUntilMs ?? null;
     if (!/^[1-9][0-9]{5,8}$/.test(id) || used.has(id)) {
       throw Error("invalid_store_item_id");
     }
@@ -47,6 +51,13 @@ export function normalizeStoreCatalogItems(raw) {
         !STORE_DURATIONS.includes(durationDays) ||
         !Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 10000 ||
         !Number.isSafeInteger(minVipLevel) || minVipLevel < 0 || minVipLevel > 10 ||
+        !Number.isSafeInteger(minWealthLevel) || minWealthLevel < 0 ||
+        minWealthLevel > 35 ||
+        ![visibleFromMs, visibleUntilMs].every(bound =>
+          bound === null || (Number.isSafeInteger(bound) &&
+            bound >= 0 && bound <= 4_102_444_800_000)) ||
+        (visibleFromMs !== null && visibleUntilMs !== null &&
+          visibleFromMs >= visibleUntilMs) ||
         !RARITIES.has(rarity)) {
       throw Error("invalid_store_item_details");
     }
@@ -58,7 +69,8 @@ export function normalizeStoreCatalogItems(raw) {
       throw Error("invalid_store_item_details");
     }
     return { id, nameAr, category, priceCoins, durationDays,
-      sortOrder, rarity, minVipLevel, enabled: value.enabled, assetKey };
+      sortOrder, rarity, minVipLevel, minWealthLevel,
+      visibleFromMs, visibleUntilMs, enabled: value.enabled, assetKey };
   });
 }
 
