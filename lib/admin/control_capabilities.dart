@@ -9,7 +9,7 @@ abstract final class ControlCapabilities {
   static const manageAgencyPackages='manageAgencyPackages', grantAgencyPackage='grantAgencyPackage';
   static const suspendAgencies='suspendAgencies';
   static const manageUserLevels='manageUserLevels', manageWealthLevel='manageWealthLevel', manageAttractionLevel='manageAttractionLevel', manageGameLevel='manageGameLevel';
-  static const manageVip='manageVip', manageVipLevels='manageVipLevels', manageVipPolicy='manageVipPolicy', manageMysteriousPerson='manageMysteriousPerson', revealMysteriousIdentity='revealMysteriousIdentity', manageSpecialIds='manageSpecialIds', manageIds='manageIds', viewStore='viewStore', manageStore='manageStore';
+  static const manageVip='manageVip', manageVipLevels='manageVipLevels', manageVipPolicy='manageVipPolicy', manageMysteriousPerson='manageMysteriousPerson', revealMysteriousIdentity='revealMysteriousIdentity', manageSpecialIds='manageSpecialIds', manageIds='manageIds', viewStore='viewStore', viewStoreInventory='viewStoreInventory', manageStore='manageStore';
   static const manageGames='manageGames', manageEconomy='manageEconomy', manageGiftCatalog='manageGiftCatalog', viewGiftStats='viewGiftStats', adjustBalances='adjustBalances';
   static const manageWithdrawals='manageWithdrawals', manageSettlements='manageSettlements';
   static const manageCampaigns='manageCampaigns', manageRoles='manageRoles';
