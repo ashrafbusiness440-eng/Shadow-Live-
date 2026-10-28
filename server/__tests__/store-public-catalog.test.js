@@ -21,7 +21,7 @@ test("public store projection never includes hidden products or administrator me
   assert.equal(view[0].id,"200002");
   assert.deepEqual(Object.keys(view[0]).sort(), [
     "assetKey","category","durationDays","id","minVipLevel",
-    "nameAr","priceCoins","rarity","sortOrder",
+    "minWealthLevel","nameAr","priceCoins","rarity","sortOrder",
   ].sort());
   assert.ok(!JSON.stringify(view).includes("PRIVATE"));
   assert.equal(view[0].priceCoins,2500);
@@ -55,4 +55,34 @@ test("public store endpoint and Flutter screen have no purchase or grants", () =
   assert.match(screen,/الشراء قريباً/);
   assert.match(menu,/PublicStoreCatalogScreen\(\)/);
   assert.doesNotMatch(api,/adjustBalance|grantEntitlement|coinBalance|writeUpdate|writeCreate/);
+});
+
+test("scheduled products respect exact UTC start and end while old items stay visible",()=>{
+  const before={...item("200010"),visibleFromMs:1000,visibleUntilMs:2000,
+    minWealthLevel:22,minVipLevel:7};
+  const legacy=item("200011");
+  assert.deepEqual(selectPublicStoreItems([before,legacy],999).map(x=>x.id),
+    ["200011"]);
+  assert.deepEqual(selectPublicStoreItems([before,legacy],1000).map(x=>x.id),
+    ["200010","200011"]);
+  assert.deepEqual(selectPublicStoreItems([before,legacy],1999).map(x=>x.id),
+    ["200010","200011"]);
+  assert.deepEqual(selectPublicStoreItems([before,legacy],2000).map(x=>x.id),
+    ["200011"]);
+  assert.equal(selectPublicStoreItems([before],1500)[0].minWealthLevel,22);
+  assert.equal(selectPublicStoreItems([before],1500)[0].minVipLevel,7);
+  assert.deepEqual(selectPublicStoreItems([
+    {...before,visibleFromMs:2000,visibleUntilMs:1000},
+    {...before,id:"200012",assetKey:"store.item.200012.icon",minWealthLevel:36},
+  ],1500),[]);
+  assert.deepEqual(selectPublicStoreItems([legacy],NaN),[]);
+});
+
+test("store timestamp gating is computed after the configuration cache",()=>{
+  const content=readFileSync(new URL(
+    "../../cloudflare-worker/src/public-store-catalog.js", import.meta.url),"utf8");
+  assert.match(content,/const rawItems = await readThroughConfigCache/);
+  assert.match(content,/selectPublicStoreItems\(rawItems, Date\.now\(\)\)/);
+  assert.match(content,/Cache-Control":"no-store/);
+  assert.doesNotMatch(content,/return selectPublicStoreItems\(snapshot/);
 });
