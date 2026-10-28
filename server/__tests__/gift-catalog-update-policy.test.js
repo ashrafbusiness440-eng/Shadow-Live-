@@ -75,3 +75,22 @@ test("gift schedule and placement changes are audited, without false array diffs
     [],
   );
 });
+
+test("new automatically numbered gift cannot take a saved draft ID", () => {
+  const config = {
+    revision: 6,
+    gifts: [gift("heart")],
+    drafts: [gift("100001")],
+  };
+  assert.throws(
+    () => validateGiftCatalogUpdate(
+      config, [gift("heart"), gift("100001")], 6,
+    ),
+    /gift_catalog_draft_id_conflict/,
+  );
+  const allowed = validateGiftCatalogUpdate(
+    config, [gift("heart"), gift("100002")], 6,
+  );
+  assert.equal(allowed.revision, 7);
+  assert.equal(allowed.changes.some((item) => item.giftId === "100002"), true);
+});
