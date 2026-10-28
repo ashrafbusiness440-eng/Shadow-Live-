@@ -3,6 +3,7 @@ import {assertUserDocumentSessionState, verifyFirebaseIdToken} from "./firebase-
 import {firestoreClient, isTransientFirestoreError, firestoreErrorRetryDelayMs} from "./firestore.js";
 import {STORE_CATEGORIES, STORE_DURATIONS, validateStoreCatalogUpdate} from "./store-catalog-policy.js";
 import {canViewStoreInventory} from "./manage-store-inventory.js";
+import {canViewStoreAudit} from "./manage-store-audit.js";
 
 const clean = (value) => String(value ?? "").trim();
 const CONFIG_PATH = "system_config/store_catalog";
@@ -36,11 +37,12 @@ async function readActor(db, payload, tx = null) {
   assertUserDocumentSessionState(payload, snap.data || {});
   const canViewCatalog=canViewStoreCatalog(snap.data || {});
   const canViewInventory=canViewStoreInventory(snap.data || {});
-  if (!canViewCatalog && !canViewInventory) {
+  const canViewAudit=canViewStoreAudit(snap.data || {});
+  if (!canViewCatalog && !canViewInventory && !canViewAudit) {
     throw new StoreCatalogError("forbidden", 403);
   }
   return {uid, canEdit:canManageStoreCatalog(snap.data || {}),
-    canViewCatalog,canViewInventory};
+    canViewCatalog,canViewInventory,canViewAudit};
 }
 
 async function loadState(db, token) {
@@ -55,6 +57,7 @@ async function loadState(db, token) {
     purchasingEnabled: false,
     canEdit: actor.canEdit,
     canViewInventory: actor.canViewInventory,
+    canViewAudit: actor.canViewAudit,
     canViewCatalog: actor.canViewCatalog,
     note: "catalog_preparation_only",
   };

@@ -41,6 +41,7 @@ import { manageStoreCatalog } from "./manage-store-catalog.js";
 import { publicStoreCatalog } from "./public-store-catalog.js";
 import { storePurchase, myStoreItems } from "./store-entitlements.js";
 import { manageStoreInventory } from "./manage-store-inventory.js";
+import { manageStoreAudit } from "./manage-store-audit.js";
 import { economyRouter } from "./economy-router.js";
 import { agencyApplication } from "./agency-application.js";
 import { agencyControl } from "./agency-control.js";
@@ -136,6 +137,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/manage-store-inventory") {
     return manageStoreInventory(request, env);
+  }
+  if (url.pathname === "/api/manage-store-audit") {
+    return manageStoreAudit(request, env);
   }
   if (url.pathname === "/api/manage-user-access") {
     return manageUserAccess(request, env);

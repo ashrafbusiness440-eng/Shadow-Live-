@@ -9,6 +9,7 @@ import 'control_api_endpoints.dart';
 import 'control_asset_manager_page.dart';
 import 'control_firebase.dart';
 import 'store_user_inventory_panel.dart';
+import 'store_audit_history_panel.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 const storeCategories = <String, String>{
@@ -31,6 +32,7 @@ const storeDurations = <int, String>{
 const storeControlSections = <String>[
   'نظرة عامة', 'المنتجات', 'المشتريات', 'المنح',
   'مقتنيات المستخدمين', 'الإحصاءات', 'الإعدادات والصلاحيات',
+  'سجل التعديلات',
 ];
 
 const storeTemplates = <String, String>{
@@ -60,6 +62,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool previewOpen = false;
   bool canEdit = false;
   bool canViewInventory = false;
+  bool canViewAudit = false;
   bool canViewCatalog = true;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
@@ -157,6 +160,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         revision = result['revision'] as int;
         canEdit = result['canEdit'] == true;
         canViewInventory = result['canViewInventory'] == true;
+        canViewAudit = result['canViewAudit'] == true;
         canViewCatalog = result['canViewCatalog'] == true;
         items = raw.map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
@@ -639,6 +643,15 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   );
 
   Widget _sectionPanel() {
+    if (activeSection == 7) {
+      return canViewAudit
+          ? const StoreAuditHistoryPanel()
+          : const Card(child: ListTile(
+              leading: Icon(Icons.lock_outline),
+              title: Text('سجل التعديلات'),
+              subtitle: Text('هذه الصفحة تتطلب صلاحية مستقلة من المالك.'),
+            ));
+    }
     if (activeSection == 4) {
       return canViewInventory
           ? const StoreUserInventoryPanel()
