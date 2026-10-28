@@ -26,6 +26,7 @@ import 'admin/admin_notifications_page.dart';
 import 'admin/deleted_account_logs_page.dart';
 import 'admin/economy_control_page.dart';
 import 'admin/gift_catalog_control_page.dart';
+import 'admin/store_catalog_control_page.dart';
 import 'admin/games_control_page.dart';
 import 'admin/user_access_control_card.dart';
 import 'admin/system_health_card.dart';
@@ -3027,6 +3028,8 @@ class MorePage extends StatelessWidget {
               capabilities.contains('manageDiaries')||
               capabilities.contains('deleteDiaryComment')));
         final canOpenReports=canOpenGeneralReports||canOpenDiaryReports;
+        final canOpenStore=isOwner||
+            (adminEnabled&&capabilities.contains('manageStore'));
         final canOpenVip=isOwner||
             (adminEnabled&&capabilities.contains('manageVipLevels'));
         final canOpenVipInformation=isOwner||
@@ -3056,6 +3059,8 @@ class MorePage extends StatelessWidget {
             const ControlItem('الشخص الغامض','الأسعار + المنح/السحب + كشف الهوية حسب الصلاحية',Icons.theater_comedy_outlined),
           if(canOpenIds)
             const ControlItem('IDs الخاصة','إدارة المعرّفات الخاصة',Icons.badge_outlined),
+          if(canOpenStore)
+            const ControlItem('إدارة المتجر','المنتجات والأسعار والفئات والصور والتحكم بالظهور',Icons.storefront_outlined),
           if(isOwner)
             const ControlItem('استوديو الأصول','Shadow Asset Studio • Templates + Validation + Preview + Draft/Publish',Icons.auto_awesome_mosaic_outlined),
           if(canManageSystem)
@@ -3093,6 +3098,7 @@ class ControlList extends StatelessWidget {
       allowDiary:item.reportsDiaryAllowed,
     );
     if (item.title == 'سجل الإدارة') return const AuditLogPage();
+    if (item.title == 'إدارة المتجر') return const StoreCatalogControlPage();
     if (item.title == 'إعدادات النظام') return const SystemConfigPage();
     if (item.title == 'استوديو الأصول' || item.title == 'إدارة أصول التطبيق') return const ControlAssetManagerPage();
     if (item.title == 'العلاقات / CP') return const ControlRelationshipTypesPage();
