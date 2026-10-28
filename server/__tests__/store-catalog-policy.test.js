@@ -253,8 +253,9 @@ test("store cloning creates a new ID and asset key without mutating prior owners
   assert.notEqual(copied.assetKey,source.assetKey);
   assert.equal(copied.enabled,false);
   assert.equal(copied.priceCoins,source.priceCoins);
-  assert.deepEqual(validateStoreCatalogUpdate({revision:1,items:[source]},
-    [source,copied],1).changedIds,["200002"]);
+  assert.deepEqual(validateStoreCatalogUpdate({
+    revision:1,items:normalizeStoreCatalogItems([source]),
+  },[source,copied],1).changedIds,["200002"]);
   const ui=readFileSync(new URL("../../lib/admin/store_catalog_control_page.dart",
     import.meta.url),"utf8");
   assert.match(ui,/bool duplicate = false/);
