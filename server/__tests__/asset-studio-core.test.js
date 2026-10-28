@@ -495,3 +495,25 @@ test("login header is a first-class Asset Studio surface with bundled fallback",
   assert.equal(authChoice.includes("assets/images/auth_header.png"), true);
 });
 
+
+test("gift image and animation links resolve registry exact key before opening a safe editor", () => {
+  const gift = source("lib/admin/gift_catalog_control_page.dart");
+  const manager = source("lib/admin/control_asset_manager_page.dart");
+  const server = source("cloudflare-worker/src/manage-app-asset.js");
+  assert.match(gift, /initialAssetKey: assetKey\.text\.trim\(\)/);
+  assert.match(gift, /initialAssetKey: effectAssetKey\.text\.trim\(\)/);
+  assert.match(manager, /Future<void> _loadLinkedGiftAsset\(\) async/);
+  assert.match(manager, /_endpoint\.replace\(queryParameters: \{'assetKey': key\}\)/);
+  assert.match(manager, /if \(asset\['assetKey'\] != key\)/);
+  assert.match(manager, /_beginEditAsset\(asset\)/);
+  assert.match(manager, /response\.statusCode == 404 &&\s*body\['code'\] == 'asset_not_found'/);
+  assert.match(manager, /_startNewAsset\(\)/);
+  assert.match(manager, /_hasUnsavedChanges \|\| _showStudioForm/);
+  assert.match(manager, /_loadLinkedGiftAsset\(\)/);
+  assert.match(server, /db\.get\(`app_asset_registry\/\$\{detailKey\}`\)/);
+  assert.match(server, /if \(!current\.exists\) throw new ApiError\("asset_not_found", 404\)/);
+  assert.doesNotMatch(manager.slice(
+    manager.indexOf("Future<void> _loadLinkedGiftAsset()"),
+    manager.indexOf("Future<void> _loadAssets(", manager.indexOf("Future<void> _loadLinkedGiftAsset()"))
+  ), /writeCreate|writeUpdate|writeDelete|deleteFile/);
+});
