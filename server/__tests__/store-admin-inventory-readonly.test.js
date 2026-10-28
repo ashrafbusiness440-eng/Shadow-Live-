@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
-import {canViewStoreInventory,loadStoreUserInventory} from "../../cloudflare-worker/src/manage-store-inventory.js";
+import {canViewStoreInventory,loadStoreUserInventory,manageStoreInventory} from "../../cloudflare-worker/src/manage-store-inventory.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
 
@@ -120,4 +120,18 @@ test("Owner permission workflow recognizes Store inventory as distinct permissio
     "../../cloudflare-worker/src/manage-user-access.js",import.meta.url),"utf8");
   assert.match(accessCode,/capabilities\.includes\("viewStoreInventory"\)/);
   assert.match(accessCode,/"viewStoreInventory"/);
+});
+
+test("admin inventory API accepts no unauthenticated GET or mutating verbs",async()=>{
+  for(const method of ["GET","DELETE","PUT"]) {
+    const response=await manageStoreInventory(
+      new Request("https://example.com/api/manage-store-inventory",{method}),{});
+    assert.equal(response.status,405);
+    assert.equal((await response.json()).code,"method_not_allowed");
+  }
+  const code=readFileSync(new URL(
+    "../../cloudflare-worker/src/manage-store-inventory.js",import.meta.url),"utf8");
+  assert.match(code,/Cache-Control":"no-store/);
+  assert.match(code,/validStoreEntitlementDocument\(doc\.data,targetUid,nowMs\)/);
+  assert.doesNotMatch(code,/walletBalance|adjustBalance|grantItem|updateEntitlement/);
 });
