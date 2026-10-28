@@ -243,3 +243,23 @@ test("store editor preserves the operation ID across uncertain retries", () => {
   assert.match(ui,/editorOpen = true;/);
   assert.match(ui,/finally \{\s*editorOpen = false;/);
 });
+
+test("store cloning creates a new ID and asset key without mutating prior ownership", () => {
+  const source = make("200001");
+  const copiedId = nextStoreNumericId([source]);
+  const copied = {...source, id:copiedId, assetKey:`store.item.${copiedId}.icon`,
+    enabled:false};
+  assert.equal(copiedId,"200002");
+  assert.notEqual(copied.assetKey,source.assetKey);
+  assert.equal(copied.enabled,false);
+  assert.equal(copied.priceCoins,source.priceCoins);
+  assert.deepEqual(validateStoreCatalogUpdate({revision:1,items:[source]},
+    [source,copied],1).changedIds,["200002"]);
+  const ui=readFileSync(new URL("../../lib/admin/store_catalog_control_page.dart",
+    import.meta.url),"utf8");
+  assert.match(ui,/bool duplicate = false/);
+  assert.match(ui,/original != null && !duplicate/);
+  assert.match(ui,/var enabled = !duplicate && original\?\['enabled'\] == true;/);
+  assert.match(ui,/duplicate: value == 'copy'/);
+  assert.match(ui,/نسخ المنتج/);
+});
