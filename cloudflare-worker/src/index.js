@@ -37,6 +37,7 @@ import { voiceSession } from "./voice-session.js";
 import { roomRealtime } from "./room-realtime.js";
 import { googlePlayPurchase } from "./google-play-purchase.js";
 import { manageAppAsset } from "./manage-app-asset.js";
+import { manageStoreCatalog } from "./manage-store-catalog.js";
 import { economyRouter } from "./economy-router.js";
 import { agencyApplication } from "./agency-application.js";
 import { agencyControl } from "./agency-control.js";
@@ -117,6 +118,9 @@ async function dispatchRequest(request, env, ctx) {
   if (url.pathname === "/api/set-id-management-permission") {
     annotatePressureRequest(request, { action: "setIdManagementPermission" });
     return setIdManagementPermission(request, env);
+  }
+  if (url.pathname === "/api/manage-store-catalog") {
+    return manageStoreCatalog(request, env);
   }
   if (url.pathname === "/api/manage-user-access") {
     return manageUserAccess(request, env);
