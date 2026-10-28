@@ -56,6 +56,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool loading = true;
   bool saving = false;
   bool editorOpen = false;
+  bool previewOpen = false;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
   // the same draft cannot submit a second catalog transaction.
@@ -471,8 +472,11 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   );
 
   Future<void> _preview(Map<String, dynamic> item) async {
+    if (previewOpen) return;
+    previewOpen = true;
     final key = item['assetKey'].toString();
-    await showDialog<void>(
+    try {
+      await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('معاينة المنتج قبل النشر'),
@@ -513,6 +517,9 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         ],
       ),
     );
+    } finally {
+      previewOpen = false;
+    }
   }
 
   Widget _navigation() => Wrap(
