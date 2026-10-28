@@ -772,6 +772,7 @@ export async function handler(req, res) {
               "invalid_gifts",
               "invalid_catalog_revision",
               "gift_catalog_existing_id_missing",
+              "gift_catalog_draft_id_conflict",
               "gift_catalog_restricted_category",
               "invalid_gift_id",
               "duplicate_gift_id",
