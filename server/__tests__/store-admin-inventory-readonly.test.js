@@ -24,6 +24,8 @@ function fakeDb(currentActor=actor) {
     }]}],
   ]);
   return {reads,docs,
+    async beginTransaction(){return {};},
+    async rollback(){},
     async get(path) {reads.push(path);return {
       exists:docs.has(path),data:docs.get(path),
     };},
