@@ -76,6 +76,7 @@ import 'features/room/services/room_presence_service.dart';
 import 'features/games/services/game_runtime_service.dart';
 import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
+import 'features/store/screens/public_store_catalog_screen.dart';
 import 'features/agency/screens/public_agency_page.dart';
 import 'features/agency/services/agency_room_link.dart';
 import 'features/agency/widgets/agency_room_image_crop_sheet.dart';
@@ -3743,7 +3744,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         tool(
                           icon: Icons.storefront_rounded,
                           label: 'المتجر',
-                          onTap: () => comingSoon('المتجر'),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PublicStoreCatalogScreen(),
+                              ),
+                            );
+                          },
                           iconColor: const Color(0xFFFFF59D),
                         ),
                         tool(
