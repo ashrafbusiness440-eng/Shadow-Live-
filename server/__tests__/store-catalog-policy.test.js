@@ -9,7 +9,7 @@ import {canManageStoreCatalog} from "../../cloudflare-worker/src/manage-store-ca
 
 const make = (id = "200001") => ({
   id, nameAr: "إطار ملكي", category: "frames", priceCoins: 2500,
-  durationDays: 7, rarity: "rare", enabled: false, sortOrder: 3,
+  durationDays: 7, rarity: "rare", minVipLevel: 0, enabled: false, sortOrder: 3,
   assetKey: "store.item." + id + ".icon",
 });
 test("store catalog categories and durations remain bounded and Arabic", () => {
@@ -43,6 +43,7 @@ test("concurrent, deleted, duplicate and malformed products fail closed", () => 
     /invalid_store_item_id/);
   for (const field of [
     {priceCoins:-1},{priceCoins:1.5},{durationDays:99},{sortOrder:-2},
+    {minVipLevel:-1},{minVipLevel:11},
     {enabled:"true"},{rarity:"unknown"},{category:"payments"},
     {assetKey:"store.item.200002.icon"},{id:"../other"},
   ]) assert.throws(()=>normalizeStoreCatalogItems([{...make(),...field}]));
