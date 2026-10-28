@@ -57,6 +57,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool saving = false;
   bool editorOpen = false;
   bool previewOpen = false;
+  bool canEdit = false;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
   // the same draft cannot submit a second catalog transaction.
@@ -151,6 +152,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       if (!mounted) return;
       setState(() {
         revision = result['revision'] as int;
+        canEdit = result['canEdit'] == true;
         items = raw.map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
         loading = false;
@@ -188,7 +190,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   }
 
   Future<void> _edit({Map<String, dynamic>? original, bool duplicate = false}) async {
-    if (saving || loading || editorOpen) return;
+    if (!canEdit || saving || loading || editorOpen) return;
     if ((original == null || duplicate) && items.length >= 100) {
       setState(() => error = 'وصل المتجر للحد الأعلى من المنتجات.');
       return;
@@ -515,7 +517,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   }
 
   Future<void> _save() async {
-    if (loading || saving || !dirty) return;
+    if (!canEdit || loading || saving || !dirty) return;
     setState(() { saving = true; error = null; });
     // Reuse the same operation ID if the server committed but the reply was
     // lost. A changed draft or refreshed catalog clears this ID.
@@ -700,6 +702,12 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
           title: Text('تجهيز منتجات المتجر'),
           subtitle: Text('تقدر تضيف المنتجات وتعدل السعر والصور والفئات. شراء المنتجات بالكوينز غير مفعل في هذه المرحلة.'),
         )),
+        if (!canEdit) const Card(child: ListTile(
+          leading: Icon(Icons.visibility_outlined),
+          title: Text('صلاحية عرض فقط'),
+          subtitle: Text('يمكنك مشاهدة المنتجات ومعاينتها. '
+              'الإضافة والتعديل والنسخ والحفظ محصورة بالمشرف المخوّل.'),
+        )),
         if (dirty) const Padding(
           padding: EdgeInsets.all(8),
           child: Text('عندك تعديلات غير محفوظة',
@@ -710,12 +718,12 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
           child: Text(error!, style: const TextStyle(color: Colors.orangeAccent)),
         )),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          FilledButton.icon(
+          if (canEdit) FilledButton.icon(
             onPressed: loading || saving ? null : () => _edit(),
             icon: const Icon(Icons.add),
             label: const Text('إضافة منتج'),
           ),
-          FilledButton.tonalIcon(
+          if (canEdit) FilledButton.tonalIcon(
             onPressed: loading || saving || !dirty ? null : _save,
             icon: const Icon(Icons.save_outlined),
             label: const Text('حفظ التعديلات'),
@@ -794,7 +802,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                 icon: const Icon(Icons.visibility_outlined),
                 onPressed: () => _preview(item),
               ),
-              PopupMenuButton<String>(
+              if (canEdit) PopupMenuButton<String>(
                 tooltip: 'خيارات المنتج',
                 enabled: !loading && !saving,
                 icon: const Icon(Icons.more_vert),
@@ -807,7 +815,8 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                 ],
               ),
             ]),
-            onTap: loading || saving ? null : () => _edit(original: item),
+            onTap: !canEdit || loading || saving ? null :
+                () => _edit(original: item),
           ),
         ),
       ]),

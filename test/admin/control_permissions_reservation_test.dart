@@ -13,6 +13,13 @@ void main(){
   expect(x.contains(ControlCapabilities.manageRoles),isTrue);
   expect(x.contains(ControlCapabilities.emergencyLock),isTrue);
   expect(x.contains(ControlCapabilities.manageIds),isTrue);
+  expect(x.contains(ControlCapabilities.viewStore),isTrue);
+ });
+ test('admin store read permission does not imply edit',(){
+  final x=ControlPermissionsMatrix.effective(
+    role:'admin',explicit:{ControlCapabilities.viewStore});
+  expect(x.contains(ControlCapabilities.viewStore),isTrue);
+  expect(x.contains(ControlCapabilities.manageStore),isFalse);
  });
  test('manageIds is explicit for non-owner admins',(){
   final x=ControlPermissionsMatrix.effective(role:'admin',explicit:{ControlCapabilities.manageIds});

@@ -19,20 +19,28 @@ export function canManageStoreCatalog(user = {}) {
     user.capabilities.includes("manageStore");
 }
 
+export function canViewStoreCatalog(user = {}) {
+  if (canManageStoreCatalog(user)) return true;
+  return user.adminEnabled === true &&
+    (user.role === "admin" || user.role === "super_admin") &&
+    Array.isArray(user.capabilities) &&
+    user.capabilities.includes("viewStore");
+}
+
 async function readActor(db, payload, tx = null) {
   const uid = clean(payload?.sub);
   if (!uid) throw new StoreCatalogError("unauthorized", 401);
   const snap = await db.get("users/" + uid, tx);
   if (!snap.exists) throw new StoreCatalogError("forbidden", 403);
   assertUserDocumentSessionState(payload, snap.data || {});
-  if (!canManageStoreCatalog(snap.data || {})) {
+  if (!canViewStoreCatalog(snap.data || {})) {
     throw new StoreCatalogError("forbidden", 403);
   }
-  return uid;
+  return {uid, canEdit: canManageStoreCatalog(snap.data || {})};
 }
 
 async function loadState(db, token) {
-  await readActor(db, token);
+  const actor = await readActor(db, token);
   const snap = await db.get(CONFIG_PATH);
   return {
     ok: true, revision: Number(snap.data?.revision ?? 0),
@@ -40,6 +48,7 @@ async function loadState(db, token) {
     categories: STORE_CATEGORIES,
     durations: STORE_DURATIONS,
     purchasingEnabled: false,
+    canEdit: actor.canEdit,
     note: "catalog_preparation_only",
   };
 }
@@ -69,11 +78,16 @@ async function saveCatalog(db, payload, body) {
     let tx = null;
     try {
       tx = await db.beginTransaction();
-      const [uid, config, previousOperation] = await Promise.all([
+      const [actor, config, previousOperation] = await Promise.all([
         readActor(db, payload, tx),
         db.get(CONFIG_PATH, tx),
         db.get("control_operations/store_catalog_" + key, tx),
       ]);
+      // A viewer cannot replay a previous editor operation or mutate the catalog.
+      if (!actor.canEdit) {
+        throw new StoreCatalogError("forbidden", 403);
+      }
+      const uid = actor.uid;
       if (previousOperation.exists) {
         if (previousOperation.data?.actorUid !== uid) {
           throw new StoreCatalogError("operation_id_conflict", 409);
@@ -169,4 +183,4 @@ export async function manageStoreCatalog(request, env) {
   }
 }
 
-export const storeCatalogInternals = Object.freeze({canManageStoreCatalog, loadState, saveCatalog, assertStorePublishableAssets});
+export const storeCatalogInternals = Object.freeze({canManageStoreCatalog, canViewStoreCatalog, loadState, saveCatalog, assertStorePublishableAssets});

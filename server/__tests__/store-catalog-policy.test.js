@@ -5,7 +5,8 @@ import {
   STORE_CATEGORIES, STORE_DURATIONS, normalizeStoreCatalogItems,
   validateStoreCatalogUpdate, nextStoreNumericId,
 } from "../../cloudflare-worker/src/store-catalog-policy.js";
-import {canManageStoreCatalog, storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
+import {canManageStoreCatalog, canViewStoreCatalog, storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
+import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
 
 const make = (id = "200001") => ({
   id, nameAr: "إطار ملكي", category: "frames", priceCoins: 2500,
@@ -244,7 +245,7 @@ test("store editor preserves the operation ID across uncertain retries", () => {
   assert.match(ui,/final operation = pendingSaveOperationId!/);
   assert.match(ui,/pendingSaveOperationId = null;/);
   // Rapid taps must not stack multiple add/edit dialogs.
-  assert.match(ui,/if \(saving \|\| loading \|\| editorOpen\) return;/);
+  assert.match(ui,/if \(!canEdit \|\| saving \|\| loading \|\| editorOpen\) return;/);
   assert.match(ui,/editorOpen = true;/);
   assert.match(ui,/finally \{\s*editorOpen = false;/);
 });
@@ -268,4 +269,85 @@ test("store cloning creates a new ID and asset key without mutating prior owners
   assert.match(ui,/var enabled = !duplicate && original\?\['enabled'\] == true;/);
   assert.match(ui,/duplicate: value == 'copy'/);
   assert.match(ui,/نسخ المنتج/);
+});
+
+test("store viewers cannot save, copy, or replay catalog operations", async () => {
+  const viewer = {role:"admin",adminEnabled:true,capabilities:["viewStore"]};
+  const editor = {role:"admin",adminEnabled:true,capabilities:["manageStore"]};
+  assert.equal(canViewStoreCatalog(viewer), true);
+  assert.equal(canManageStoreCatalog(viewer), false);
+  assert.equal(canViewStoreCatalog(editor), true);
+  assert.equal(canManageStoreCatalog(editor), true);
+  assert.equal(canViewStoreCatalog({role:"super_admin",adminEnabled:true,
+    capabilities:["viewStore"]}),true);
+  assert.equal(canViewStoreCatalog({role:"moderator",adminEnabled:true,
+    capabilities:["viewStore"]}),false);
+  assert.equal(canViewStoreCatalog({role:"user",adminEnabled:true,
+    capabilities:["viewStore"]}),false);
+  assert.equal(canViewStoreCatalog({role:"admin",adminEnabled:false,
+    capabilities:["viewStore"]}),false);
+
+  const savedItems=[make()];
+  const docs = new Map([
+    ["users/view_user",viewer],
+    ["users/editor_user",editor],
+    ["system_config/store_catalog",{revision:0,items:savedItems}],
+    ["control_operations/store_catalog_safe_edit_01",{
+      actorUid:"view_user",result:{revision:99},
+    }],
+  ]);
+  let writeCount = 0;
+  const db={
+    async get(path) {
+      return {exists:docs.has(path),data:docs.get(path)};
+    },
+    async beginTransaction(){return {};},
+    async rollback(){},
+    async commit(){writeCount++;},
+  };
+  const viewerToken={sub:"view_user",iat:Math.floor(Date.now()/1000)};
+  const state=await storeCatalogInternals.loadState(db,viewerToken);
+  assert.equal(state.ok,true);
+  assert.equal(state.canEdit,false);
+  assert.deepEqual(state.items,savedItems);
+  await assert.rejects(()=>storeCatalogInternals.saveCatalog(
+    db,viewerToken,{
+      operationId:"store_catalog_safe_edit_01",
+      expectedRevision:0,items:savedItems,
+    }),/forbidden/);
+  await assert.rejects(()=>storeCatalogInternals.saveCatalog(
+    db,viewerToken,{
+      operationId:"store_catalog_safe_edit_02",
+      expectedRevision:0,items:savedItems,
+    }),/forbidden/);
+  assert.equal(writeCount,0);
+  const editorState=await storeCatalogInternals.loadState(db,{
+    sub:"editor_user",iat:viewerToken.iat,
+  });
+  assert.equal(editorState.canEdit,true);
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_catalog_control_page.dart",import.meta.url),"utf8");
+  assert.match(ui,/result\['canEdit'\] == true/);
+  assert.match(ui,/if \(!canEdit \|\| saving \|\| loading \|\| editorOpen\)/);
+  assert.match(ui,/if \(canEdit\) PopupMenuButton<String>/);
+  const nav=readFileSync(new URL("../../lib/main_control.dart",import.meta.url),"utf8");
+  assert.match(nav,/capabilities\.contains\('viewStore'\)/);
+});
+
+test("Owner can assign Store view scope only to an actual admin role", async() => {
+  assert.deepEqual(manageUserAccessInternals.normalizeCapabilities(
+    ["manageStore","viewStore","viewStore"]),["manageStore","viewStore"]);
+  const accessCode=readFileSync(new URL(
+    "../../lib/admin/user_access_control_card.dart",import.meta.url),"utf8");
+  assert.match(accessCode,/'viewStore': 'عرض منتجات المتجر فقط'/);
+  assert.match(accessCode,/'المتجر': \[/);
+  assert.match(accessCode,/'viewStore', 'manageStore'/);
+  let transactions=0;
+  const db={async beginTransaction(){transactions++;return {}; }};
+  await assert.rejects(()=>manageUserAccessInternals.execute(
+    db,{sub:"owner"},
+    {targetUid:"other",role:"moderator",adminEnabled:true,
+      capabilities:["viewStore"]}),
+    /invalid_store_capability_role/);
+  assert.equal(transactions,0);
 });
