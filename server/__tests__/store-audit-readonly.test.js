@@ -78,6 +78,9 @@ test("audit history query stays bounded and never reads or writes user purchases
     "../../cloudflare-worker/src/manage-store-audit.js",import.meta.url),"utf8");
   assert.doesNotMatch(code,/db\.commit\(|db\.writeCreate\(|db\.writeUpdate\(|user_store_entitlements\//);
   assert.match(code,/Cache-Control":"no-store/);
+  const routes=readFileSync(new URL(
+    "../../cloudflare-worker/src/index.js",import.meta.url),"utf8");
+  assert.match(routes,/url\.pathname === "\/api\/manage-store-audit"/);
 });
 
 test("unauthorized, inactive and stale-auth auditors cannot fetch history",async()=>{
