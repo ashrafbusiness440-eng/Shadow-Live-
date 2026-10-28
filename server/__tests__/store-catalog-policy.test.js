@@ -6,6 +6,7 @@ import {
   validateStoreCatalogUpdate, nextStoreNumericId,
 } from "../../cloudflare-worker/src/store-catalog-policy.js";
 import {canManageStoreCatalog, canViewStoreCatalog, storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
+import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
 
 const make = (id = "200001") => ({
   id, nameAr: "إطار ملكي", category: "frames", priceCoins: 2500,
@@ -331,4 +332,22 @@ test("store viewers cannot save, copy, or replay catalog operations", async () =
   assert.match(ui,/if \(canEdit\) PopupMenuButton<String>/);
   const nav=readFileSync(new URL("../../lib/main_control.dart",import.meta.url),"utf8");
   assert.match(nav,/capabilities\.contains\('viewStore'\)/);
+});
+
+test("Owner can assign Store view scope only to an actual admin role", async() => {
+  assert.deepEqual(manageUserAccessInternals.normalizeCapabilities(
+    ["manageStore","viewStore","viewStore"]),["manageStore","viewStore"]);
+  const accessCode=readFileSync(new URL(
+    "../../lib/admin/user_access_control_card.dart",import.meta.url),"utf8");
+  assert.match(accessCode,/'viewStore': 'عرض منتجات المتجر فقط'/);
+  assert.match(accessCode,/'المتجر': \[/);
+  assert.match(accessCode,/'viewStore', 'manageStore'/);
+  let transactions=0;
+  const db={async beginTransaction(){transactions++;return {}; }};
+  await assert.rejects(()=>manageUserAccessInternals.execute(
+    db,{sub:"owner"},
+    {targetUid:"other",role:"moderator",adminEnabled:true,
+      capabilities:["viewStore"]}),
+    /invalid_store_capability_role/);
+  assert.equal(transactions,0);
 });
