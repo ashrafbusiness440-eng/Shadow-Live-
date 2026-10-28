@@ -43,13 +43,15 @@ export function prepareStorePurchase({
   if (!raw) throw Error("store_product_unavailable");
   // Catalog normalization rejects tampered price, ID, asset key and durations.
   const item = normalizeStoreCatalogItems([raw])[0];
-  if (!item.enabled) throw Error("store_product_unavailable");
+  if (!item.enabled ||
+      (item.visibleFromMs !== null && now < item.visibleFromMs) ||
+      (item.visibleUntilMs !== null && now >= item.visibleUntilMs)) {
+    throw Error("store_product_unavailable");
+  }
   if (item.priceCoins <= 0) throw Error("store_product_not_purchasable");
   if (vipLevel < item.minVipLevel) throw Error("store_vip_level_required");
-  // Wealth gating is enabled once the store schema adds a trusted minWealthLevel.
-  // Reject any unrecognized requirement rather than silently bypassing it.
-  if (raw.minWealthLevel !== undefined && raw.minWealthLevel !== 0) {
-    throw Error("store_wealth_policy_not_ready");
+  if (wealthLevel < item.minWealthLevel) {
+    throw Error("store_wealth_level_required");
   }
   const expiresAtMs = item.durationDays === 0
     ? null
@@ -68,7 +70,7 @@ export function prepareStorePurchase({
     expiresAtMs,
     rarity: item.rarity,
     purchasedAtMs: now,
-    minVipLevel: item.minVipLevel,
+    minVipLevel: item.minVipLevel, minWealthLevel: item.minWealthLevel,
   });
 }
 
