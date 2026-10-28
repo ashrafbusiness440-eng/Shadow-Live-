@@ -98,6 +98,9 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
             if (item.minVipLevel > 0) Text(
               'يتطلب مستوى VIP ${item.minVipLevel} فما فوق',
               style: const TextStyle(color: Colors.white70)),
+            if (item.minWealthLevel > 0) Text(
+              'يتطلب مستوى ثروة ${item.minWealthLevel} فما فوق',
+              style: const TextStyle(color: Colors.white70)),
             const SizedBox(height: 20),
             const FilledButton(
               onPressed: null,
@@ -132,7 +135,9 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
           Text('${item.priceCoins} كوينز',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Color(0xFFFFD54F))),
-          Text(item.minVipLevel > 0 ? 'VIP ${item.minVipLevel}+' : 'الشراء قريباً',
+          Text(item.minVipLevel > 0 ? 'VIP ${item.minVipLevel}+'
+                : item.minWealthLevel > 0 ? 'ثروة ${item.minWealthLevel}+'
+                : 'الشراء قريباً',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white54, fontSize: 12)),
         ]),

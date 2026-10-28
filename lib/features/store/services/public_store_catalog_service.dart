@@ -11,6 +11,7 @@ class PublicStoreItem {
     required this.durationDays,
     required this.rarity,
     required this.minVipLevel,
+    required this.minWealthLevel,
     required this.assetKey,
   });
 
@@ -21,6 +22,7 @@ class PublicStoreItem {
   final int durationDays;
   final String rarity;
   final int minVipLevel;
+  final int minWealthLevel;
   final String assetKey;
 
   factory PublicStoreItem.fromJson(Map<String, dynamic> value) {
@@ -38,6 +40,7 @@ class PublicStoreItem {
       durationDays: (value['durationDays'] as num).toInt(),
       rarity: value['rarity']?.toString() ?? '',
       minVipLevel: (value['minVipLevel'] as num).toInt(),
+      minWealthLevel: (value['minWealthLevel'] as num?)?.toInt() ?? 0,
       assetKey: assetKey,
     );
   }

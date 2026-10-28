@@ -56,7 +56,9 @@ test("purchase preflight rejects hidden, free, invalid, low VIP and unsupported 
     {catalog:{items:[{...product(),enabled:false}]}},
     {catalog:{items:[{...product(),priceCoins:0}]}},
     {catalog:{items:[{...product(),assetKey:"store.item.200002.icon"}]}},
-    {catalog:{items:[{...product(),minWealthLevel:3}]}},
+    {catalog:{items:[{...product(),minWealthLevel:9}]}},
+    {catalog:{items:[{...product(),visibleFromMs:100001}]}},
+    {catalog:{items:[{...product(),visibleUntilMs:100000}]}},
     {vipLevel:1},{vipLevel:-1},{wealthLevel:36},
     {buyer:{uid:"active_uid",accountStatus:"deleting"}},
     {productId:"200002"},{nowMs:NaN},
@@ -100,4 +102,20 @@ test("own-inventory endpoint does not accept a target user or grant/mutate data"
   assert.match(routes,/url\.pathname === "\/api\/my-store-items"/);
   assert.match(routes,/url\.pathname === "\/api\/store-purchase"/);
   assert.doesNotMatch(service,/db\.commit\(|db\.writeCreate\(|db\.writeUpdate\(|adjustBalance|wallet_operations/);
+});
+
+test("store purchase rejects prelaunch and expired items and respects wealth", () => {
+  const c=context();
+  const productAtLevel={...product(),minWealthLevel:8,
+    visibleFromMs:99_000,visibleUntilMs:100_001};
+  const quote=prepareStorePurchase({
+    ...c,catalog:{items:[productAtLevel]},
+  });
+  assert.equal(quote.minWealthLevel,8);
+  assert.throws(()=>prepareStorePurchase({
+    ...c,wealthLevel:7,catalog:{items:[productAtLevel]},
+  }),/store_wealth_level_required/);
+  assert.throws(()=>prepareStorePurchase({
+    ...c,nowMs:100_001,catalog:{items:[productAtLevel]},
+  }),/store_product_unavailable/);
 });
