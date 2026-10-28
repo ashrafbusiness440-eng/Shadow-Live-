@@ -124,3 +124,17 @@ test("audit-only admin enters Store Hub without private catalog or inventory",as
   assert.match(ui,/StoreAuditHistoryPanel\(/);
   assert.match(ownerUi,/'viewStoreAudit': 'عرض سجل تعديلات المتجر'/);
 });
+
+test("audit projection bounds product IDs and warns when more than 50 rows may exist",async()=>{
+  const safe=projectStoreCatalogAudit({
+    ...log,changedIds:["../user","200010","200010","INVALID",...Array(150).fill("200011")],
+  });
+  assert.equal(safe.changedIds.length,100);
+  assert.ok(safe.changedIds.every(id=>/^[1-9][0-9]{5,8}$/.test(id)));
+  const db=mockDb();
+  db.runQuery=async()=>Array(50).fill({data:log});
+  const result=await loadStoreCatalogAudit(db,token);
+  assert.equal(result.entries.length,50);
+  assert.equal(result.moreMayExist,true);
+  assert.equal(result.resultLimit,50);
+});
