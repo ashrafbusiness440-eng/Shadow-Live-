@@ -420,6 +420,10 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                       labelText: 'الترتيب', border: OutlineInputBorder(),
                     ),
                     validator: (value) {
+                      if (visibleFromMs != null && visibleUntilMs != null &&
+                          visibleFromMs! >= visibleUntilMs!) {
+                        return 'موعد النهاية يجب أن يكون بعد البداية';
+                      }
                       final n = int.tryParse(value ?? '');
                       return n == null || n < 0 || n > 10000
                           ? 'الترتيب غير صحيح' : null;
@@ -581,6 +585,13 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
             Text((item['minVipLevel'] as num? ?? 0) == 0
                 ? 'متاح لجميع المستويات'
                 : 'VIP ${item['minVipLevel']} فما فوق'),
+            Text((item['minWealthLevel'] as num? ?? 0) == 0
+                ? 'متاح لجميع مستويات الثروة'
+                : 'ثروة LV${item['minWealthLevel']} فما فوق'),
+            if (item['visibleFromMs'] is int)
+              Text('يبدأ العرض: ${DateTime.fromMillisecondsSinceEpoch(item['visibleFromMs'] as int).toLocal().toString().substring(0, 16)}'),
+            if (item['visibleUntilMs'] is int)
+              Text('ينتهي العرض: ${DateTime.fromMillisecondsSinceEpoch(item['visibleUntilMs'] as int).toLocal().toString().substring(0, 16)}'),
             const SizedBox(height: 12),
             FutureBuilder<Uri?>(
               future: ShadowAssetRegistry.remoteUrl(key),
@@ -766,7 +777,15 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
             subtitle: Text(
               'رقم ${item['id']} • ${storeCategories[item['category']] ?? item['category']}\n'
               '${item['priceCoins']} كوينز • ${storeDurations[item['durationDays']] ?? ''} • '
-              '${item['enabled'] == true ? 'ظاهرة' : 'مسودة / مخفية'}',
+              '${item['enabled'] != true ? 'مسودة / مخفية' :
+                  (item['visibleFromMs'] is int &&
+                  (item['visibleFromMs'] as int) > DateTime.now().millisecondsSinceEpoch)
+                    ? 'مجدولة للظهور' :
+                  (item['visibleUntilMs'] is int &&
+                  (item['visibleUntilMs'] as int) <= DateTime.now().millisecondsSinceEpoch)
+                    ? 'انتهى موعد العرض' : 'ظاهرة'}'
+              '${(item['minVipLevel'] as num? ?? 0) > 0 ? ' • VIP ${item['minVipLevel']}+' : ''}'
+              '${(item['minWealthLevel'] as num? ?? 0) > 0 ? ' • ثروة ${item['minWealthLevel']}+' : ''}',
             ),
             isThreeLine: true,
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
