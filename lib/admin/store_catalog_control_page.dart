@@ -683,7 +683,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
               '${item['enabled'] == true ? 'ظاهرة' : 'مسودة / مخفية'}',
             ),
             isThreeLine: true,
-            trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               IconButton(
                 tooltip: 'معاينة المنتج',
                 icon: const Icon(Icons.visibility_outlined),
