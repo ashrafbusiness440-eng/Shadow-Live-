@@ -144,6 +144,47 @@ test("store saves are atomic, retryable and reject stale revisions without purch
   }),/forbidden/);
 });
 
+test("store visibility is guarded by a published Studio image, without charges", async () => {
+  const hidden = make();
+  const visible = {...hidden, enabled:true};
+  const assets = new Map();
+  const db = {
+    async get(path) {
+      const data = assets.get(path);
+      return {exists:data !== undefined, data};
+    },
+  };
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [hidden], [hidden]);
+  await assert.rejects(
+    () => storeCatalogInternals.assertStorePublishableAssets(db, null, [hidden], [visible]),
+    /store_asset_not_published/);
+  assets.set("app_asset_registry/" + hidden.assetKey, {
+    published:false, rawUrl:"https://example.com/draft.webp",
+  });
+  await assert.rejects(
+    () => storeCatalogInternals.assertStorePublishableAssets(db, null, [hidden], [visible]),
+    /store_asset_not_published/);
+  assets.set("app_asset_registry/" + hidden.assetKey, {
+    published:true, rawUrl:"",
+  });
+  await assert.rejects(
+    () => storeCatalogInternals.assertStorePublishableAssets(db, null, [hidden], [visible]),
+    /store_asset_not_published/);
+  assets.set("app_asset_registry/" + hidden.assetKey, {
+    published:true, rawUrl:"https://example.com/published.webp",
+  });
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [hidden], [visible]);
+  // Hiding an already published item remains allowed even if its asset vanishes.
+  assets.clear();
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [visible], [hidden]);
+  // Visible legacy items can be edited without unrelated availability failures.
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [visible], [{...visible, priceCoins:2700}]);
+});
+
 test("store editor preserves the operation ID across uncertain retries", () => {
   const ui=readFileSync(new URL(
     "../../lib/admin/store_catalog_control_page.dart",import.meta.url),"utf8");
