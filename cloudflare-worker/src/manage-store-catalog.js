@@ -2,6 +2,7 @@ import {json, readJson} from "./http.js";
 import {assertUserDocumentSessionState, verifyFirebaseIdToken} from "./firebase-auth.js";
 import {firestoreClient, isTransientFirestoreError, firestoreErrorRetryDelayMs} from "./firestore.js";
 import {STORE_CATEGORIES, STORE_DURATIONS, validateStoreCatalogUpdate} from "./store-catalog-policy.js";
+import {canViewStoreInventory} from "./manage-store-inventory.js";
 
 const clean = (value) => String(value ?? "").trim();
 const CONFIG_PATH = "system_config/store_catalog";
@@ -33,22 +34,28 @@ async function readActor(db, payload, tx = null) {
   const snap = await db.get("users/" + uid, tx);
   if (!snap.exists) throw new StoreCatalogError("forbidden", 403);
   assertUserDocumentSessionState(payload, snap.data || {});
-  if (!canViewStoreCatalog(snap.data || {})) {
+  const canViewCatalog=canViewStoreCatalog(snap.data || {});
+  const canViewInventory=canViewStoreInventory(snap.data || {});
+  if (!canViewCatalog && !canViewInventory) {
     throw new StoreCatalogError("forbidden", 403);
   }
-  return {uid, canEdit: canManageStoreCatalog(snap.data || {})};
+  return {uid, canEdit:canManageStoreCatalog(snap.data || {}),
+    canViewCatalog,canViewInventory};
 }
 
 async function loadState(db, token) {
   const actor = await readActor(db, token);
   const snap = await db.get(CONFIG_PATH);
   return {
-    ok: true, revision: Number(snap.data?.revision ?? 0),
-    items: Array.isArray(snap.data?.items) ? snap.data.items : [],
+    ok: true, revision: actor.canViewCatalog ? Number(snap.data?.revision ?? 0) : 0,
+    items: actor.canViewCatalog && Array.isArray(snap.data?.items)
+      ? snap.data.items : [],
     categories: STORE_CATEGORIES,
     durations: STORE_DURATIONS,
     purchasingEnabled: false,
     canEdit: actor.canEdit,
+    canViewInventory: actor.canViewInventory,
+    canViewCatalog: actor.canViewCatalog,
     note: "catalog_preparation_only",
   };
 }

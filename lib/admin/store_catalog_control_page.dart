@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_asset_manager_page.dart';
 import 'control_firebase.dart';
+import 'store_user_inventory_panel.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 const storeCategories = <String, String>{
@@ -58,6 +59,8 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool editorOpen = false;
   bool previewOpen = false;
   bool canEdit = false;
+  bool canViewInventory = false;
+  bool canViewCatalog = true;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
   // the same draft cannot submit a second catalog transaction.
@@ -153,6 +156,8 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       setState(() {
         revision = result['revision'] as int;
         canEdit = result['canEdit'] == true;
+        canViewInventory = result['canViewInventory'] == true;
+        canViewCatalog = result['canViewCatalog'] == true;
         items = raw.map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
         loading = false;
@@ -634,6 +639,15 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   );
 
   Widget _sectionPanel() {
+    if (activeSection == 4) {
+      return canViewInventory
+          ? const StoreUserInventoryPanel()
+          : const Card(child: ListTile(
+              leading: Icon(Icons.lock_outline),
+              title: Text('مقتنيات المستخدمين'),
+              subtitle: Text('هذه الصفحة تتطلب صلاحية خاصة من المالك.'),
+            ));
+    }
     if (activeSection == 0) {
       final visible = items.where((item) => item['enabled'] == true).length;
       return Column(children: [
@@ -686,7 +700,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('إدارة المتجر')),
-      body: activeSection != 1
+      body: activeSection != 1 || !canViewCatalog
           ? ListView(padding: const EdgeInsets.all(16), children: [
               _navigation(),
               const SizedBox(height: 12),

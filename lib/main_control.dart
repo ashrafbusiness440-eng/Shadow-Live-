@@ -1400,7 +1400,7 @@ class _RolePolicyCard extends StatelessWidget {
     'manageSettlements':'إدارة التسويات','manageRoles':'إدارة الأدوار','manageCapabilities':'إدارة الصلاحيات',
     'manageSystem':'إدارة النظام','manageIds':'إدارة IDs المستخدمين والغرف',
     'manageVipLevels':'إدارة مستويات VIP','manageVipPolicy':'إدارة إعدادات وعروض VIP',
-    'viewStore':'عرض منتجات المتجر','manageStore':'إدارة منتجات المتجر',
+    'viewStore':'عرض منتجات المتجر','viewStoreInventory':'عرض مقتنيات المتجر','manageStore':'إدارة منتجات المتجر',
   };
   @override Widget build(BuildContext context){
     final isOwner=role=='owner';
@@ -3031,7 +3031,8 @@ class MorePage extends StatelessWidget {
         final canOpenReports=canOpenGeneralReports||canOpenDiaryReports;
         final canOpenStore=isOwner||
             (adminEnabled&&(capabilities.contains('manageStore')||
-                capabilities.contains('viewStore')));
+                capabilities.contains('viewStore')||
+                capabilities.contains('viewStoreInventory')));
         final canOpenVip=isOwner||
             (adminEnabled&&capabilities.contains('manageVipLevels'));
         final canOpenVipInformation=isOwner||
