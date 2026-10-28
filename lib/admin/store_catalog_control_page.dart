@@ -12,6 +12,7 @@ import 'store_user_inventory_panel.dart';
 import 'store_audit_history_panel.dart';
 import 'store_catalog_statistics_panel.dart';
 import 'store_purchase_history_panel.dart';
+import 'store_grant_preview_panel.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 const storeCategories = <String, String>{
@@ -66,6 +67,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool canViewInventory = false;
   bool canViewAudit = false;
   bool canViewPurchases = false;
+  bool canPreviewGrants = false;
   bool canViewCatalog = false;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
@@ -165,6 +167,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         canViewInventory = result['canViewInventory'] == true;
         canViewAudit = result['canViewAudit'] == true;
         canViewPurchases = result['canViewPurchases'] == true;
+        canPreviewGrants = result['canPreviewGrants'] == true;
         canViewCatalog = result['canViewCatalog'] == true;
         items = raw.map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
@@ -647,6 +650,18 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   );
 
   Widget _sectionPanel() {
+    if (activeSection == 3) {
+      return canPreviewGrants
+          ? StoreGrantPreviewPanel(
+              catalogItems: canViewCatalog ? items : const [],
+            )
+          : const Card(child: ListTile(
+              leading: Icon(Icons.lock_outline),
+              title: Text('المنح'),
+              subtitle: Text('يلزم إذن مستقل من المالك لمعاينة المنح. ' 
+                  'الإرسال الفعلي متوقف للجميع.'),
+            ));
+    }
     if (activeSection == 2) {
       return canViewPurchases
           ? const StorePurchaseHistoryPanel()
