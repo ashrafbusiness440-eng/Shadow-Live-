@@ -68,6 +68,7 @@ class OwnerUserAccessCard extends StatelessWidget {
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
     'viewStore': 'عرض منتجات المتجر فقط',
+    'viewStoreInventory': 'عرض مقتنيات مستخدمي المتجر',
     'manageStore': 'إضافة وتعديل منتجات المتجر',
     'manageGames': 'إدارة الألعاب',
     'manageEconomy': 'إدارة الاقتصاد',
@@ -112,7 +113,7 @@ class OwnerUserAccessCard extends StatelessWidget {
       'manageMysteriousPerson', 'revealMysteriousIdentity',
     ],
     'المتجر': [
-      'viewStore', 'manageStore',
+      'viewStore', 'manageStore', 'viewStoreInventory',
     ],
     'الإدارة العامة': [
       'manageVip', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
@@ -290,6 +291,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                               'manageVipLevels',
                               'manageVipPolicy',
                               'viewStore',
+                              'viewStoreInventory',
                             });
                             allowedVipLevels.clear();
                           }
