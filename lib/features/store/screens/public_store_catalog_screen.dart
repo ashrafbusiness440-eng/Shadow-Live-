@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/public_store_catalog_service.dart';
+import 'store_owned_items_screen.dart';
 
 class PublicStoreCatalogScreen extends StatefulWidget {
   const PublicStoreCatalogScreen({super.key});
@@ -158,6 +159,15 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
           foregroundColor: Colors.white,
           title: const Text('المتجر'),
           actions: [
+            IconButton(
+              tooltip: 'مقتنياتي من المتجر',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const StoreOwnedItemsScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.inventory_2_outlined),
+            ),
             IconButton(
               tooltip: 'تحديث المنتجات',
               onPressed: _loading ? null : _load,
