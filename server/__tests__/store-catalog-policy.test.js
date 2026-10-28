@@ -224,6 +224,8 @@ test("store hub exposes seven Arabic sections with preview and no financial acti
     assert.ok(ui.includes(tab), tab);
   }
   assert.match(ui,/Future<void> _preview\(/);
+  assert.match(ui,/if \(previewOpen\) return;/);
+  assert.match(ui,/previewOpen = false;/);
   assert.match(ui,/draftItem\(\)/);
   assert.match(ui,/store_asset_not_published/);
   assert.match(ui,/ShadowAssetRegistry\.remoteUrl/);
