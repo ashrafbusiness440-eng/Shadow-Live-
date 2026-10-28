@@ -150,4 +150,8 @@ test("store editor preserves the operation ID across uncertain retries", () => {
   assert.match(ui,/pendingSaveOperationId \?\?=/);
   assert.match(ui,/final operation = pendingSaveOperationId!/);
   assert.match(ui,/pendingSaveOperationId = null;/);
+  // Rapid taps must not stack multiple add/edit dialogs.
+  assert.match(ui,/if \(saving \|\| loading \|\| editorOpen\) return;/);
+  assert.match(ui,/editorOpen = true;/);
+  assert.match(ui,/finally \{\s*editorOpen = false;/);
 });
