@@ -182,6 +182,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     var selectedCategory = original?['category']?.toString() ?? 'frames';
     var selectedRarity = original?['rarity']?.toString() ?? 'normal';
     var selectedDuration = (original?['durationDays'] as num?)?.toInt() ?? 7;
+    var minVipLevel = (original?['minVipLevel'] as num?)?.toInt() ?? 0;
     var enabled = original?['enabled'] == true;
     final name = TextEditingController(
       text: original?['nameAr']?.toString() ?? '',
@@ -266,6 +267,22 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                     },
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: minVipLevel,
+                    decoration: const InputDecoration(
+                      labelText: 'أهلية الشراء حسب VIP',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: List.generate(11, (level) =>
+                      DropdownMenuItem(
+                        value: level,
+                        child: Text(level == 0 ? 'متاح للجميع' : 'VIP $level فما فوق'),
+                      )),
+                    onChanged: (value) {
+                      if (value != null) update(() => minVipLevel = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: selectedRarity,
                     decoration: const InputDecoration(
@@ -326,6 +343,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                   'priceCoins': int.parse(price.text),
                   'durationDays': selectedDuration,
                   'rarity': selectedRarity,
+                  'minVipLevel': minVipLevel,
                   'enabled': enabled,
                   'sortOrder': int.parse(order.text),
                   'assetKey': _assetKey(id),
