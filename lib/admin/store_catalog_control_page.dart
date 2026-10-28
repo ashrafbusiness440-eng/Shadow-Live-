@@ -199,7 +199,27 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     var selectedRarity = original?['rarity']?.toString() ?? 'normal';
     var selectedDuration = (original?['durationDays'] as num?)?.toInt() ?? 7;
     var minVipLevel = (original?['minVipLevel'] as num?)?.toInt() ?? 0;
+    var minWealthLevel = (original?['minWealthLevel'] as num?)?.toInt() ?? 0;
+    int? visibleFromMs = duplicate ? null : (original?['visibleFromMs'] as num?)?.toInt();
+    int? visibleUntilMs = duplicate ? null : (original?['visibleUntilMs'] as num?)?.toInt();
     var enabled = !duplicate && original?['enabled'] == true;
+    Future<int?> pickSchedule(int? current) async {
+      final initial = current == null ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(current);
+      final safeInitial = initial.isBefore(DateTime(2020)) ? DateTime(2020)
+          : initial.isAfter(DateTime(2100)) ? DateTime(2100) : initial;
+      final date = await showDatePicker(context: context,
+        initialDate: safeInitial,
+        firstDate: DateTime(2020), lastDate: DateTime(2100));
+      if (date == null || !mounted) return null;
+      final time = await showTimePicker(context: context,
+        initialTime: TimeOfDay.fromDateTime(safeInitial));
+      if (time == null || !mounted) return null;
+      return DateTime(date.year, date.month, date.day,
+          time.hour, time.minute).millisecondsSinceEpoch;
+    }
+    String scheduleText(int? time) => time == null ? 'بدون موعد' :
+        DateTime.fromMillisecondsSinceEpoch(time).toLocal().toString().substring(0, 16);
     final name = TextEditingController(
       text: original?['nameAr']?.toString() ?? '',
     );
@@ -218,6 +238,9 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       'durationDays': selectedDuration,
       'rarity': selectedRarity,
       'minVipLevel': minVipLevel,
+      'minWealthLevel': minWealthLevel,
+      'visibleFromMs': visibleFromMs,
+      'visibleUntilMs': visibleUntilMs,
       'enabled': enabled,
       'sortOrder': int.parse(order.text),
       'assetKey': _assetKey(id),
@@ -319,6 +342,62 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                       if (value != null) update(() => minVipLevel = value);
                     },
                   ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: minWealthLevel,
+                    decoration: const InputDecoration(
+                      labelText: 'حصرية مستوى الثروة',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: List.generate(36, (level) =>
+                      DropdownMenuItem(value: level,
+                        child: Text(level == 0
+                          ? 'متاح لجميع مستويات الثروة'
+                          : 'ثروة LV$level فما فوق'))),
+                    onChanged: (value) {
+                      if (value != null) update(() => minWealthLevel = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('جدولة ظهور المنتج (بتوقيت جهازك)'),
+                  ListTile(
+                    title: const Text('بداية الظهور'),
+                    subtitle: Text(scheduleText(visibleFromMs)),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(tooltip: 'تحديد البداية',
+                        icon: const Icon(Icons.event),
+                        onPressed: () async {
+                          final chosen = await pickSchedule(visibleFromMs);
+                          if (chosen != null && dialogContext.mounted) {
+                            update(() => visibleFromMs = chosen);
+                          }
+                        }),
+                      IconButton(tooltip: 'مسح البداية',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => update(() => visibleFromMs = null)),
+                    ]),
+                  ),
+                  ListTile(
+                    title: const Text('نهاية الظهور'),
+                    subtitle: Text(scheduleText(visibleUntilMs)),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(tooltip: 'تحديد النهاية',
+                        icon: const Icon(Icons.event),
+                        onPressed: () async {
+                          final chosen = await pickSchedule(visibleUntilMs);
+                          if (chosen != null && dialogContext.mounted) {
+                            update(() => visibleUntilMs = chosen);
+                          }
+                        }),
+                      IconButton(tooltip: 'مسح النهاية',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => update(() => visibleUntilMs = null)),
+                    ]),
+                  ),
+                  if (visibleFromMs != null && visibleUntilMs != null &&
+                      visibleFromMs! >= visibleUntilMs!)
+                    const Text('موعد النهاية يجب أن يكون بعد البداية',
+                      style: TextStyle(color: Colors.orangeAccent)),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: selectedRarity,
