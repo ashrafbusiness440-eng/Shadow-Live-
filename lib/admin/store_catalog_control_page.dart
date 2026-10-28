@@ -392,7 +392,8 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       if (uri == null) return const Icon(Icons.inventory_2_outlined, size: 38);
       return Image.network(
         uri.toString(), width: 64, height: 64, fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => const Icon(Icons.image_not_supported_outlined),
+        errorBuilder: (context, error, stackTrace) =>
+            const Icon(Icons.image_not_supported_outlined),
       );
     },
   );
