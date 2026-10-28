@@ -5,6 +5,7 @@ import {STORE_CATEGORIES, STORE_DURATIONS, validateStoreCatalogUpdate} from "./s
 import {canViewStoreInventory} from "./manage-store-inventory.js";
 import {canViewStoreAudit} from "./manage-store-audit.js";
 import {canViewStorePurchases} from "./manage-store-purchases.js";
+import {canPreviewStoreGrants} from "./manage-store-grant-preview.js";
 
 const clean = (value) => String(value ?? "").trim();
 const CONFIG_PATH = "system_config/store_catalog";
@@ -40,12 +41,14 @@ async function readActor(db, payload, tx = null) {
   const canViewInventory=canViewStoreInventory(snap.data || {});
   const canViewAudit=canViewStoreAudit(snap.data || {});
   const canViewPurchases=canViewStorePurchases(snap.data || {});
+  const canPreviewGrants=canPreviewStoreGrants(snap.data || {});
   if (!canViewCatalog && !canViewInventory && !canViewAudit &&
-      !canViewPurchases) {
+      !canViewPurchases && !canPreviewGrants) {
     throw new StoreCatalogError("forbidden", 403);
   }
   return {uid, canEdit:canManageStoreCatalog(snap.data || {}),
-    canViewCatalog,canViewInventory,canViewAudit,canViewPurchases};
+    canViewCatalog,canViewInventory,canViewAudit,canViewPurchases,
+    canPreviewGrants};
 }
 
 async function loadState(db, token) {
@@ -62,6 +65,7 @@ async function loadState(db, token) {
     canViewInventory: actor.canViewInventory,
     canViewAudit: actor.canViewAudit,
     canViewPurchases: actor.canViewPurchases,
+    canPreviewGrants: actor.canPreviewGrants,
     canViewCatalog: actor.canViewCatalog,
     note: "catalog_preparation_only",
   };
