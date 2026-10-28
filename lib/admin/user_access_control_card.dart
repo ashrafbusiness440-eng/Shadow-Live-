@@ -67,7 +67,8 @@ class OwnerUserAccessCard extends StatelessWidget {
     'revealMysteriousIdentity': 'كشف هوية الشخص الغامض',
     'manageSpecialIds': 'إدارة IDs المميزة',
     'manageIds': 'إدارة IDs المستخدمين والغرف',
-    'manageStore': 'إدارة المتجر',
+    'viewStore': 'عرض منتجات المتجر فقط',
+    'manageStore': 'إضافة وتعديل منتجات المتجر',
     'manageGames': 'إدارة الألعاب',
     'manageEconomy': 'إدارة الاقتصاد',
     'manageGiftCatalog': 'إضافة وتعديل ونشر الهدايا (بدون منح رصيد)',
@@ -110,8 +111,11 @@ class OwnerUserAccessCard extends StatelessWidget {
     'الشخص الغامض': [
       'manageMysteriousPerson', 'revealMysteriousIdentity',
     ],
+    'المتجر': [
+      'viewStore', 'manageStore',
+    ],
     'الإدارة العامة': [
-      'manageVip', 'manageStore', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
+      'manageVip', 'manageCampaigns', 'manageRoles', 'viewAuditLog', 'emergencyLock',
     ],
   };
 
@@ -246,6 +250,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                 'owner_protected' => 'حساب الـOwner محمي.',
                 'forbidden' => 'هذه العملية متاحة للـOwner فقط.',
                 'invalid_capability' => 'توجد صلاحية غير معتمدة في الطلب.',
+                'invalid_store_capability_role' => 'صلاحية عرض المتجر تتطلب Admin أو Super Admin.',
                 'invalid_level_capability_role' => 'صلاحيات المستوى وVIP يمكن منحها فقط لـ Admin أو Super Admin.',
                 'invalid_vip_grant_levels' => 'قائمة مستويات VIP المسموحة غير صالحة.',
                 'not_found' => 'الحساب المستهدف غير موجود.',
@@ -284,6 +289,7 @@ class OwnerUserAccessCard extends StatelessWidget {
                               'manageGameLevel',
                               'manageVipLevels',
                               'manageVipPolicy',
+                              'viewStore',
                             });
                             allowedVipLevels.clear();
                           }
