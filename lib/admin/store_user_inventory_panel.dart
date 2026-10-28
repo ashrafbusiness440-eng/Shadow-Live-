@@ -203,3 +203,4 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
       ],
     ],
   );
+}
