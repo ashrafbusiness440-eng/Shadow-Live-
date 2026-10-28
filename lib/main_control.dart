@@ -3031,7 +3031,8 @@ class MorePage extends StatelessWidget {
         final canOpenReports=canOpenGeneralReports||canOpenDiaryReports;
         final canOpenStore=isOwner||
             (adminEnabled&&(capabilities.contains('manageStore')||
-                capabilities.contains('viewStore')));
+                capabilities.contains('viewStore')||
+                capabilities.contains('viewStoreInventory')));
         final canOpenVip=isOwner||
             (adminEnabled&&capabilities.contains('manageVipLevels'));
         final canOpenVipInformation=isOwner||
