@@ -104,6 +104,28 @@ test("offline store transactions refuse duplicate ownership and invalid VIP",asy
   assert.equal(commits(),0);
 });
 
+test("lost commit acknowledgment never debits the user twice", async()=>{
+  const {db,records,commits}=setup();
+  const realCommit=db.commit;
+  let loseReply=true;
+  db.commit=async(...args)=>{
+    await realCommit(...args);
+    if(loseReply){
+      loseReply=false;
+      throw Error("firestore_network_error");
+    }
+  };
+  const result=await commitStorePurchaseOffline(db,user,{
+    ...request,priceCoins:1,discountCoins:999999,
+  },levels,100000);
+  assert.equal(result.ok,true);
+  assert.equal(result.duplicate,true);
+  assert.equal(commits(),1);
+  assert.equal(records.get("users/buyer_1").coins,15000);
+  assert.equal(records.get("store_purchase_receipts/buyer_1__"+
+    request.operationId).priceCoins,25000);
+});
+
 test("production API never imports the offline transaction executor",()=>{
   const handler=readFileSync(new URL(
     "../../cloudflare-worker/src/store-entitlements.js",import.meta.url),"utf8");
