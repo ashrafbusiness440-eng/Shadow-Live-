@@ -370,13 +370,14 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       order.dispose();
     }
     if (result == null || !mounted) return;
+    final editedItem = result!;
     setState(() {
       if (original != null) {
         final existing = items.indexWhere(
           (item) => item['id'] == original['id']);
-        if (existing >= 0) items[existing] = result;
+        if (existing >= 0) items[existing] = editedItem;
       } else {
-        items.add(result);
+        items.add(editedItem);
       }
       dirty = true;
       // A changed draft is a new operation. Previous retries must not save it.
