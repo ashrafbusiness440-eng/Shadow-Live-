@@ -109,7 +109,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   String friendlyError(Object failure) {
     final code = failure.toString();
     if (code.contains('duplicate_gift_id')) {
-      return 'رقم الهدية مستخدم من قبل. اختر رقمًا مختلفًا.';
+      return 'رقم الهدية موجود مسبقًا. حدّث القائمة ثم أضف الهدية ليُختار رقم جديد تلقائيًا.';
     }
     if (code.contains('invalid_gift_price')) {
       return 'سعر الهدية غير صحيح. أدخل قيمة كوينز صحيحة.';
@@ -121,13 +121,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       return 'تأكد أن موعد نهاية الهدية بعد بداية ظهورها.';
     }
     if (code.contains('gift_draft_already_published')) {
-      return 'رقم الهدية مستخدم في الهدايا المنشورة. اختر رقماً آخر.';
+      return 'رقم الهدية مستخدم في هدية منشورة. حدّث القائمة ثم أعد الإضافة.';
     }
     if (code.contains('gift_draft_not_found')) {
       return 'المسودة غير موجودة. حدّث الصفحة وأعد المحاولة.';
     }
     if (code.contains('gift_draft_limit')) {
       return 'وصلت للعدد الأقصى من المسودات. انشر مسودة أو احذف إحداها.';
+    }
+    if (code.contains('gift_catalog_draft_id_conflict')) {
+      return 'الرقم محجوز لمسودة محفوظة. حدّث القائمة ثم أضف الهدية ليُختار رقم جديد تلقائيًا.';
     }
     if (code.contains('gift_catalog_conflict')) {
       return 'تم تعديل الهدايا من لوحة أخرى. احتفظنا بتعديلاتك هنا؛ لا تحفظ قبل مراجعة أحدث البيانات.';
