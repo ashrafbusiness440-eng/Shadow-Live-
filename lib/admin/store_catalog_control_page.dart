@@ -27,6 +27,11 @@ const storeRarities = <String, String>{
 const storeDurations = <int, String>{
   0: 'دائم', 3: '3 أيام', 7: '7 أيام', 30: '30 يوماً',
 };
+const storeControlSections = <String>[
+  'نظرة عامة', 'المنتجات', 'المشتريات', 'المنح',
+  'مقتنيات المستخدمين', 'الإحصاءات', 'الإعدادات والصلاحيات',
+];
+
 const storeTemplates = <String, String>{
   'frames': 'frame.base.v1',
   'entranceEffects': 'entrance.base.v1',
@@ -47,6 +52,7 @@ class StoreCatalogControlPage extends StatefulWidget {
 }
 
 class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
+  int activeSection = 0;
   bool loading = true;
   bool saving = false;
   bool editorOpen = false;
@@ -97,6 +103,9 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     }
     if (text.contains('store_catalog_existing_id_missing')) {
       return 'ما فيك تحذف منتج قديم. اخفه بدل الحذف.';
+    }
+    if (text.contains('store_asset_not_published')) {
+      return 'لا يمكن إظهار المنتج قبل نشر صورته في استوديو الأصول.';
     }
     if (text.contains('recent_auth_required')) {
       return 'سجّل دخولك مجدداً لتأكيد حفظ التعديلات.';
@@ -199,6 +208,18 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       text: original?['sortOrder']?.toString() ?? '${items.length + 1}',
     );
     final formKey = GlobalKey<FormState>();
+    Map<String, dynamic> draftItem() => {
+      'id': id,
+      'nameAr': name.text.trim(),
+      'category': selectedCategory,
+      'priceCoins': int.parse(price.text),
+      'durationDays': selectedDuration,
+      'rarity': selectedRarity,
+      'minVipLevel': minVipLevel,
+      'enabled': enabled,
+      'sortOrder': int.parse(order.text),
+      'assetKey': _assetKey(id),
+    };
     editorOpen = true;
     Map<String, dynamic>? result;
     try {
@@ -319,9 +340,26 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                   ),
                   SwitchListTile(
                     title: const Text('إظهار المنتج'),
-                    subtitle: const Text('الكتالوج للتحضير فقط، وليس للبيع حالياً'),
+                    subtitle: Text(enabled
+                      ? 'يتطلب الإظهار صورة منشورة في الاستوديو'
+                      : 'مسودة محفوظة داخل الإدارة؛ الشراء غير مفعل'),
                     value: enabled,
                     onChanged: (value) => update(() => enabled = value),
+                  ),
+                  FutureBuilder<Uri?>(
+                    future: ShadowAssetRegistry.remoteUrl(_assetKey(id)),
+                    builder: (context, snapshot) => ListTile(
+                      dense: true,
+                      leading: Icon(snapshot.data == null
+                          ? Icons.warning_amber_outlined
+                          : Icons.verified_outlined),
+                      title: Text(snapshot.connectionState == ConnectionState.waiting
+                          ? 'جارٍ التحقق من الصورة المنشورة'
+                          : snapshot.data == null
+                              ? 'الصورة غير منشورة أو غير موجودة'
+                              : 'صورة منشورة ومتاحة للمعاينة'),
+                      subtitle: const Text('يمكن حفظ المسودة بدون صورة؛ النشر يتطلب صورة معتمدة.'),
+                    ),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -330,6 +368,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                     trailing: const Icon(Icons.image_outlined),
                     onTap: () async {
                       await _openAsset(id, selectedCategory);
+                      if (dialogContext.mounted) update(() {});
                     },
                   ),
                 ]),
@@ -341,23 +380,21 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('إلغاء'),
             ),
+            OutlinedButton.icon(
+              onPressed: () {
+                if (formKey.currentState?.validate() == true) {
+                  _preview(draftItem());
+                }
+              },
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('معاينة'),
+            ),
             FilledButton(
               onPressed: () {
                 if (formKey.currentState?.validate() != true) return;
-                Navigator.pop(dialogContext, {
-                  'id': id,
-                  'nameAr': name.text.trim(),
-                  'category': selectedCategory,
-                  'priceCoins': int.parse(price.text),
-                  'durationDays': selectedDuration,
-                  'rarity': selectedRarity,
-                  'minVipLevel': minVipLevel,
-                  'enabled': enabled,
-                  'sortOrder': int.parse(order.text),
-                  'assetKey': _assetKey(id),
-                });
+                Navigator.pop(dialogContext, draftItem());
               },
-              child: const Text('إضافة للقائمة'),
+              child: Text(enabled ? 'إضافة للقائمة' : 'حفظ كمسودة'),
             ),
           ],
         ),
@@ -433,6 +470,98 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     },
   );
 
+  Future<void> _preview(Map<String, dynamic> item) async {
+    final key = item['assetKey'].toString();
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('معاينة المنتج قبل النشر'),
+        content: SizedBox(
+          width: 350,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(width: 92, height: 92, child: Center(child: _image(key))),
+            const SizedBox(height: 12),
+            Text(item['nameAr'].toString(),
+              style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text("${storeCategories[item['category']] ?? ''} • "
+                "${storeRarities[item['rarity']] ?? ''}"),
+            Text("${item['priceCoins']} كوينز • "
+                "${storeDurations[item['durationDays']] ?? ''}"),
+            Text((item['minVipLevel'] as num? ?? 0) == 0
+                ? 'متاح لجميع المستويات'
+                : 'VIP ${item['minVipLevel']} فما فوق'),
+            const SizedBox(height: 12),
+            FutureBuilder<Uri?>(
+              future: ShadowAssetRegistry.remoteUrl(key),
+              builder: (context, snapshot) => Text(snapshot.data == null
+                ? 'لا توجد صورة منشورة لهذا المنتج'
+                : 'هذه الصورة المنشورة حالياً في الاستوديو'),
+            ),
+            const SizedBox(height: 8),
+            Text(item['enabled'] == true ? 'جاهز للعرض بعد حفظ التعديلات'
+                : 'مسودة — غير ظاهرة في المتجر'),
+            const SizedBox(height: 8),
+            const Text('المعاينة لا تنشر المنتج ولا تمنحه لأي مستخدم.'),
+          ]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navigation() => Wrap(
+    spacing: 7, runSpacing: 6,
+    children: [
+      for (var index = 0; index < storeControlSections.length; index++)
+        ChoiceChip(
+          label: Text(storeControlSections[index]),
+          selected: activeSection == index,
+          onSelected: (_) => setState(() => activeSection = index),
+        ),
+    ],
+  );
+
+  Widget _sectionPanel() {
+    if (activeSection == 0) {
+      final visible = items.where((item) => item['enabled'] == true).length;
+      return Column(children: [
+        const Card(child: ListTile(
+          leading: Icon(Icons.lock_outline),
+          title: Text('المتجر قيد التجهيز'),
+          subtitle: Text('الشراء والمنح غير مفعلين. الأرقام هنا للمنتجات فقط وليست مبيعات.'),
+        )),
+        Card(child: ListTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text('إجمالي المنتجات: ${items.length}'),
+          subtitle: Text('ظاهرة: $visible • مسودات أو مخفية: ${items.length - visible}'),
+          trailing: TextButton(
+            onPressed: () => setState(() => activeSection = 1),
+            child: const Text('إدارة المنتجات'),
+          ),
+        )),
+        if (dirty) const Card(child: ListTile(
+          leading: Icon(Icons.warning_amber_outlined),
+          title: Text('توجد تعديلات لم تُحفظ بعد'),
+          subtitle: Text('ارجع إلى المنتجات لحفظها أو مراجعتها.'),
+        )),
+      ]);
+    }
+    return Card(child: ListTile(
+      leading: const Icon(Icons.lock_outline),
+      title: Text(storeControlSections[activeSection]),
+      subtitle: const Text(
+        'هذا القسم محجوز للدفعات القادمة ولم يُفعّل بعد. '
+        'لا توجد مشتريات أو منح أو أرقام مبيعات تجريبية. '
+        'ستتم إضافة الصلاحيات وحراسة الخادم قبل تشغيل أي وظيفة حساسة.'),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = items.where((item) {
@@ -451,7 +580,17 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('إدارة المتجر')),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+      body: activeSection != 1
+          ? ListView(padding: const EdgeInsets.all(16), children: [
+              _navigation(),
+              const SizedBox(height: 12),
+              if (loading) const LinearProgressIndicator(),
+              if (error != null) Text(error!),
+              _sectionPanel(),
+            ])
+          : ListView(padding: const EdgeInsets.all(16), children: [
+        _navigation(),
+        const SizedBox(height: 12),
         const Card(child: ListTile(
           leading: Icon(Icons.lock_outline),
           title: Text('تجهيز منتجات المتجر'),
@@ -534,14 +673,21 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
             subtitle: Text(
               'رقم ${item['id']} • ${storeCategories[item['category']] ?? item['category']}\n'
               '${item['priceCoins']} كوينز • ${storeDurations[item['durationDays']] ?? ''} • '
-              '${item['enabled'] == true ? 'ظاهرة' : 'مخفية'}',
+              '${item['enabled'] == true ? 'ظاهرة' : 'مسودة / مخفية'}',
             ),
             isThreeLine: true,
-            trailing: IconButton(
-              tooltip: 'تعديل المنتج',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: loading || saving ? null : () => _edit(original: item),
-            ),
+            trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                tooltip: 'معاينة المنتج',
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () => _preview(item),
+              ),
+              IconButton(
+                tooltip: 'تعديل المنتج',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: loading || saving ? null : () => _edit(original: item),
+              ),
+            ]),
             onTap: loading || saving ? null : () => _edit(original: item),
           ),
         ),
