@@ -49,6 +49,7 @@ class StoreCatalogControlPage extends StatefulWidget {
 class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool loading = true;
   bool saving = false;
+  bool editorOpen = false;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
   // the same draft cannot submit a second catalog transaction.
@@ -177,7 +178,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   }
 
   Future<void> _edit({Map<String, dynamic>? original}) async {
-    if (saving || loading) return;
+    if (saving || loading || editorOpen) return;
     if (original == null && items.length >= 100) {
       setState(() => error = 'وصل المتجر للحد الأعلى من المنتجات.');
       return;
@@ -198,7 +199,10 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       text: original?['sortOrder']?.toString() ?? '${items.length + 1}',
     );
     final formKey = GlobalKey<FormState>();
-    final result = await showDialog<Map<String, dynamic>>(
+    editorOpen = true;
+    Map<String, dynamic>? result;
+    try {
+      result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, update) => AlertDialog(
@@ -359,9 +363,12 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         ),
       ),
     );
-    name.dispose();
-    price.dispose();
-    order.dispose();
+    } finally {
+      editorOpen = false;
+      name.dispose();
+      price.dispose();
+      order.dispose();
+    }
     if (result == null || !mounted) return;
     setState(() {
       if (original != null) {
