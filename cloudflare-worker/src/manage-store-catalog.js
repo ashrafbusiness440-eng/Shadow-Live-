@@ -44,6 +44,22 @@ async function loadState(db, token) {
   };
 }
 
+// Only a published, non-empty Studio asset can be made visible. Existing
+// visible entries are not revalidated on unrelated edits to avoid breaking
+// catalog maintenance when a legacy asset is temporarily unavailable.
+async function assertStorePublishableAssets(db, tx, previousItems, nextItems) {
+  const before = new Map((previousItems || []).map(item => [String(item.id), item]));
+  for (const item of nextItems) {
+    if (item.enabled !== true || before.get(item.id)?.enabled === true) continue;
+    const asset = await db.get(`app_asset_registry/${item.assetKey}`, tx);
+    if (!asset.exists || asset.data?.published !== true ||
+        typeof asset.data?.rawUrl !== "string" ||
+        !/^https:\/\//.test(asset.data.rawUrl.trim())) {
+      throw new StoreCatalogError("store_asset_not_published", 409);
+    }
+  }
+}
+
 async function saveCatalog(db, payload, body) {
   const key = clean(body?.operationId);
   if (!/^[A-Za-z0-9_-]{12,100}$/.test(key)) {
@@ -74,6 +90,8 @@ async function saveCatalog(db, payload, body) {
         const code = clean(error?.message);
         throw new StoreCatalogError(code, code.includes("conflict") ? 409 : 400);
       }
+      await assertStorePublishableAssets(
+        db, tx, config.data?.items, result.items);
       const now = new Date();
       const next = {
         revision: result.revision, items: result.items,
@@ -151,4 +169,4 @@ export async function manageStoreCatalog(request, env) {
   }
 }
 
-export const storeCatalogInternals = Object.freeze({canManageStoreCatalog, loadState, saveCatalog});
+export const storeCatalogInternals = Object.freeze({canManageStoreCatalog, loadState, saveCatalog, assertStorePublishableAssets});

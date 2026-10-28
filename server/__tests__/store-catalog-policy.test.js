@@ -144,6 +144,94 @@ test("store saves are atomic, retryable and reject stale revisions without purch
   }),/forbidden/);
 });
 
+test("store visibility is guarded by a published Studio image, without charges", async () => {
+  const hidden = make();
+  const visible = {...hidden, enabled:true};
+  const assets = new Map();
+  const db = {
+    async get(path) {
+      const data = assets.get(path);
+      return {exists:data !== undefined, data};
+    },
+  };
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [hidden], [hidden]);
+  await assert.rejects(
+    () => storeCatalogInternals.assertStorePublishableAssets(db, null, [hidden], [visible]),
+    /store_asset_not_published/);
+  assets.set("app_asset_registry/" + hidden.assetKey, {
+    published:false, rawUrl:"https://example.com/draft.webp",
+  });
+  await assert.rejects(
+    () => storeCatalogInternals.assertStorePublishableAssets(db, null, [hidden], [visible]),
+    /store_asset_not_published/);
+  assets.set("app_asset_registry/" + hidden.assetKey, {
+    published:true, rawUrl:"",
+  });
+  await assert.rejects(
+    () => storeCatalogInternals.assertStorePublishableAssets(db, null, [hidden], [visible]),
+    /store_asset_not_published/);
+  assets.set("app_asset_registry/" + hidden.assetKey, {
+    published:true, rawUrl:"https://example.com/published.webp",
+  });
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [hidden], [visible]);
+  // Hiding an already published item remains allowed even if its asset vanishes.
+  assets.clear();
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [visible], [hidden]);
+  // Visible legacy items can be edited without unrelated availability failures.
+  await storeCatalogInternals.assertStorePublishableAssets(db, null,
+    [visible], [{...visible, priceCoins:2700}]);
+});
+
+test("catalog transaction refuses a visible item whose Studio asset is missing", async () => {
+  const documents = new Map([["users/owner_test", {role:"owner"}]]);
+  const db = {
+    async beginTransaction() { return {}; },
+    async get(path) { return {
+      exists:documents.has(path), data:documents.get(path),
+    }; },
+    writeCreate(path, data) { return {kind:"create", path, data}; },
+    writeUpdate(path, data) { return {kind:"update", path, data}; },
+    async rollback() {},
+    async commit(tx, writes) {
+      for (const write of writes) documents.set(write.path, write.data);
+    },
+  };
+  const actor = {sub:"owner_test",iat:Math.floor(Date.now()/1000)};
+  const shown = {...make(),enabled:true};
+  const body = {items:[shown],expectedRevision:0,
+    operationId:"store_publish_guard_01"};
+  await assert.rejects(
+    () => storeCatalogInternals.saveCatalog(db,actor,body),
+    /store_asset_not_published/);
+  assert.equal(documents.has("system_config/store_catalog"), false);
+  assert.equal(documents.has("control_operations/store_catalog_" + body.operationId), false);
+  // The same draft can be published once the Studio asset is published.
+  documents.set("app_asset_registry/" + shown.assetKey,
+    {published:true,rawUrl:"https://example.com/store/200001.webp"});
+  const result = await storeCatalogInternals.saveCatalog(db,actor,body);
+  assert.equal(result.revision,1);
+  assert.equal(documents.get("system_config/store_catalog").purchasingEnabled,false);
+});
+
+test("store hub exposes seven Arabic sections with preview and no financial actions", () => {
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_catalog_control_page.dart",import.meta.url),"utf8");
+  for (const tab of ["نظرة عامة","المنتجات","المشتريات","المنح",
+    "مقتنيات المستخدمين","الإحصاءات","الإعدادات والصلاحيات"]) {
+    assert.ok(ui.includes(tab), tab);
+  }
+  assert.match(ui,/Future<void> _preview\(/);
+  assert.match(ui,/if \(previewOpen\) return;/);
+  assert.match(ui,/previewOpen = false;/);
+  assert.match(ui,/draftItem\(\)/);
+  assert.match(ui,/store_asset_not_published/);
+  assert.match(ui,/ShadowAssetRegistry\.remoteUrl/);
+  assert.match(ui,/الشراء والمنح غير مفعلين/);
+});
+
 test("store editor preserves the operation ID across uncertain retries", () => {
   const ui=readFileSync(new URL(
     "../../lib/admin/store_catalog_control_page.dart",import.meta.url),"utf8");
