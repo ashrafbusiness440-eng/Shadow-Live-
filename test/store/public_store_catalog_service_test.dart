@@ -25,6 +25,7 @@ void main() {
             'durationDays': 7,
             'rarity': 'rare',
             'minVipLevel': 0,
+            'minWealthLevel': 15,
             'assetKey': 'store.item.200001.icon',
           }],
         }), 200, headers: const {
@@ -35,6 +36,7 @@ void main() {
     final catalog = await service.load();
     expect(catalog.items.single.id, '200001');
     expect(catalog.items.single.priceCoins, 1200);
+    expect(catalog.items.single.minWealthLevel, 15);
     expect(catalog.categories['frames'], 'الإطارات');
     service.close();
   });
