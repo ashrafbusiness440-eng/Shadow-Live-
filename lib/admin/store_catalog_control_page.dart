@@ -187,18 +187,19 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _edit({Map<String, dynamic>? original}) async {
+  Future<void> _edit({Map<String, dynamic>? original, bool duplicate = false}) async {
     if (saving || loading || editorOpen) return;
-    if (original == null && items.length >= 100) {
+    if ((original == null || duplicate) && items.length >= 100) {
       setState(() => error = 'وصل المتجر للحد الأعلى من المنتجات.');
       return;
     }
-    final id = original?['id']?.toString() ?? _nextId();
+    final id = original != null && !duplicate
+        ? original['id'].toString() : _nextId();
     var selectedCategory = original?['category']?.toString() ?? 'frames';
     var selectedRarity = original?['rarity']?.toString() ?? 'normal';
     var selectedDuration = (original?['durationDays'] as num?)?.toInt() ?? 7;
     var minVipLevel = (original?['minVipLevel'] as num?)?.toInt() ?? 0;
-    var enabled = original?['enabled'] == true;
+    var enabled = !duplicate && original?['enabled'] == true;
     final name = TextEditingController(
       text: original?['nameAr']?.toString() ?? '',
     );
@@ -228,13 +229,19 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, update) => AlertDialog(
-          title: Text(original == null ? 'إضافة منتج' : 'تعديل المنتج'),
+          title: Text(duplicate ? 'نسخ المنتج' :
+              original == null ? 'إضافة منتج' : 'تعديل المنتج'),
           content: SizedBox(
             width: 440,
             child: SingleChildScrollView(
               child: Form(
                 key: formKey,
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  if (duplicate) const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text('هذه نسخة جديدة برقم وصورة مستقلين. '
+                      'لا تظهر للناس قبل نشر صورتها في الاستوديو.'),
+                  ),
                   TextFormField(
                     initialValue: id,
                     readOnly: true,
@@ -410,7 +417,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     if (result == null || !mounted) return;
     final editedItem = result!;
     setState(() {
-      if (original != null) {
+      if (original != null && !duplicate) {
         final existing = items.indexWhere(
           (item) => item['id'] == original['id']);
         if (existing >= 0) items[existing] = editedItem;
@@ -689,10 +696,17 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                 icon: const Icon(Icons.visibility_outlined),
                 onPressed: () => _preview(item),
               ),
-              IconButton(
-                tooltip: 'تعديل المنتج',
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: loading || saving ? null : () => _edit(original: item),
+              PopupMenuButton<String>(
+                tooltip: 'خيارات المنتج',
+                enabled: !loading && !saving,
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) => _edit(
+                  original: item, duplicate: value == 'copy',
+                ),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('تعديل المنتج')),
+                  PopupMenuItem(value: 'copy', child: Text('نسخ المنتج')),
+                ],
               ),
             ]),
             onTap: loading || saving ? null : () => _edit(original: item),
