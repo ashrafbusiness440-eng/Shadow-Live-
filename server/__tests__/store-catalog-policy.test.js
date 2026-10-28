@@ -5,7 +5,7 @@ import {
   STORE_CATEGORIES, STORE_DURATIONS, normalizeStoreCatalogItems,
   validateStoreCatalogUpdate, nextStoreNumericId,
 } from "../../cloudflare-worker/src/store-catalog-policy.js";
-import {canManageStoreCatalog} from "../../cloudflare-worker/src/manage-store-catalog.js";
+import {canManageStoreCatalog, storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 
 const make = (id = "200001") => ({
   id, nameAr: "إطار ملكي", category: "frames", priceCoins: 2500,
@@ -89,4 +89,69 @@ test("store catalog is administration-only, never purchases or credits users", (
   assert.match(ui,/ControlAssetManagerPage\(/);
   assert.match(ui,/store\.item\.\$id\.icon/);
   assert.match(ui,/الشراء غير مفعل/);
+});
+
+test("store saves are atomic, retryable and reject stale revisions without purchases", async () => {
+  const documents = new Map([["users/owner_test", {role:"owner"}]]);
+  const committed = [];
+  const db = {
+    async beginTransaction() { return {}; },
+    async get(path) {
+      return {exists:documents.has(path), data:documents.get(path)};
+    },
+    writeCreate(path, data) { return {kind:"create", path, data}; },
+    writeUpdate(path, data) { return {kind:"update", path, data}; },
+    async rollback() {},
+    async commit(tx, writes) {
+      for (const w of writes) {
+        if (w.kind === "create" && documents.has(w.path)) {
+          throw Error("already_exists");
+        }
+      }
+      for (const w of writes) documents.set(w.path, w.data);
+      committed.push(writes);
+    },
+  };
+  const actor = {sub:"owner_test", iat:Math.floor(Date.now()/1000)};
+  const operationId = "store_safe_retry_0001";
+  const body = {operationId, expectedRevision:0, items:[make()]};
+  const first = await storeCatalogInternals.saveCatalog(db,actor,body);
+  assert.equal(first.ok,true);
+  assert.equal(first.revision,1);
+  assert.equal(first.duplicate,undefined);
+  assert.equal(committed.length,1);
+  assert.equal(committed[0].length,3);
+  assert.equal(documents.get("system_config/store_catalog").purchasingEnabled,false);
+  assert.equal(documents.get("admin_audit_logs/store_catalog_"+operationId).actorUid,
+    "owner_test");
+
+  // A server commit with a lost reply is safely retried using the same ID.
+  const duplicate = await storeCatalogInternals.saveCatalog(db,actor,body);
+  assert.equal(duplicate.ok,true);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(duplicate.revision,1);
+  assert.equal(committed.length,1);
+
+  // A different ID must not overwrite data based on a stale snapshot.
+  await assert.rejects(() => storeCatalogInternals.saveCatalog(db,actor,{
+    ...body,operationId:"store_safe_retry_0002",
+  }),/store_catalog_conflict/);
+  assert.equal(committed.length,1);
+
+  // A non-admin cannot read or edit the catalog, even with a valid session.
+  await assert.rejects(() => storeCatalogInternals.loadState(db,{
+    sub:"missing_user", iat:actor.iat,
+  }),/forbidden/);
+});
+
+test("store editor preserves the operation ID across uncertain retries", () => {
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_catalog_control_page.dart",import.meta.url),"utf8");
+  assert.match(ui,/pendingSaveOperationId \?\?=/);
+  assert.match(ui,/final operation = pendingSaveOperationId!/);
+  assert.match(ui,/pendingSaveOperationId = null;/);
+  // Rapid taps must not stack multiple add/edit dialogs.
+  assert.match(ui,/if \(saving \|\| loading \|\| editorOpen\) return;/);
+  assert.match(ui,/editorOpen = true;/);
+  assert.match(ui,/finally \{\s*editorOpen = false;/);
 });

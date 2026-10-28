@@ -49,7 +49,11 @@ class StoreCatalogControlPage extends StatefulWidget {
 class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool loading = true;
   bool saving = false;
+  bool editorOpen = false;
   bool dirty = false;
+  // Keep an operation ID after an uncertain network failure so retrying
+  // the same draft cannot submit a second catalog transaction.
+  String? pendingSaveOperationId;
   String? error;
   String search = '';
   String categoryFilter = 'all';
@@ -141,6 +145,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
             .toList();
         loading = false;
         dirty = false;
+        pendingSaveOperationId = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -173,7 +178,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   }
 
   Future<void> _edit({Map<String, dynamic>? original}) async {
-    if (saving || loading) return;
+    if (saving || loading || editorOpen) return;
     if (original == null && items.length >= 100) {
       setState(() => error = 'وصل المتجر للحد الأعلى من المنتجات.');
       return;
@@ -194,7 +199,10 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       text: original?['sortOrder']?.toString() ?? '${items.length + 1}',
     );
     final formKey = GlobalKey<FormState>();
-    final result = await showDialog<Map<String, dynamic>>(
+    editorOpen = true;
+    Map<String, dynamic>? result;
+    try {
+      result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, update) => AlertDialog(
@@ -355,19 +363,25 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         ),
       ),
     );
-    name.dispose();
-    price.dispose();
-    order.dispose();
+    } finally {
+      editorOpen = false;
+      name.dispose();
+      price.dispose();
+      order.dispose();
+    }
     if (result == null || !mounted) return;
+    final editedItem = result!;
     setState(() {
       if (original != null) {
         final existing = items.indexWhere(
           (item) => item['id'] == original['id']);
-        if (existing >= 0) items[existing] = result;
+        if (existing >= 0) items[existing] = editedItem;
       } else {
-        items.add(result);
+        items.add(editedItem);
       }
       dirty = true;
+      // A changed draft is a new operation. Previous retries must not save it.
+      pendingSaveOperationId = null;
       error = null;
     });
   }
@@ -375,9 +389,11 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   Future<void> _save() async {
     if (loading || saving || !dirty) return;
     setState(() { saving = true; error = null; });
-    // A unique operation protects retries; never share identifiers between saves.
-    final nonce = Random.secure().nextInt(0x7fffffff);
-    final operation = 'store_${DateTime.now().microsecondsSinceEpoch}_$nonce';
+    // Reuse the same operation ID if the server committed but the reply was
+    // lost. A changed draft or refreshed catalog clears this ID.
+    pendingSaveOperationId ??= 'store_${DateTime.now().microsecondsSinceEpoch}_'
+        '${Random.secure().nextInt(0x7fffffff)}';
+    final operation = pendingSaveOperationId!;
     try {
       final result = await _post({
         'action': 'save', 'operationId': operation,
@@ -391,6 +407,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         revision = result['revision'] as int;
         dirty = false;
         saving = false;
+        pendingSaveOperationId = null;
         items = (result['items'] as List)
             .map((e) => Map<String, dynamic>.from(e as Map)).toList();
       });
