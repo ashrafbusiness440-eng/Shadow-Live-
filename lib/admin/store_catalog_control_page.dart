@@ -10,6 +10,7 @@ import 'control_asset_manager_page.dart';
 import 'control_firebase.dart';
 import 'store_user_inventory_panel.dart';
 import 'store_audit_history_panel.dart';
+import 'store_catalog_statistics_panel.dart';
 import '../core/assets/shadow_asset_registry.dart';
 
 const storeCategories = <String, String>{
@@ -63,7 +64,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool canEdit = false;
   bool canViewInventory = false;
   bool canViewAudit = false;
-  bool canViewCatalog = true;
+  bool canViewCatalog = false;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
   // the same draft cannot submit a second catalog transaction.
@@ -643,6 +644,20 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   );
 
   Widget _sectionPanel() {
+    if (activeSection == 5) {
+      if (!canViewCatalog) {
+        return const Card(child: ListTile(
+          leading: Icon(Icons.lock_outline),
+          title: Text('إحصائيات المتجر'),
+          subtitle: Text('يتطلب هذا القسم صلاحية عرض منتجات المتجر.'),
+        ));
+      }
+      return StoreCatalogStatisticsPanel(
+        items: items,
+        categories: storeCategories,
+        hasUnpublishedEdits: dirty,
+      );
+    }
     if (activeSection == 7) {
       return canViewAudit
           ? const StoreAuditHistoryPanel()
@@ -662,6 +677,13 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
             ));
     }
     if (activeSection == 0) {
+      if (!canViewCatalog) {
+        return const Card(child: ListTile(
+          leading: Icon(Icons.lock_outline),
+          title: Text('نظرة عامة على المنتجات'),
+          subtitle: Text('يتطلب هذا القسم صلاحية عرض منتجات المتجر.'),
+        ));
+      }
       final visible = items.where((item) => item['enabled'] == true).length;
       return Column(children: [
         const Card(child: ListTile(
