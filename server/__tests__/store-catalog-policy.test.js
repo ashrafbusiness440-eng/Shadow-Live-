@@ -11,6 +11,7 @@ const make = (id = "200001") => ({
   id, nameAr: "إطار ملكي", category: "frames", priceCoins: 2500,
   durationDays: 7, rarity: "rare", minVipLevel: 0, enabled: false, sortOrder: 3,
   assetKey: "store.item." + id + ".icon",
+  minWealthLevel: 0, visibleFromMs: null, visibleUntilMs: null,
 });
 test("store catalog categories and durations remain bounded and Arabic", () => {
   assert.ok(Object.keys(STORE_CATEGORIES).length >= 8);
@@ -45,6 +46,10 @@ test("concurrent, deleted, duplicate and malformed products fail closed", () => 
     {priceCoins:-1},{priceCoins:1.5},{durationDays:99},{sortOrder:-2},
     {minVipLevel:-1},{minVipLevel:11},
     {enabled:"true"},{rarity:"unknown"},{category:"payments"},
+    {minWealthLevel:-1},{minWealthLevel:36},
+    {visibleFromMs:-5},{visibleUntilMs:"not-a-date"},
+    {visibleFromMs:300,visibleUntilMs:300},
+    {visibleFromMs:500,visibleUntilMs:300},
     {assetKey:"store.item.200002.icon"},{id:"../other"},
   ]) assert.throws(()=>normalizeStoreCatalogItems([{...make(),...field}]));
   assert.throws(()=>normalizeStoreCatalogItems(
