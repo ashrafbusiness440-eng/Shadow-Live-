@@ -10,8 +10,20 @@ const headers={authorization:"Bearer "+token};
 const group="gift_transactions";
 const parent="projects/"+projectId+"/databases/(default)/collectionGroups/"+group;
 const root="https://firestore.googleapis.com/v1/projects/"+encodeURIComponent(projectId)+"/databases/(default)";
-const expected=["giftId","quantity","totalCost","paidCost"];
+const expected=["giftId","paidCost","quantity","totalCost"];
 const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+function suggestedIndexFields(rawBody){
+  try{
+    const doc=JSON.parse(rawBody);
+    const message=String((Array.isArray(doc)?doc[0]:doc)?.error?.message||"");
+    const match=message.match(/create_composite=([A-Za-z0-9_-]+)/);
+    if(!match)return [];
+    const text=Buffer.from(match[1],"base64url").toString("utf8");
+    return [...text.matchAll(/giftId|quantity|totalCost|paidCost|__name__/g)]
+      .map(m=>m[0]);
+  }catch{return [];}
+}
+
 function matching(index){
   if(index.queryScope!=="COLLECTION")return false;
   const fields=(index.fields||[]).filter(f=>f.fieldPath!=="__name__");
@@ -55,8 +67,16 @@ const response=await fetch(root+"/documents:runAggregationQuery",{
   body:JSON.stringify(giftTotalsAggregationRequest(null,probeId)),
 });
 if(!response.ok){
-  const code=response.status;
-  throw Error("gift_ranking_index_aggregation_http_"+code);
+  const rawError=await response.text();
+  let parsed={};
+  try{parsed=JSON.parse(rawError);}catch{}
+  const first=Array.isArray(parsed)?parsed[0]:parsed;
+  const upstreamStatus=String(first?.error?.status||"UNKNOWN").slice(0,80);
+  console.error("Gift ranking aggregation unavailable:",JSON.stringify({
+    httpCode:response.status,upstreamStatus,
+    suggestedFields:suggestedIndexFields(rawError),
+  }));
+  throw Error("gift_ranking_index_aggregation_http_"+response.status);
 }
 const rawResult=await response.text();
 let entries;

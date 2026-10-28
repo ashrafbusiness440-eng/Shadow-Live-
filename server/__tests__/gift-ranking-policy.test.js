@@ -77,3 +77,13 @@ test("report only permissions and no financial writes, with bounded on-demand re
   const room = readFileSync(new URL("../../cloudflare-worker/src/room-gift.js",import.meta.url),"utf8");
   assert.doesNotMatch(room,/statsGiftRanking/);
 });
+
+test("Firestore composite index uses the real COUNT/SUM order returned by production", () => {
+  const config=JSON.parse(readFileSync(new URL("../../firestore.indexes.json",import.meta.url),"utf8"));
+  assert.ok(config.indexes.some(index=>
+    index.collectionGroup==="gift_transactions" &&
+    index.queryScope==="COLLECTION" &&
+    JSON.stringify(index.fields.map(field=>[field.fieldPath,field.order]))===
+    JSON.stringify(["giftId","paidCost","quantity","totalCost"].map(field=>[field,"ASCENDING"]))
+  ));
+});
