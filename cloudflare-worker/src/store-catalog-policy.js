@@ -48,8 +48,8 @@ export function normalizeStoreCatalogItems(raw) {
         !RARITIES.has(rarity)) {
       throw Error("invalid_store_item_details");
     }
-    if (!/^store\.[a-z][A-Za-z0-9]*\.[1-9][0-9]{5,8}\.icon$/.test(assetKey) ||
-        assetKey !== `store.${category}.${id}.icon`) {
+    if (!/^store\.item\.[1-9][0-9]{5,8}\.icon$/.test(assetKey) ||
+        assetKey !== `store.item.${id}.icon`) {
       throw Error("invalid_store_asset_key");
     }
     if (typeof value.enabled !== "boolean") {
