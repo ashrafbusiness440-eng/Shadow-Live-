@@ -36,21 +36,36 @@ export async function loadStoreUserInventory(db, payload, targetUid, nowMs=Date.
   if (!recent(payload)) {
     const error=new Error("recent_auth_required");error.status=401;throw error;
   }
-  if (!validUid(targetUid)) {
+  const searchedId=clean(targetUid);
+  const normalizedId=searchedId
+    .replace(/[٠-٩]/g, ch=>String(ch.charCodeAt(0)-0x0660))
+    .replace(/[۰-۹]/g, ch=>String(ch.charCodeAt(0)-0x06F0));
+  if (!validUid(normalizedId)) {
     const error=new Error("invalid_target_id");error.status=400;throw error;
   }
-  const target=await db.get(`users/${targetUid}`);
-  if (!target.exists) {
+  let resolvedUid=normalizedId;
+  const byPublicId=/^[0-9]{3,8}$/.test(normalizedId);
+  if (byPublicId) {
+    const registry=await db.get(`public_ids/${normalizedId}`);
+    resolvedUid=clean(registry.data?.uid);
+    if (!registry.exists || !validUid(resolvedUid)) {
+      const error=new Error("not_found");error.status=404;throw error;
+    }
+  }
+  const target=await db.get(`users/${resolvedUid}`);
+  // A changed/retired public ID cannot expose another account's inventory.
+  if (!target.exists ||
+      (byPublicId && clean(target.data?.publicId) !== normalizedId)) {
     const error=new Error("not_found");error.status=404;throw error;
   }
   // Bounded user-scoped collection read. Never scan all users or inventory.
-  const docs=await db.list(`user_store_entitlements/${targetUid}/items`, 100);
+  const docs=await db.list(`user_store_entitlements/${resolvedUid}/items`, 100);
   const items=docs
-    .map(doc=>validStoreEntitlementDocument(doc.data,targetUid,nowMs))
+    .map(doc=>validStoreEntitlementDocument(doc.data,resolvedUid,nowMs))
     .filter(Boolean)
     .sort((a,b)=>b.acquiredAtMs-a.acquiredAtMs || a.productId.localeCompare(b.productId));
   return {
-    ok:true, targetUid, items, purchasingEnabled:false,
+    ok:true, targetUid:resolvedUid, searchedId, items, purchasingEnabled:false,
     resultLimit:100, moreMayExist:docs.length>=100,
   };
 }
@@ -66,7 +81,7 @@ export async function manageStoreInventory(request, env) {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const output=await loadStoreUserInventory(
-      firestoreClient(env),token,clean(body?.targetUid));
+      firestoreClient(env),token,clean(body?.targetId ?? body?.targetUid));
     return json(request,env,output,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
