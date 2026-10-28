@@ -277,6 +277,10 @@ test("store viewers cannot save, copy, or replay catalog operations", async () =
   assert.equal(canManageStoreCatalog(viewer), false);
   assert.equal(canViewStoreCatalog(editor), true);
   assert.equal(canManageStoreCatalog(editor), true);
+  assert.equal(canViewStoreCatalog({role:"super_admin",adminEnabled:true,
+    capabilities:["viewStore"]}),true);
+  assert.equal(canViewStoreCatalog({role:"moderator",adminEnabled:true,
+    capabilities:["viewStore"]}),false);
   assert.equal(canViewStoreCatalog({role:"user",adminEnabled:true,
     capabilities:["viewStore"]}),false);
   assert.equal(canViewStoreCatalog({role:"admin",adminEnabled:false,
