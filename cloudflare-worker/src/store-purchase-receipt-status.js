@@ -60,11 +60,17 @@ export async function lookupOwnStorePurchaseReceipt(db,token,body){
     :result.durationDays>0&&validTime(result.expiresAtMs)&&
       result.expiresAtMs>result.acquiredAtMs;
   const validReceiptTime=renewal
-    ?validTime(r.acquiredAtMs)&&
+    ?result.renewal===true&&r.renewal===true&&
+      validTime(result.previousExpiresAtMs)&&
+      result.previousExpiresAtMs>result.acquiredAtMs&&
+      result.expiresAtMs>result.previousExpiresAtMs&&
+      validTime(r.acquiredAtMs)&&
       r.acquiredAtMs>=result.acquiredAtMs&&
       r.acquiredAtMs<result.expiresAtMs&&
       r.previousExpiresAtMs===result.previousExpiresAtMs
-    :r.acquiredAtMs===result.acquiredAtMs;
+    :r.acquiredAtMs===result.acquiredAtMs&&
+      result.previousExpiresAtMs===undefined&&
+      r.previousExpiresAtMs===undefined;
   if(!validKind||op.status!=="completed"||
       result.operationId!==operationId||
       result.productId!==productId||result.deliveryStatus!=="delivered"||
