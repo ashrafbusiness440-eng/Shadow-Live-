@@ -1,6 +1,7 @@
-// 578D: offline-only, read-only financial evidence certification.
-// Not imported by a production Worker route; never settles, refunds,
-// repairs balances, scans collections, or authorizes checkout.
+// 578D/579E: read-only evidence certification of ONE Store operation.
+// Reused by the Owner-authorized admin history action only (and offline tests).
+// Never settles, refunds, repairs balances, scans collections, or authorizes
+// checkout. Not an all-time revenue or full-wallet certification.
 import {validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
 
