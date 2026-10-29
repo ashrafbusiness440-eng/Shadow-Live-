@@ -58,7 +58,13 @@ export async function certifyStorePurchaseEvidenceOffline(
   if(r.buyerUid!==buyerUid||r.operationId!==key||
       r.productId!==op.productId||r.priceCoins!==price||
       r.durationDays!==result.durationDays||
-      r.acquiredAtMs!==start||r.expiresAtMs!==expiry||
+      // A renewal receipt records the RENEWAL transaction time; the
+      // operation result preserves the original entitlement acquisition.
+      // They must not be compared as equal for renewed items.
+      (!renewal&&r.acquiredAtMs!==start)||
+      (renewal&&(!validTime(r.acquiredAtMs)||
+        r.acquiredAtMs<start||r.acquiredAtMs>=expiry))||
+      r.expiresAtMs!==expiry||
       r.deliveryStatus!=="delivered"||r.renewal!==renewal||
       (renewal&&r.previousExpiresAtMs!==result.previousExpiresAtMs))
     return failure("receipt_mismatch");
