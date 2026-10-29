@@ -13,6 +13,11 @@ const clean=v=>String(v??"").trim();
 const validUid=v=>/^[A-Za-z0-9_-]{1,128}$/.test(v);
 const VISUAL_CATEGORIES=Object.freeze(["frames","entranceEffects",
   "chatBubbles","nameEffects"]);
+// Room admission keeps its existing bounded projection: a profile card is
+// consumed only by the authenticated profile presentation endpoint.
+const PROFILE_VISUAL_CATEGORIES=Object.freeze([
+  ...VISUAL_CATEGORIES,"profileCards",
+]);
 
 function isActiveUser(data={}){
   return clean(data.accountStatus||"active")==="active" &&
@@ -47,14 +52,15 @@ async function readStoreDocument(db,path){
 // Null means the slot/entitlement/asset is absent, invalid or expired.
 // The positive result is safe to show other users. No private purchase/grant
 // markers, actor identity, ledger, user document or raw equipment slots leak.
-export async function resolveStoreVisuals(db,uid,nowMs=Date.now()){
+export async function resolveStoreVisuals(
+  db,uid,nowMs=Date.now(),categories=VISUAL_CATEGORIES){
   if(!validUid(uid)||!Number.isSafeInteger(nowMs)||nowMs<0)return {};
   const selection=await readStoreDocument(db,"user_store_equipped/"+uid);
   if(!selection.exists)return {};
   let slots;
   try{slots=readStoreEquipSlots(selection,uid);}
   catch(_){return {};}
-  const entries=VISUAL_CATEGORIES.filter(category=>slots[category]);
+  const entries=categories.filter(category=>slots[category]);
   if(!entries.length)return {};
   const resolved=await Promise.all(entries.map(async category=>{
     const id=slots[category];
@@ -107,7 +113,8 @@ export async function storePresentation(request,env){
           {"Cache-Control":"private, no-store"});
       }
     }
-    const visuals=await resolveStoreVisuals(db,uid);
+    const visuals=await resolveStoreVisuals(
+      db,uid,Date.now(),PROFILE_VISUAL_CATEGORIES);
     return json(request,env,{ok:true,visuals},200,
       {"Cache-Control":"private, no-store"});
   }catch(error){
