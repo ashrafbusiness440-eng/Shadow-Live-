@@ -157,6 +157,8 @@ test("source guards enforce live revocation after commit and privacy-safe room e
     "../../lib/features/voice/services/voice_room_session_controller.dart",import.meta.url),"utf8");
   const live=readFileSync(new URL(
     "../../cloudflare-worker/src/store-grant-revoke-live.js",import.meta.url),"utf8");
+  const ownerUi=readFileSync(new URL(
+    "../../lib/admin/store_grant_revoke_action.dart",import.meta.url),"utf8");
   assert.ok(handler.indexOf("commitStoreGrantRevokeOffline(") <
     handler.indexOf("refreshRevokedStoreGrantInLiveRoom("));
   assert.match(handler,/\.catch\(\(\)=>\(\{status:"pending_refresh"\}\)\)/);
@@ -169,5 +171,7 @@ test("source guards enforce live revocation after commit and privacy-safe room e
   assert.match(controller,/_seatService\.refreshStoreCosmetics\(id\)/);
   assert.match(live,/user_room_index\//);
   assert.match(live,/realtimeUserPresentFromNamespace/);
+  assert.match(ownerUi,/liveStatus == 'pending_refresh'/);
+  assert.match(ownerUi,/تحديث مؤثراتها داخل الغرفة لم يتأكد بعد/);
   assert.doesNotMatch(live,/db\.list\(|db\.runQuery\(|setInterval\(/);
 });
