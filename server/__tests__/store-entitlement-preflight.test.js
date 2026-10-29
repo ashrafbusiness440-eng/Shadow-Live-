@@ -76,10 +76,11 @@ test("store inventory projects only owned, valid entitlements without audit iden
   const view=validStoreEntitlementDocument(data,"user_one",2000);
   assert.ok(view);
   assert.equal(view.active,true);
+  assert.equal(view.lifecycleState,"active");
   assert.equal(view.expired,false);
   assert.deepEqual(Object.keys(view).sort(),[
     "productId","nameAr","category","assetKey","source",
-    "acquiredAtMs","expiresAtMs","active","expired",
+    "acquiredAtMs","expiresAtMs","active","expired","lifecycleState",
   ].sort());
   assert.ok(!JSON.stringify(view).includes("PRIVATE"));
   assert.equal(validStoreEntitlementDocument(data,"another_user",2000),null);
@@ -118,4 +119,49 @@ test("store purchase rejects prelaunch and expired items and respects wealth", (
   assert.throws(()=>prepareStorePurchase({
     ...c,nowMs:100_001,catalog:{items:[productAtLevel]},
   }),/store_product_unavailable/);
+});
+
+test("entitlement lifecycle is read-only, time-aware and revocation wins over expiry", () => {
+  const ent = {
+    ownerUid:"user_one",productId:"200001",nameAr:"إطار ملكي",
+    category:"frames",assetKey:"store.item.200001.icon",
+    source:"admin_grant",status:"active",acquiredAtMs:1000,
+    expiresAtMs:5000,grantedByUid:"PRIVATE_ADMIN",
+  };
+  const current=validStoreEntitlementDocument(ent,"user_one",4999);
+  assert.deepEqual([current.lifecycleState,current.active,current.expired],
+    ["active",true,false]);
+  const expired=validStoreEntitlementDocument(ent,"user_one",5000);
+  assert.deepEqual([expired.lifecycleState,expired.active,expired.expired],
+    ["expired",false,true]);
+  const revoked=validStoreEntitlementDocument(
+    {...ent,status:"revoked"},"user_one",4999);
+  assert.deepEqual([revoked.lifecycleState,revoked.active,revoked.expired],
+    ["revoked",false,false]);
+  const revokedAndExpired=validStoreEntitlementDocument(
+    {...ent,status:"revoked"},"user_one",5000);
+  assert.equal(revokedAndExpired.lifecycleState,"revoked");
+  const permanent=validStoreEntitlementDocument(
+    {...ent,expiresAtMs:null},"user_one",5000);
+  assert.equal(permanent.lifecycleState,"active");
+  assert.equal(JSON.stringify(revoked).includes("PRIVATE_ADMIN"),false);
+  assert.equal(validStoreEntitlementDocument(
+    {...ent,status:"forged"},"user_one",5000),null);
+});
+
+test("user-owned Store items display the server lifecycle without enabling equipment", () => {
+  const model=readFileSync(new URL(
+    "../../lib/features/store/services/store_owned_items_service.dart",
+    import.meta.url),"utf8");
+  const screen=readFileSync(new URL(
+    "../../lib/features/store/screens/store_owned_items_screen.dart",
+    import.meta.url),"utf8");
+  assert.match(model,/final String lifecycleState;/);
+  assert.match(model,/value\['lifecycleState'\]/);
+  assert.match(model,/invalid_store_entitlement_state/);
+  assert.match(screen,/'active' => 'صالح للاستخدام'/);
+  assert.match(screen,/'expired' => 'منتهي الصلاحية'/);
+  assert.match(screen,/'revoked' => 'ملغى'/);
+  assert.match(screen,/تجهيز منتجات المتجر سيُتاح بعد اكتمال/);
+  assert.doesNotMatch(screen,/storePurchase\(|grantStoreItem\(|equipStoreItem\(/);
 });

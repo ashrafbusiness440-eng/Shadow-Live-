@@ -86,6 +86,11 @@ export function validStoreEntitlementDocument(value, uid, nowMs = Date.now()) {
       data.assetKey !== `store.item.${data.productId}.icon`) return null;
   if (data.expiresAtMs !== null && !integer(data.expiresAtMs, 0)) return null;
   if (!integer(data.acquiredAtMs, 0) || !integer(nowMs, 0)) return null;
+  // Revocation takes precedence over the expiry clock when showing lifecycle.
+  // Keep the existing active/expired flags for backwards-compatible consumers.
+  const expired = data.expiresAtMs !== null && data.expiresAtMs <= nowMs;
+  const lifecycleState = data.status === "revoked"
+    ? "revoked" : expired ? "expired" : "active";
   // Return a strict allowlist: never disclose actor, issuer, operation or audit IDs.
   return {
     productId: clean(data.productId),
@@ -95,8 +100,8 @@ export function validStoreEntitlementDocument(value, uid, nowMs = Date.now()) {
     source: data.source,
     acquiredAtMs: data.acquiredAtMs,
     expiresAtMs: data.expiresAtMs,
-    active: data.status === "active" &&
-      (data.expiresAtMs === null || data.expiresAtMs > nowMs),
-    expired: data.expiresAtMs !== null && data.expiresAtMs <= nowMs,
+    lifecycleState,
+    active: lifecycleState === "active",
+    expired,
   };
 }
