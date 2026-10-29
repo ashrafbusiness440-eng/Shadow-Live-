@@ -26,6 +26,10 @@ class RoomChatMessage {
     required this.systemKind,
     required this.vipLevel,
     required this.entryEffectKey,
+    this.storeChatBubbleKey = '',
+    this.storeChatBubbleExpiresAtMs = 0,
+    this.storeNameEffectKey = '',
+    this.storeNameEffectExpiresAtMs = 0,
     required this.animatedEmojiId,
     required this.animatedEmojiAssetKey,
     required this.animatedEmojiFallbackGlyph,
@@ -60,6 +64,10 @@ class RoomChatMessage {
   final String systemKind;
   final int vipLevel;
   final String entryEffectKey;
+  final String storeChatBubbleKey;
+  final int storeChatBubbleExpiresAtMs;
+  final String storeNameEffectKey;
+  final int storeNameEffectExpiresAtMs;
   final String animatedEmojiId;
   final String animatedEmojiAssetKey;
   final String animatedEmojiFallbackGlyph;
@@ -107,6 +115,10 @@ class RoomChatMessage {
       systemKind: (data['systemKind'] ?? '').toString(),
       vipLevel: (data['vipLevel'] as num?)?.toInt() ?? 0,
       entryEffectKey: (data['entryEffectKey'] ?? '').toString(),
+      storeChatBubbleKey: (data['storeChatBubbleKey'] ?? '').toString(),
+      storeChatBubbleExpiresAtMs: (data['storeChatBubbleExpiresAtMs'] as num?)?.toInt() ?? 0,
+      storeNameEffectKey: (data['storeNameEffectKey'] ?? '').toString(),
+      storeNameEffectExpiresAtMs: (data['storeNameEffectExpiresAtMs'] as num?)?.toInt() ?? 0,
       animatedEmojiId:
           (data['animatedEmojiId'] ?? data['vipEmojiToken'] ?? '').toString(),
       animatedEmojiAssetKey:
