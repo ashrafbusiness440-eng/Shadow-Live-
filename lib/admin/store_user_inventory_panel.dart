@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../core/assets/shadow_asset_registry.dart';
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'store_grant_revoke_action.dart';
 
 /// Read-only inventory inspection. Permissions and target access are checked
 /// afresh by the Worker on every request, never trusted from this widget.
@@ -22,6 +23,8 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
   bool _loading = false;
   String? _error;
   String? _target;
+  String? _targetUid;
+  bool _canRevokeGrants = false;
   bool _more = false;
   List<Map<String, dynamic>> _items = [];
   int _generation = 0;
@@ -40,6 +43,8 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
       setState(() {
         _error = 'اكتب معرّف الحساب الصحيح.';
         _target = null;
+        _targetUid = null;
+        _canRevokeGrants = false;
         _items = [];
         _more = false;
       });
@@ -49,6 +54,8 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
     setState(() {
       _loading = true;
       _target = null;
+      _targetUid = null;
+      _canRevokeGrants = false;
       _items = [];
       _more = false;
       _error = null;
@@ -70,7 +77,11 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
       if (value is! Map || response.statusCode != 200 || value['ok'] != true ||
           value['searchedId'] != target || value['items'] is! List ||
           value['purchasingEnabled'] != false ||
-          value['moreMayExist'] is! bool) {
+          value['moreMayExist'] is! bool ||
+          value['canRevokeGrants'] is! bool ||
+          value['targetUid'] is! String ||
+          !RegExp(r'^[A-Za-z0-9_-]{1,128}$').hasMatch(
+              value['targetUid'] as String)) {
         final code = value is Map ? value['code']?.toString() ?? '' : '';
         throw StateError(code.isEmpty ? 'request_failed' : code);
       }
@@ -81,6 +92,8 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
       if (!mounted || generation != _generation) return;
       setState(() {
         _target = target;
+        _targetUid = value['targetUid'] as String;
+        _canRevokeGrants = value['canRevokeGrants'] == true;
         _items = records.map(
           (item) => Map<String, dynamic>.from(item as Map),
         ).toList(growable: false);
@@ -157,6 +170,15 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
           '$lifecycle',
         ),
         isThreeLine: true,
+        trailing: _canRevokeGrants && _targetUid != null &&
+                item['source'] == 'admin_grant' &&
+                item['lifecycleState'] != 'revoked'
+            ? StoreGrantRevokeAction(
+                targetUid: _targetUid!,
+                item: item,
+                onRevoked: _search,
+              )
+            : null,
       ),
     );
   }
@@ -167,9 +189,9 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
     children: [
       const Card(child: ListTile(
         leading: Icon(Icons.lock_outline),
-        title: Text('مقتنيات المستخدمين — عرض فقط'),
-        subtitle: Text('لا يمكن منح أي منتج أو تعديل ملكيته من هذه الصفحة. '
-            'يلزم إذن مستقل من المالك ودخول حديث.'),
+        title: Text('مقتنيات المستخدمين'),
+        subtitle: Text('العرض متاح بإذن مستقل. سحب المنحة متاح للمالك فقط '
+            'عند تفعيل المسار الآمن ودخول حديث؛ المشتريات والمكافآت محمية.'),
       )),
       const SizedBox(height: 8),
       TextField(
@@ -191,6 +213,10 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
         label: const Text('عرض المقتنيات'),
       )),
       if (_loading) const LinearProgressIndicator(),
+      if (_target != null && !_canRevokeGrants) const Padding(
+        padding: EdgeInsets.all(8),
+        child: Text('سحب المنح غير مفعّل لهذا الحساب حاليًا.'),
+      ),
       if (_error != null) Padding(
         padding: const EdgeInsets.all(10),
         child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent)),

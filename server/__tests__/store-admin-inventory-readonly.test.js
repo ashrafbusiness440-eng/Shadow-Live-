@@ -162,13 +162,40 @@ test("public user ID and Arabic digits resolve safely without global user scans"
     /not_found/);
 });
 
-test("inventory control shows revoked, expired and active without mutation actions",()=>{
+test("Store inventory is view-only for admins and exposes revocation only for Owner release",async()=>{
+  const admin=await loadStoreUserInventory(fakeDb(),token,"target_uid",2000,true);
+  assert.equal(admin.canRevokeGrants,false);
+  const owner=await loadStoreUserInventory(fakeDb({
+    role:"owner",accountStatus:"active",
+  }),token,"target_uid",2000,true);
+  assert.equal(owner.canRevokeGrants,true);
+  const off=await loadStoreUserInventory(fakeDb({
+    role:"owner",accountStatus:"active",
+  }),token,"target_uid",2000,false);
+  assert.equal(off.canRevokeGrants,false);
+});
+
+test("inventory control shows lifecycle and only Owner-gated grant revoke",()=>{
   const ui=readFileSync(new URL(
     "../../lib/admin/store_user_inventory_panel.dart",import.meta.url),"utf8");
+  const action=readFileSync(new URL(
+    "../../lib/admin/store_grant_revoke_action.dart",import.meta.url),"utf8");
+  const backend=readFileSync(new URL(
+    "../../cloudflare-worker/src/manage-store-inventory.js",import.meta.url),"utf8");
   assert.match(ui,/item\['lifecycleState'\]/);
   assert.match(ui,/'revoked' => 'ملغى'/);
   assert.match(ui,/'expired' => 'منتهي الصلاحية'/);
   assert.match(ui,/'active' => 'صالح'/);
-  assert.match(ui,/مقتنيات المستخدمين — عرض فقط/);
+  assert.match(ui,/_canRevokeGrants && _targetUid != null/);
+  assert.match(ui,/item\['source'\] == 'admin_grant'/);
+  assert.match(ui,/StoreGrantRevokeAction\(/);
+  assert.match(backend,/actor\.data\?\.role==="owner"&&revocationReleaseEnabled/);
+  assert.match(backend,/storeGrantRevokeEnabled\(env\)/);
+  assert.match(action,/showDialog<String>/);
+  assert.match(action,/_sending \|\| _dialogOpen/);
+  assert.match(action,/_dialogOpen = false/);
+  assert.match(action,/confirmation': 'confirmed'/);
+  assert.match(action,/pendingOperationId/);
+  assert.match(action,/result\['operationId'\] != operationId/);
   assert.doesNotMatch(ui,/grantStoreItem|updateEntitlement|revokeStoreItem/);
 });

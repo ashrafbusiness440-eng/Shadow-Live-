@@ -4,6 +4,7 @@ import {verifyFirebaseIdToken, assertUserDocumentSessionState} from "./firebase-
 import {firestoreClient} from "./firestore.js";
 import {validStoreEntitlementDocument} from "./store-purchase-policy.js";
 import {resolveStoreAdminTarget,hasRecentStoreAdminLogin} from "./store-admin-target.js";
+import {storeGrantRevokeEnabled} from "./manage-store-grant-revoke.js";
 
 const clean = v => String(v ?? "").trim();
 const validUid = v => /^[A-Za-z0-9_-]{1,128}$/.test(clean(v));
@@ -16,7 +17,8 @@ export function canViewStoreInventory(user={}) {
     user.capabilities.includes("viewStoreInventory");
 }
 
-export async function loadStoreUserInventory(db, payload, targetUid, nowMs=Date.now()) {
+export async function loadStoreUserInventory(
+  db,payload,targetUid,nowMs=Date.now(),revocationReleaseEnabled=false) {
   const actorUid=clean(payload?.sub);
   if (!validUid(actorUid)) {
     const error=new Error("unauthorized");error.status=401;throw error;
@@ -43,6 +45,8 @@ export async function loadStoreUserInventory(db, payload, targetUid, nowMs=Date.
     .sort((a,b)=>b.acquiredAtMs-a.acquiredAtMs || a.productId.localeCompare(b.productId));
   return {
     ok:true, targetUid:resolvedUid, searchedId, items, purchasingEnabled:false,
+    // The Worker is authoritative for both role and the separate release gate.
+    canRevokeGrants: actor.data?.role==="owner"&&revocationReleaseEnabled,
     resultLimit:100, moreMayExist:docs.length>=100,
   };
 }
@@ -58,7 +62,8 @@ export async function manageStoreInventory(request, env) {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const output=await loadStoreUserInventory(
-      firestoreClient(env),token,clean(body?.targetId ?? body?.targetUid));
+      firestoreClient(env),token,clean(body?.targetId ?? body?.targetUid),
+      Date.now(),storeGrantRevokeEnabled(env));
     return json(request,env,output,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
