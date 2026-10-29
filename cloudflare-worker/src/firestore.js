@@ -1,6 +1,9 @@
 import { googleAccessToken, parseServiceAccount } from "./google-auth.js";
 import { recordFirestoreTelemetry } from "./pressure-telemetry.js";
 import { giftTotalsAggregationRequest, parseGiftTotalsAggregationResponse } from "./gift-totals-aggregation-policy.js";
+import {storeFinancialCountRequest,parseStoreFinancialCountResponse,
+  assembleStoreFinancialCoverage,STORE_COVERAGE_SOURCES}
+  from "./store-financial-coverage-policy.js";
 
 export function parseFirestoreAggregationRows(payload) {
   const content = String(payload ?? "").trim();
@@ -370,7 +373,8 @@ export function firestoreClient(env) {
       if (response) {
         body = response.ok && readMode === "batch"
           ? parseFirestoreBatchGetRows(await response.text())
-          : response.ok && operation === "run_gift_aggregate"
+          : response.ok && (operation === "run_gift_aggregate" ||
+            operation === "run_store_source_count")
             ? parseFirestoreAggregationRows(await response.text())
             : await response.json().catch(() => ({}));
         if (response.ok) {
@@ -606,6 +610,27 @@ export function firestoreClient(env) {
         },
       );
       return parseGiftTotalsAggregationResponse(body);
+    },
+
+    async readStoreFinancialCoverageCounts(buyerUid) {
+      // Four *independent*, index-only, UID-scoped aggregation calls.
+      // Each source counts at most 501 index entries and returns no
+      // financial documents. No full collection scans or monetary sums.
+      const rows=await Promise.all(STORE_COVERAGE_SOURCES.map(async source=>{
+        const request=storeFinancialCountRequest(source,buyerUid);
+        const collection=request.structuredAggregationQuery.structuredQuery
+          .from[0].collectionId;
+        const {body}=await call(
+          `${root}/documents:runAggregationQuery`,{
+            method:"POST",body:JSON.stringify(request),
+          },{
+            retryTransient:true,
+            operation:"run_store_source_count",readMode:"query",
+            resource:collection,
+          });
+        return [source,parseStoreFinancialCountResponse(source,body)];
+      }));
+      return assembleStoreFinancialCoverage(Object.fromEntries(rows));
     },
 
     async runQuery(collectionPath, {
