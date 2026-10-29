@@ -77,8 +77,12 @@ export async function commitStorePurchaseOffline(
       // balance is interpreted while a debit is being performed.
       const before=safeBalance(buyer.coins);
       if(before===null)fail("invalid_wallet_state");
-      if(buyer.balance!==undefined&&buyer.balance!==null&&
-          buyer.balance!==before)fail("invalid_wallet_state");
+      // Legacy users may hold a second Coins mirror. If present, it must
+      // agree BEFORE the debit and be written to the same new amount in the
+      // *same* Firestore transaction. Never create a mirror for new users.
+      const hasBalanceMirror=buyer.balance!==undefined&&buyer.balance!==null;
+      if(hasBalanceMirror&&buyer.balance!==before)
+        fail("invalid_wallet_state");
       const wealthPoints=buyer.wealthPoints??0;
       if(safeBalance(wealthPoints)===null)fail("invalid_store_eligibility");
       const levelPolicy=await loadUserLevelPolicy(db,{
@@ -138,8 +142,10 @@ export async function commitStorePurchaseOffline(
       };
       await db.commit(tx,[
         db.writeUpdate(walletPath,{
-          coins:after,walletUpdatedAt:createdAt,
-        },["coins","walletUpdatedAt"]),
+          coins:after,
+          ...(hasBalanceMirror?{balance:after}:{}),
+          walletUpdatedAt:createdAt,
+        },["coins",...(hasBalanceMirror?["balance"]:[]),"walletUpdatedAt"]),
         ...(renewal?[
           db.writeUpdate(entitlementPath,{
             expiresAtMs:renewal.expiresAtMs,
