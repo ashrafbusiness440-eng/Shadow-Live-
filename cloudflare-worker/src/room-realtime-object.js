@@ -574,6 +574,46 @@ export class RoomRealtimeObject extends DurableObject {
           : null,
       });
     }
+    if (url.pathname === "/presence/store-invalidated" &&
+        request.method === "POST") {
+      // Internal DO request only (no public Worker route). A target room
+      // socket must exist before any message is sent to that room.
+      const body=await request.json().catch(()=>({}));
+      const roomId=normalizeRoomId(body.roomId);
+      const uid=String(body.uid||"").trim();
+      const category=String(body.category||"").trim();
+      if(!roomId||!/^[A-Za-z0-9_-]{1,128}$/.test(uid)||
+          !["frames","entranceEffects","chatBubbles","nameEffects",
+            "profileCards","voiceWaves","roomFrames","backgrounds"]
+            .includes(category)) {
+        return Response.json({ok:false,code:"invalid_store_invalidation"},
+          {status:400});
+      }
+      const sockets=this.ctx.getWebSockets().map(socket=>{
+        try{return {socket,attachment:socket.deserializeAttachment()||{}};}
+        catch(_){return null;}
+      }).filter(Boolean).filter(({attachment})=>
+        String(attachment.mode||"room")==="room" &&
+        normalizeRoomId(attachment.roomId)===roomId);
+      const targets=sockets.filter(({attachment})=>
+        String(attachment.uid||"").trim()===uid);
+      if(!targets.length)return Response.json({ok:true,present:false,delivered:0});
+      // Privacy: a hidden / mysterious room participant must never be
+      // exposed through a new UID-bearing public room event.
+      const hidden=targets.some(({attachment})=>
+        attachment.ghostMode===true||
+        attachment.hiddenRoomEntry===true||
+        attachment.mysteriousMode===true);
+      const event=realtimeEnvelope("room.store_cosmetics_invalidated",{
+        roomId,uid,category,
+      });
+      let delivered=0;
+      for(const {socket,attachment} of sockets){
+        if(hidden && String(attachment.uid||"").trim()!==uid)continue;
+        if(safeSend(socket,event))delivered++;
+      }
+      return Response.json({ok:true,present:true,delivered});
+    }
     if (url.pathname === "/presence/identity" && request.method === "POST") {
       return this.#updatePresenceIdentity(request);
     }
@@ -1252,7 +1292,10 @@ export class RoomRealtimeObject extends DurableObject {
       if (String(attachment.mode || "room") !== "room") continue;
       if (normalizeRoomId(attachment.roomId) !== roomId) continue;
       if (String(attachment.uid || "").trim() !== uid) continue;
-      hidden = hidden || attachment.ghostMode === true;
+      hidden = hidden || attachment.ghostMode === true ||
+        attachment.hiddenRoomEntry === true ||
+        attachment.mysteriousMode === true ||
+        patch.mysteriousMode === true;
       try {
         socket.serializeAttachment({ ...attachment, ...patch });
         updated += 1;
