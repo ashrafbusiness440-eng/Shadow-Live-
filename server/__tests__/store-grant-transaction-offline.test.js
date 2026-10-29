@@ -103,6 +103,43 @@ test("offline grant never permits admins, previewers, stale auth or inactive tar
   assert.equal(reassigned.commits(),0);
 });
 
+test("offline grants obey emergency economy stop and deleted-target guards",async()=>{
+  for(const lock of [{enabled:true},{economyLocked:true}]){
+    const sample=setup();
+    sample.records.set("system_config/emergency_lock",lock);
+    await assert.rejects(()=>commitStoreGrantOffline(
+      sample.db,ownerToken,operation,NOW),/emergency_locked/);
+    assert.equal(sample.commits(),0);
+    assert.equal(sample.records.has(
+      "user_store_entitlements/target_1/items/200001"),false);
+    assert.equal(sample.records.get("users/target_1").coins,10000);
+  }
+  for(const patch of [
+    {authDeleted:true},{deletionProcessing:true},
+    {deletedAt:"2026-10-29"},{deletionRequestedAt:"2026-10-29"},
+    {accountStatus:"suspended"},
+  ]){
+    const sample=setup();
+    Object.assign(sample.records.get("users/target_1"),patch);
+    await assert.rejects(()=>commitStoreGrantOffline(
+      sample.db,ownerToken,operation,NOW),/target_not_active/);
+    assert.equal(sample.commits(),0);
+  }
+});
+
+test("grant replay remains idempotent after emergency lock is enabled",async()=>{
+  const sample=setup();
+  const first=await commitStoreGrantOffline(
+    sample.db,ownerToken,operation,NOW);
+  assert.equal(first.ok,true);
+  sample.records.set("system_config/emergency_lock",{economyLocked:true});
+  const again=await commitStoreGrantOffline(
+    sample.db,ownerToken,operation,NOW+1);
+  assert.equal(again.duplicate,true);
+  assert.equal(sample.commits(),1);
+  assert.equal(sample.records.get("users/target_1").coins,10000);
+});
+
 test("offline grant rejects hidden, future, expired and unpublished products",async()=>{
   const mutations=[
     {enabled:false},

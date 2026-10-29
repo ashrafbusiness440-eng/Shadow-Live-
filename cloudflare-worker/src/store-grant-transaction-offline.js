@@ -1,7 +1,6 @@
-// OFFLINE CERTIFICATION ONLY. This module is intentionally not imported by any
-// public Worker handler or its routes. No grant endpoint is enabled.
-// Never connect it to production until the Owner explicitly authorizes launch,
-// writes have been independently security-reviewed, and live E2E is signed off.
+// OFFLINE CERTIFICATION ONLY. No public Worker route imports this executor.
+// The Owner approved resuming grant implementation (2026-10-29), but live
+// issuance still needs independent security review and E2E certification.
 import {normalizeStoreCatalogItems} from "./store-catalog-policy.js";
 import {loadUserLevelPolicy,userLevelSummaries} from "./user-level-policy.js";
 import {effectiveVipLevel} from "./user-level-visibility.js";
@@ -45,7 +44,9 @@ async function resolveGrantTargetInTransaction(db,tx,rawId) {
   }
   const data=target.data||{};
   if(cleanStoreId(data.accountStatus||"active")!=="active" ||
-      data.deletionRequestedAt||data.deletedAt) fail("target_not_active");
+      data.deletionRequestedAt||data.deletedAt||
+      data.authDeleted===true||data.deletionProcessing===true)
+    fail("target_not_active");
   return {uid,data};
 }
 
@@ -83,9 +84,10 @@ export async function commitStoreGrantOffline(db,verifiedOwnerToken,body,
     let tx=null;
     try{
       tx=await db.beginTransaction();
-      const [actor,prior]=await Promise.all([
+      const [actor,prior,lock]=await Promise.all([
         db.get(`users/${ownerUid}`,tx),
         db.get(opPath,tx),
+        db.get("system_config/emergency_lock",tx),
       ]);
       if(!actor.exists) fail("forbidden");
       assertUserDocumentSessionState(verifiedOwnerToken,actor.data||{});
@@ -107,6 +109,10 @@ export async function commitStoreGrantOffline(db,verifiedOwnerToken,body,
         tx=null;
         return {ok:true,duplicate:true,...op.result};
       }
+      // Administrative freebies must respect the same emergency economy
+      // stop as Store checkout, even though they never debit Coins.
+      if(lock.data?.enabled===true||lock.data?.economyLocked===true)
+        fail("emergency_locked");
       const {uid:targetUid,data:target}=await resolveGrantTargetInTransaction(
         db,tx,searched);
       const catalog=await db.get("system_config/store_catalog",tx);
