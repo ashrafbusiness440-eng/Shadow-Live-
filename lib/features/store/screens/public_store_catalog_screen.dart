@@ -101,7 +101,7 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
         title: const Text('تأكيد شراء المنتج'),
         content: Text('هل تريد شراء ${item.nameAr} مقابل '
             '${item.priceCoins} كوينز لمدة ${_duration(item.durationDays)}؟'
-            '\\nسيتم التحقق من السعر والرصيد من الخادم قبل أي خصم.'),
+            '\nسيتم التحقق من السعر والرصيد من الخادم قبل أي خصم.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('إلغاء')),
