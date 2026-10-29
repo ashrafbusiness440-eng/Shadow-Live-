@@ -40,6 +40,7 @@ import { manageAppAsset } from "./manage-app-asset.js";
 import { manageStoreCatalog } from "./manage-store-catalog.js";
 import { publicStoreCatalog } from "./public-store-catalog.js";
 import { storePurchase, myStoreItems } from "./store-entitlements.js";
+import { storePurchaseReceiptStatus } from "./store-purchase-receipt-status.js";
 import { manageStoreInventory } from "./manage-store-inventory.js";
 import { manageStoreAudit } from "./manage-store-audit.js";
 import { manageStorePurchases } from "./manage-store-purchases.js";
@@ -134,6 +135,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/store-purchase") {
     return storePurchase(request, env);
+  }
+  if (url.pathname === "/api/store-purchase-status") {
+    return storePurchaseReceiptStatus(request, env);
   }
   if (url.pathname === "/api/my-store-items") {
     return myStoreItems(request, env);
