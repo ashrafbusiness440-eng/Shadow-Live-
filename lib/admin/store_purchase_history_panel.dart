@@ -212,10 +212,10 @@ class _StorePurchaseHistoryPanelState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('ملخص حالات الإيصالات المعروضة',
+          Text('ملخص حالات أول 50 إيصالاً',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          const Text('لهذا الحساب فقط، من النتائج المسترجعة (حتى 50 إيصالاً). '
+          const Text('لهذا الحساب فقط، من أول 50 إيصالاً مسترجعاً. '
               'هذه أعداد حالات، وليست إجمالي مبيعات أو إيرادات أو '
               'إثباتاً لصحة رصيد الكوينز. وقد توجد إيصالات أخرى.'),
           const SizedBox(height: 8),
