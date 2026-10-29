@@ -69,6 +69,12 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   bool canViewPurchases = false;
   bool canPreviewGrants = false;
   bool canViewCatalog = false;
+  bool purchasingEnabled = false;
+  bool purchaseReleaseReady = false;
+  bool canTogglePurchasing = false;
+  bool togglingPurchasing = false;
+  String? pendingPurchasingOperationId;
+  bool? pendingPurchasingEnabled;
   bool dirty = false;
   // Keep an operation ID after an uncertain network failure so retrying
   // the same draft cannot submit a second catalog transaction.
@@ -120,6 +126,15 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     if (text.contains('store_asset_not_published')) {
       return 'لا يمكن إظهار المنتج قبل نشر صورته في استوديو الأصول.';
     }
+    if (text.contains('purchase_release_not_ready')) {
+      return 'تشغيل الشراء لم يُعتمد بعد في إعدادات الخادم.';
+    }
+    if (text.contains('store_purchasable_items_missing')) {
+      return 'أضف منتجاً ظاهراً بسعر كوينز صالح قبل تشغيل الشراء.';
+    }
+    if (text.contains('emergency_locked')) {
+      return 'الاقتصاد مقفل مؤقتاً. لا يمكن تشغيل الشراء.';
+    }
     if (text.contains('recent_auth_required')) {
       return 'سجّل دخولك مجدداً لتأكيد حفظ التعديلات.';
     }
@@ -169,6 +184,11 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         canViewPurchases = result['canViewPurchases'] == true;
         canPreviewGrants = result['canPreviewGrants'] == true;
         canViewCatalog = result['canViewCatalog'] == true;
+        canTogglePurchasing = result['canTogglePurchasing'] == true;
+        purchaseReleaseReady = result['purchaseReleaseReady'] == true;
+        purchasingEnabled = result['purchasingEnabled'] == true;
+        pendingPurchasingOperationId = null;
+        pendingPurchasingEnabled = null;
         items = raw.map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
         loading = false;
@@ -554,6 +574,7 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         dirty = false;
         saving = false;
         pendingSaveOperationId = null;
+        purchasingEnabled = false;
         items = (result['items'] as List)
             .map((e) => Map<String, dynamic>.from(e as Map)).toList();
       });
@@ -563,6 +584,68 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() { saving = false; error = _friendly(e); });
+    }
+  }
+
+  Future<void> _togglePurchasing(bool enabled) async {
+    if (!canTogglePurchasing || togglingPurchasing || saving || loading || dirty ||
+        (enabled && !purchaseReleaseReady)) return;
+    final consent = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(enabled ? 'تأكيد تشغيل الشراء' : 'تأكيد إيقاف الشراء'),
+        content: Text(enabled
+            ? 'هل تريد السماح بشراء منتجات المتجر بالكوينز؟ '
+              'سيُطبّق الخادم قواعد الرصيد والأهلية وتسجيل كل عملية.'
+            : 'هل تريد إيقاف عمليات الشراء الجديدة؟ '
+              'المقتنيات والمشتريات السابقة ستبقى محفوظة.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(enabled ? 'تشغيل الشراء' : 'إيقاف الشراء')),
+        ],
+      ),
+    );
+    if (!mounted || consent != true || togglingPurchasing || dirty ||
+        (enabled && !purchaseReleaseReady)) return;
+    if (pendingPurchasingEnabled != enabled) {
+      pendingPurchasingEnabled = enabled;
+      pendingPurchasingOperationId = null;
+    }
+    pendingPurchasingOperationId ??=
+        'store_rollout_${DateTime.now().microsecondsSinceEpoch}_'
+        '${Random.secure().nextInt(0x7fffffff)}';
+    final operationId = pendingPurchasingOperationId!;
+    setState(() { togglingPurchasing = true; error = null; });
+    try {
+      final result = await _post({
+        'action': 'purchasing', 'enabled': enabled,
+        'confirmation': 'confirmed', 'expectedRevision': revision,
+        'operationId': operationId,
+      });
+      if (result['revision'] is! int ||
+          result['purchasingEnabled'] != enabled) {
+        throw StateError('invalid_purchase_rollout_response');
+      }
+      if (!mounted) return;
+      setState(() {
+        revision = result['revision'] as int;
+        purchasingEnabled = enabled;
+        togglingPurchasing = false;
+        pendingPurchasingOperationId = null;
+        pendingPurchasingEnabled = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(enabled ? 'تم تشغيل الشراء في المتجر.'
+            : 'تم إيقاف الشراء في المتجر.'),
+      ));
+    } catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        togglingPurchasing = false;
+        error = _friendly(failure);
+      });
     }
   }
 
@@ -702,6 +785,47 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
               title: Text('مقتنيات المستخدمين'),
               subtitle: Text('هذه الصفحة تتطلب صلاحية خاصة من المالك.'),
             ));
+    }
+    if (activeSection == 6) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(child: ListTile(
+            leading: Icon(purchasingEnabled
+                ? Icons.shopping_cart_outlined : Icons.lock_outline),
+            title: const Text('الشراء بالكوينز'),
+            subtitle: Text(purchasingEnabled
+                ? 'الشراء مفعّل. يمكن للمالك إيقاف العمليات الجديدة.'
+                : 'الشراء متوقف. المنتجات والمقتنيات السابقة محفوظة.'),
+          )),
+          if (!purchaseReleaseReady) const Card(child: ListTile(
+            leading: Icon(Icons.info_outline),
+            title: Text('تجهيز إطلاق الشراء'),
+            subtitle: Text('لا يمكن تشغيل الشراء قبل اكتمال إعدادات '
+                'الخادم واختبارات الحماية.'),
+          )),
+          if (!canTogglePurchasing) const Card(child: ListTile(
+            leading: Icon(Icons.admin_panel_settings_outlined),
+            title: Text('إعدادات تشغيل المتجر'),
+            subtitle: Text('المالك وحده يتحكم بتشغيل ووقف الشراء.'),
+          )),
+          if (dirty) const Card(child: ListTile(
+            leading: Icon(Icons.warning_amber_outlined),
+            title: Text('تعديلات غير محفوظة'),
+            subtitle: Text('احفظ تعديلات المنتجات أولاً قبل تغيير حالة الشراء.'),
+          )),
+          if (canTogglePurchasing)
+            FilledButton.icon(
+              onPressed: togglingPurchasing || loading || saving || dirty ||
+                  (!purchasingEnabled && !purchaseReleaseReady)
+                  ? null : () => _togglePurchasing(!purchasingEnabled),
+              icon: Icon(purchasingEnabled ? Icons.lock_outline :
+                Icons.shopping_cart_checkout_outlined),
+              label: Text(togglingPurchasing ? 'جارٍ حفظ القرار...'
+                  : purchasingEnabled ? 'إيقاف الشراء' : 'تشغيل الشراء'),
+            ),
+          if (togglingPurchasing) const LinearProgressIndicator(),
+        ],
+      );
     }
     if (activeSection == 0) {
       if (!canViewCatalog) {
