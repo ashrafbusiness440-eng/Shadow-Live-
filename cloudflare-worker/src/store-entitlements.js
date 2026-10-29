@@ -1,22 +1,76 @@
-import {json, firestoreQuotaResponse} from "./http.js";
+import {json, readJson, firestoreQuotaResponse} from "./http.js";
 import {verifyFirebaseIdToken, assertUserDocumentSessionState} from "./firebase-auth.js";
 import {firestoreClient} from "./firestore.js";
+import {commitStorePurchaseOffline} from "./store-purchase-transaction.js";
 import {
   STORE_PURCHASING_ENABLED,
   validStoreEntitlementDocument,
 } from "./store-purchase-policy.js";
 
-// Intentionally hard-off even when an admin document says otherwise.
-// Do not remove this gate until ledger, balance, eligibility, rollback,
-// concurrency tests and the owner's explicit approval are verified.
+// Separate Worker release switch: absent or invalid means checkout is OFF,
+// regardless of catalog flags or any request-body property. The Owner has
+// approved resuming implementation, not bypassing unverified financial tests.
+export const STORE_PURCHASE_RELEASE_VALUE="owner-purchases-v1";
+export function storeCheckoutIssuanceEnabled(env){
+  return env?.STORE_PURCHASE_ISSUANCE_ENABLED===STORE_PURCHASE_RELEASE_VALUE;
+}
+
 export async function storePurchase(request, env) {
   if (request.method !== "POST") {
     return json(request, env, {ok:false,code:"method_not_allowed"},405);
   }
-  return json(request, env, {
-    ok:false, code:"purchasing_disabled",
-    purchasingEnabled:STORE_PURCHASING_ENABLED,
-  },423);
+  // Production is dormant until explicit Worker flag AND authoritative Store
+  // catalog purchasingEnabled are enabled by separately reviewed rollout.
+  if(!storeCheckoutIssuanceEnabled(env)){
+    return json(request, env, {
+      ok:false, code:"purchasing_disabled",
+      purchasingEnabled:STORE_PURCHASING_ENABLED,
+    },423);
+  }
+  try{
+    const body=await readJson(request);
+    if(body?.action!=="purchase" || body?.confirmation!=="confirmed"){
+      return json(request,env,{ok:false,code:"invalid_purchase_confirmation"},400);
+    }
+    const token=await verifyFirebaseIdToken(request,env,{
+      checkUserState:false,
+    });
+    // The existing transaction reads price, balance, levels, status, product,
+    // receipt and emergency lock SERVER-SIDE before a single atomic commit.
+    const result=await commitStorePurchaseOffline(
+      firestoreClient(env),token,body,null);
+    return json(request,env,result,200,{"Cache-Control":"no-store"});
+  }catch(error){
+    const quota=firestoreQuotaResponse(request,env,error);
+    if(quota)return quota;
+    const code=String(error?.code||error?.message||"").trim();
+    if(code==="purchasing_disabled"){
+      return json(request,env,{
+        ok:false,code,purchasingEnabled:false,
+      },423);
+    }
+    const allowed=[
+      "unauthorized","account_required","store_buyer_not_eligible",
+      "invalid_store_purchase_operation_id","invalid_store_product_id",
+      "invalid_purchase_time","invalid_store_wallet",
+      "invalid_wallet_state","invalid_store_eligibility",
+      "store_product_unavailable","store_product_not_purchasable",
+      "store_vip_level_required","store_wealth_level_required",
+      "store_asset_not_published","store_item_already_owned",
+      "insufficient_balance","emergency_locked",
+      "store_operation_id_conflict","store_operation_record_invalid",
+      "invalid_store_expiry",
+    ];
+    if(allowed.includes(code)){
+      const status=
+        code==="unauthorized"?401:
+        code==="account_required"||code==="store_buyer_not_eligible"?403:
+        code==="store_product_unavailable"?404:
+        code.startsWith("invalid_")?400:409;
+      return json(request,env,{ok:false,code},status);
+    }
+    return json(request,env,{ok:false,code:"store_checkout_unavailable"},503);
+  }
 }
 
 export async function myStoreItems(request, env) {
