@@ -188,6 +188,37 @@ test("578B no partial writes for insufficient wallet or changed consent",async()
   }
 });
 
+test("578C emulator legacy balance mirror stays in lockstep across purchase and renewal",async()=>{
+  const suffix="mirror";
+  const {uid,db}=await seed(suffix,{coins:100000,walletMirror:100000});
+  await commitStorePurchaseOffline(db,verifiedToken(uid),
+    request(suffix),null,NOW);
+  let row=await inspect(uid,operationId(suffix));
+  assert.equal(row.user.coins,75000);
+  assert.equal(row.user.balance,75000);
+  assert.equal(row.ledger.data().closingBalance,75000);
+
+  const renewalKey="store_578c_mirror_renew_000002";
+  const renewalRequest={
+    action:"renew",productId,operationId:renewalKey,
+    expectedPriceCoins:PRICE,expectedDurationDays:7,
+    expectedCurrentExpiresAtMs:NOW+7*86400000,
+  };
+  const renewed=await commitStorePurchaseOffline(
+    db,verifiedToken(uid),renewalRequest,null,NOW+100);
+  assert.equal(renewed.renewal,true);
+  row=await inspect(uid,renewalKey);
+  assert.equal(row.user.coins,50000);
+  assert.equal(row.user.balance,50000);
+  assert.equal(row.ledger.data().openingBalance,75000);
+  assert.equal(row.ledger.data().closingBalance,50000);
+  assert.equal(row.entitlement.data().renewalCount,1);
+  const repeated=await commitStorePurchaseOffline(
+    db,verifiedToken(uid),renewalRequest,null,NOW+200);
+  assert.equal(repeated.duplicate,true);
+  assert.equal((await inspect(uid,renewalKey)).user.balance,50000);
+});
+
 test("578B renewal charges once and extends active paid term without another entitlement",async()=>{
   const suffix="renew";
   const {uid,db}=await seed(suffix,{coins:100000});
