@@ -216,9 +216,13 @@ export async function loadStoreUserFinancialEvidencePage(
     startAfter,limit:FINANCIAL_EVIDENCE_PAGE_SIZE+1,
   });
   const page=docs.slice(0,FINANCIAL_EVIDENCE_PAGE_SIZE);
+  const seenReceiptIds=new Set();
   const evidence=await Promise.all(page.map(async row=>{
-    const receipt=row?.data||{};
     const documentId=row?.id;
+    if(typeof documentId!=="string"||seenReceiptIds.has(documentId))
+      return {verified:false,code:"invalid_or_duplicate_receipt_key"};
+    seenReceiptIds.add(documentId);
+    const receipt=row?.data||{};
     const opKey=cleanStoreId(receipt.operationId);
     const productId=cleanStoreId(receipt.productId);
     const validKey=typeof documentId==="string"&&
@@ -226,7 +230,9 @@ export async function loadStoreUserFinancialEvidencePage(
     try{validateStorePurchaseOperationId(opKey);}
     catch(_){return {verified:false,code:"invalid_receipt_identity"};}
     if(!validKey||receipt.buyerUid!==targetUid||
-      !/^[1-9][0-9]{5,8}$/.test(productId))
+      !/^[1-9][0-9]{5,8}$/.test(productId)||
+      !Number.isSafeInteger(receipt.acquiredAtMs)||
+      receipt.acquiredAtMs<0)
       return {verified:false,code:"invalid_receipt_identity"};
     const check=await certifyStorePurchaseEvidenceOffline(db,{
       buyerUid:targetUid,operationId:opKey,expectedProductId:productId,
