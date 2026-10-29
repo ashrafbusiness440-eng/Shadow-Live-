@@ -48,6 +48,11 @@ export function selectPublicStoreItems(items, nowMs = Date.now()) {
     .slice(0, 100);
 }
 
+export function isPublicStoreCheckoutAvailable(config,env){
+  return storeCheckoutIssuanceEnabled(env) &&
+    config?.purchasingEnabled === true;
+}
+
 export async function publicStoreCatalog(request, env) {
   if (request.method !== "GET") {
     return json(request, env, {ok:false,code:"method_not_allowed"}, 405);
@@ -65,8 +70,7 @@ export async function publicStoreCatalog(request, env) {
     const items = selectPublicStoreItems(config.items, Date.now());
     // Never advertise purchasing unless BOTH independent server gates allow
     // it. Neither can be enabled by this public endpoint or request input.
-    const purchasingEnabled = storeCheckoutIssuanceEnabled(env) &&
-      config.purchasingEnabled === true;
+    const purchasingEnabled = isPublicStoreCheckoutAvailable(config,env);
     return json(request, env, {
       ok:true, purchasingEnabled,
       categories: STORE_CATEGORIES,
