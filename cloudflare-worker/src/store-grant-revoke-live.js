@@ -98,7 +98,8 @@ export async function refreshRevokedStoreGrantInLiveRoom(
       });
     const confirmation=response.ok
       ?await response.json().catch(()=>({})):{};
-    notified=response.ok && confirmation.present===true;
+    notified=response.ok && confirmation.present===true &&
+      Number(confirmation.delivered||0)>0;
   }catch(_){}
   return {
     status:identityRefreshed&&notified&&seatCleared
