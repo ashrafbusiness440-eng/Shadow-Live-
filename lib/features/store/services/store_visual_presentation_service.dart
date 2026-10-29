@@ -71,10 +71,22 @@ class StoreVisualPresentationService {
       _loadVisual(uid, 'profileCards');
 
   Future<StoreVerifiedFrame?> _loadVisual(String uid, String category) async {
+    final results = await loadRoomScopedVisuals(uid, [category]);
+    return results[category];
+  }
+
+  /// One authenticated request for both room decorations. Never fetch an
+  /// individual entitlement from Firestore directly or trust room arguments.
+  Future<Map<String, StoreVerifiedFrame>> loadRoomDecorations(String uid) =>
+      loadRoomScopedVisuals(uid, const ['roomFrames', 'backgrounds']);
+
+  Future<Map<String, StoreVerifiedFrame>> loadRoomScopedVisuals(
+    String uid, List<String> categories,
+  ) async {
     final userId = uid.trim();
-    if (userId.isEmpty) return null;
+    if (userId.isEmpty) return {};
     final token = await _tokenProvider();
-    if (token == null || token.isEmpty) return null;
+    if (token == null || token.isEmpty) return {};
     final url = Uri.parse(
       '${_base.replaceFirst(RegExp(r"/+$"), "")}/store-presentation',
     ).replace(queryParameters: {'uid': userId});
@@ -82,17 +94,21 @@ class StoreVisualPresentationService {
       final response = await _client.get(url, headers: {
         'authorization': 'Bearer $token',
       }).timeout(const Duration(seconds: 8));
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) return {};
       final result = jsonDecode(response.body);
       if (result is! Map || result['ok'] != true ||
-          result['visuals'] is! Map) return null;
-      final visual = StoreVerifiedFrame.fromResponse(
-        (result['visuals'] as Map)[category],
-      );
-      return visual != null && visual.activeNow ? visual : null;
+          result['visuals'] is! Map) return {};
+      final rawVisuals = result['visuals'] as Map;
+      final verified = <String, StoreVerifiedFrame>{};
+      for (final category in categories) {
+        // Each category is fixed by the caller, not supplied by the user.
+        final visual = StoreVerifiedFrame.fromResponse(rawVisuals[category]);
+        if (visual != null && visual.activeNow) verified[category] = visual;
+      }
+      return verified;
     } catch (_) {
       // Failure is cosmetic only; keep existing level/VIP profile frame.
-      return null;
+      return {};
     }
   }
 
