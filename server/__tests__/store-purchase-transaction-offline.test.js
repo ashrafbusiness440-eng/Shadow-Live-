@@ -48,7 +48,8 @@ function setup({coins=40000, purchasingEnabled=true, published=true} = {}) {
   return {db,records,commits:()=>commits};
 }
 const user={sub:"buyer_1",iat:Math.floor(Date.now()/1000)};
-const request={productId:"200001",operationId:"store_transaction_safe_0001"};
+const request={productId:"200001",operationId:"store_transaction_safe_0001",
+  expectedPriceCoins:25000,expectedDurationDays:7};
 const levels={vipLevel:2,wealthLevel:5};
 
 test("offline store purchase commits wallet, receipt, ownership, ledger atomically",async()=>{
@@ -211,4 +212,38 @@ test("revoked/expired ownership blocks a new charge until approved renewal polic
     assert.equal(sample.commits(),0);
     assert.equal(sample.records.get("users/buyer_1").coins,40000);
   }
+});
+
+test("user must approve exact price and term, stale quote never debits",async()=>{
+  for(const quote of [
+    {expectedPriceCoins:25001},
+    {expectedPriceCoins:1},
+    {expectedPriceCoins:-1},
+    {expectedPriceCoins:null},
+    {expectedDurationDays:30},
+    {expectedDurationDays:null},
+  ]){
+    const sample=setup();
+    await assert.rejects(()=>commitStorePurchaseOffline(
+      sample.db,user,{...request,...quote},levels,100000),
+      /store_purchase_quote_changed|invalid_store_purchase_quote/);
+    assert.equal(sample.commits(),0);
+    assert.equal(sample.records.get("users/buyer_1").coins,40000);
+    assert.equal(sample.records.has(
+      "user_store_entitlements/buyer_1/items/200001"),false);
+  }
+  const stalePrice=setup();
+  stalePrice.records.get("system_config/store_catalog").items=[{
+    ...product(),priceCoins:26000,
+  }];
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    stalePrice.db,user,request,levels,100000),/store_purchase_quote_changed/);
+  assert.equal(stalePrice.commits(),0);
+  const staleTerm=setup();
+  staleTerm.records.get("system_config/store_catalog").items=[{
+    ...product(),durationDays:30,
+  }];
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    staleTerm.db,user,request,levels,100000),/store_purchase_quote_changed/);
+  assert.equal(staleTerm.commits(),0);
 });
