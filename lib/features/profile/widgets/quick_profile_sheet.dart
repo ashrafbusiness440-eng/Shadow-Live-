@@ -264,6 +264,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                     child: ProfileAvatarWithFrame(
                       diameter: 96,
                       userId: widget.userId,
+                      verifyStoreFrame: true,
                       fallbackProfile: data,
                       vipLevel: vip,
                       vipFrameLevel: vipFrameLevel,
