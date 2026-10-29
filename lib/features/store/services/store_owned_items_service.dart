@@ -15,6 +15,7 @@ class StoreOwnedItem {
     required this.active,
     required this.expired,
     required this.lifecycleState,
+    this.equipped = false,
   });
 
   final String productId;
@@ -28,6 +29,8 @@ class StoreOwnedItem {
   final bool expired;
   /// Server-projected lifecycle; legacy clients may fall back to prior flags.
   final String lifecycleState;
+  /// Current server-verified equipment. Expired/revoked items cannot be equipped.
+  final bool equipped;
 
   factory StoreOwnedItem.fromJson(Map<String, dynamic> value) {
     final id = value['productId']?.toString() ?? '';
@@ -39,7 +42,9 @@ class StoreOwnedItem {
         (value['expiresAtMs'] != null &&
             (value['expiresAtMs'] is! int ||
                 (value['expiresAtMs'] as int) < 0)) ||
-        !const {'purchase', 'admin_grant', 'reward'}.contains(value['source'])) {
+        !const {'purchase', 'admin_grant', 'reward'}.contains(value['source']) ||
+        (value['equipped'] != null && value['equipped'] is! bool) ||
+        (value['equipped'] == true && value['active'] != true)) {
       throw const FormatException('invalid_store_entitlement');
     }
     final rawState = value['lifecycleState'];
@@ -66,6 +71,7 @@ class StoreOwnedItem {
       active: value['active'] as bool,
       expired: value['expired'] as bool,
       lifecycleState: state,
+      equipped: value['equipped'] == true,
     );
   }
 }
@@ -128,6 +134,37 @@ class StoreOwnedItemsService {
       return StoreOwnedItem.fromJson(Map<String, dynamic>.from(entry));
     }).toList(growable: false);
     return StoreOwnedItemsResult(items, decoded['moreMayExist'] as bool);
+  }
+
+  /// This only selects an existing entitlement; it never buys or grants items.
+  Future<void> setEquipped(StoreOwnedItem item, {required bool equipped}) async {
+    if (equipped && !item.active) throw StateError('store_item_unavailable');
+    final token = await _tokenProvider();
+    if (token == null || token.isEmpty) {
+      throw StateError('store_login_required');
+    }
+    final endpoint = Uri.parse(
+      '${_base.replaceFirst(RegExp(r"/+$"), "")}/store-equip',
+    );
+    final response = await _client.post(endpoint,
+      headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode(equipped
+        ? {'action': 'equip', 'productId': item.productId}
+        : {'action': 'unequip', 'category': item.category}),
+    ).timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      throw StateError('store_equipment_unavailable');
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map || decoded['ok'] != true ||
+        decoded['category'] != item.category ||
+        decoded['productId'] != (equipped ? item.productId : null) ||
+        decoded['changed'] is! bool) {
+      throw const FormatException('invalid_store_equipment_response');
+    }
   }
 
   void close() => _client.close();
