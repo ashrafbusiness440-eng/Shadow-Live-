@@ -247,3 +247,120 @@ test("user must approve exact price and term, stale quote never debits",async()=
     staleTerm.db,user,request,levels,100000),/store_purchase_quote_changed/);
   assert.equal(staleTerm.commits(),0);
 });
+
+test("explicit renewal stacks only a verified paid time-limited entitlement",async()=>{
+  const sample=setup({coins:150000});
+  const path="user_store_entitlements/buyer_1/items/200001";
+  const first=await commitStorePurchaseOffline(
+    sample.db,user,request,levels,100000);
+  assert.equal(first.renewal,false);
+  const initial=sample.records.get(path);
+  const oldExpiry=initial.expiresAtMs;
+  const renewalRequest={
+    ...request,action:"renew",
+    operationId:"store_renewal_safe_0002",
+    expectedCurrentExpiresAtMs:oldExpiry,
+  };
+  const renewal=await commitStorePurchaseOffline(
+    sample.db,user,renewalRequest,levels,200000);
+  assert.equal(renewal.renewal,true);
+  assert.equal(renewal.previousExpiresAtMs,oldExpiry);
+  assert.equal(renewal.expiresAtMs,oldExpiry+7*86400000);
+  assert.equal(renewal.acquiredAtMs,100000);
+  assert.equal(sample.records.get(path).expiresAtMs,renewal.expiresAtMs);
+  assert.equal(sample.records.get(path).renewalCount,1);
+  assert.equal(sample.records.get(path).equipped,false);
+  assert.equal(sample.records.get("users/buyer_1").coins,100000);
+  assert.equal(sample.commits(),2);
+  assert.equal(sample.records.get(
+    "admin_audit_logs/store_purchase_buyer_1__"+renewalRequest.operationId
+  ).action,"renewStoreItem");
+  assert.equal(sample.records.get(
+    "store_purchase_receipts/buyer_1__"+renewalRequest.operationId
+  ).renewal,true);
+
+  const duplicate=await commitStorePurchaseOffline(
+    sample.db,user,renewalRequest,levels,300000);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(duplicate.expiresAtMs,renewal.expiresAtMs);
+  assert.equal(sample.records.get("users/buyer_1").coins,100000);
+  assert.equal(sample.records.get(path).renewalCount,1);
+  assert.equal(sample.commits(),2);
+
+  // Explicit new consent and operation ID are mandatory per additional term.
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    sample.db,user,{...renewalRequest,operationId:"store_renewal_safe_0003"},
+    levels,400000),/store_renewal_quote_changed/);
+  const second=await commitStorePurchaseOffline(
+    sample.db,user,{...renewalRequest,
+      operationId:"store_renewal_safe_0004",
+      expectedCurrentExpiresAtMs:renewal.expiresAtMs},
+    levels,400000);
+  assert.equal(second.expiresAtMs,oldExpiry+14*86400000);
+  assert.equal(sample.records.get(path).renewalCount,2);
+  assert.equal(sample.records.get("users/buyer_1").coins,75000);
+  assert.equal(sample.commits(),3);
+});
+
+test("expired paid entitlement renews from NOW, without double time",async()=>{
+  const sample=setup();
+  const oldExpiry=1000;
+  sample.records.set("user_store_entitlements/buyer_1/items/200001",{
+    ownerUid:"buyer_1",productId:"200001",category:"frames",
+    source:"purchase",status:"active",equipped:true,
+    assetKey:"store.item.200001.icon",
+    acquiredAtMs:100,expiresAtMs:oldExpiry,
+  });
+  const renewal=await commitStorePurchaseOffline(sample.db,user,{
+    ...request,action:"renew",operationId:"store_renewal_expired_0005",
+    expectedCurrentExpiresAtMs:oldExpiry,
+  },levels,100000);
+  assert.equal(renewal.expiresAtMs,100000+7*86400000);
+  assert.equal(sample.records.get("user_store_entitlements/buyer_1/items/200001").equipped,true);
+  assert.equal(sample.records.get("users/buyer_1").coins,15000);
+});
+
+test("revoked, permanent, foreign, rewarded and malformed ownership cannot renew",async()=>{
+  const path="user_store_entitlements/buyer_1/items/200001";
+  const valid={
+    ownerUid:"buyer_1",productId:"200001",category:"frames",
+    source:"purchase",status:"active",equipped:false,
+    assetKey:"store.item.200001.icon",
+    acquiredAtMs:100,expiresAtMs:100000+86400000,
+  };
+  for(const [changes,reason] of [
+    [{status:"revoked"},"store_renewal_revoked"],
+    [{expiresAtMs:null},"store_renewal_permanent"],
+    [{ownerUid:"other"},"store_renewal_entitlement_invalid"],
+    [{source:"admin_grant"},"store_renewal_entitlement_invalid"],
+    [{source:"reward"},"store_renewal_entitlement_invalid"],
+    [{category:"backgrounds"},"store_renewal_entitlement_invalid"],
+    [{renewalCount:-1},"store_renewal_invalid_count"],
+  ]){
+    const sample=setup();
+    sample.records.set(path,{...valid,...changes});
+    await assert.rejects(()=>commitStorePurchaseOffline(sample.db,user,{
+      ...request,action:"renew",
+      expectedCurrentExpiresAtMs:valid.expiresAtMs,
+    },levels,100000),new RegExp(reason));
+    assert.equal(sample.commits(),0);
+    assert.equal(sample.records.get("users/buyer_1").coins,40000);
+  }
+  const absent=setup();
+  await assert.rejects(()=>commitStorePurchaseOffline(absent.db,user,{
+    ...request,action:"renew",expectedCurrentExpiresAtMs:10000,
+  },levels,100000),/store_renewal_item_not_owned/);
+  assert.equal(absent.commits(),0);
+});
+
+test("an operation ID cannot switch from initial purchase to renewal",async()=>{
+  const sample=setup();
+  await commitStorePurchaseOffline(sample.db,user,request,levels,100000);
+  const expiry=sample.records.get(
+    "user_store_entitlements/buyer_1/items/200001").expiresAtMs;
+  await assert.rejects(()=>commitStorePurchaseOffline(sample.db,user,{
+    ...request,action:"renew",expectedCurrentExpiresAtMs:expiry,
+  },levels,200000),/store_operation_id_conflict/);
+  assert.equal(sample.commits(),1);
+  assert.equal(sample.records.get("users/buyer_1").coins,15000);
+});
