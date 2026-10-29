@@ -505,14 +505,16 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                     },
                   ),
                   if (selectedCategory == 'frames' ||
-                      selectedCategory == 'entranceEffects')
+                      selectedCategory == 'entranceEffects' ||
+                      selectedCategory == 'chatBubbles' ||
+                      selectedCategory == 'nameEffects')
                     FutureBuilder<Uri?>(
                       future: ShadowAssetRegistry.remoteUrl(_visualAssetKey(id)),
                       builder: (context, snapshot) => ListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('صورة الاستخدام الفعلية'),
                         subtitle: Text(snapshot.data == null
-                          ? 'غير منشورة — لن يظهر الإطار أو مؤثر الدخول حتى تُنشر'
+                          ? 'غير منشورة — لن يظهر التأثير عند التجهيز حتى تُنشر'
                           : 'جاهزة للعرض عند تجهيز هذا المنتج'),
                         trailing: Icon(snapshot.data == null
                           ? Icons.add_photo_alternate_outlined
