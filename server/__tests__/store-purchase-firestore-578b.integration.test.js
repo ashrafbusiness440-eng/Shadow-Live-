@@ -582,3 +582,75 @@ test("578D never approves missing audit or mismatched operation and receipt",asy
     db,{buyerUid:"unrelated_account",operationId:key}),
   {ok:false,code:"not_found"});
 });
+
+test("580C same buyer concurrent retries share one debit and receipt on Emulator",async()=>{
+  const suffix="580c_same_buyer_same_op";
+  const {uid,db}=await seed(suffix,{coins:50000});
+  const key=operationId(suffix);
+  const [first,second]=await Promise.all([
+    commitStorePurchaseOffline(db,verifiedToken(uid),
+      request(suffix),null,NOW),
+    commitStorePurchaseOffline(db,verifiedToken(uid),
+      request(suffix),null,NOW),
+  ]);
+  assert.equal(first.operationId,key);
+  assert.equal(second.operationId,key);
+  assert.equal([first,second].filter(x=>x.duplicate===true).length,1);
+  const records=await inspect(uid,key);
+  assert.equal(records.user.coins,25000);
+  assert.equal(records.receipt.data().buyerUid,uid);
+  assert.equal(records.ledger.data().delta,-PRICE);
+  assert.equal(records.ledger.data().openingBalance,50000);
+  assert.equal(records.ledger.data().closingBalance,25000);
+  assert.equal(records.entitlement.data().source,"purchase");
+  assert.equal(records.op.data().status,"completed");
+});
+
+test("580C real Firestore transaction race prevents overspend on different products",async()=>{
+  const suffix="580c_shared_wallet_other_items";
+  const {uid,db}=await seed(suffix,{coins:40000});
+  const secondId="200002";
+  const other={...product,id:secondId,nameAr:"إطار بديل",
+    assetKey:"store.item.200002.icon",sortOrder:2};
+  await Promise.all([
+    firestore.doc("system_config/store_catalog").set({
+      purchasingEnabled:true,revision:2,items:[product,other],
+    }),
+    firestore.doc("app_asset_registry/"+other.assetKey).set({
+      published:true,rawUrl:"https://example.com/second-item.webp",
+    }),
+  ]);
+  const keyA="store_580c_wallet_item_a_001";
+  const keyB="store_580c_wallet_item_b_001";
+  const attempts=await Promise.allSettled([
+    commitStorePurchaseOffline(db,verifiedToken(uid),
+      request(suffix,{operationId:keyA}),null,NOW),
+    commitStorePurchaseOffline(db,verifiedToken(uid),
+      request(suffix,{productId:secondId,operationId:keyB}),null,NOW),
+  ]);
+  assert.equal(attempts.filter(x=>x.status==="fulfilled").length,1);
+  assert.equal(attempts.filter(x=>x.status==="rejected").length,1);
+  assert.match(attempts.find(x=>x.status==="rejected").reason.message,
+    /insufficient_balance/);
+  const wallet=(await firestore.doc("users/"+uid).get()).data();
+  assert.equal(wallet.coins,15000);
+  const financial=await Promise.all([keyA,keyB].map(async key=>{
+    const id=uid+"__"+key;
+    return {
+      receipt:await firestore.doc("store_purchase_receipts/"+id).get(),
+      ledger:await firestore.doc("financial_ledger/store_"+id).get(),
+      operation:await firestore.doc("store_purchase_operations/"+id).get(),
+    };
+  }));
+  for(const kind of ["receipt","ledger","operation"]){
+    assert.equal(financial.filter(row=>row[kind].exists).length,1);
+  }
+  const entitlements=await Promise.all([productId,secondId].map(id=>
+    firestore.doc("user_store_entitlements/"+uid+"/items/"+id).get()));
+  assert.equal(entitlements.filter(row=>row.exists).length,1);
+  const winner=attempts.find(x=>x.status==="fulfilled").value;
+  const certified=await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:winner.operationId});
+  assert.deepEqual(certified,{ok:true,kind:"purchase",
+    certifiedAmountCoins:PRICE});
+});
