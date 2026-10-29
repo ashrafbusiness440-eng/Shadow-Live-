@@ -16,7 +16,7 @@ const VISUAL_CATEGORIES=Object.freeze(["frames","entranceEffects",
 // Room admission keeps its existing bounded projection: a profile card is
 // consumed only by the authenticated profile presentation endpoint.
 const PROFILE_VISUAL_CATEGORIES=Object.freeze([
-  ...VISUAL_CATEGORIES,"profileCards",
+  ...VISUAL_CATEGORIES,"profileCards","roomFrames","backgrounds",
 ]);
 
 function isActiveUser(data={}){
