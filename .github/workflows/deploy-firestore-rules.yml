@@ -414,11 +414,27 @@ jobs:
               .filter((index) =>
                 String(index?.name || '').startsWith(parent + '/indexes/'));
             const existingSignatures = new Set(existing.map(indexSignature));
+            // Store finance pages use an explicit DESC document-ID
+            // tie-breaker. Earlier signature matching ignores __name__ and
+            // can confuse ASC and DESC composite indexes for the same fields.
+            const strictStoreIndex = new Set([
+              'store_purchase_receipts','store_purchase_operations',
+              'financial_ledger','admin_audit_logs',
+            ]).has(collectionGroup);
+            const matchesDesired = (candidate, wanted) =>
+              indexSignature(candidate) === indexSignature(wanted) &&
+              (!strictStoreIndex ||
+                String((candidate.fields || []).find(f =>
+                  f.fieldPath === '__name__')?.order || '') ===
+                String((wanted.fields || []).find(f =>
+                  f.fieldPath === '__name__')?.order || ''));
+
 
             for (const desiredIndex of indexes) {
               const signature = indexSignature(desiredIndex);
-              if (existingSignatures.has(signature)) {
-                const match = existing.find((item) => indexSignature(item) === signature);
+              const match = existing.find(item =>
+                matchesDesired(item,desiredIndex));
+              if (existingSignatures.has(signature) && match) {
                 console.log(
                   'Firestore index already present:',
                   match?.name || parent + '/indexes/<existing>',
@@ -460,36 +476,49 @@ jobs:
             }
           }
 
-          // Store purchase history must not be considered deploy-ready merely
-          // because the Admin API accepted creation of a composite index.
-          // This runs ONLY on index-sync deploys, not in a Worker request.
-          const storeIndex=byCollection.get('store_purchase_receipts')
-            ?.find((item) => fieldSignature(item.fields) ===
-              'buyerUid:order:ASCENDING|acquiredAtMs:order:DESCENDING');
-          if(storeIndex){
-            const group='store_purchase_receipts';
-            const parent='projects/' + projectId +
-              '/databases/(default)/collectionGroups/' + group;
-            const url='https://firestore.googleapis.com/v1/projects/' +
-              encodeURIComponent(projectId) +
-              '/databases/(default)/collectionGroups/' + group;
-            const signature=indexSignature(storeIndex);
+          // Never approve the receipt/history or finance parity queries by
+          // index-creation ACK alone. Poll the EXACT source indexes used by
+          // the bounded Owner Store report; an ASC __name__ fallback is NOT
+          // equivalent to the required DESC traversal.
+          const requiredStoreIndexes = [
+            ['store_purchase_receipts',
+              'buyerUid:order:ASCENDING|acquiredAtMs:order:DESCENDING'],
+            ['store_purchase_operations','buyerUid:order:ASCENDING'],
+            ['financial_ledger',
+              'userId:order:ASCENDING|sourceType:order:ASCENDING'],
+            ['admin_audit_logs',
+              'actorUid:order:ASCENDING|action:order:ASCENDING'],
+          ];
+          for(const [group,fieldKey] of requiredStoreIndexes){
+            const desiredIndex=(byCollection.get(group)||[])
+              .find(i=>fieldSignature(i.fields)===fieldKey &&
+                (i.fields||[]).some(f=>f.fieldPath==='__name__' &&
+                  f.order==='DESCENDING'));
+            if(!desiredIndex)throw new Error('required_store_index_missing:'+group);
+            const parent='projects/'+projectId+
+              '/databases/(default)/collectionGroups/'+group;
+            const url='https://firestore.googleapis.com/v1/projects/'+
+              encodeURIComponent(projectId)+
+              '/databases/(default)/collectionGroups/'+group;
             let ready=false;
             for(let attempt=0;attempt<24;attempt++){
-              const matched=(await listIndexes(url)).find(item =>
-                String(item?.name || '').startsWith(parent + '/indexes/') &&
-                indexSignature(item) === signature);
-              if(matched?.state==='READY'){
-                console.log('Store purchase receipts index READY:', matched.name);
-                ready=true;
-                break;
+              const match=(await listIndexes(url)).find(item=>
+                String(item?.name||'').startsWith(parent+'/indexes/') &&
+                indexSignature(item)===indexSignature(desiredIndex) &&
+                String((item.fields||[]).find(f=>
+                  f.fieldPath==='__name__')?.order||'')==='DESCENDING');
+              if(match?.state==='READY'){
+                console.log('Store finance index READY:',group,match.name);
+                if(group==='store_purchase_receipts')
+                  console.log('Store purchase receipts index READY:',match.name);
+                ready=true;break;
               }
-              if(matched?.state==='NEEDS_REPAIR')
-                throw new Error('store_receipt_index_needs_repair');
+              if(match?.state==='NEEDS_REPAIR')
+                throw new Error('store_finance_index_needs_repair:'+group);
               if(attempt<23)
                 await new Promise(resolve=>setTimeout(resolve,5000));
             }
-            if(!ready)throw new Error('store_receipt_index_not_ready');
+            if(!ready)throw new Error('store_finance_index_not_ready:'+group);
           }
 
           console.log('Firestore composite index sync completed.');
