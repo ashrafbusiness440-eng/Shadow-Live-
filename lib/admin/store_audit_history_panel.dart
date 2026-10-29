@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'store_operation_sample_summary.dart';
 
 class StoreAuditHistoryPanel extends StatefulWidget {
   const StoreAuditHistoryPanel({super.key});
@@ -142,6 +143,34 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
     ));
   }
 
+  Widget _operationSampleSummary() {
+    final summary = StoreOperationSampleSummary.fromEntries(_operationEntries);
+    Widget count(String label, int value) =>
+        Chip(label: Text('$label: $value'));
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ملخص سجلات العمليات المعروضة',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          const Text('للمالك فقط. هذه أعداد من آخر السجلات المسترجعة '
+              '(حتى 50 عملية)، وليست إجمالي المبيعات أو الإيرادات '
+              'أو الأرصدة. قد توجد سجلات خارج العينة.'),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            count('سجلات تمت مراجعتها', summary.inspected),
+            count('شراء', summary.purchases),
+            count('تجديد', summary.renewals),
+            count('منح', summary.grants),
+            count('سحب منحة', summary.revocations),
+          ]),
+        ],
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -181,6 +210,7 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
               'للمالك فقط، عرض للقراءة من سجلات حقيقية. '
               'لا يحتوي على بيانات المحفظة الخاصة.'),
         ),
+        if (_loaded) _operationSampleSummary(),
         if (_loaded && _operationEntries.isEmpty)
           const Card(child: ListTile(
             title: Text('لا توجد عمليات متجر محفوظة في النتائج المعروضة.'),
