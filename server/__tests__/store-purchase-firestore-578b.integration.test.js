@@ -514,6 +514,9 @@ test("578D verifies purchase and renewal against four Firestore evidence documen
     expectedPriceCoins:PRICE,expectedDurationDays:7,
     expectedCurrentExpiresAtMs:NOW+7*86400000,
   },null,NOW+100);
+  const renewalEvidence=await inspect(uid,renewalKey);
+  assert.equal(renewalEvidence.op.data().result.acquiredAtMs,NOW);
+  assert.equal(renewalEvidence.receipt.data().acquiredAtMs,NOW+100);
   const second=await certifyStorePurchaseEvidenceOffline(
     db,{buyerUid:uid,operationId:renewalKey});
   assert.deepEqual(second,{ok:true,kind:"renew",
