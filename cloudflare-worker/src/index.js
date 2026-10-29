@@ -48,6 +48,7 @@ import { manageStoreAudit } from "./manage-store-audit.js";
 import { manageStorePurchases } from "./manage-store-purchases.js";
 import { manageStoreGrantPreview } from "./manage-store-grant-preview.js";
 import { manageStoreGrantIssue } from "./manage-store-grant-issue.js";
+import { manageStoreGrantRevoke } from "./manage-store-grant-revoke.js";
 import { economyRouter } from "./economy-router.js";
 import { agencyApplication } from "./agency-application.js";
 import { agencyControl } from "./agency-control.js";
@@ -164,6 +165,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/manage-store-grant-issue") {
     return manageStoreGrantIssue(request, env);
+  }
+  if (url.pathname === "/api/manage-store-grant-revoke") {
+    return manageStoreGrantRevoke(request, env);
   }
   if (url.pathname === "/api/manage-user-access") {
     return manageUserAccess(request, env);
