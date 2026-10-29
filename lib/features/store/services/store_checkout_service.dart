@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,6 +27,65 @@ class StoreCheckoutService {
   final String _base;
   final Future<String?> Function() _tokenProvider;
 
+  Map<String, dynamic> _validReceipt(
+    Map decoded, {
+    required String productId,
+    required String operationId,
+    required int expectedPriceCoins,
+    required int expectedDurationDays,
+  }) {
+    if (decoded['ok'] != true ||
+        decoded['operationId'] != operationId ||
+        decoded['productId'] != productId ||
+        decoded['priceCoins'] != expectedPriceCoins ||
+        decoded['durationDays'] != expectedDurationDays ||
+        decoded['deliveryStatus'] != 'delivered') {
+      throw StateError('invalid_store_purchase_receipt');
+    }
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  Future<Map<String, dynamic>> _recoverReceipt({
+    required String token,
+    required String productId,
+    required String operationId,
+    required int expectedPriceCoins,
+    required int expectedDurationDays,
+  }) async {
+    // A lost response is NOT permission to issue a new charge. Query the
+    // immutable, token-scoped receipt via the read-only endpoint instead.
+    // Missing or unreachable receipt means "unconfirmed", never "failed".
+    try {
+      final uri = Uri.parse(
+        '${_base.replaceFirst(RegExp(r"/+$"), "")}/store-purchase-status',
+      );
+      final response = await _client.post(uri, headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      }, body: jsonEncode({
+        'action': 'status',
+        'operationId': operationId,
+        'productId': productId,
+      })).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map && decoded['ok'] == true &&
+            decoded['found'] == true) {
+          return _validReceipt(decoded,
+            productId: productId,
+            operationId: operationId,
+            expectedPriceCoins: expectedPriceCoins,
+            expectedDurationDays: expectedDurationDays,
+          );
+        }
+      }
+    } catch (_) {
+      // Keep the same operation ID for explicit manual retry. A status lookup
+      // error cannot prove that a transaction failed or that no Coins moved.
+    }
+    throw StateError('store_purchase_result_unconfirmed');
+  }
+
   Future<Map<String, dynamic>> purchase({
     required String productId,
     required String operationId,
@@ -44,17 +104,32 @@ class StoreCheckoutService {
     final uri = Uri.parse(
       '${_base.replaceFirst(RegExp(r"/+$"), "")}/store-purchase',
     );
-    final response = await _client.post(uri, headers: {
-      'authorization': 'Bearer $token',
-      'content-type': 'application/json',
-    }, body: jsonEncode({
-      'action': 'purchase',
-      'confirmation': 'confirmed',
-      'productId': productId,
-      'operationId': operationId,
-      'expectedPriceCoins': expectedPriceCoins,
-      'expectedDurationDays': expectedDurationDays,
-    })).timeout(const Duration(seconds: 25));
+    late final http.Response response;
+    try {
+      response = await _client.post(uri, headers: {
+        'authorization': 'Bearer $token',
+        'content-type': 'application/json',
+      }, body: jsonEncode({
+        'action': 'purchase',
+        'confirmation': 'confirmed',
+        'productId': productId,
+        'operationId': operationId,
+        'expectedPriceCoins': expectedPriceCoins,
+        'expectedDurationDays': expectedDurationDays,
+      })).timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      return _recoverReceipt(
+        token: token, productId: productId, operationId: operationId,
+        expectedPriceCoins: expectedPriceCoins,
+        expectedDurationDays: expectedDurationDays,
+      );
+    } on http.ClientException {
+      return _recoverReceipt(
+        token: token, productId: productId, operationId: operationId,
+        expectedPriceCoins: expectedPriceCoins,
+        expectedDurationDays: expectedDurationDays,
+      );
+    }
     final decoded = jsonDecode(response.body);
     if (decoded is! Map || decoded['ok'] != true ||
         response.statusCode != 200) {
@@ -62,14 +137,11 @@ class StoreCheckoutService {
       throw StateError(code == null || code.isEmpty
           ? 'store_checkout_unavailable' : code);
     }
-    if (decoded['operationId'] != operationId ||
-        decoded['productId'] != productId ||
-        decoded['priceCoins'] != expectedPriceCoins ||
-        decoded['durationDays'] != expectedDurationDays ||
-        decoded['deliveryStatus'] != 'delivered') {
-      throw StateError('invalid_store_purchase_receipt');
-    }
-    return Map<String, dynamic>.from(decoded);
+    return _validReceipt(decoded,
+      productId: productId, operationId: operationId,
+      expectedPriceCoins: expectedPriceCoins,
+      expectedDurationDays: expectedDurationDays,
+    );
   }
 
   void close() => _client.close();
