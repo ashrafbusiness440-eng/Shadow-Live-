@@ -118,4 +118,100 @@ void main() {
     ), throwsStateError);
     service.close();
   });
+  test('lost checkout response recovers receipt without another Coins debit',
+      () async {
+    var purchases = 0;
+    var statusReads = 0;
+    final service = StoreCheckoutService(
+      baseUrl: 'https://example.com/api',
+      tokenProvider: () async => 'buyer-token',
+      client: MockClient((request) async {
+        if (request.url.path == '/api/store-purchase') {
+          purchases++;
+          throw http.ClientException('connection reset after commit');
+        }
+        if (request.url.path == '/api/store-purchase-status') {
+          statusReads++;
+          expect(request.headers['authorization'], 'Bearer buyer-token');
+          final body = jsonDecode(request.body) as Map;
+          expect(body, {
+            'action': 'status',
+            'operationId': 'purchase_123456789012345678901234',
+            'productId': '200001',
+          });
+          return http.Response(jsonEncode({
+            'ok': true, 'found': true,
+            'operationId': body['operationId'],
+            'productId': body['productId'],
+            'priceCoins': 25000, 'durationDays': 7,
+            'deliveryStatus': 'delivered', 'duplicate': true,
+          }), 200);
+        }
+        throw StateError('unexpected endpoint');
+      }),
+    );
+    final receipt = await service.purchase(
+      productId: '200001',
+      operationId: 'purchase_123456789012345678901234',
+      expectedPriceCoins: 25000, expectedDurationDays: 7,
+    );
+    expect(receipt['deliveryStatus'], 'delivered');
+    expect(receipt['duplicate'], isTrue);
+    expect(purchases, 1);
+    expect(statusReads, 1);
+    service.close();
+  });
+
+  test('missing receipt after network error remains unconfirmed, never success',
+      () async {
+    var purchases = 0;
+    final service = StoreCheckoutService(
+      baseUrl: 'https://example.com/api',
+      tokenProvider: () async => 'buyer-token',
+      client: MockClient((request) async {
+        if (request.url.path == '/api/store-purchase') {
+          purchases++;
+          throw http.ClientException('unknown commit');
+        }
+        return http.Response(jsonEncode({'ok': true, 'found': false}), 200);
+      }),
+    );
+    await expectLater(service.purchase(
+      productId: '200001',
+      operationId: 'purchase_123456789012345678901234',
+      expectedPriceCoins: 25000, expectedDurationDays: 7,
+    ), throwsA(isA<StateError>().having(
+      (e) => e.message, 'message', 'store_purchase_result_unconfirmed')));
+    expect(purchases, 1);
+    service.close();
+  });
+
+  test('recovered receipt fails closed if amount or item was forged', () async {
+    var statusReads = 0;
+    final service = StoreCheckoutService(
+      baseUrl: 'https://example.com/api',
+      tokenProvider: () async => 'buyer-token',
+      client: MockClient((request) async {
+        if (request.url.path == '/api/store-purchase') {
+          throw http.ClientException('unknown result');
+        }
+        statusReads++;
+        return http.Response(jsonEncode({
+          'ok': true, 'found': true,
+          'operationId': 'purchase_123456789012345678901234',
+          'productId': '200001', 'priceCoins': 1,
+          'durationDays': 7, 'deliveryStatus': 'delivered',
+        }), 200);
+      }),
+    );
+    await expectLater(service.purchase(
+      productId: '200001',
+      operationId: 'purchase_123456789012345678901234',
+      expectedPriceCoins: 25000, expectedDurationDays: 7,
+    ), throwsA(isA<StateError>().having(
+      (e) => e.message, 'message', 'store_purchase_result_unconfirmed')));
+    expect(statusReads, 1);
+    service.close();
+  });
+
 }
