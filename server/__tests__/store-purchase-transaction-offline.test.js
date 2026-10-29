@@ -171,6 +171,29 @@ test("purchase rejects economy lock, suspended/deleting users and guest sign-in"
   assert.equal(guest.commits(),0);
 });
 
+test("578C existing Coins mirror follows exactly the same atomic wallet debit",async()=>{
+  const withMirror=setup({coins:40000});
+  withMirror.records.get("users/buyer_1").balance=40000;
+  const result=await commitStorePurchaseOffline(
+    withMirror.db,user,request,levels,100000);
+  assert.equal(result.ok,true);
+  assert.equal(withMirror.commits(),1);
+  const updated=withMirror.records.get("users/buyer_1");
+  assert.equal(updated.coins,15000);
+  assert.equal(updated.balance,15000);
+  assert.equal(withMirror.records.get(
+    "financial_ledger/store_buyer_1__"+request.operationId).closingBalance,
+    updated.balance);
+  const repeat=await commitStorePurchaseOffline(
+    withMirror.db,user,request,levels,100100);
+  assert.equal(repeat.duplicate,true);
+  assert.equal(withMirror.commits(),1);
+  assert.equal(updated.balance,15000);
+  const withoutMirror=setup();
+  await commitStorePurchaseOffline(withoutMirror.db,user,request,levels,100000);
+  assert.equal("balance" in withoutMirror.records.get("users/buyer_1"),false);
+});
+
 test("wallet mirrors must reconcile before charging and levels are never client-trusted",async()=>{
   for(const changes of [
     {coins:null},
