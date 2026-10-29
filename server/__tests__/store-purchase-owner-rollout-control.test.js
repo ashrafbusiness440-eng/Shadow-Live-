@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 
@@ -130,4 +131,33 @@ test("client, editor roles and invalid confirmations cannot enable purchase",asy
       sample.db,owner,{...request,...patch},enabledEnv));
   }
   assert.equal(sample.commits(),0);
+});
+
+test("previous toggle receipt cannot override a later catalog change",async()=>{
+  const sample=setup();
+  await storeCatalogInternals.setStorePurchasing(
+    sample.db,owner,request,enabledEnv);
+  sample.records.get("system_config/store_catalog").revision=5;
+  sample.records.get("system_config/store_catalog").purchasingEnabled=false;
+  await assert.rejects(()=>storeCatalogInternals.setStorePurchasing(
+    sample.db,owner,request,enabledEnv),/store_rollout_state_changed/);
+  assert.equal(sample.commits(),1);
+  assert.equal(sample.records.get("system_config/store_catalog").purchasingEnabled,false);
+});
+
+test("Shadow Control gives only Owner an Arabic guarded rollout switch",()=>{
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_catalog_control_page.dart",import.meta.url),"utf8");
+  const api=readFileSync(new URL(
+    "../../cloudflare-worker/src/manage-store-catalog.js",import.meta.url),"utf8");
+  assert.match(ui,/canTogglePurchasing/);
+  assert.match(ui,/purchaseReleaseReady/);
+  assert.match(ui,/تأكيد تشغيل الشراء/);
+  assert.match(ui,/pendingPurchasingOperationId/);
+  assert.match(ui,/expectedRevision': revision/);
+  assert.match(api,/actor\.data\?\.role!=="owner"/);
+  assert.match(api,/storeCheckoutIssuanceEnabled\(env\)/);
+  assert.match(api,/control_operations\/store_purchase_rollout_/);
+  assert.match(api,/store_rollout_state_changed/);
+  assert.doesNotMatch(ui,/writeUpdate\(|financial_ledger\//);
 });
