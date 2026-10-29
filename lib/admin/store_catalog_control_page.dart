@@ -210,18 +210,22 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
   }
 
   String _assetKey(String id) => 'store.item.$id.icon';
+  String _visualAssetKey(String id) => 'store.item.$id.visual';
 
-  Future<void> _openAsset(String id, String category) async {
+  Future<void> _openAsset(String id, String category,
+      {bool actualVisual = false}) async {
+    final key = actualVisual ? _visualAssetKey(id) : _assetKey(id);
     await Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => ControlAssetManagerPage(
-        initialSearch: _assetKey(id),
-        initialAssetKey: _assetKey(id),
+        initialSearch: key,
+        initialAssetKey: key,
         initialTemplateId: storeTemplates[category] ?? 'frame.base.v1',
         initialDirectory: 'assets/images/store',
-        initialFileName: 'store_$id.webp',
+        initialFileName: actualVisual
+          ? 'store_${id}_visual.webp' : 'store_$id.webp',
       ),
     ));
-    ShadowAssetRegistry.remoteUrl(_assetKey(id), refresh: true);
+    ShadowAssetRegistry.remoteUrl(key, refresh: true);
     if (mounted) setState(() {});
   }
 
@@ -500,6 +504,26 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                       if (dialogContext.mounted) update(() {});
                     },
                   ),
+                  if (selectedCategory == 'frames' ||
+                      selectedCategory == 'entranceEffects')
+                    FutureBuilder<Uri?>(
+                      future: ShadowAssetRegistry.remoteUrl(_visualAssetKey(id)),
+                      builder: (context, snapshot) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('صورة الاستخدام الفعلية'),
+                        subtitle: Text(snapshot.data == null
+                          ? 'غير منشورة — لن يظهر الإطار أو مؤثر الدخول حتى تُنشر'
+                          : 'جاهزة للعرض عند تجهيز هذا المنتج'),
+                        trailing: Icon(snapshot.data == null
+                          ? Icons.add_photo_alternate_outlined
+                          : Icons.verified_outlined),
+                        onTap: () async {
+                          await _openAsset(id, selectedCategory,
+                            actualVisual: true);
+                          if (dialogContext.mounted) update(() {});
+                        },
+                      ),
+                    ),
                 ]),
               ),
             ),

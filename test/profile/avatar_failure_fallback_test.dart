@@ -41,7 +41,9 @@ void main() {
     expect(src.contains('backgroundImage: provider'), isFalse);
     expect(src.contains('effectiveProfileAvatarProvider(profile)'), isTrue);
     expect(src.contains('AnimatedProfileFrameVisual('), isTrue);
-    expect(src.contains('if (_frameActive(profile))'), isTrue);
+    expect(src.contains('if (_frameActive(profile, verifiedStoreFrame: verifiedStoreFrame))'), isTrue);
+    expect(src.contains("key.startsWith('store.item.')"), isTrue);
+    expect(src.contains('verifiedStoreFrame: true'), isTrue);
     expect(src.contains('if (widget.snapshotOnly) return _render(fallback);'),
         isTrue);
 
