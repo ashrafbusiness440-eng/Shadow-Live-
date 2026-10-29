@@ -6,6 +6,14 @@ import {initializeApp,deleteApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
 import {commitStorePurchaseOffline} from
   "../../cloudflare-worker/src/store-purchase-transaction.js";
+import {commitStoreGrantOffline} from
+  "../../cloudflare-worker/src/store-grant-transaction-offline.js";
+import {commitStoreGrantRevokeOffline} from
+  "../../cloudflare-worker/src/store-grant-revoke-transaction.js";
+import {commitStoreEquip} from
+  "../../cloudflare-worker/src/store-equip.js";
+import {resolveStoreVisuals} from
+  "../../cloudflare-worker/src/store-presentation.js";
 
 const projectId="shadow-live-economy-test";
 const host=process.env.FIRESTORE_EMULATOR_HOST;
@@ -65,8 +73,10 @@ function emulatorStoreClient(db){
       await token.completed;
     },
     async get(path,token){
-      if(!token || token.finished)throw Error("invalid_emulator_tx");
-      const snap=await token.native.get(db.doc(path));
+      if(token?.finished)throw Error("invalid_emulator_tx");
+      const snap=token
+        ?await token.native.get(db.doc(path))
+        :await db.doc(path).get();
       return {exists:snap.exists,data:snap.exists?snap.data():null};
     },
     writeUpdate(path,data,fields){
@@ -246,4 +256,130 @@ test("578B renewal charges once and extends active paid term without another ent
   },null,NOW+200);
   assert.equal(again.duplicate,true);
   assert.equal((await inspect(uid,renewalKey)).user.coins,50000);
+});
+
+test("580A paid item lifecycle purchase, equip, display, unequip is server-verified",async()=>{
+  const suffix="paid_lifecycle";
+  const {uid,db}=await seed(suffix,{coins:75000});
+  await firestore.doc("app_asset_registry/store.item.200001.visual").set({
+    published:true,rawUrl:"https://example.com/store-frame-visual.webp",
+  });
+  const checkout=await commitStorePurchaseOffline(
+    db,verifiedToken(uid),request(suffix),null,NOW);
+  assert.equal(checkout.deliveryStatus,"delivered");
+  assert.equal((await resolveStoreVisuals(db,uid,NOW+5)).frames,undefined);
+  const equipped=await commitStoreEquip(
+    db,verifiedToken(uid),{action:"equip",productId},NOW+10);
+  assert.equal(equipped.changed,true);
+  assert.equal(equipped.category,"frames");
+  const displayed=await resolveStoreVisuals(db,uid,NOW+20);
+  assert.equal(displayed.frames.imageUrl,
+    "https://example.com/store-frame-visual.webp");
+  assert.equal(displayed.frames.productId,productId);
+  assert.equal(displayed.frames.expiresAtMs,NOW+7*86400000);
+  const repeated=await commitStoreEquip(
+    db,verifiedToken(uid),{action:"equip",productId},NOW+30);
+  assert.equal(repeated.changed,false);
+  const removed=await commitStoreEquip(
+    db,verifiedToken(uid),{action:"unequip",category:"frames"},NOW+40);
+  assert.equal(removed.changed,true);
+  assert.deepEqual(await resolveStoreVisuals(db,uid,NOW+50),{});
+  const row=await inspect(uid,operationId(suffix));
+  assert.equal(row.user.coins,50000);
+  assert.equal(row.ledger.data().delta,-PRICE);
+  assert.equal(row.receipt.data().deliveryStatus,"delivered");
+  assert.equal(row.entitlement.data().equipped,false);
+});
+
+test("580A Owner grant, equip, revoke, and replay clean one slot without Coins",async()=>{
+  const suffix="grant_lifecycle";
+  const {uid,db}=await seed(suffix,{coins:50000,purchasingEnabled:false});
+  const ownerUid="store580a_owner";
+  await firestore.doc("users/"+ownerUid).set({
+    role:"owner",accountStatus:"active",
+  });
+  await firestore.doc("app_asset_registry/store.item.200001.visual").set({
+    published:true,rawUrl:"https://example.com/granted-frame-visual.webp",
+  });
+  const current=Date.now();
+  const ownerToken={sub:ownerUid,iat:Math.floor(current/1000),
+    auth_time:Math.floor(current/1000)};
+  const grantOp="store_580a_grant_operation_001";
+  const grant=await commitStoreGrantOffline(db,ownerToken,{
+    targetId:uid,productId,operationId:grantOp,
+    reason:"منحة اختبار دورة حياة المتجر",
+  },current);
+  assert.equal(grant.ok,true);
+  assert.equal(grant.deliveryStatus,"delivered");
+  const entPath="user_store_entitlements/"+uid+"/items/"+productId;
+  let item=await firestore.doc(entPath).get();
+  assert.equal(item.data().source,"admin_grant");
+  assert.equal(item.data().equipped,false);
+  assert.equal((await firestore.doc("users/"+uid).get()).data().coins,50000);
+  assert.equal((await firestore.doc("store_purchase_receipts/"+uid+"__"+grantOp).get()).exists,false);
+
+  const equip=await commitStoreEquip(db,verifiedToken(uid),{
+    action:"equip",productId,
+  },current+10);
+  assert.equal(equip.changed,true);
+  assert.equal((await resolveStoreVisuals(db,uid,current+20)).frames.imageUrl,
+    "https://example.com/granted-frame-visual.webp");
+
+  const revokeOp="store_580a_revoke_operation_001";
+  const revokeBody={
+    targetUid:uid,productId,operationId:revokeOp,
+    reason:"سحب المنحة لاختبار انتهاء صلاحية المقتنى",
+  };
+  const revoke=await commitStoreGrantRevokeOffline(
+    db,ownerToken,revokeBody,current+30);
+  assert.equal(revoke.revoked,true);
+  assert.equal(revoke.wasEquipped,true);
+  item=await firestore.doc(entPath).get();
+  assert.equal(item.data().status,"revoked");
+  assert.equal(item.data().equipped,false);
+  assert.deepEqual((await firestore.doc("user_store_equipped/"+uid).get())
+    .data().slots,{});
+  assert.deepEqual(await resolveStoreVisuals(db,uid,current+40),{});
+  await assert.rejects(()=>commitStoreEquip(
+    db,verifiedToken(uid),{action:"equip",productId},current+50),
+    /store_entitlement_not_usable/);
+  const replay=await commitStoreGrantRevokeOffline(
+    db,ownerToken,revokeBody,current+60);
+  assert.equal(replay.duplicate,true);
+  assert.equal((await firestore.doc("users/"+uid).get()).data().coins,50000);
+  assert.equal((await firestore.doc(
+    "admin_audit_logs/store_grant_revoke_"+ownerUid+"__"+revokeOp
+  ).get()).data().action,"revokeStoreGrant");
+  assert.equal((await firestore.doc(
+    "financial_ledger/store_"+uid+"__"+grantOp
+  ).get()).exists,false);
+});
+
+test("580A an expired equipped grant disappears without an extra wallet write",async()=>{
+  const suffix="expired_grant";
+  const {uid,db}=await seed(suffix,{coins:50000,purchasingEnabled:false});
+  const ownerUid="store580a_owner";
+  const current=Date.now();
+  await firestore.doc("users/"+ownerUid).set({
+    role:"owner",accountStatus:"active",
+  });
+  await firestore.doc("app_asset_registry/store.item.200001.visual").set({
+    published:true,rawUrl:"https://example.com/granted-frame-visual.webp",
+  });
+  const token={sub:ownerUid,iat:Math.floor(current/1000),
+    auth_time:Math.floor(current/1000)};
+  await commitStoreGrantOffline(db,token,{
+    targetId:uid,productId,
+    operationId:"store_580a_expiry_grant_001",
+    reason:"منحة مؤقتة لأغراض اختبار الصلاحية",
+  },current);
+  await commitStoreEquip(db,verifiedToken(uid),
+    {action:"equip",productId},current+10);
+  assert.ok((await resolveStoreVisuals(db,uid,current+20)).frames);
+  assert.deepEqual(await resolveStoreVisuals(
+    db,uid,current+7*86400000+1),{});
+  assert.equal((await firestore.doc("users/"+uid).get()).data().coins,50000);
+  assert.equal((await firestore.doc(
+    "user_store_entitlements/"+uid+"/items/"+productId
+  ).get()).data().equipped,true);
 });
