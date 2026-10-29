@@ -61,29 +61,32 @@ class _StoreVerifiedProfileCardBackdropState
         if (visual == null || !visual.activeNow) return widget.child;
         return StoreVisualExpiryGate(
           expiresAtMs: visual.expiresAtMs,
-          builder: (context, active) => !active ? widget.child : ClipRRect(
-          borderRadius: widget.borderRadius,
-          child: Stack(
-            fit: StackFit.passthrough,
-            children: [
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: .30,
-                    child: Image.network(
-                      visual.imageUrl,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, __, ___) =>
-                          const SizedBox.shrink(),
+          builder: (context, active) {
+            if (!active) return widget.child;
+            return ClipRRect(
+              borderRadius: widget.borderRadius,
+              child: Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: .30,
+                        child: Image.network(
+                          visual.imageUrl,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  widget.child,
+                ],
               ),
-              widget.child,
-            ],
-          ),
-        ),
+            );
+          },
         );
       },
     );
