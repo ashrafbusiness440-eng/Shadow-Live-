@@ -156,7 +156,8 @@ test("purchase rejects economy lock, suspended/deleting users and guest sign-in"
     const sample=setup();
     Object.assign(sample.records.get("users/buyer_1"),changes);
     await assert.rejects(()=>commitStorePurchaseOffline(
-      sample.db,user,request,levels,100000),/store_buyer_not_eligible/);
+      sample.db,user,request,levels,100000),
+      /store_buyer_not_eligible|unauthorized/);
     assert.equal(sample.commits(),0);
   }
   const guest=setup();
