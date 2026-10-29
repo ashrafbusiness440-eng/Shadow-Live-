@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -6,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 
-/// Grant-preview screen only; intentionally offers NO submission or issue button.
+/// Grant preview with Owner-only confirmation when the server release gate opens.
 class StoreGrantPreviewPanel extends StatefulWidget {
   const StoreGrantPreviewPanel({super.key, this.catalogItems = const []});
 
@@ -19,6 +20,9 @@ class StoreGrantPreviewPanel extends StatefulWidget {
 class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
   final _userId = TextEditingController();
   final _productId = TextEditingController();
+  final _reason = TextEditingController();
+  bool _issuing = false;
+  String? _pendingOperationId;
   bool _loading = false;
   String? _error;
   Map<String, dynamic>? _preview;
@@ -29,16 +33,18 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
     _generation++;
     _userId.dispose();
     _productId.dispose();
+    _reason.dispose();
     super.dispose();
   }
 
   void _resetPreview() {
     _generation++;
+    _pendingOperationId = null;
     if (mounted) setState(() { _preview = null; _error = null; });
   }
 
   Future<void> _check() async {
-    if (_loading) return;
+    if (_loading || _issuing) return;
     final target = _userId.text.trim();
     final productId = _productId.text.trim();
     if (!RegExp(r'^[A-Za-z0-9_٠-٩۰-۹-]{1,128}$').hasMatch(target) ||
@@ -68,7 +74,7 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
       final decoded = jsonDecode(response.body);
       if (decoded is! Map || response.statusCode != 200 ||
           decoded['ok'] != true || decoded['searchedId'] != target ||
-          decoded['grantEnabled'] != false || decoded['canGrant'] != false ||
+          decoded['grantEnabled'] is! bool || decoded['canGrant'] is! bool ||
           decoded['note'] != 'grant_preview_only' ||
           decoded['product'] is! Map ||
           (decoded['product'] as Map)['id'] != productId ||
@@ -108,6 +114,101 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
     }
   }
 
+  String _newOperationId() {
+    final random = Random.secure();
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+    return 'grant_${List.generate(24, (_) => chars[random.nextInt(chars.length)]).join()}';
+  }
+
+  Future<void> _issueGrant(Map<String, dynamic> info) async {
+    if (_loading || _issuing || info['canGrant'] != true ||
+        info['grantEnabled'] != true || !identical(_preview, info)) return;
+    final product = Map<String, dynamic>.from(info['product'] as Map);
+    final target = _userId.text.trim();
+    final productId = _productId.text.trim();
+    final reason = _reason.text.trim();
+    if (reason.length < 5 || reason.length > 200) {
+      setState(() => _error = 'اكتب سبب المنح من 5 إلى 200 حرف.');
+      return;
+    }
+    if (info['searchedId'] != target || product['id'] != productId ||
+        info['alreadyHasProduct'] == true ||
+        info['meetsExclusiveRequirements'] != true) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد منح المنتج'),
+        content: Text('هل تريد منح ${product['nameAr']} للمستخدم $target؟ '
+            'لن يتم خصم كوينز من أي حساب.\nسبب المنح: $reason'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('تأكيد المنح')),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || _preview != info ||
+        _userId.text.trim() != target || _productId.text.trim() != productId ||
+        _reason.text.trim() != reason) return;
+    final operationId = _pendingOperationId ??= _newOperationId();
+    setState(() { _issuing = true; _error = null; });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-grant-issue'),
+        headers: {
+          'authorization': 'Bearer $token',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': 'issue',
+          'confirmation': 'confirmed',
+          'targetId': target,
+          'productId': productId,
+          'reason': reason,
+          'operationId': operationId,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || response.statusCode != 200 ||
+          decoded['ok'] != true || decoded['operationId'] != operationId ||
+          decoded['productId'] != productId) {
+        final code = decoded is Map ? decoded['code']?.toString() ?? '' : '';
+        throw StateError(code.isEmpty ? 'issue_unavailable' : code);
+      }
+      if (!mounted) return;
+      setState(() {
+        _preview = null;
+        _pendingOperationId = null;
+        _error = null;
+        _reason.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم منح المنتج وتسجيل العملية بنجاح.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString();
+      setState(() => _error = code.contains('store_grants_disabled')
+          ? 'منح المنتجات غير مفعّل حاليًا.'
+          : code.contains('recent_auth_required')
+              ? 'يلزم تسجيل دخول جديد قبل المنح.'
+              : code.contains('store_item_already_owned')
+                  ? 'المستخدم يمتلك المنتج بالفعل.'
+                  : code.contains('emergency_locked')
+                      ? 'العمليات متوقفة مؤقتًا لأسباب أمنية.'
+                      : code.contains('forbidden')
+                          ? 'هذه العملية متاحة للمالك فقط.'
+                          : 'لم نتأكد من نتيجة المنح. أعد المحاولة دون تغيير البيانات.');
+    } finally {
+      if (mounted) setState(() => _issuing = false);
+    }
+  }
+
   Widget _previewCard(Map<String, dynamic> info) {
     final product = Map<String, dynamic>.from(info['product'] as Map);
     final alreadyOwned = info['alreadyHasProduct'] == true;
@@ -140,8 +241,30 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
           if (!vipMet || !wealthMet)
             const Text('شروط المنتج الحصري غير مكتملة لهذا المستخدم.'),
           const SizedBox(height: 10),
-          const Text('المعاينة لا ترسل المنتج. المنح الفعلي غير مفعّل '
-              'ولا يمكن تأكيده من هذه الصفحة.'),
+          if (info['canGrant'] == true) ...[
+            TextField(
+              controller: _reason,
+              enabled: !_issuing,
+              minLines: 2,
+              maxLines: 3,
+              maxLength: 200,
+              onChanged: (_) => _pendingOperationId = null,
+              decoration: const InputDecoration(
+                labelText: 'سبب المنح',
+                hintText: 'اكتب سبب المنحة لتسجيله في السجل',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _issuing ? null : () => _issueGrant(info),
+              icon: const Icon(Icons.card_giftcard),
+              label: const Text('منح المنتج بعد التأكيد'),
+            ),
+            if (_issuing) const LinearProgressIndicator(),
+          ] else
+            const Text('هذه معاينة فقط. منح المنتج غير متاح '
+                'لهذا الحساب أو لم تُفعّل صلاحية الإصدار بعد.'),
         ],
       ),
     ));
@@ -156,14 +279,15 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
       children: [
         const Card(child: ListTile(
           leading: Icon(Icons.lock_outline),
-          title: Text('تجهيز منح منتج — معاينة فقط'),
-          subtitle: Text('تحقق من المستخدم والمنتج والصورة ووجود مقتنى سابق. '
-              'لا يوجد إرسال أو إضافة مقتنيات أو خصم كوينز حالياً.'),
+          title: Text('منح منتج للمستخدم'),
+          subtitle: Text('تحقق من المستخدم والمنتج وشروط الأهلية أولًا. '
+              'لن يظهر تأكيد المنح إلا للمالك عند تفعيل الإصدار، '
+              'والمنح لا يخصم كوينز.'),
         )),
         const SizedBox(height: 8),
         TextField(
           controller: _userId,
-          enabled: !_loading,
+          enabled: !_loading && !_issuing,
           textDirection: TextDirection.ltr,
           onChanged: (_) => _resetPreview(),
           decoration: const InputDecoration(
@@ -185,7 +309,7 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
               child: Text('${item['nameAr']} — ${item['id']}',
                 overflow: TextOverflow.ellipsis),
             )).toList(),
-            onChanged: _loading ? null : (id) {
+            onChanged: _loading || _issuing ? null : (id) {
               if (id == null) return;
               _productId.text = id;
               _resetPreview();
@@ -207,7 +331,7 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
         ),
         const SizedBox(height: 10),
         Align(alignment: Alignment.centerRight, child: FilledButton.icon(
-          onPressed: _loading ? null : _check,
+          onPressed: _loading || _issuing ? null : _check,
           icon: const Icon(Icons.preview_outlined),
           label: const Text('معاينة بدون إرسال'),
         )),
