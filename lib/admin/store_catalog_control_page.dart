@@ -795,9 +795,11 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
             leading: Icon(purchasingEnabled
                 ? Icons.shopping_cart_outlined : Icons.lock_outline),
             title: const Text('الشراء بالكوينز'),
-            subtitle: Text(purchasingEnabled
+            subtitle: Text(purchasingEnabled && purchaseReleaseReady
                 ? 'الشراء مفعّل. يمكن للمالك إيقاف العمليات الجديدة.'
-                : 'الشراء متوقف. المنتجات والمقتنيات السابقة محفوظة.'),
+                : purchasingEnabled
+                    ? 'الشراء مقفل من الخادم رغم حفظ إعداد التشغيل.'
+                    : 'الشراء متوقف. المنتجات والمقتنيات السابقة محفوظة.'),
           )),
           if (!purchaseReleaseReady) const Card(child: ListTile(
             leading: Icon(Icons.info_outline),
@@ -839,10 +841,15 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
       }
       final visible = items.where((item) => item['enabled'] == true).length;
       return Column(children: [
-        const Card(child: ListTile(
-          leading: Icon(Icons.lock_outline),
-          title: Text('المتجر قيد التجهيز'),
-          subtitle: Text('الشراء والمنح غير مفعلين. الأرقام هنا للمنتجات فقط وليست مبيعات.'),
+        Card(child: ListTile(
+          leading: Icon(purchasingEnabled && purchaseReleaseReady
+              ? Icons.shopping_cart_outlined : Icons.lock_outline),
+          title: Text(purchasingEnabled && purchaseReleaseReady
+              ? 'الشراء متاح حسب صلاحيات المنتج' : 'المتجر قيد التجهيز'),
+          subtitle: Text(purchasingEnabled && purchaseReleaseReady
+              ? 'الشراء مفعل، والمنح يخضع لصلاحياته المستقلة. '
+                'إحصاءات المنتجات ليست سجل المبيعات.'
+              : 'الشراء والمنح غير مفعلين. الأرقام هنا للمنتجات فقط وليست مبيعات.'),
         )),
         Card(child: ListTile(
           leading: const Icon(Icons.inventory_2_outlined),
