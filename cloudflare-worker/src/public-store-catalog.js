@@ -3,6 +3,7 @@ import {json, firestoreQuotaResponse} from "./http.js";
 import {firestoreClient} from "./firestore.js";
 import {readThroughConfigCache} from "./config-cache.js";
 import {STORE_CATEGORIES, STORE_DURATIONS} from "./store-catalog-policy.js";
+import {storeCheckoutIssuanceEnabled} from "./store-entitlements.js";
 
 const CONFIG_PATH = "system_config/store_catalog";
 const clean = (value) => String(value ?? "").trim();
@@ -54,13 +55,20 @@ export async function publicStoreCatalog(request, env) {
   try {
     // Cache the raw snapshot, not a time-filtered result: scheduled items
     // appear/disappear at the exact request boundary even with a warm cache.
-    const rawItems = await readThroughConfigCache("store:public-catalog:v2", async () => {
+    const config = await readThroughConfigCache("store:public-catalog:v3", async () => {
       const snapshot = await firestoreClient(env).get(CONFIG_PATH);
-      return snapshot.data?.items ?? [];
+      return {
+        items: snapshot.data?.items ?? [],
+        purchasingEnabled: snapshot.data?.purchasingEnabled === true,
+      };
     }, {ttlMs:15_000,staleMs:15_000,allowStaleOnError:false});
-    const items = selectPublicStoreItems(rawItems, Date.now());
+    const items = selectPublicStoreItems(config.items, Date.now());
+    // Never advertise purchasing unless BOTH independent server gates allow
+    // it. Neither can be enabled by this public endpoint or request input.
+    const purchasingEnabled = storeCheckoutIssuanceEnabled(env) &&
+      config.purchasingEnabled === true;
     return json(request, env, {
-      ok:true, purchasingEnabled:false,
+      ok:true, purchasingEnabled,
       categories: STORE_CATEGORIES,
       durations: STORE_DURATIONS,
       items,
