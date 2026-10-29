@@ -130,14 +130,17 @@ test("lost commit acknowledgment never debits the user twice", async()=>{
     request.operationId).priceCoins,25000);
 });
 
-test("production API never imports the offline transaction executor",()=>{
+test("checkout imports the certified engine only after the independent Worker release gate",()=>{
   const handler=readFileSync(new URL(
     "../../cloudflare-worker/src/store-entitlements.js",import.meta.url),"utf8");
   const routes=readFileSync(new URL(
     "../../cloudflare-worker/src/index.js",import.meta.url),"utf8");
-  assert.doesNotMatch(handler,/commitStorePurchaseOffline|store-purchase-transaction/);
-  assert.doesNotMatch(routes,/commitStorePurchaseOffline|store-purchase-transaction/);
+  assert.match(handler,/commitStorePurchaseOffline/);
+  assert.match(handler,/storeCheckoutIssuanceEnabled\(env\)/);
+  assert.match(handler,/STORE_PURCHASE_ISSUANCE_ENABLED/);
   assert.match(handler,/return json\(request, env, \{\s*ok:false, code:"purchasing_disabled"/);
+  assert.match(routes,/url\.pathname === "\/api\/store-purchase"/);
+  assert.doesNotMatch(routes,/STORE_PURCHASE_ISSUANCE_ENABLED/);
 });
 
 test("purchase rejects economy lock, suspended/deleting users and guest sign-in",async()=>{
