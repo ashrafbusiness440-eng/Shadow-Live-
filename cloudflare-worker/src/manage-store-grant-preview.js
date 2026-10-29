@@ -8,6 +8,7 @@ import {loadUserLevelPolicy,userLevelSummaries} from "./user-level-policy.js";
 import {effectiveVipLevel} from "./user-level-visibility.js";
 import {cleanStoreId,validStoreUid,hasRecentStoreAdminLogin,resolveStoreAdminTarget}
   from "./store-admin-target.js";
+import {storeGrantIssuanceEnabled} from "./manage-store-grant-issue.js";
 
 export const STORE_GRANTS_ENABLED=false;
 
@@ -22,7 +23,7 @@ export function canPreviewStoreGrants(user={}) {
 function reject(code) {throw Error(code);}
 
 export async function previewStoreGrant(db,token,rawTargetId,rawProductId,
-  nowMs=Date.now()) {
+  nowMs=Date.now(),issuanceEnabled=false) {
   const actorUid=cleanStoreId(token?.sub);
   if(!validStoreUid(actorUid)) reject("unauthorized");
   const actor=await db.get(`users/${actorUid}`);
@@ -37,7 +38,9 @@ export async function previewStoreGrant(db,token,rawTargetId,rawProductId,
   const target=await db.get(`users/${targetUid}`);
   const status=cleanStoreId(target.data?.accountStatus||"active");
   if(!target.exists || status!=="active" ||
-      target.data?.deletionRequestedAt || target.data?.deletedAt) {
+      target.data?.deletionRequestedAt || target.data?.deletedAt ||
+      target.data?.authDeleted===true ||
+      target.data?.deletionProcessing===true) {
     reject("target_not_active");
   }
   const config=await db.get("system_config/store_catalog");
@@ -82,9 +85,13 @@ export async function previewStoreGrant(db,token,rawTargetId,rawProductId,
   }
   const vipRequirementMet=vipLevel>=product.minVipLevel;
   const meetsExclusiveRequirements=vipRequirementMet && wealthRequirementMet;
-  // Never mistake eligibility or a valid preview for issuance permission.
+  // Only the Owner may confirm issuance and only with the private Worker
+  // release setting enabled. Admin preview permission never becomes issuance.
+  const grantEnabled=issuanceEnabled===true;
+  const canGrant=grantEnabled && actor.data?.role==="owner" &&
+    !entitlement.exists && meetsExclusiveRequirements;
   return {
-    ok:true, grantEnabled:STORE_GRANTS_ENABLED, searchedId,
+    ok:true, grantEnabled, searchedId,
     product: {
       id:product.id,nameAr:product.nameAr,category:product.category,
       durationDays:product.durationDays,minVipLevel:product.minVipLevel,
@@ -93,7 +100,7 @@ export async function previewStoreGrant(db,token,rawTargetId,rawProductId,
     alreadyHasProduct:entitlement.exists,
     vipRequirementMet,wealthRequirementMet,meetsExclusiveRequirements,
     exclusiveRequirementsUnverified:false,
-    canGrant:false,
+    canGrant,
     note:"grant_preview_only",
   };
 }
@@ -117,7 +124,8 @@ export async function manageStoreGrantPreview(request,env) {
     }
     const token=await verifyFirebaseIdToken(request,env,{checkUserState:false});
     return json(request,env,await previewStoreGrant(
-      firestoreClient(env),token,body?.targetId,body?.productId),
+      firestoreClient(env),token,body?.targetId,body?.productId,
+      Date.now(),storeGrantIssuanceEnabled(env)),
       200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);

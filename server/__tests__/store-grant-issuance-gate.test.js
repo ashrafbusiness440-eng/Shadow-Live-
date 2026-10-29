@@ -69,3 +69,23 @@ test("grant route isolates operation, currency and production preview paths",()=
   assert.doesNotMatch(handler,/writeUpdate\(|financial_ledger\/|balance:/);
   assert.doesNotMatch(preview,/commitStoreGrantOffline|manageStoreGrantIssue/);
 });
+
+test("Shadow Control only offers Owner grant confirmation behind verified preview",()=>{
+  const preview=readFileSync(new URL(
+    "../../cloudflare-worker/src/manage-store-grant-preview.js",import.meta.url),"utf8");
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_grant_preview_panel.dart",import.meta.url),"utf8");
+  assert.match(preview,/storeGrantIssuanceEnabled\(env\)/);
+  assert.match(preview,/actor\.data\?\.role==="owner"/);
+  assert.match(preview,/!entitlement\.exists && meetsExclusiveRequirements/);
+  assert.match(ui,/info\['canGrant'\] == true/);
+  assert.match(ui,/showDialog<bool>/);
+  assert.match(ui,/manage-store-grant-issue/);
+  assert.match(ui,/'action': 'issue'/);
+  assert.match(ui,/'confirmation': 'confirmed'/);
+  assert.match(ui,/_pendingOperationId \?\?= _newOperationId\(\)/);
+  assert.match(ui,/لن يتم خصم كوينز/);
+  assert.match(ui,/reason.length < 5/);
+  assert.match(ui,/operationId\x27: operationId/);
+  assert.match(ui,/if \(_issuing\) const LinearProgressIndicator/);
+});
