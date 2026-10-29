@@ -161,3 +161,14 @@ test("public user ID and Arabic digits resolve safely without global user scans"
   await assert.rejects(()=>loadStoreUserInventory(missing,token,"123456"),
     /not_found/);
 });
+
+test("inventory control shows revoked, expired and active without mutation actions",()=>{
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_user_inventory_panel.dart",import.meta.url),"utf8");
+  assert.match(ui,/item\['lifecycleState'\]/);
+  assert.match(ui,/'revoked' => 'ملغى'/);
+  assert.match(ui,/'expired' => 'منتهي الصلاحية'/);
+  assert.match(ui,/'active' => 'صالح'/);
+  assert.match(ui,/مقتنيات المستخدمين — عرض فقط/);
+  assert.doesNotMatch(ui,/grantStoreItem|updateEntitlement|revokeStoreItem/);
+});
