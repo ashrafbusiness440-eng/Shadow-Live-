@@ -101,9 +101,14 @@ class StoreVisualPresentationService {
       final rawVisuals = result['visuals'] as Map;
       final verified = <String, StoreVerifiedFrame>{};
       for (final category in categories) {
-        // Each category is fixed by the caller, not supplied by the user.
-        final visual = StoreVerifiedFrame.fromResponse(rawVisuals[category]);
-        if (visual != null && visual.activeNow) verified[category] = visual;
+        // A damaged frame must not hide a separate valid background.
+        // All categories are fixed in trusted callers, not in UI input.
+        try {
+          final visual = StoreVerifiedFrame.fromResponse(rawVisuals[category]);
+          if (visual != null && visual.activeNow) verified[category] = visual;
+        } on FormatException {
+          // Invalid Store claims fail closed for this category alone.
+        }
       }
       return verified;
     } catch (_) {
