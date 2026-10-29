@@ -6,6 +6,8 @@ import {canViewStoreInventory} from "./manage-store-inventory.js";
 import {canViewStoreAudit} from "./manage-store-audit.js";
 import {canViewStorePurchases} from "./manage-store-purchases.js";
 import {canPreviewStoreGrants} from "./manage-store-grant-preview.js";
+import {hasRecentStoreAdminLogin} from "./store-admin-target.js";
+import {storeCheckoutIssuanceEnabled} from "./store-entitlements.js";
 
 const clean = (value) => String(value ?? "").trim();
 const CONFIG_PATH = "system_config/store_catalog";
@@ -48,10 +50,10 @@ async function readActor(db, payload, tx = null) {
   }
   return {uid, canEdit:canManageStoreCatalog(snap.data || {}),
     canViewCatalog,canViewInventory,canViewAudit,canViewPurchases,
-    canPreviewGrants};
+    canPreviewGrants,canTogglePurchasing:snap.data?.role==="owner"};
 }
 
-async function loadState(db, token) {
+async function loadState(db, token, env={}) {
   const actor = await readActor(db, token);
   const snap = await db.get(CONFIG_PATH);
   return {
@@ -60,7 +62,11 @@ async function loadState(db, token) {
       ? snap.data.items : [],
     categories: STORE_CATEGORIES,
     durations: STORE_DURATIONS,
-    purchasingEnabled: false,
+    purchasingEnabled: actor.canViewCatalog &&
+      snap.data?.purchasingEnabled===true,
+    purchaseReleaseReady: actor.canTogglePurchasing &&
+      storeCheckoutIssuanceEnabled(env),
+    canTogglePurchasing: actor.canTogglePurchasing,
     canEdit: actor.canEdit,
     canViewInventory: actor.canViewInventory,
     canViewAudit: actor.canViewAudit,
@@ -168,6 +174,105 @@ async function saveCatalog(db, payload, body) {
   throw new StoreCatalogError("transaction_failed", 500);
 }
 
+// Owner-only Store purchasing switch. Never set from catalog edits, product
+// visibility, delegated admin capabilities, or a client-controlled flag.
+// A Worker release flag is additionally required for enabling the checkout;
+// disabling remains possible even if the Worker rollout has been shut off.
+async function setStorePurchasing(db,payload,body,env){
+  const operationId=clean(body?.operationId);
+  if(!/^[A-Za-z0-9_-]{12,100}$/.test(operationId))
+    throw new StoreCatalogError("invalid_operation_id",400);
+  if(typeof body?.enabled!=="boolean" ||
+      body?.confirmation!=="confirmed" ||
+      !Number.isSafeInteger(body?.expectedRevision) ||
+      body.expectedRevision<0)
+    throw new StoreCatalogError("invalid_purchase_rollout_request",400);
+  for(let attempt=0;attempt<MAX_RETRIES;attempt++){
+    let tx=null;
+    try{
+      tx=await db.beginTransaction();
+      const uid=clean(payload?.sub);
+      if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid))
+        throw new StoreCatalogError("unauthorized",401);
+      const operationPath="control_operations/store_purchase_rollout_"+operationId;
+      const [actor,config,lock,prior]=await Promise.all([
+        db.get("users/"+uid,tx),
+        db.get(CONFIG_PATH,tx),
+        db.get("system_config/emergency_lock",tx),
+        db.get(operationPath,tx),
+      ]);
+      if(!actor.exists)throw new StoreCatalogError("forbidden",403);
+      assertUserDocumentSessionState(payload,actor.data||{});
+      if(actor.data?.role!=="owner" ||
+          clean(actor.data?.accountStatus||"active")!=="active")
+        throw new StoreCatalogError("forbidden",403);
+      if(!hasRecentStoreAdminLogin(payload))
+        throw new StoreCatalogError("recent_auth_required",401);
+      // Replay only the exact Owner operation; never let a different command
+      // or a later administrator reuse the same rollout operation marker.
+      if(prior.exists){
+        if(prior.data?.actorUid!==uid ||
+            prior.data?.enabled!==body.enabled ||
+            prior.data?.status!=="completed" || !prior.data?.result)
+          throw new StoreCatalogError("operation_id_conflict",409);
+        if(config.data?.revision!==prior.data.result.revision ||
+            (config.data?.purchasingEnabled===true)!==prior.data.enabled)
+          throw new StoreCatalogError("store_rollout_state_changed",409);
+        await db.rollback(tx);tx=null;
+        return {ok:true,duplicate:true,...prior.data.result};
+      }
+      if(!config.exists)
+        throw new StoreCatalogError("store_catalog_not_found",404);
+      if(config.data?.revision!==body.expectedRevision)
+        throw new StoreCatalogError("store_catalog_conflict",409);
+      if(body.enabled){
+        if(!storeCheckoutIssuanceEnabled(env))
+          throw new StoreCatalogError("purchase_release_not_ready",423);
+        if(lock.data?.enabled===true||lock.data?.economyLocked===true)
+          throw new StoreCatalogError("emergency_locked",409);
+        if(!Array.isArray(config.data?.items) ||
+            !config.data.items.some(item=>
+              item?.enabled===true && Number.isSafeInteger(item.priceCoins) &&
+              item.priceCoins>0))
+          throw new StoreCatalogError("store_purchasable_items_missing",409);
+      }
+      const revision=body.expectedRevision+1;
+      if(!Number.isSafeInteger(revision))
+        throw new StoreCatalogError("store_catalog_conflict",409);
+      const now=new Date();
+      const result={purchasingEnabled:body.enabled,revision};
+      await db.commit(tx,[
+        db.writeUpdate(CONFIG_PATH,{
+          purchasingEnabled:body.enabled,revision,updatedAt:now,updatedBy:uid,
+        },["purchasingEnabled","revision","updatedAt","updatedBy"]),
+        db.writeCreate("admin_audit_logs/store_purchase_rollout_"+operationId,{
+          actorUid:uid,targetType:"store_catalog",
+          targetId:CONFIG_PATH,action:"setStorePurchasing",
+          before:{purchasingEnabled:config.data?.purchasingEnabled===true},
+          after:{purchasingEnabled:body.enabled},
+          operationId,createdAt:now,
+        }),
+        db.writeCreate(operationPath,{
+          actorUid:uid,enabled:body.enabled,status:"completed",
+          result,createdAt:now,
+        }),
+      ]);
+      tx=null;
+      return {ok:true,...result};
+    }catch(error){
+      if(tx)await db.rollback(tx).catch(()=>{});
+      if(error instanceof StoreCatalogError)throw error;
+      if(attempt<MAX_RETRIES-1&&isTransientFirestoreError(error)){
+        await new Promise(resolve=>setTimeout(resolve,
+          firestoreErrorRetryDelayMs(attempt)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new StoreCatalogError("transaction_failed",500);
+}
+
 export async function manageStoreCatalog(request, env) {
   if (request.method !== "POST") {
     return json(request, env, {ok: false, code: "method_not_allowed"}, 405);
@@ -179,7 +284,11 @@ export async function manageStoreCatalog(request, env) {
     const db = firestoreClient(env);
     const action = clean(body?.action);
     if (action === "state") {
-      return json(request, env, await loadState(db, token), 200);
+      return json(request, env, await loadState(db, token, env), 200);
+    }
+    if(action==="purchasing") {
+      return json(request,env,
+        await setStorePurchasing(db,token,body,env),200);
     }
     if (action === "save") {
       const age = Math.floor(Date.now() / 1000) - Number(token.auth_time || 0);
@@ -201,4 +310,4 @@ export async function manageStoreCatalog(request, env) {
   }
 }
 
-export const storeCatalogInternals = Object.freeze({canManageStoreCatalog, canViewStoreCatalog, loadState, saveCatalog, assertStorePublishableAssets});
+export const storeCatalogInternals = Object.freeze({canManageStoreCatalog, canViewStoreCatalog, loadState, saveCatalog, setStorePurchasing, assertStorePublishableAssets});
