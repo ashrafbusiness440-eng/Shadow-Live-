@@ -3,7 +3,8 @@ import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {
   canViewStorePurchases,projectStorePurchaseReceipt,loadStoreUserPurchases,
-  verifyStorePurchaseEvidenceForOwner,manageStorePurchases,
+  verifyStorePurchaseEvidenceForOwner,reviewStorePurchaseEvidenceBatchForOwner,
+  manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
@@ -328,4 +329,134 @@ test("579F delegated staff never receive an encoded operation-ID page cursor",as
   assert.equal(result.hasNextPage,false);
   assert.equal(result.nextCursor,null);
   assert.ok(result.receipts.every(row=>!("operationId" in row)));
+});
+
+test("602 Owner can certify at most five selected operations without financial totals",async()=>{
+  const db=ownerEvidenceDb();
+  const result=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[
+      {operationId:evidenceOperationId,productId:"200001"},
+      {operationId:"store_missing_operation_0002",productId:"200001"},
+    ]);
+  assert.equal(result.ok,true);
+  assert.equal(result.scope,"selected_operations_only");
+  assert.equal(result.inspected,2);
+  assert.equal(result.verified,1);
+  assert.equal(result.verifiedPurchases,1);
+  assert.equal(result.verifiedRenewals,0);
+  assert.equal(result.needsReview,1);
+  assert.equal(result.incompleteEvidence,1);
+  assert.equal(result.requiresRefundReview,0);
+  assert.equal(result.conflictingEvidence,0);
+  assert.equal(result.financialReportComplete,false);
+  assert.equal(result.netRevenueCertified,false);
+  assert.deepEqual(result.evidence[0],{
+    operationId:evidenceOperationId,verified:true,
+    kind:"purchase",certifiedAmountCoins:14000,
+  });
+  assert.equal(result.evidence[1].verified,false);
+  assert.equal(result.evidence[1].code,"not_found");
+  assert.equal(db.reads.length,11); // actor + target registry/user + 2x4
+  assert.ok(!db.reads.some(x=>typeof x==="object"));
+  const serial=JSON.stringify(result);
+  for(const secret of ["NEVER_EXPOSE","closingBalance","openingBalance",
+    "netCoins","totalRevenue","buyer_1"])
+    assert.ok(!serial.includes(secret),secret);
+});
+
+test("602 selected-review permissions, duplicate IDs and request caps fail closed",async()=>{
+  for(const user of [
+    viewer,
+    {...viewer,capabilities:["viewStorePurchases","viewStoreAudit"]},
+  ]){
+    const db=dbFor(user);
+    await assert.rejects(
+      ()=>reviewStorePurchaseEvidenceBatchForOwner(db,token,"123456",[
+        {operationId:evidenceOperationId,productId:"200001"},
+      ]),/forbidden/);
+    assert.deepEqual(db.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  await assert.rejects(
+    ()=>reviewStorePurchaseEvidenceBatchForOwner(stale,
+      {...token,auth_time:1},"123456",[
+        {operationId:evidenceOperationId,productId:"200001"},
+      ]),/recent_auth_required/);
+  const sample={operationId:evidenceOperationId,productId:"200001"};
+  for(const selected of [
+    [],Array(6).fill(sample),[sample,sample],
+    [{operationId:"../other",productId:"200001"}],
+    [{operationId:evidenceOperationId,productId:"../../hidden"}],
+  ]){
+    const db=ownerEvidenceDb();
+    await assert.rejects(
+      ()=>reviewStorePurchaseEvidenceBatchForOwner(db,token,"123456",selected),
+      /invalid_store_review_selection|invalid_store_purchase_operation_id/);
+    assert.deepEqual(db.reads,["users/auditor_1"]);
+  }
+});
+
+test("602 refund pending in selected evidence stays nonreportable and read-only",async()=>{
+  const db=ownerEvidenceDb();
+  db.docs.get("store_purchase_receipts/buyer_1__"+evidenceOperationId)
+    .refundStatus="requested";
+  const result=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[{operationId:evidenceOperationId,
+      productId:"200001"}]);
+  assert.equal(result.verified,0);
+  assert.equal(result.needsReview,1);
+  assert.equal(result.evidence[0].code,"requires_refund_review");
+  assert.equal(result.requiresRefundReview,1);
+  assert.equal(result.financialReportComplete,false);
+});
+
+test("602 Owner review rejects absent renewal expiry proof before any certified amount",async()=>{
+  const db=ownerEvidenceDb();
+  const key="buyer_1__"+evidenceOperationId;
+  const op=db.docs.get("store_purchase_operations/"+key);
+  const receipt=db.docs.get("store_purchase_receipts/"+key);
+  const ledger=db.docs.get("financial_ledger/store_"+key);
+  const audit=db.docs.get("admin_audit_logs/store_purchase_"+key);
+  op.kind="renew";
+  Object.assign(op.result,{
+    renewal:true,durationDays:7,expiresAtMs:100000+14*86400000,
+    previousExpiresAtMs:100000+7*86400000,
+  });
+  Object.assign(receipt,{
+    renewal:true,durationDays:7,acquiredAtMs:100100,
+    expiresAtMs:op.result.expiresAtMs,
+    previousExpiresAtMs:op.result.previousExpiresAtMs,
+  });
+  ledger.renewal=true;
+  audit.action="renewStoreItem";
+  const good=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[{operationId:evidenceOperationId,
+      productId:"200001"}]);
+  assert.equal(good.verified,1);
+  assert.equal(good.verifiedRenewals,1);
+  assert.equal(good.evidence[0].kind,"renew");
+  delete op.result.previousExpiresAtMs;
+  delete receipt.previousExpiresAtMs;
+  const bad=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[{operationId:evidenceOperationId,
+      productId:"200001"}]);
+  assert.equal(bad.verified,0);
+  assert.equal(bad.conflictingEvidence,1);
+  assert.equal(bad.evidence[0].code,"operation_mismatch");
+  assert.equal(bad.evidence[0].certifiedAmountCoins,undefined);
+});
+
+test("602 staff cannot submit a guessed receipt cursor or invoke batch review",async()=>{
+  const db=dbFor();
+  const cursor=btoa(JSON.stringify({uid:"buyer_1",at:100000,
+    id:"buyer_1__store_purchase_000000000001"}));
+  await assert.rejects(
+    ()=>loadStoreUserPurchases(db,token,"123456",cursor),/forbidden/);
+  assert.deepEqual(db.reads,["users/auditor_1"]);
+  const review=dbFor();
+  await assert.rejects(
+    ()=>reviewStorePurchaseEvidenceBatchForOwner(review,token,"123456",[
+      {operationId:evidenceOperationId,productId:"200001"},
+    ]),/forbidden/);
+  assert.deepEqual(review.reads,["users/auditor_1"]);
 });

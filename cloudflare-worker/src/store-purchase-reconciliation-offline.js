@@ -57,7 +57,11 @@ export async function certifyStorePurchaseEvidenceOffline(
       result.durationDays<0||!validTime(start)||
       (expiry!==null&&(!validTime(expiry)||expiry<=start))||
       (result.durationDays===0&&expiry!==null)||
-      (result.durationDays>0&&expiry===null))
+      (result.durationDays>0&&expiry===null)||
+      (renewal&&(!validTime(result.previousExpiresAtMs)||
+        result.previousExpiresAtMs<=start||
+        expiry<=result.previousExpiresAtMs))||
+      (!renewal&&result.previousExpiresAtMs!==undefined))
     return failure("operation_mismatch");
   if(r.buyerUid!==buyerUid||r.operationId!==key||
       r.productId!==op.productId||r.priceCoins!==price||
@@ -70,7 +74,8 @@ export async function certifyStorePurchaseEvidenceOffline(
         r.acquiredAtMs<start||r.acquiredAtMs>=expiry))||
       r.expiresAtMs!==expiry||
       r.deliveryStatus!=="delivered"||r.renewal!==renewal||
-      (renewal&&r.previousExpiresAtMs!==result.previousExpiresAtMs))
+      (renewal&&r.previousExpiresAtMs!==result.previousExpiresAtMs)||
+      (!renewal&&r.previousExpiresAtMs!==undefined))
     return failure("receipt_mismatch");
   // A refund is not a proven original sale; it requires its own separately
   // certified refund ledger before any net revenue can be stated.
