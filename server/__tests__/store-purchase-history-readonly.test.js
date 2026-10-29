@@ -197,7 +197,7 @@ test("579E Owner-only history exposes verified operation keys but staff never se
 test("579E evidence inspection reuses four exact docs, no wallet totals or settlement",async()=>{
   const db=ownerEvidenceDb();
   const view=await verifyStorePurchaseEvidenceForOwner(
-    db,token,"١٢٣٤٥٦",evidenceOperationId);
+    db,token,"١٢٣٤٥٦",evidenceOperationId,"200001");
   assert.deepEqual(view,{
     ok:true,operationId:evidenceOperationId,verified:true,
     kind:"purchase",certifiedAmountCoins:14000,
@@ -223,17 +223,17 @@ test("581B only Owner with a recent live session can inspect financial evidence"
   ]){
     const db=dbFor(actor);
     await assert.rejects(()=>verifyStorePurchaseEvidenceForOwner(
-      db,token,"123456",evidenceOperationId),/forbidden|unauthorized/);
+      db,token,"123456",evidenceOperationId,"200001"),/forbidden|unauthorized/);
     assert.deepEqual(db.reads,["users/auditor_1"]);
   }
   const stale=ownerEvidenceDb();
   await assert.rejects(()=>verifyStorePurchaseEvidenceForOwner(
-    stale,{...token,auth_time:1},"123456",evidenceOperationId),
+    stale,{...token,auth_time:1},"123456",evidenceOperationId,"200001"),
     /recent_auth_required/);
   assert.deepEqual(stale.reads,["users/auditor_1"]);
   const bad=ownerEvidenceDb();
   await assert.rejects(()=>verifyStorePurchaseEvidenceForOwner(
-    bad,token,"123456","../bad"),/invalid_store_purchase_operation_id/);
+    bad,token,"123456","../bad","200001"),/invalid_store_purchase_operation_id/);
   assert.deepEqual(bad.reads,["users/auditor_1"]);
 });
 
@@ -250,15 +250,21 @@ test("581B tampered, missing and refund-pending evidence is never certified",asy
     const db=ownerEvidenceDb();
     mutate(db);
     const result=await verifyStorePurchaseEvidenceForOwner(
-      db,token,"123456",evidenceOperationId);
+      db,token,"123456",evidenceOperationId,"200001");
     assert.equal(result.ok,true);
     assert.equal(result.verified,false);
     assert.ok(["incomplete_evidence","ledger_mismatch",
       "requires_refund_review","audit_mismatch"].includes(result.code));
     assert.equal(result.certifiedAmountCoins,undefined);
   }
+  const wrongProduct=await verifyStorePurchaseEvidenceForOwner(
+    ownerEvidenceDb(),token,"123456",evidenceOperationId,"200002");
+  assert.deepEqual(wrongProduct,{
+    ok:true,operationId:evidenceOperationId,verified:false,
+    code:"operation_mismatch",
+  });
   const notFound=await verifyStorePurchaseEvidenceForOwner(
-    ownerEvidenceDb(),token,"123456","store_missing_operation_0001");
+    ownerEvidenceDb(),token,"123456","store_missing_operation_0001","200001");
   assert.deepEqual(notFound,{ok:true,verified:false,
     operationId:"store_missing_operation_0001",code:"not_found"});
 });
