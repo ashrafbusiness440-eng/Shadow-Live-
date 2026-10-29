@@ -129,6 +129,13 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
   Widget _item(Map<String, dynamic> item) {
     final active = item['active'] == true;
     final expired = item['expired'] == true;
+    // Prefer the explicit server state; retain the older projection as fallback.
+    final lifecycle = switch (item['lifecycleState']) {
+      'revoked' => 'ملغى',
+      'expired' => 'منتهي الصلاحية',
+      'active' => 'صالح',
+      _ => active ? 'صالح' : expired ? 'منتهي الصلاحية' : 'غير صالح',
+    };
     final source = switch (item['source']) {
       'purchase' => 'شراء',
       'admin_grant' => 'منحة',
@@ -147,7 +154,7 @@ class _StoreUserInventoryPanelState extends State<StoreUserInventoryPanel> {
           'رقم المنتج: ${item['productId']} • المصدر: $source\n'
           'من: ${_date(item['acquiredAtMs'] is int ? item['acquiredAtMs'] as int : null)}'
           ' • حتى: ${_date(expires)}\n'
-          '${active ? 'صالح' : expired ? 'منتهي الصلاحية' : 'غير صالح'}',
+          '$lifecycle',
         ),
         isThreeLine: true,
       ),
