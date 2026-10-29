@@ -16,6 +16,13 @@ export function storeCheckoutIssuanceEnabled(env){
   return env?.STORE_PURCHASE_ISSUANCE_ENABLED===STORE_PURCHASE_RELEASE_VALUE;
 }
 
+// Both actions retain the SAME independent OFF-by-default production gate.
+// Renewal terms and entitlement ownership are rechecked by the atomic engine.
+export function isConfirmedStorePurchaseAction(body){
+  return (body?.action==="purchase"||body?.action==="renew")&&
+    body?.confirmation==="confirmed";
+}
+
 export async function storePurchase(request, env) {
   if (request.method !== "POST") {
     return json(request, env, {ok:false,code:"method_not_allowed"},405);
@@ -30,7 +37,7 @@ export async function storePurchase(request, env) {
   }
   try{
     const body=await readJson(request);
-    if(body?.action!=="purchase" || body?.confirmation!=="confirmed"){
+    if(!isConfirmedStorePurchaseAction(body)){
       return json(request,env,{ok:false,code:"invalid_purchase_confirmation"},400);
     }
     const token=await verifyFirebaseIdToken(request,env,{
@@ -59,6 +66,10 @@ export async function storePurchase(request, env) {
       "store_product_unavailable","store_product_not_purchasable",
       "store_vip_level_required","store_wealth_level_required",
       "store_asset_not_published","store_item_already_owned",
+      "store_renewal_item_not_owned","store_renewal_entitlement_invalid",
+      "store_renewal_revoked","store_renewal_permanent",
+      "store_renewal_quote_changed","store_renewal_limit",
+      "store_renewal_invalid_count",
       "insufficient_balance","emergency_locked",
       "store_operation_id_conflict","store_operation_record_invalid",
       "invalid_store_expiry",

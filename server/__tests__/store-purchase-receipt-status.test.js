@@ -117,3 +117,74 @@ test("the recovery API does not depend on purchase release and performs no write
   assert.match(handler,/store_purchase_receipts\//);
   assert.doesNotMatch(handler,/STORE_PURCHASE_ISSUANCE_ENABLED|db\.commit\(|db\.writeUpdate\(|db\.list\(/);
 });
+
+test("581C recovery accepts an actual renewal whose receipt time differs from entitlement start",async()=>{
+  const {db,docs,reads}=setup();
+  const original=100000,renewedAt=120000,expires=100000+14*86400000;
+  const op=docs.get("store_purchase_operations/"+key);
+  op.kind="renew";
+  op.result={...result,renewal:true,acquiredAtMs:original,
+    previousExpiresAtMs:original+7*86400000,expiresAtMs:expires};
+  const receipt=docs.get("store_purchase_receipts/"+key);
+  Object.assign(receipt,{
+    renewal:true,acquiredAtMs:renewedAt,
+    previousExpiresAtMs:original+7*86400000,
+    expiresAtMs:expires,refundStatus:"none",
+  });
+  const view=await lookupOwnStorePurchaseReceipt(db,token,body);
+  assert.equal(view.found,true);
+  assert.equal(view.acquiredAtMs,original);
+  assert.equal(view.expiresAtMs,expires);
+  assert.equal(view.duplicate,true);
+  assert.deepEqual(reads,[
+    "users/"+uid,"store_purchase_operations/"+key,
+    "store_purchase_receipts/"+key,
+  ]);
+});
+
+test("581C recovery refuses contradictory renewal or refund data",async()=>{
+  for(const mutate of [
+    docs=>{docs.get("store_purchase_operations/"+key).kind="renew";},
+    docs=>{docs.get("store_purchase_receipts/"+key).renewal=true;},
+    docs=>{docs.get("store_purchase_operations/"+key).kind="unknown";},
+    docs=>{docs.get("store_purchase_receipts/"+key).refundStatus="requested";},
+    docs=>{docs.get("store_purchase_receipts/"+key).refundStatus="refunded";},
+    docs=>{docs.get("store_purchase_receipts/"+key).refundStatus="unknown";},
+    docs=>{docs.get("store_purchase_operations/"+key).result={
+      ...result,durationDays:7,expiresAtMs:null};},
+    docs=>{docs.get("store_purchase_operations/"+key).result={
+      ...result,durationDays:0};},
+  ]){
+    const {db,docs}=setup();
+    mutate(docs);
+    await assert.rejects(()=>lookupOwnStorePurchaseReceipt(db,token,body),
+      /store_purchase_receipt_inconsistent/);
+  }
+});
+
+test("581C renewal must reject mismatched dates, term and operation type",async()=>{
+  for(const mutate of [
+    (op,r)=>{r.acquiredAtMs=op.result.acquiredAtMs-1;},
+    (op,r)=>{r.acquiredAtMs=op.result.expiresAtMs;},
+    (op,r)=>{r.previousExpiresAtMs+=1;},
+    (op,r)=>{op.result.renewal=false;},
+    (op,r)=>{r.renewal=false;},
+    (op,r)=>{r.priceCoins=1;},
+    (op,r)=>{op.result.durationDays=0;},
+  ]){
+    const {db,docs}=setup();
+    const op=docs.get("store_purchase_operations/"+key);
+    const r=docs.get("store_purchase_receipts/"+key);
+    op.kind="renew";
+    op.result={...result,renewal:true,
+      previousExpiresAtMs:result.expiresAtMs,
+      expiresAtMs:result.expiresAtMs+7*86400000};
+    Object.assign(r,{renewal:true,refundStatus:"none",
+      previousExpiresAtMs:result.expiresAtMs,
+      acquiredAtMs:result.acquiredAtMs+100,
+      expiresAtMs:op.result.expiresAtMs});
+    mutate(op,r);
+    await assert.rejects(()=>lookupOwnStorePurchaseReceipt(db,token,body),
+      /store_purchase_receipt_inconsistent/);
+  }
+});
