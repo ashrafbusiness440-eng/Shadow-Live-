@@ -22,6 +22,11 @@ class _StorePurchaseHistoryPanelState
   bool _loading = false;
   bool _loadingMore = false;
   bool _reviewingBatch = false;
+  bool _loadingFinancial = false;
+  String? _financialCursor;
+  Map<String, dynamic>? _financialPage;
+  String? _financialError;
+  int _financialPageNumber = 0;
   String? _batchNote;
   String? _nextCursor;
   String? _error;
@@ -64,6 +69,11 @@ class _StorePurchaseHistoryPanelState
       _loadingMore = false;
       _reviewingBatch = false;
       _batchNote = null;
+      _loadingFinancial = false;
+      _financialCursor = null;
+      _financialPage = null;
+      _financialError = null;
+      _financialPageNumber = 0;
       _canVerifyReceipts = false;
       _verifyingOperationId = null;
       _evidenceByOperation.clear();
@@ -355,6 +365,148 @@ class _StorePurchaseHistoryPanelState
     }
   }
 
+  Future<void> _loadFinancialPage({bool next = false}) async {
+    if (_loading || _loadingMore || _reviewingBatch ||
+        _loadingFinancial || _verifyingOperationId != null ||
+        !_canVerifyReceipts || _target == null ||
+        (next && _financialCursor == null)) return;
+    final target = _target!;
+    final cursor = next ? _financialCursor : null;
+    final generation = _generation;
+    setState(() { _loadingFinancial = true; _financialError = null; });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'financial_page', 'targetId': target,
+          if (cursor != null) 'cursor': cursor,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final data = jsonDecode(response.body);
+      if (response.statusCode != 200 || data is! Map ||
+          data['ok'] != true || data['searchedId'] != target ||
+          data['scope'] != 'one_buyer_one_page' ||
+          data['pageLimit'] != 10 || data['inspected'] is! int ||
+          (data['inspected'] as int) > 10 ||
+          data['verified'] is! int || data['needsReview'] is! int ||
+          data['verifiedPurchases'] is! int ||
+          data['verifiedRenewals'] is! int ||
+          data['verifiedPurchaseCoins'] is! int ||
+          data['verifiedRenewalCoins'] is! int ||
+          data['refundReview'] is! int ||
+          data['hasMore'] is! bool ||
+          data['partialEvidenceOnly'] != true ||
+          data['financialReportComplete'] != false ||
+          data['netRevenueCertified'] != false ||
+          data['refundSettlementCertified'] != false ||
+          data['evidence'] is! List ||
+          (data['evidence'] as List).length != data['inspected']) {
+        throw const FormatException('invalid_store_finance_page');
+      }
+      if (!mounted || generation != _generation || _target != target ||
+          (next && cursor != _financialCursor)) return;
+      setState(() {
+        _financialPage = Map<String, dynamic>.from(data);
+        _financialCursor = data['nextCursor'] is String &&
+                (data['nextCursor'] as String).isNotEmpty
+            ? data['nextCursor'] as String : null;
+        _financialPageNumber = next ? _financialPageNumber + 1 : 1;
+      });
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _financialError =
+        'تعذّر فحص أدلة الصفحة المالية، ولم يتم تغيير أي رصيد.');
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loadingFinancial = false);
+      }
+    }
+  }
+
+  Widget _financialEvidencePanel() {
+    final page = _financialPage;
+    Widget count(String label, Object? value) =>
+      Chip(label: Text('$label: $value'));
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('تدقيق الإيصالات المالية — للمالك',
+            style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text('فحص موثّق لإيصالات هذا الحساب، حتى 10 بكل صفحة. '
+            'تُطابق العملية مع إيصالها وقيد الكوينز وسجل التنفيذ والتدقيق. '
+            'أي استرداد أو نقص أو اختلاف يبقى بحاجة لمراجعة. '
+            'الأرقام هنا للعمليات المثبتة في الصفحة فقط، '
+            'وليست إيرادات المتجر الشاملة أو صافي المبيعات.'),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: _loadingFinancial || _loadingMore || _loading ||
+                _reviewingBatch || _verifyingOperationId != null
+                ? null : () => _loadFinancialPage(),
+            icon: const Icon(Icons.receipt_long_outlined),
+            label: Text(_loadingFinancial
+              ? 'جارٍ فحص الأدلة...' : 'فحص أول 10 إيصالات'),
+          ),
+          if (_loadingFinancial) const LinearProgressIndicator(),
+          if (_financialError != null)
+            Text(_financialError!,
+              style: const TextStyle(color: Colors.orangeAccent)),
+          if (page != null) ...[
+            const SizedBox(height: 12),
+            Text('صفحة التدقيق: $_financialPageNumber'),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              count('تم فحصها', page['inspected']),
+              count('عمليات مطابقة', page['verified']),
+              count('شراء مطابق', page['verifiedPurchases']),
+              count('تجديد مطابق', page['verifiedRenewals']),
+              count('تحتاج مراجعة', page['needsReview']),
+              count('استرداد يحتاج مراجعة', page['refundReview']),
+              count('كوينز شراء مثبتة بهذه الصفحة',
+                page['verifiedPurchaseCoins']),
+              count('كوينز تجديد مثبتة بهذه الصفحة',
+                page['verifiedRenewalCoins']),
+            ]),
+            const SizedBox(height: 8),
+            for (final record in (page['evidence'] as List))
+              if (record is Map)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Text(record['verified'] == true
+                    ? 'عملية ${record['operationId']} — '
+                      'مطابقة (${record['kind'] == 'renew' ? 'تجديد' : 'شراء'}) '
+                      'بقيمة ${record['certifiedAmountCoins']} كوينز.'
+                    : 'سجل يحتاج مراجعة: '
+                      '${record['code'] ?? 'بيانات غير مكتملة'}'),
+                ),
+            if (page['hasMore'] == true &&
+                _financialCursor != null)
+              OutlinedButton.icon(
+                onPressed: _loadingFinancial || _loadingMore ||
+                  _reviewingBatch || _verifyingOperationId != null
+                    ? null : () => _loadFinancialPage(next: true),
+                icon: const Icon(Icons.navigate_next),
+                label: const Text('فحص الصفحة المالية التالية'),
+              ),
+            if (page['hasMore'] == true &&
+                _financialCursor == null)
+              const Text('تعذّر الاستمرار بأمان بسبب بيانات صفحة '
+                'غير مكتملة. يلزم مراجعة السجلات.'),
+            const Text('حتى لو انتهت الصفحات، لا يُعتبر التقرير '
+              'إقفالاً للمحاسبة أو إثباتاً لاكتمال كل القيود.'),
+          ],
+        ],
+      ),
+    ));
+  }
+
   String _evidenceText(Map<String, dynamic> evidence) {
     if (evidence['verified'] == true) {
       return 'تم تطابق أدلة هذه العملية: '
@@ -459,6 +611,7 @@ class _StorePurchaseHistoryPanelState
         const SizedBox(height: 12),
         Text('السجل: ${_receipts.length} • الحساب: $_target'),
         if (_receipts.isNotEmpty) _receiptSampleSummary(),
+        if (_canVerifyReceipts) _financialEvidencePanel(),
         if (_canVerifyReceipts && _receipts.any((row) =>
             row['operationId'] is String && row['productId'] is String))
           Padding(

@@ -198,6 +198,100 @@ export async function reviewStorePurchaseEvidenceBatchForOwner(
   };
 }
 
+// Owner-only indexed evidence report for ONE buyer and ONE bounded page.
+// It deliberately does NOT claim complete user history, global revenue,
+// refund/chargeback settlement, or current wallet reconciliation. Queries are
+// ordered by the already READY 579F buyerUid/acquiredAtMs/__name__ index.
+// Each valid receipt is checked against the immutable four-document proof.
+const FINANCIAL_EVIDENCE_PAGE_SIZE=10;
+export async function loadStoreUserFinancialEvidencePage(
+  db,token,rawTargetId,rawCursor=null){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  const {targetUid,searchedId}=await resolveStoreAdminTarget(db,rawTargetId);
+  const startAfter=decodeReceiptCursor(rawCursor,targetUid);
+  const docs=await db.runQuery("store_purchase_receipts",{
+    filters:[{field:"buyerUid",op:"==",value:targetUid}],
+    orderBy:[{field:"acquiredAtMs",direction:"desc"},
+      {field:"__name__",direction:"desc"}],
+    startAfter,limit:FINANCIAL_EVIDENCE_PAGE_SIZE+1,
+  });
+  const page=docs.slice(0,FINANCIAL_EVIDENCE_PAGE_SIZE);
+  const seenReceiptIds=new Set();
+  const evidence=await Promise.all(page.map(async row=>{
+    const documentId=row?.id;
+    if(typeof documentId!=="string"||seenReceiptIds.has(documentId))
+      return {verified:false,code:"invalid_or_duplicate_receipt_key"};
+    seenReceiptIds.add(documentId);
+    const receipt=row?.data||{};
+    const opKey=cleanStoreId(receipt.operationId);
+    const productId=cleanStoreId(receipt.productId);
+    const validKey=typeof documentId==="string"&&
+      documentId===targetUid+"__"+opKey;
+    try{validateStorePurchaseOperationId(opKey);}
+    catch(_){return {verified:false,code:"invalid_receipt_identity"};}
+    if(!validKey||receipt.buyerUid!==targetUid||
+      !/^[1-9][0-9]{5,8}$/.test(productId)||
+      !Number.isSafeInteger(receipt.acquiredAtMs)||
+      receipt.acquiredAtMs<0)
+      return {verified:false,code:"invalid_receipt_identity"};
+    // The indexed query and four exact reads are not a single Firestore
+    // snapshot. Reject a refund/incomplete status observed in EITHER read:
+    // never certify on an older or contradictory receipt view.
+    if(receipt.refundStatus!=="none")
+      return {operationId:opKey,productId,verified:false,
+        code:"requires_refund_review"};
+    if(receipt.deliveryStatus!=="delivered"||
+        !Number.isSafeInteger(receipt.priceCoins)||
+        receipt.priceCoins<=0||typeof receipt.renewal!=="boolean")
+      return {operationId:opKey,productId,verified:false,
+        code:"invalid_receipt_financial_state"};
+    const check=await certifyStorePurchaseEvidenceOffline(db,{
+      buyerUid:targetUid,operationId:opKey,expectedProductId:productId,
+    });
+    if(check.ok&&(check.certifiedAmountCoins!==receipt.priceCoins||
+        (check.kind==="renew")!==receipt.renewal))
+      return {operationId:opKey,productId,verified:false,
+        code:"conflicting_receipt_snapshot"};
+    return {
+      operationId:opKey,productId,verified:check.ok,
+      ...(check.ok?{
+        kind:check.kind,certifiedAmountCoins:check.certifiedAmountCoins,
+      }:{code:check.code}),
+    };
+  }));
+  const verified=evidence.filter(row=>row.verified);
+  const totalFor=kind=>verified.filter(row=>row.kind===kind)
+    .reduce((n,row)=>n+row.certifiedAmountCoins,0);
+  const verifiedPurchaseCoins=totalFor("purchase");
+  const verifiedRenewalCoins=totalFor("renew");
+  if(!Number.isSafeInteger(verifiedPurchaseCoins)||
+    !Number.isSafeInteger(verifiedRenewalCoins)||
+    !Number.isSafeInteger(verifiedPurchaseCoins+verifiedRenewalCoins))
+    throw Error("store_evidence_total_overflow");
+  const hasMore=docs.length>FINANCIAL_EVIDENCE_PAGE_SIZE;
+  const nextCursor=hasMore
+    ?encodeReceiptCursor(page[page.length-1],targetUid):null;
+  // If an invalid last receipt lacks the stable document key, never
+  // claim pagination ended cleanly or silently skip the bad evidence.
+  return {
+    ok:true,searchedId,targetUid,scope:"one_buyer_one_page",
+    pageLimit:FINANCIAL_EVIDENCE_PAGE_SIZE,inspected:evidence.length,
+    verified:verified.length,needsReview:evidence.length-verified.length,
+    verifiedPurchases:verified.filter(row=>row.kind==="purchase").length,
+    verifiedRenewals:verified.filter(row=>row.kind==="renew").length,
+    verifiedPurchaseCoins,verifiedRenewalCoins,
+    refundReview:evidence.filter(row=>
+      row.code==="requires_refund_review").length,
+    hasMore,nextCursor,
+    paginationBlocked:hasMore&&nextCursor===null,
+    // Never silently promote bounded, receipt-driven evidence into a
+    // financial aggregate, even when this query returns fewer than 10.
+    partialEvidenceOnly:true,financialReportComplete:false,
+    netRevenueCertified:false,refundSettlementCertified:false,
+    evidence,
+  };
+}
+
 export async function manageStorePurchases(request,env) {
   if(request.method!=="POST") {
     return json(request,env,{ok:false,code:"method_not_allowed"},405);
@@ -206,7 +300,8 @@ export async function manageStorePurchases(request,env) {
     const token=await verifyFirebaseIdToken(request,env,{checkUserState:false});
     const body=await readJson(request);
     if(body?.action!=="history"&&body?.action!=="verify_operation"&&
-        body?.action!=="review_selected") {
+        body?.action!=="review_selected"&&
+        body?.action!=="financial_page") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -217,7 +312,10 @@ export async function manageStorePurchases(request,env) {
       :body.action==="review_selected"
         ?await reviewStorePurchaseEvidenceBatchForOwner(
           db,token,targetId,body?.operations)
-        :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+        :body.action==="financial_page"
+          ?await loadStoreUserFinancialEvidencePage(
+            db,token,targetId,body?.cursor)
+          :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);

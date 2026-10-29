@@ -4,6 +4,7 @@ import {test} from "node:test";
 import {
   canViewStorePurchases,projectStorePurchaseReceipt,loadStoreUserPurchases,
   verifyStorePurchaseEvidenceForOwner,reviewStorePurchaseEvidenceBatchForOwner,
+  loadStoreUserFinancialEvidencePage,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
@@ -459,4 +460,127 @@ test("602 staff cannot submit a guessed receipt cursor or invoke batch review",a
       {operationId:evidenceOperationId,productId:"200001"},
     ]),/forbidden/);
   assert.deepEqual(review.reads,["users/auditor_1"]);
+});
+
+test("603 Owner financial evidence page verifies exact matching receipts only",async()=>{
+  const db=ownerEvidenceDb();
+  const key=evidenceOperationId;
+  const docId="buyer_1__"+key;
+  const data={...db.docs.get("store_purchase_receipts/"+docId),
+    nameAr:"إطار ملكي",category:"frames"};
+  db.runQuery=async(path,params)=>{
+    db.reads.push({path,params});
+    return [{id:docId,data}];
+  };
+  const report=await loadStoreUserFinancialEvidencePage(
+    db,token,"123456");
+  assert.equal(report.scope,"one_buyer_one_page");
+  assert.equal(report.inspected,1);
+  assert.equal(report.verified,1);
+  assert.equal(report.needsReview,0);
+  assert.equal(report.verifiedPurchases,1);
+  assert.equal(report.verifiedRenewals,0);
+  assert.equal(report.verifiedPurchaseCoins,14000);
+  assert.equal(report.verifiedRenewalCoins,0);
+  assert.equal(report.refundReview,0);
+  assert.equal(report.hasMore,false);
+  assert.equal(report.nextCursor,null);
+  assert.equal(report.financialReportComplete,false);
+  assert.equal(report.netRevenueCertified,false);
+  assert.equal(report.refundSettlementCertified,false);
+  assert.equal(report.partialEvidenceOnly,true);
+  assert.equal(report.evidence[0].operationId,key);
+  assert.equal(JSON.stringify(report).includes("NEVER_EXPOSE"),false);
+  const query=db.reads.find(x=>typeof x==="object");
+  assert.equal(query.path,"store_purchase_receipts");
+  assert.deepEqual(query.params.filters,[
+    {field:"buyerUid",op:"==",value:"buyer_1"},
+  ]);
+  assert.deepEqual(query.params.orderBy,[
+    {field:"acquiredAtMs",direction:"desc"},
+    {field:"__name__",direction:"desc"},
+  ]);
+  assert.equal(query.params.limit,11);
+  assert.equal(db.reads.length,8); // Owner, target registry/user, query + four docs.
+});
+
+test("603 refunded, corrupted and missing receipts cannot inflate verified Coins",async()=>{
+  const db=ownerEvidenceDb();
+  const key=evidenceOperationId;
+  const path="store_purchase_receipts/buyer_1__"+key;
+  const receipt=db.docs.get(path);
+  const clean={...receipt};
+  db.runQuery=async(pathName,params)=>{
+    db.reads.push({path:pathName,params});
+    return [
+      {id:"buyer_1__"+key,data:{...receipt,refundStatus:"requested"}},
+      {id:"buyer_1__store_malformed_0000000001",
+        data:{...clean,operationId:"../bad"}},
+      {id:"buyer_1__store_missing_op_0000001",
+        data:{...clean,operationId:"store_missing_op_0000001"}},
+    ];
+  };
+  const report=await loadStoreUserFinancialEvidencePage(
+    db,token,"123456");
+  assert.equal(report.verified,0);
+  assert.equal(report.needsReview,3);
+  assert.equal(report.verifiedPurchaseCoins,0);
+  assert.equal(report.verifiedRenewalCoins,0);
+  assert.equal(report.refundReview,1);
+  assert.equal(report.evidence[0].code,"requires_refund_review");
+  assert.equal(report.evidence[1].code,"invalid_receipt_identity");
+  assert.equal(report.evidence[2].code,"not_found");
+  assert.equal(report.financialReportComplete,false);
+});
+
+test("603 Owner finance report cursor, page cap and permissions stay isolated",async()=>{
+  const db=ownerEvidenceDb();
+  const key=evidenceOperationId;
+  const row=db.docs.get("store_purchase_receipts/buyer_1__"+key);
+  db.runQuery=async(path,params)=>{
+    db.reads.push({path,params});
+    return Array.from({length:11},(_,i)=>({
+      id:"buyer_1__"+key,
+      data:{...row,acquiredAtMs:100000-i},
+    }));
+  };
+  const first=await loadStoreUserFinancialEvidencePage(
+    db,token,"123456");
+  assert.equal(first.inspected,10);
+  assert.equal(first.hasMore,true);
+  assert.equal(first.paginationBlocked,false);
+  assert.ok(first.nextCursor);
+  const next=await loadStoreUserFinancialEvidencePage(
+    db,token,"123456",first.nextCursor);
+  const query=db.reads.filter(x=>typeof x==="object");
+  assert.equal(query.length,2);
+  assert.equal(query[1].params.startAfter[0],99991);
+  assert.equal(next.pageLimit,10);
+  await assert.rejects(
+    ()=>loadStoreUserFinancialEvidencePage(db,token,"123456",
+      btoa(JSON.stringify({uid:"another",at:100000,
+        id:"another__"+key}))),/invalid_store_receipt_cursor/);
+  assert.equal(db.reads.filter(x=>typeof x==="object").length,2);
+  const staff=dbFor(viewer);
+  await assert.rejects(()=>loadStoreUserFinancialEvidencePage(
+    staff,token,"123456"),/forbidden/);
+  assert.deepEqual(staff.reads,["users/auditor_1"]);
+  const stale=ownerEvidenceDb();
+  await assert.rejects(()=>loadStoreUserFinancialEvidencePage(
+    stale,{...token,auth_time:1},"123456"),/recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+});
+
+test("603 financial evidence page never drops malformed last receipt into a silent end",async()=>{
+  const db=ownerEvidenceDb();
+  db.runQuery=async()=>Array.from({length:11},(_,i)=>({
+    id:i===9?null:"buyer_1__store_missing_op_0000001",
+    data:{buyerUid:"buyer_1",operationId:"store_missing_op_0000001",
+      productId:"200001",acquiredAtMs:100000-i},
+  }));
+  const report=await loadStoreUserFinancialEvidencePage(db,token,"123456");
+  assert.equal(report.hasMore,true);
+  assert.equal(report.nextCursor,null);
+  assert.equal(report.paginationBlocked,true);
+  assert.equal(report.financialReportComplete,false);
 });
