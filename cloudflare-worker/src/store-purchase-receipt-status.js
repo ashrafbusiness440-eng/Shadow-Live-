@@ -47,18 +47,39 @@ export async function lookupOwnStorePurchaseReceipt(db,token,body){
       r.operationId!==operationId)
     fail("store_purchase_receipt_mismatch",409);
   const result=op.result||{};
-  if(op.status!=="completed"||result.operationId!==operationId||
+  // Purchase and renewal share this buyer-scoped recovery endpoint. For a
+  // renewal, the operation keeps the ORIGINAL entitlement acquisition time;
+  // the receipt records the time of the NEW renewal transaction. Requiring
+  // these times to be equal incorrectly rejects a durable renewal receipt.
+  // Legacy purchase operations may omit kind/renewal markers.
+  const renewal=op.kind==="renew";
+  const validKind=op.kind===undefined||op.kind==="purchase"||renewal;
+  const validTime=value=>Number.isSafeInteger(value)&&value>=0;
+  const validExpiry=result.expiresAtMs===null
+    ?result.durationDays===0
+    :result.durationDays>0&&validTime(result.expiresAtMs)&&
+      result.expiresAtMs>result.acquiredAtMs;
+  const validReceiptTime=renewal
+    ?validTime(r.acquiredAtMs)&&
+      r.acquiredAtMs>=result.acquiredAtMs&&
+      r.acquiredAtMs<result.expiresAtMs&&
+      r.previousExpiresAtMs===result.previousExpiresAtMs
+    :r.acquiredAtMs===result.acquiredAtMs;
+  if(!validKind||op.status!=="completed"||
+      result.operationId!==operationId||
       result.productId!==productId||result.deliveryStatus!=="delivered"||
       r.deliveryStatus!=="delivered"||
+      (result.renewal!==undefined&&result.renewal!==renewal)||
+      (r.renewal!==undefined&&r.renewal!==renewal)||
+      // A pending/refunded/unknown refund must not be presented to the
+      // buyer as an undisputed delivered purchase during recovery.
+      (r.refundStatus!==undefined&&r.refundStatus!=="none")||
       !Number.isSafeInteger(result.priceCoins)||result.priceCoins<=0||
       !Number.isSafeInteger(result.durationDays)||result.durationDays<0||
-      !Number.isSafeInteger(result.acquiredAtMs)||result.acquiredAtMs<0||
-      (result.expiresAtMs!==null&&
-        (!Number.isSafeInteger(result.expiresAtMs)||
-          result.expiresAtMs<result.acquiredAtMs))||
+      !validTime(result.acquiredAtMs)||!validExpiry||
+      !validReceiptTime||
       r.priceCoins!==result.priceCoins||
       r.durationDays!==result.durationDays||
-      r.acquiredAtMs!==result.acquiredAtMs||
       r.expiresAtMs!==result.expiresAtMs)
     fail("store_purchase_receipt_inconsistent",409);
   // Explicit allowlist: no balance, financial ledger, UID, admin audit,
