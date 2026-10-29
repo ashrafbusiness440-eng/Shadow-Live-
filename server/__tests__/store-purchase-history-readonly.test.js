@@ -3,7 +3,8 @@ import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {
   canViewStorePurchases,projectStorePurchaseReceipt,loadStoreUserPurchases,
-  verifyStorePurchaseEvidenceForOwner,manageStorePurchases,
+  verifyStorePurchaseEvidenceForOwner,reviewStorePurchaseEvidenceBatchForOwner,
+  manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
@@ -328,4 +329,77 @@ test("579F delegated staff never receive an encoded operation-ID page cursor",as
   assert.equal(result.hasNextPage,false);
   assert.equal(result.nextCursor,null);
   assert.ok(result.receipts.every(row=>!("operationId" in row)));
+});
+
+test("602 Owner can certify at most five selected operations without financial totals",async()=>{
+  const db=ownerEvidenceDb();
+  const result=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[
+      {operationId:evidenceOperationId,productId:"200001"},
+      {operationId:"store_missing_operation_0002",productId:"200001"},
+    ]);
+  assert.equal(result.ok,true);
+  assert.equal(result.scope,"selected_operations_only");
+  assert.equal(result.inspected,2);
+  assert.equal(result.verified,1);
+  assert.equal(result.needsReview,1);
+  assert.equal(result.financialReportComplete,false);
+  assert.equal(result.netRevenueCertified,false);
+  assert.deepEqual(result.evidence[0],{
+    operationId:evidenceOperationId,verified:true,
+    kind:"purchase",certifiedAmountCoins:14000,
+  });
+  assert.equal(result.evidence[1].verified,false);
+  assert.equal(result.evidence[1].code,"not_found");
+  assert.equal(db.reads.length,11); // actor + target registry/user + 2x4
+  assert.ok(!db.reads.some(x=>typeof x==="object"));
+  const serial=JSON.stringify(result);
+  for(const secret of ["NEVER_EXPOSE","closingBalance","openingBalance",
+    "netCoins","totalRevenue","buyer_1"])
+    assert.ok(!serial.includes(secret),secret);
+});
+
+test("602 selected-review permissions, duplicate IDs and request caps fail closed",async()=>{
+  for(const user of [
+    viewer,
+    {...viewer,capabilities:["viewStorePurchases","viewStoreAudit"]},
+  ]){
+    const db=dbFor(user);
+    await assert.rejects(
+      ()=>reviewStorePurchaseEvidenceBatchForOwner(db,token,"123456",[
+        {operationId:evidenceOperationId,productId:"200001"},
+      ]),/forbidden/);
+    assert.deepEqual(db.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  await assert.rejects(
+    ()=>reviewStorePurchaseEvidenceBatchForOwner(stale,
+      {...token,auth_time:1},"123456",[
+        {operationId:evidenceOperationId,productId:"200001"},
+      ]),/recent_auth_required/);
+  const sample={operationId:evidenceOperationId,productId:"200001"};
+  for(const selected of [
+    [],Array(6).fill(sample),[sample,sample],
+    [{operationId:"../other",productId:"200001"}],
+    [{operationId:evidenceOperationId,productId:"../../hidden"}],
+  ]){
+    const db=ownerEvidenceDb();
+    await assert.rejects(
+      ()=>reviewStorePurchaseEvidenceBatchForOwner(db,token,"123456",selected),
+      /invalid_store_review_selection|invalid_store_purchase_operation_id/);
+    assert.deepEqual(db.reads,["users/auditor_1"]);
+  }
+});
+
+test("602 refund pending in selected evidence stays nonreportable and read-only",async()=>{
+  const db=ownerEvidenceDb();
+  db.docs.get("store_purchase_receipts/buyer_1__"+evidenceOperationId)
+    .refundStatus="requested";
+  const result=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[{operationId:evidenceOperationId,
+      productId:"200001"}]);
+  assert.equal(result.verified,0);
+  assert.equal(result.needsReview,1);
+  assert.equal(result.evidence[0].code,"requires_refund_review");
+  assert.equal(result.financialReportComplete,false);
 });
