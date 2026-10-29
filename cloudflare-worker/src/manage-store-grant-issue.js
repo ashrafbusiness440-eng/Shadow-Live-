@@ -5,7 +5,7 @@
 import {json,readJson,firestoreQuotaResponse} from "./http.js";
 import {verifyFirebaseIdToken} from "./firebase-auth.js";
 import {firestoreClient} from "./firestore.js";
-import {commitStoreGrantOffline,OfflineStoreGrantError}
+import {commitStoreGrantOffline}
   from "./store-grant-transaction-offline.js";
 
 const clean=v=>String(v??"").trim();
