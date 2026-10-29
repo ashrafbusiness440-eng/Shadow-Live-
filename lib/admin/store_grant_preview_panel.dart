@@ -73,7 +73,10 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
           decoded['product'] is! Map ||
           (decoded['product'] as Map)['id'] != productId ||
           decoded['alreadyHasProduct'] is! bool ||
-          decoded['exclusiveRequirementsUnverified'] is! bool) {
+          decoded['vipRequirementMet'] is! bool ||
+          decoded['wealthRequirementMet'] is! bool ||
+          decoded['meetsExclusiveRequirements'] is! bool ||
+          decoded['exclusiveRequirementsUnverified'] != false) {
         final code = decoded is Map ? decoded['code']?.toString() ?? '' : '';
         throw StateError(code.isEmpty ? 'invalid_grant_preview' : code);
       }
@@ -93,7 +96,9 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
                   ? 'المستخدم غير موجود أو حسابه غير نشط.'
                   : code.contains('store_asset_not_published')
                       ? 'صورة هذا المنتج لم تُنشر في الاستوديو بعد.'
-                      : code.contains('store_product_unavailable')
+                       : code.contains('invalid_target_level_data')
+                          ? 'تعذّر التحقق من نقاط الثروة الحالية للمستخدم.'
+                          : code.contains('store_product_unavailable')
                           ? 'المنتج غير ظاهر حالياً أو لم يحن موعده.'
                           : 'تعذّرت المعاينة. راجع الأرقام والاتصال.');
     } finally {
@@ -106,7 +111,10 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
   Widget _previewCard(Map<String, dynamic> info) {
     final product = Map<String, dynamic>.from(info['product'] as Map);
     final alreadyOwned = info['alreadyHasProduct'] == true;
-    final exclusive = info['exclusiveRequirementsUnverified'] == true;
+    final minVip = product['minVipLevel'] as int? ?? 0;
+    final minWealth = product['minWealthLevel'] as int? ?? 0;
+    final vipMet = info['vipRequirementMet'] == true;
+    final wealthMet = info['wealthRequirementMet'] == true;
     final days = product['durationDays'] as int? ?? 0;
     return Card(child: Padding(
       padding: const EdgeInsets.all(14),
@@ -121,9 +129,16 @@ class _StoreGrantPreviewPanelState extends State<StoreGrantPreviewPanel> {
           Text('الصلاحية: ${days == 0 ? 'دائم' : '$days أيام'}'),
           if (alreadyOwned)
             const Text('هذا المنتج مسجل بالفعل ضمن مقتنيات المستخدم.'),
-          if (exclusive)
-            const Text('هذا منتج حصري. يلزم فحص مستوى VIP أو الثروة '
-                'من النظام قبل السماح بمنحه مستقبلاً.'),
+          if (minVip > 0)
+            Text(vipMet
+                ? 'شرط VIP المستوى $minVip: مستوفى'
+                : 'شرط VIP المستوى $minVip: غير مستوفى'),
+          if (minWealth > 0)
+            Text(wealthMet
+                ? 'شرط الثروة المستوى $minWealth: مستوفى'
+                : 'شرط الثروة المستوى $minWealth: غير مستوفى'),
+          if (!vipMet || !wealthMet)
+            const Text('شروط المنتج الحصري غير مكتملة لهذا المستخدم.'),
           const SizedBox(height: 10),
           const Text('المعاينة لا ترسل المنتج. المنح الفعلي غير مفعّل '
               'ولا يمكن تأكيده من هذه الصفحة.'),
