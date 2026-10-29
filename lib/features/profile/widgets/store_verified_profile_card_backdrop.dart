@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../store/services/store_visual_presentation_service.dart';
+import '../../store/widgets/store_visual_expiry_gate.dart';
 
 /// Header-only decoration. The server is authoritative for ownership,
 /// equipment, expiry and published Studio .visual; no public profile field
@@ -58,28 +59,34 @@ class _StoreVerifiedProfileCardBackdropState
       builder: (context, snapshot) {
         final visual = snapshot.data;
         if (visual == null || !visual.activeNow) return widget.child;
-        return ClipRRect(
-          borderRadius: widget.borderRadius,
-          child: Stack(
-            fit: StackFit.passthrough,
-            children: [
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: .30,
-                    child: Image.network(
-                      visual.imageUrl,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, __, ___) =>
-                          const SizedBox.shrink(),
+        return StoreVisualExpiryGate(
+          expiresAtMs: visual.expiresAtMs,
+          builder: (context, active) {
+            if (!active) return widget.child;
+            return ClipRRect(
+              borderRadius: widget.borderRadius,
+              child: Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: .30,
+                        child: Image.network(
+                          visual.imageUrl,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  widget.child,
+                ],
               ),
-              widget.child,
-            ],
-          ),
+            );
+          },
         );
       },
     );
