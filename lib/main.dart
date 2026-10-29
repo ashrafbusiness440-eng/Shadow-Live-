@@ -78,6 +78,7 @@ import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
 import 'features/store/screens/public_store_catalog_screen.dart';
 import 'features/store/services/store_visual_presentation_service.dart';
+import 'features/store/widgets/store_visual_expiry_gate.dart';
 import 'features/agency/screens/public_agency_page.dart';
 import 'features/agency/services/agency_room_link.dart';
 import 'features/agency/widgets/agency_room_image_crop_sheet.dart';
@@ -2684,9 +2685,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         child: SizedBox(
                           width: micSize + 16,
                           height: micSize + 16,
-                          child: CosmeticAssetVisual(
-                            assetKey: seat.voiceWaveAssetKey,
-                            imageUrl: seat.voiceWaveImageUrl,
+                          child: StoreVisualExpiryGate(
+                            // Current seat keys were attested by the server.
+                            // A single repaint removes an expired wave even
+                            // when the room receives no further messages.
+                            expiresAtMs: seat.voiceWaveExpiresAtMs,
+                            builder: (context, active) => active
+                                ? CosmeticAssetVisual(
+                                    assetKey: seat.voiceWaveAssetKey,
+                                    imageUrl: seat.voiceWaveImageUrl,
+                                  )
+                                : const SizedBox.shrink(),
                           ),
                         ),
                       ),
@@ -7085,12 +7094,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             if (visual == null || !visual.activeNow) {
                               return fallback;
                             }
-                            return Image.network(
-                              visual.imageUrl,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (_, child, progress) =>
-                                  progress == null ? child : fallback,
-                              errorBuilder: (_, __, ___) => fallback,
+                            return StoreVisualExpiryGate(
+                              expiresAtMs: visual.expiresAtMs,
+                              builder: (context, active) => !active
+                                  ? fallback
+                                  : Image.network(
+                                      visual.imageUrl,
+                                      fit: BoxFit.cover,
+                                      loadingBuilder: (_, child, progress) =>
+                                          progress == null ? child : fallback,
+                                      errorBuilder: (_, __, ___) => fallback,
+                                    ),
                             );
                           },
                         ),
@@ -7120,12 +7134,26 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                             children: [
                               FutureBuilder<Map<String, StoreVerifiedFrame>>(
                                 future: _verifiedStoreRoomDecorations(ownerUid),
-                                builder: (context, snapshot) => _buildRoomHeader(
-                                  roomTitle: roomTitle,
-                                  roomPublicId: roomPublicId,
-                                  insights: insights,
-                                  storeRoomFrame: snapshot.data?['roomFrames'],
-                                ),
+                                builder: (context, snapshot) {
+                                  final frame = snapshot.data?['roomFrames'];
+                                  if (frame == null || !frame.activeNow) {
+                                    return _buildRoomHeader(
+                                      roomTitle: roomTitle,
+                                      roomPublicId: roomPublicId,
+                                      insights: insights,
+                                    );
+                                  }
+                                  return StoreVisualExpiryGate(
+                                    expiresAtMs: frame.expiresAtMs,
+                                    builder: (context, active) =>
+                                        _buildRoomHeader(
+                                      roomTitle: roomTitle,
+                                      roomPublicId: roomPublicId,
+                                      insights: insights,
+                                      storeRoomFrame: active ? frame : null,
+                                    ),
+                                  );
+                                },
                               ),
                               const SizedBox(height: 6),
                               _buildRoomInsightsBar(),
