@@ -110,7 +110,10 @@ export async function loadStoreUserPurchases(db,token,rawTargetId,rawCursor=null
     .map(row=>projectStorePurchaseReceipt(row.data,targetUid,isOwner))
     .filter(Boolean);
   const hasNextPage=docs.length>RECEIPT_PAGE_SIZE;
-  const nextCursor=hasNextPage
+  // A cursor embeds the receipt document ID (and thus operationId).
+  // Do not expose even base64-encoded financial operation IDs to delegated
+  // viewers. Owner can page; delegated staff retain their bounded sample.
+  const nextCursor=hasNextPage&&isOwner
     ?encodeReceiptCursor(page[page.length-1],targetUid):null;
   return {
     ok:true,searchedId,targetUid,receipts,
