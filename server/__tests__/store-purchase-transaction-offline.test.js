@@ -14,7 +14,8 @@ const product = () => ({
 
 function setup({coins=40000, purchasingEnabled=true, published=true} = {}) {
   const records = new Map([
-    ["users/buyer_1",{coins,accountStatus:"active",role:"user"}],
+    ["users/buyer_1",{coins,accountStatus:"active",role:"user",
+      wealthPoints:0,effectiveVipLevel:2}],
     ["system_config/store_catalog",{
       purchasingEnabled,revision:1,items:[product()],
     }],
@@ -67,6 +68,8 @@ test("offline store purchase commits wallet, receipt, ownership, ledger atomical
   const receipt=records.get("store_purchase_receipts/buyer_1__"+request.operationId);
   assert.equal(receipt.priceCoins,25000);
   assert.equal(receipt.deliveryStatus,"delivered");
+  assert.equal(records.get("admin_audit_logs/store_purchase_buyer_1__"+
+    request.operationId).action,"purchaseStoreItem");
   const repeat=await commitStorePurchaseOffline(db,user,request,levels,150000);
   assert.equal(repeat.duplicate,true);
   assert.equal(repeat.priceCoins,25000);
@@ -98,8 +101,9 @@ test("offline store transactions refuse duplicate ownership and invalid VIP",asy
   await assert.rejects(()=>commitStorePurchaseOffline(db,user,request,levels,100000),
     /store_item_already_owned/);
   records.delete("user_store_entitlements/buyer_1/items/200001");
+  records.get("users/buyer_1").effectiveVipLevel=0;
   await assert.rejects(()=>commitStorePurchaseOffline(db,user,request,{
-    ...levels,vipLevel:0,
+    ...levels,vipLevel:10,
   },100000),/store_vip_level_required/);
   assert.equal(commits(),0);
 });
@@ -134,4 +138,73 @@ test("production API never imports the offline transaction executor",()=>{
   assert.doesNotMatch(handler,/commitStorePurchaseOffline|store-purchase-transaction/);
   assert.doesNotMatch(routes,/commitStorePurchaseOffline|store-purchase-transaction/);
   assert.match(handler,/return json\(request, env, \{\s*ok:false, code:"purchasing_disabled"/);
+});
+
+test("purchase rejects economy lock, suspended/deleting users and guest sign-in",async()=>{
+  const locked=setup();
+  locked.records.set("system_config/emergency_lock",{economyLocked:true});
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    locked.db,user,request,levels,100000),/emergency_locked/);
+  assert.equal(locked.commits(),0);
+  for(const changes of [
+    {accountStatus:"deleting"},
+    {deletionRequestedAt:"2026-10-29"},
+    {deletedAt:"2026-10-29"},
+    {authDeleted:true},
+    {deletionProcessing:true},
+  ]){
+    const sample=setup();
+    Object.assign(sample.records.get("users/buyer_1"),changes);
+    await assert.rejects(()=>commitStorePurchaseOffline(
+      sample.db,user,request,levels,100000),/store_buyer_not_eligible/);
+    assert.equal(sample.commits(),0);
+  }
+  const guest=setup();
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    guest.db,{...user,firebase:{sign_in_provider:"anonymous"}},
+    request,levels,100000),/account_required/);
+  assert.equal(guest.commits(),0);
+});
+
+test("wallet mirrors must reconcile before charging and levels are never client-trusted",async()=>{
+  for(const changes of [
+    {coins:null},
+    {coins:-1},
+    {coins:40000,balance:100},
+    {wealthPoints:-1},
+  ]){
+    const sample=setup();
+    Object.assign(sample.records.get("users/buyer_1"),changes);
+    await assert.rejects(()=>commitStorePurchaseOffline(
+      sample.db,user,request,levels,100000),
+      /invalid_wallet_state|invalid_store_eligibility/);
+    assert.equal(sample.commits(),0);
+  }
+  const vip=setup();
+  vip.records.get("users/buyer_1").effectiveVipLevel=0;
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    vip.db,user,request,{vipLevel:10,wealthLevel:35},100000),
+    /store_vip_level_required/);
+  assert.equal(vip.commits(),0);
+  const wealth=setup();
+  wealth.records.get("system_config/store_catalog").items=[{
+    ...product(),minVipLevel:0,minWealthLevel:3,
+  }];
+  await assert.rejects(()=>commitStorePurchaseOffline(
+    wealth.db,user,request,{vipLevel:10,wealthLevel:35},100000),
+    /store_wealth_level_required/);
+  assert.equal(wealth.commits(),0);
+});
+
+test("revoked/expired ownership blocks a new charge until approved renewal policy",async()=>{
+  for(const status of ["active","revoked"]){
+    const sample=setup();
+    sample.records.set("user_store_entitlements/buyer_1/items/200001",{
+      status,expiresAtMs:0,ownerUid:"buyer_1",
+    });
+    await assert.rejects(()=>commitStorePurchaseOffline(
+      sample.db,user,request,levels,100000),/store_item_already_owned/);
+    assert.equal(sample.commits(),0);
+    assert.equal(sample.records.get("users/buyer_1").coins,40000);
+  }
 });
