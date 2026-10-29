@@ -96,6 +96,9 @@ test("preview uses public ID, published image, scoped entitlement; never sends i
   assert.equal(result.product.durationDays,7);
   assert.equal(result.alreadyHasProduct,false);
   assert.equal(result.exclusiveRequirementsUnverified,false);
+  assert.equal(result.vipRequirementMet,true);
+  assert.equal(result.wealthRequirementMet,true);
+  assert.equal(result.meetsExclusiveRequirements,true);
   assert.ok(!JSON.stringify(result).includes("admin_1"));
   assert.ok(!JSON.stringify(result).includes("target_1"));
   assert.ok(!JSON.stringify(result).includes("rawUrl"));
@@ -136,8 +139,41 @@ test("grant preview blocks hidden, scheduled, expired or unpublished products",a
     items:[{...product,minVipLevel:4,minWealthLevel:15}],
   });
   const response=await previewStoreGrant(exclusive,token,"123456","200001");
-  assert.equal(response.exclusiveRequirementsUnverified,true);
+  assert.equal(response.exclusiveRequirementsUnverified,false);
+  assert.equal(response.vipRequirementMet,false);
+  assert.equal(response.wealthRequirementMet,false);
+  assert.equal(response.meetsExclusiveRequirements,false);
   assert.equal(response.canGrant,false);
+  assert.ok(exclusive.reads.includes("system_config/user_levels"));
+
+  const eligible=mockDb();
+  eligible.docs.set("users/target_1",{
+    publicId:"123456",accountStatus:"active",effectiveVipLevel:6,
+    wealthPoints:1000000000000,
+  });
+  eligible.docs.set("system_config/store_catalog",{
+    items:[{...product,minVipLevel:4,minWealthLevel:15}],
+  });
+  const yes=await previewStoreGrant(eligible,token,"123456","200001");
+  assert.equal(yes.vipRequirementMet,true);
+  assert.equal(yes.wealthRequirementMet,true);
+  assert.equal(yes.meetsExclusiveRequirements,true);
+  assert.equal(yes.exclusiveRequirementsUnverified,false);
+  assert.equal(yes.canGrant,false);
+  assert.equal(yes.grantEnabled,false);
+
+  const invalidPoints=mockDb();
+  invalidPoints.docs.set("users/target_1",{
+    publicId:"123456",accountStatus:"active",effectiveVipLevel:9,
+    wealthPoints:-42,
+  });
+  invalidPoints.docs.set("system_config/store_catalog",{
+    items:[{...product,minWealthLevel:3}],
+  });
+  await assert.rejects(
+    ()=>previewStoreGrant(invalidPoints,token,"123456","200001"),
+    /invalid_target_level_data/,
+  );
 });
 
 test("no other account or inactive/deleting account passes grant preview",async()=>{
