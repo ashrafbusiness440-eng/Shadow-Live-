@@ -162,7 +162,7 @@ class _StorePurchaseHistoryPanelState
     ));
   }
 
-  Future<void> _verifyEvidence(String operationId) async {
+  Future<void> _verifyEvidence(String operationId, String productId) async {
     if (_loading || _verifyingOperationId != null || !_canVerifyReceipts ||
         _target == null) return;
     final target = _target!;
@@ -184,6 +184,7 @@ class _StorePurchaseHistoryPanelState
           'action': 'verify_operation',
           'targetId': target,
           'operationId': operationId,
+          'productId': productId,
         }),
       ).timeout(const Duration(seconds: 25));
       final parsed = jsonDecode(response.body);
@@ -311,7 +312,8 @@ class _StorePurchaseHistoryPanelState
               alignment: AlignmentDirectional.centerEnd,
               child: OutlinedButton.icon(
                 onPressed: _loading || _verifyingOperationId != null
-                    ? null : () => _verifyEvidence(operationId),
+                    ? null : () => _verifyEvidence(
+                        operationId, item['productId'].toString()),
                 icon: const Icon(Icons.fact_check_outlined),
                 label: Text(_verifyingOperationId == operationId
                     ? 'جارٍ التحقق...' : 'التحقق من أدلة الشراء'),
