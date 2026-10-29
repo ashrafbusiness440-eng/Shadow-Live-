@@ -111,11 +111,17 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
         profile['activeProfileFramePermanent'],
       ].join('|');
 
+  Future<StoreVerifiedFrame?> _loadStoreFrame(String uid) async {
+    final service=StoreVisualPresentationService();
+    try { return await service.loadFrame(uid); }
+    finally { service.close(); }
+  }
+
   void _reload({bool allowPrime = true}) {
     final uid = widget.userId.trim();
     _storeFrameFuture = widget.verifyStoreFrame && !widget.snapshotOnly &&
         uid.isNotEmpty
-      ? StoreVisualPresentationService().loadFrame(uid)
+      ? _loadStoreFrame(uid)
       : null;
     if (widget.snapshotOnly) {
       _future = null;
