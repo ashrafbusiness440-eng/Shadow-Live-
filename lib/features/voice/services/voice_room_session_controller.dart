@@ -156,6 +156,28 @@ class VoiceRoomSessionController extends ChangeNotifier {
   int get roomChatComposerIntentRevision => _roomChatComposerIntentRevision;
 
   String get roomId => (_roomArguments['roomId'] ?? '').toString();
+  int _storeCosmeticsRevision = 0;
+  int get storeCosmeticsRevision => _storeCosmeticsRevision;
+
+  /// No polling: one authenticated realtime identity + active mic refresh
+  /// after an equipped item changes. Neither path alters Coins or grants.
+  Future<void> refreshStoreRoomCosmetics() async {
+    final id = roomId.trim();
+    if (!_active || id.isEmpty) return;
+    _storeCosmeticsRevision++;
+    notifyListeners();
+    await Future.wait<void>([
+      _presenceService.refreshIdentity(id).catchError((_) {}),
+      () async {
+        try {
+          await _seatService.refreshStoreCosmetics(id);
+        } catch (_) {
+          // The user might be a listener, not on a microphone.
+        }
+      }(),
+    ]);
+  }
+
   void setMysteriousModeEnabled(bool enabled) {
     if (_mysteriousModeEnabled == enabled) return;
     _mysteriousModeEnabled = enabled;

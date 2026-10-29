@@ -328,6 +328,11 @@ class RoomSeatService {
     return raw is Map ? Map<String, dynamic>.from(raw) : null;
   }
 
+  /// One-off, authenticated refresh after equipment changes. The Worker
+  /// verifies ownership and the currently occupied mic seat in its transaction.
+  Future<RoomSeatState> refreshStoreCosmetics(String roomId) =>
+      _action(roomId: roomId, seatAction: 'refreshStoreCosmetics');
+
   Future<void> syncMysteriousIdentity(String roomId) async {
     final id = roomId.trim();
     if (id.isEmpty) return;

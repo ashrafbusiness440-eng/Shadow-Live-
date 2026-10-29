@@ -6913,7 +6913,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         ownerUid.isEmpty || viewerUid.isEmpty) {
       return null;
     }
-    final scope = '${_voiceSession.roomId}|$ownerUid|$viewerUid';
+    final scope = '${_voiceSession.roomId}|$ownerUid|$viewerUid|${_voiceSession.storeCosmeticsRevision}';
     if (_storeRoomDecorationsScope != scope ||
         _storeRoomDecorationsFuture == null) {
       _storeRoomDecorationsScope = scope;

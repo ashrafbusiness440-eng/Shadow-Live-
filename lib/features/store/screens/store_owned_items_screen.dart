@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/store_owned_items_service.dart';
+import '../../voice/services/voice_room_session_controller.dart';
 
 class StoreOwnedItemsScreen extends StatefulWidget {
   const StoreOwnedItemsScreen({super.key});
@@ -55,6 +56,9 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
     setState(() => _changingId = item.productId);
     try {
       await _service.setEquipped(item, equipped: !item.equipped);
+      // Reuse the active room session after confirmed equipment mutation.
+      // Failure of a visual refresh never replays the equip request.
+      await VoiceRoomSessionController.instance.refreshStoreRoomCosmetics();
       await _load();
     } catch (_) {
       if (!mounted) return;
