@@ -645,6 +645,29 @@ class VoiceRoomSessionController extends ChangeNotifier {
         'presenceDegraded': true,
       };
       changed = true;
+    } else if (event.type == 'room.store_cosmetics_invalidated') {
+      // This event is emitted only after an Owner's server-committed grant
+      // revocation and verification of the target's actual room socket.
+      // Repaint verified background/frame owner visuals for everyone using
+      // the existing room revision; do not create any polling/listeners.
+      final targetUid = (event.payload['uid'] ?? '').toString().trim();
+      final category = (event.payload['category'] ?? '').toString().trim();
+      if (targetUid.isNotEmpty && const <String>{
+        'frames', 'entranceEffects', 'chatBubbles', 'nameEffects',
+        'profileCards', 'voiceWaves', 'roomFrames', 'backgrounds',
+      }.contains(category)) {
+        _storeCosmeticsRevision++;
+        changed = true;
+        if (targetUid == FirebaseAuth.instance.currentUser?.uid &&
+            category == 'voiceWaves') {
+          final id = roomId;
+          // The existing authenticated seat transaction restores VIP/reward
+          // fallback for the speaker; a listener simply gets a safe no-op.
+          unawaited(_seatService.refreshStoreCosmetics(id)
+              .then((_) {})
+              .catchError((_) {}));
+        }
+      }
     } else if (event.type == 'room.presence_updated') {
       final rawParticipant = event.payload['participant'];
       if (rawParticipant is Map) {
