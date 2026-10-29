@@ -64,6 +64,11 @@ void main() {
     );
     // Background fetching only concerns presentation, not room audio/seat state.
     expect(room, contains('RoomEffectCoordinatorHost('));
-    expect(room, contains('child: _buildRoomBackground('));
+    // Store art is verified once per room owner. If absent/expired/invalid,
+    // the existing reward / published default wallpaper remains intact.
+    expect(room, contains("snapshot.data?['backgrounds']"));
+    expect(room, contains('final fallback = _buildRoomBackground('));
+    expect(room, contains('visual == null || !visual.activeNow'));
+    expect(room, contains('errorBuilder: (_, __, ___) => fallback'));
   });
 }
