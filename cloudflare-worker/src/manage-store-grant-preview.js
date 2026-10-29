@@ -4,6 +4,8 @@ import {json,readJson,firestoreQuotaResponse} from "./http.js";
 import {verifyFirebaseIdToken,assertUserDocumentSessionState} from "./firebase-auth.js";
 import {firestoreClient} from "./firestore.js";
 import {normalizeStoreCatalogItems} from "./store-catalog-policy.js";
+import {loadUserLevelPolicy,userLevelSummaries} from "./user-level-policy.js";
+import {effectiveVipLevel} from "./user-level-visibility.js";
 import {cleanStoreId,validStoreUid,hasRecentStoreAdminLogin,resolveStoreAdminTarget}
   from "./store-admin-target.js";
 
@@ -62,8 +64,25 @@ export async function previewStoreGrant(db,token,rawTargetId,rawProductId,
       !/^https:\/\//.test(asset.data.rawUrl.trim())) {
     reject("store_asset_not_published");
   }
-  const exclusive=product.minVipLevel>0 || product.minWealthLevel>0;
-  // No future issuance authorization implied by preview, even for normal items.
+  // Levels must be derived from the target's current server-side account and
+  // the authoritative Store-wide wealth thresholds. Never accept client levels.
+  const vipLevel=effectiveVipLevel(target.data||{});
+  let wealthRequirementMet=true;
+  if(product.minWealthLevel>0){
+    const points=target.data?.wealthPoints ?? 0;
+    if(!Number.isSafeInteger(points)||points<0){
+      reject("invalid_target_level_data");
+    }
+    const policy=await loadUserLevelPolicy(db,{useCache:false});
+    const wealth=userLevelSummaries(policy,{wealthPoints:points}).wealth;
+    if(!Number.isSafeInteger(wealth?.level)||wealth.level<0){
+      reject("invalid_target_level_data");
+    }
+    wealthRequirementMet=wealth.level>=product.minWealthLevel;
+  }
+  const vipRequirementMet=vipLevel>=product.minVipLevel;
+  const meetsExclusiveRequirements=vipRequirementMet && wealthRequirementMet;
+  // Never mistake eligibility or a valid preview for issuance permission.
   return {
     ok:true, grantEnabled:STORE_GRANTS_ENABLED, searchedId,
     product: {
@@ -72,7 +91,8 @@ export async function previewStoreGrant(db,token,rawTargetId,rawProductId,
       minWealthLevel:product.minWealthLevel,
     },
     alreadyHasProduct:entitlement.exists,
-    exclusiveRequirementsUnverified:exclusive,
+    vipRequirementMet,wealthRequirementMet,meetsExclusiveRequirements,
+    exclusiveRequirementsUnverified:false,
     canGrant:false,
     note:"grant_preview_only",
   };
@@ -106,11 +126,12 @@ export async function manageStoreGrantPreview(request,env) {
     if(["unauthorized","forbidden","recent_auth_required",
       "invalid_target_id","not_found","invalid_store_product_id",
       "target_not_active","store_product_unavailable",
-      "store_asset_not_published"].includes(code)) {
+      "store_asset_not_published","invalid_target_level_data"].includes(code)) {
       const status=code==="forbidden"?403:
         code==="invalid_target_id"||code==="invalid_store_product_id"?400:
         code==="not_found"||code==="store_product_unavailable"?404:
-        code==="target_not_active"||code==="store_asset_not_published"?409:401;
+        code==="target_not_active"||code==="store_asset_not_published"||
+          code==="invalid_target_level_data"?409:401;
       return json(request,env,{ok:false,code},status);
     }
     return json(request,env,{ok:false,code:"store_grant_preview_unavailable"},503);
