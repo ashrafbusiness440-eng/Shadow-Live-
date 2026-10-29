@@ -1,4 +1,4 @@
-// Store catalog audit history only. This endpoint never writes Firestore.
+// Read-only Store catalog and Owner-only entitlement audit. No Firestore writes.
 import {json, readJson, firestoreQuotaResponse} from "./http.js";
 import {verifyFirebaseIdToken,assertUserDocumentSessionState} from "./firebase-auth.js";
 import {firestoreClient} from "./firestore.js";
@@ -57,7 +57,7 @@ export function projectStoreOperationAudit(data={}) {
   const time=Date.parse(String(data.createdAt||""));
   if(!Number.isFinite(time))return null;
   const purchase=action==="purchase"||action==="renew";
-  const price=Number(data.priceCoins);
+  const price=data.priceCoins;
   if(purchase&&(!Number.isSafeInteger(price)||price<=0))return null;
   return {
     action,actorUid:clean(data.actorUid),
