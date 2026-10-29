@@ -194,7 +194,7 @@ function roomRealtimeIdentityPresentation(
   );
 }
 
-async function refreshRealtimeIdentity(env, db, roomId, uid) {
+export async function refreshRealtimeIdentity(env, db, roomId, uid) {
   const [room, user, levelPolicy, publicProfile, storeVisuals] = await Promise.all([
     roomAdmissionCache.get(
       roomId,
