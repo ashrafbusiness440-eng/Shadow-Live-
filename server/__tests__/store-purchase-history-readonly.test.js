@@ -342,7 +342,12 @@ test("602 Owner can certify at most five selected operations without financial t
   assert.equal(result.scope,"selected_operations_only");
   assert.equal(result.inspected,2);
   assert.equal(result.verified,1);
+  assert.equal(result.verifiedPurchases,1);
+  assert.equal(result.verifiedRenewals,0);
   assert.equal(result.needsReview,1);
+  assert.equal(result.incompleteEvidence,1);
+  assert.equal(result.requiresRefundReview,0);
+  assert.equal(result.conflictingEvidence,0);
   assert.equal(result.financialReportComplete,false);
   assert.equal(result.netRevenueCertified,false);
   assert.deepEqual(result.evidence[0],{
@@ -401,5 +406,57 @@ test("602 refund pending in selected evidence stays nonreportable and read-only"
   assert.equal(result.verified,0);
   assert.equal(result.needsReview,1);
   assert.equal(result.evidence[0].code,"requires_refund_review");
+  assert.equal(result.requiresRefundReview,1);
   assert.equal(result.financialReportComplete,false);
+});
+
+test("602 Owner review rejects absent renewal expiry proof before any certified amount",async()=>{
+  const db=ownerEvidenceDb();
+  const key="buyer_1__"+evidenceOperationId;
+  const op=db.docs.get("store_purchase_operations/"+key);
+  const receipt=db.docs.get("store_purchase_receipts/"+key);
+  const ledger=db.docs.get("financial_ledger/store_"+key);
+  const audit=db.docs.get("admin_audit_logs/store_purchase_"+key);
+  op.kind="renew";
+  Object.assign(op.result,{
+    renewal:true,durationDays:7,expiresAtMs:100000+14*86400000,
+    previousExpiresAtMs:100000+7*86400000,
+  });
+  Object.assign(receipt,{
+    renewal:true,durationDays:7,acquiredAtMs:100100,
+    expiresAtMs:op.result.expiresAtMs,
+    previousExpiresAtMs:op.result.previousExpiresAtMs,
+  });
+  ledger.renewal=true;
+  audit.action="renewStoreItem";
+  const good=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[{operationId:evidenceOperationId,
+      productId:"200001"}]);
+  assert.equal(good.verified,1);
+  assert.equal(good.verifiedRenewals,1);
+  assert.equal(good.evidence[0].kind,"renew");
+  delete op.result.previousExpiresAtMs;
+  delete receipt.previousExpiresAtMs;
+  const bad=await reviewStorePurchaseEvidenceBatchForOwner(
+    db,token,"123456",[{operationId:evidenceOperationId,
+      productId:"200001"}]);
+  assert.equal(bad.verified,0);
+  assert.equal(bad.conflictingEvidence,1);
+  assert.equal(bad.evidence[0].code,"operation_mismatch");
+  assert.equal(bad.evidence[0].certifiedAmountCoins,undefined);
+});
+
+test("602 staff cannot submit a guessed receipt cursor or invoke batch review",async()=>{
+  const db=dbFor();
+  const cursor=btoa(JSON.stringify({uid:"buyer_1",at:100000,
+    id:"buyer_1__store_purchase_000000000001"}));
+  await assert.rejects(
+    ()=>loadStoreUserPurchases(db,token,"123456",cursor),/forbidden/);
+  assert.deepEqual(db.reads,["users/auditor_1"]);
+  const review=dbFor();
+  await assert.rejects(
+    ()=>reviewStorePurchaseEvidenceBatchForOwner(review,token,"123456",[
+      {operationId:evidenceOperationId,productId:"200001"},
+    ]),/forbidden/);
+  assert.deepEqual(review.reads,["users/auditor_1"]);
 });
