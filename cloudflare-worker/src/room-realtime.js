@@ -146,6 +146,10 @@ function roomRealtimeIdentityPresentation(
   const vipCosmetics = vipCosmeticsFromUser(user, Date.now());
   const storeFrame=storeVisuals.frames;
   const storeEntrance=storeVisuals.entranceEffects;
+  // A Firestore-writable public profile is not proof of Store entitlement.
+  const legacyFrameKey=clean(publicProfile.activeProfileFrameAssetKey);
+  const safeLegacyFrameKey=legacyFrameKey.startsWith("store.item.")
+    ? "" : legacyFrameKey;
   return applyMysteriousIdentityPresentation(
     {
       displayName: clean(
@@ -161,15 +165,18 @@ function roomRealtimeIdentityPresentation(
         publicProfile.profileAvatarAsset || user.profileAvatarAsset
       ),
       activeProfileFrameAssetKey: storeFrame?.assetKey ||
-        clean(publicProfile.activeProfileFrameAssetKey),
+        safeLegacyFrameKey,
       activeProfileFrameImageUrl: storeFrame?.imageUrl ||
-        clean(publicProfile.activeProfileFrameImageUrl),
+        (safeLegacyFrameKey ? clean(publicProfile.activeProfileFrameImageUrl):""),
       activeProfileFrameExpiresAtMs: storeFrame
         ? (storeFrame.expiresAtMs ?? 0)
-        : Math.max(0,Number(publicProfile.activeProfileFrameExpiresAtMs||0)),
+        : safeLegacyFrameKey
+          ? Math.max(0,Number(publicProfile.activeProfileFrameExpiresAtMs||0))
+          : 0,
       activeProfileFramePermanent: storeFrame
         ? storeFrame.expiresAtMs===null
-        : publicProfile.activeProfileFramePermanent === true,
+        : safeLegacyFrameKey &&
+          publicProfile.activeProfileFramePermanent === true,
       publicId: clean(publicProfile.publicId || user.publicId),
       wealthLevel: Math.max(0, Number(levelMetadata.wealthLevel || 0)),
       attractionLevel: Math.max(0, Number(levelMetadata.attractionLevel || 0)),
