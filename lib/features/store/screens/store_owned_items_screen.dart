@@ -69,8 +69,12 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
   );
 
   Widget _card(StoreOwnedItem item) {
-    final label = item.expired ? 'منتهي الصلاحية' :
-      item.active ? 'صالح للاستخدام' : 'غير متاح للاستخدام';
+    final label = switch (item.lifecycleState) {
+      'active' => 'صالح للاستخدام',
+      'expired' => 'منتهي الصلاحية',
+      'revoked' => 'ملغى',
+      _ => 'غير متاح للاستخدام',
+    };
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Padding(
