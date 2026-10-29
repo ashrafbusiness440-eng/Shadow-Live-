@@ -90,12 +90,15 @@ export async function loadStoreUserPurchases(db,token,rawTargetId) {
 // the existing four-document financial evidence checker and target resolver;
 // it is not a settlement, revenue aggregate, wallet scan or repair.
 export async function verifyStorePurchaseEvidenceForOwner(
-  db,token,rawTargetId,rawOperationId){
+  db,token,rawTargetId,rawOperationId,rawProductId){
   await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
   const operationId=validateStorePurchaseOperationId(rawOperationId);
+  const productId=cleanStoreId(rawProductId);
+  if(!/^[1-9][0-9]{5,8}$/.test(productId))
+    throw Error("invalid_store_product_id");
   const {targetUid}=await resolveStoreAdminTarget(db,rawTargetId);
   const result=await certifyStorePurchaseEvidenceOffline(
-    db,{buyerUid:targetUid,operationId});
+    db,{buyerUid:targetUid,operationId,expectedProductId:productId});
   return {
     ok:true,operationId,verified:result.ok,
     ...(result.ok
@@ -118,7 +121,7 @@ export async function manageStorePurchases(request,env) {
     const targetId=body?.targetId ?? body?.targetUid;
     const result=body.action==="verify_operation"
       ?await verifyStorePurchaseEvidenceForOwner(
-        db,token,targetId,body?.operationId)
+        db,token,targetId,body?.operationId,body?.productId)
       :await loadStoreUserPurchases(db,token,targetId);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
@@ -126,11 +129,12 @@ export async function manageStorePurchases(request,env) {
     if(quota) return quota;
     const code=cleanStoreId(error?.message);
     if(["unauthorized","forbidden","recent_auth_required",
-        "invalid_target_id","invalid_store_purchase_operation_id",
+        "invalid_target_id","invalid_store_product_id",
+        "invalid_store_purchase_operation_id",
         "not_found"].includes(code)) {
       return json(request,env,{ok:false,code},
         code==="forbidden"?403:
-        (code==="invalid_target_id"||
+        (code==="invalid_target_id"||code==="invalid_store_product_id"||
           code==="invalid_store_purchase_operation_id")?400:
         code==="not_found"?404:401);
     }
