@@ -14,6 +14,8 @@ import {commitStoreEquip} from
   "../../cloudflare-worker/src/store-equip.js";
 import {resolveStoreVisuals} from
   "../../cloudflare-worker/src/store-presentation.js";
+import {certifyStorePurchaseEvidenceOffline} from
+  "../../cloudflare-worker/src/store-purchase-reconciliation-offline.js";
 
 const projectId="shadow-live-economy-test";
 const host=process.env.FIRESTORE_EMULATOR_HOST;
@@ -494,4 +496,73 @@ test("580B revoke of one Owner grant never removes another user's equipped item"
     assert.equal((await firestore.doc(
       "financial_ledger/store_"+uid+"__"+operation).get()).exists,false);
   }
+});
+
+test("578D verifies purchase and renewal against four Firestore evidence documents",async()=>{
+  const suffix="578d_certification";
+  const {uid,db}=await seed(suffix,{coins:100000,walletMirror:100000});
+  const purchaseKey=operationId(suffix);
+  await commitStorePurchaseOffline(db,verifiedToken(uid),
+    request(suffix),null,NOW);
+  const first=await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:purchaseKey});
+  assert.deepEqual(first,{ok:true,kind:"purchase",
+    certifiedAmountCoins:PRICE});
+  const renewalKey="store_578d_renewal_evidence_002";
+  await commitStorePurchaseOffline(db,verifiedToken(uid),{
+    action:"renew",productId,operationId:renewalKey,
+    expectedPriceCoins:PRICE,expectedDurationDays:7,
+    expectedCurrentExpiresAtMs:NOW+7*86400000,
+  },null,NOW+100);
+  const second=await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:renewalKey});
+  assert.deepEqual(second,{ok:true,kind:"renew",
+    certifiedAmountCoins:PRICE});
+  // Later activity never invalidates an earlier transaction's evidence.
+  assert.equal((await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:purchaseKey})).ok,true);
+  const wallet=(await firestore.doc("users/"+uid).get()).data();
+  assert.equal(wallet.coins,50000);
+  assert.equal(wallet.balance,50000);
+});
+
+test("578D fails closed when ledger amount and receipt state disagree",async()=>{
+  const suffix="578d_tampered_ledger";
+  const {uid,db}=await seed(suffix);
+  const key=operationId(suffix);
+  await commitStorePurchaseOffline(db,verifiedToken(uid),
+    request(suffix),null,NOW);
+  await firestore.doc("financial_ledger/store_"+uid+"__"+key)
+    .update({delta:-(PRICE-1)});
+  assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:key}),
+  {ok:false,code:"ledger_mismatch"});
+  await firestore.doc("financial_ledger/store_"+uid+"__"+key)
+    .update({delta:-PRICE});
+  await firestore.doc("store_purchase_receipts/"+uid+"__"+key)
+    .update({refundStatus:"refunded"});
+  assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:key}),
+  {ok:false,code:"requires_refund_review"});
+});
+
+test("578D never approves missing audit or mismatched operation and receipt",async()=>{
+  const suffix="578d_missing_audit";
+  const {uid,db}=await seed(suffix);
+  const key=operationId(suffix);
+  await commitStorePurchaseOffline(db,verifiedToken(uid),
+    request(suffix),null,NOW);
+  await firestore.doc("admin_audit_logs/store_purchase_"+uid+"__"+key)
+    .delete();
+  assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:key}),
+  {ok:false,code:"incomplete_evidence"});
+  await firestore.doc("store_purchase_receipts/"+uid+"__"+key)
+    .update({priceCoins:PRICE+1});
+  assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:key}),
+  {ok:false,code:"incomplete_evidence"});
+  assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:"unrelated_account",operationId:key}),
+  {ok:false,code:"not_found"});
 });
