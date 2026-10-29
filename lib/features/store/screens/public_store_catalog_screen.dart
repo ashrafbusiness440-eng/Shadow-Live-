@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
 import '../services/public_store_catalog_service.dart';
+import '../services/store_checkout_service.dart';
 import 'store_owned_items_screen.dart';
 
 class PublicStoreCatalogScreen extends StatefulWidget {
@@ -14,6 +17,9 @@ class PublicStoreCatalogScreen extends StatefulWidget {
 
 class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
   final _service = PublicStoreCatalogService();
+  final _checkout = StoreCheckoutService();
+  final _purchaseOperations = <String, String>{};
+  bool _purchaseBusy = false;
   PublicStoreCatalog? _catalog;
   bool _loading = true;
   String? _error;
@@ -36,6 +42,7 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
   @override
   void dispose() {
     _service.close();
+    _checkout.close();
     super.dispose();
   }
 
@@ -77,12 +84,87 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
     },
   );
 
+  String _newPurchaseOperationId() {
+    final random = Random.secure();
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+    return 'purchase_${List.generate(24,
+      (_) => chars[random.nextInt(chars.length)]).join()}';
+  }
+
+  Future<void> _buyItem(PublicStoreItem item, BuildContext sheetContext,
+      StateSetter updateSheet) async {
+    if (_purchaseBusy || _catalog?.purchasingEnabled != true ||
+        item.priceCoins <= 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد شراء المنتج'),
+        content: Text('هل تريد شراء ${item.nameAr} مقابل '
+            '${item.priceCoins} كوينز لمدة ${_duration(item.durationDays)}؟'
+            '\nسيتم التحقق من السعر والرصيد من الخادم قبل أي خصم.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('تأكيد الشراء')),
+        ],
+      ),
+    );
+    if (!mounted || !sheetContext.mounted || confirmed != true ||
+        _purchaseBusy || _catalog?.purchasingEnabled != true) return;
+    // Keep this exact operation ID for any retry after a timeout or lost ACK.
+    // A new ID is only assigned to a new product attempt after success.
+    final operationId = _purchaseOperations.putIfAbsent(
+      item.id, _newPurchaseOperationId);
+    updateSheet(() => _purchaseBusy = true);
+    try {
+      await _checkout.purchase(
+        productId: item.id, operationId: operationId,
+        expectedPriceCoins: item.priceCoins,
+        expectedDurationDays: item.durationDays,
+      );
+      _purchaseOperations.remove(item.id);
+      if (!mounted) return;
+      if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم شراء المنتج وإضافته إلى مقتنياتك.')),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      final code = error.toString();
+      final message = code.contains('store_purchase_quote_changed')
+          ? 'تغير سعر المنتج أو مدته. حدّث المتجر قبل المحاولة مجددًا.'
+          : code.contains('insufficient_balance')
+              ? 'رصيد الكوينز غير كافٍ لهذا المنتج.'
+          : code.contains('store_item_already_owned')
+              ? 'المنتج موجود بالفعل ضمن مقتنياتك.'
+          : code.contains('store_login_required') ||
+                  code.contains('account_required')
+              ? 'يلزم تسجيل الدخول بحساب أساسي لإتمام الشراء.'
+          : code.contains('purchasing_disabled')
+              ? 'الشراء متوقف حاليًا من إدارة المتجر.'
+          : 'تعذّر تأكيد الشراء. ربما اكتملت العملية؛ '
+              'أعد المحاولة بنفس الطلب للتحقق دون خصم مكرر.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted && sheetContext.mounted) {
+        updateSheet(() => _purchaseBusy = false);
+      } else {
+        _purchaseBusy = false;
+      }
+    }
+  }
+
   void _details(PublicStoreItem item, String category) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1C1A26),
-      builder: (sheetContext) => SafeArea(
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, updateSheet) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -102,16 +184,23 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
               'يتطلب مستوى ثروة ${item.minWealthLevel} فما فوق',
               style: const TextStyle(color: Colors.white70)),
             const SizedBox(height: 20),
-            const FilledButton(
+            if (_catalog?.purchasingEnabled == true && item.priceCoins > 0)
+              FilledButton(
+                onPressed: _purchaseBusy
+                    ? null : () => _buyItem(item, sheetContext, updateSheet),
+                child: Text(_purchaseBusy ? 'جارٍ التحقق من الشراء...' : 'شراء الآن'),
+              )
+            else const FilledButton(
               onPressed: null,
               child: Text('الشراء قريباً'),
             ),
             const SizedBox(height: 8),
-            const Text('لا يمكن الشراء أو خصم كوينز حالياً.',
-              style: TextStyle(color: Colors.white54)),
+            if (_catalog?.purchasingEnabled != true)
+              const Text('الشراء متوقف حاليًا؛ لا يمكن خصم كوينز.',
+                style: TextStyle(color: Colors.white54)),
           ]),
         ),
-      ),
+      )),
     );
   }
 
@@ -137,6 +226,7 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
             style: const TextStyle(color: Color(0xFFFFD54F))),
           Text(item.minVipLevel > 0 ? 'VIP ${item.minVipLevel}+'
                 : item.minWealthLevel > 0 ? 'ثروة ${item.minWealthLevel}+'
+                : _catalog?.purchasingEnabled == true ? 'متاح للشراء'
                 : 'الشراء قريباً',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -181,10 +271,12 @@ class _PublicStoreCatalogScreenState extends State<PublicStoreCatalogScreen> {
           ],
         ),
         body: Column(children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text('تصفّح المنتجات الآن — الشراء بالكوينز قريباً',
-              style: TextStyle(color: Colors.white70)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(catalog?.purchasingEnabled == true
+                ? 'الشراء متاح للمنتجات المؤهلة — راجع السعر والمدة قبل التأكيد'
+                : 'تصفّح المنتجات الآن — الشراء بالكوينز غير مفعّل حاليًا',
+              style: const TextStyle(color: Colors.white70)),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

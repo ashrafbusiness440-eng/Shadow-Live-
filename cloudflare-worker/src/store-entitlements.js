@@ -52,6 +52,7 @@ export async function storePurchase(request, env) {
     const allowed=[
       "unauthorized","account_required","store_buyer_not_eligible",
       "invalid_store_purchase_operation_id","invalid_store_product_id",
+      "invalid_store_purchase_quote","store_purchase_quote_changed",
       "invalid_purchase_time","invalid_store_wallet",
       "invalid_wallet_state","invalid_store_eligibility",
       "store_product_unavailable","store_product_not_purchasable",

@@ -47,10 +47,12 @@ class PublicStoreItem {
 }
 
 class PublicStoreCatalog {
-  const PublicStoreCatalog({required this.items, required this.categories});
+  const PublicStoreCatalog({required this.items, required this.categories,
+    required this.purchasingEnabled});
 
   final List<PublicStoreItem> items;
   final Map<String, String> categories;
+  final bool purchasingEnabled;
 }
 
 class PublicStoreCatalogService {
@@ -72,7 +74,7 @@ class PublicStoreCatalogService {
     }
     final decoded = jsonDecode(response.body);
     if (decoded is! Map || decoded['ok'] != true ||
-        decoded['purchasingEnabled'] != false ||
+        decoded['purchasingEnabled'] is! bool ||
         decoded['items'] is! List || decoded['categories'] is! Map) {
       throw const FormatException('invalid_public_store_catalog');
     }
@@ -87,7 +89,8 @@ class PublicStoreCatalogService {
     final categories = (decoded['categories'] as Map).map(
       (key, value) => MapEntry(key.toString(), value.toString()),
     );
-    return PublicStoreCatalog(items: items, categories: categories);
+    return PublicStoreCatalog(items: items, categories: categories,
+      purchasingEnabled: decoded['purchasingEnabled'] as bool);
   }
 
   void close() => _client.close();

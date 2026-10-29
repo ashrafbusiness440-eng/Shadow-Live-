@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
-import {selectPublicStoreItems} from "../../cloudflare-worker/src/public-store-catalog.js";
+import {selectPublicStoreItems,isPublicStoreCheckoutAvailable} from "../../cloudflare-worker/src/public-store-catalog.js";
 
 const item = (id, enabled = true) => ({
   id, nameAr:"إطار ملكي", category:"frames", priceCoins:2500,
@@ -38,7 +38,7 @@ test("public store projection is bounded and stable across sorted products", () 
   assert.deepEqual(selectPublicStoreItems(null),[]);
 });
 
-test("public store endpoint and Flutter screen have no purchase or grants", () => {
+test("public Store catalog advertises checkout only behind both server release gates", () => {
   const api = readFileSync(new URL(
     "../../cloudflare-worker/src/public-store-catalog.js",import.meta.url),"utf8");
   const route = readFileSync(new URL(
@@ -47,14 +47,32 @@ test("public store endpoint and Flutter screen have no purchase or grants", () =
     "../../lib/features/store/screens/public_store_catalog_screen.dart",
     import.meta.url),"utf8");
   const menu = readFileSync(new URL("../../lib/main.dart",import.meta.url),"utf8");
-  assert.match(api,/purchasingEnabled:false/);
+  assert.match(api,/storeCheckoutIssuanceEnabled\(env\)/);
+  assert.match(api,/config\?\.purchasingEnabled === true/);
+  assert.match(api,/isPublicStoreCheckoutAvailable\(config,env\)/);
+  assert.match(api,/ok:true, purchasingEnabled/);
   assert.match(api,/item\.enabled !== true/);
   assert.match(api,/method_not_allowed/);
   assert.match(route,/url\.pathname === "\/api\/store-catalog"/);
   assert.match(screen,/onPressed: null/);
   assert.match(screen,/الشراء قريباً/);
+  assert.match(screen,/_catalog\?\.purchasingEnabled == true/);
+  assert.match(screen,/_buyItem\(item, sheetContext, updateSheet\)/);
   assert.match(menu,/PublicStoreCatalogScreen\(\)/);
   assert.doesNotMatch(api,/adjustBalance|grantEntitlement|coinBalance|writeUpdate|writeCreate/);
+});
+
+test("public checkout readiness is false unless Worker and catalog flags both match",()=>{
+  const release={STORE_PURCHASE_ISSUANCE_ENABLED:"owner-purchases-v1"};
+  assert.equal(isPublicStoreCheckoutAvailable({},release),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:true},{}),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:false},release),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:"true"},release),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:true},{
+    STORE_PURCHASE_ISSUANCE_ENABLED:"true",
+  }),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:true},release),
+    true);
 });
 
 test("scheduled products respect exact UTC start and end while old items stay visible",()=>{
@@ -81,8 +99,27 @@ test("scheduled products respect exact UTC start and end while old items stay vi
 test("store timestamp gating is computed after the configuration cache",()=>{
   const content=readFileSync(new URL(
     "../../cloudflare-worker/src/public-store-catalog.js", import.meta.url),"utf8");
-  assert.match(content,/const rawItems = await readThroughConfigCache/);
-  assert.match(content,/selectPublicStoreItems\(rawItems, Date\.now\(\)\)/);
+  assert.match(content,/const config = await readThroughConfigCache/);
+  assert.match(content,/selectPublicStoreItems\(config.items, Date\.now\(\)\)/);
   assert.match(content,/Cache-Control":"no-store/);
   assert.doesNotMatch(content,/return selectPublicStoreItems\(snapshot/);
+});
+
+test("Flutter checkout retains idempotency key and verifies server receipt and consent",()=>{
+  const service=readFileSync(new URL(
+    "../../lib/features/store/services/store_checkout_service.dart",
+    import.meta.url),"utf8");
+  const screen=readFileSync(new URL(
+    "../../lib/features/store/screens/public_store_catalog_screen.dart",
+    import.meta.url),"utf8");
+  assert.match(service,/expectedPriceCoins/);
+  assert.match(service,/expectedDurationDays/);
+  assert.match(service,/confirmation': 'confirmed'/);
+  assert.match(service,/deliveryStatus/);
+  assert.match(service,/Bearer \$token/);
+  assert.match(screen,/_purchaseOperations\.putIfAbsent/);
+  assert.match(screen,/_buyItem/);
+  assert.match(screen,/تأكيد الشراء/);
+  assert.match(screen,/Random\.secure\(\)/);
+  assert.doesNotMatch(screen,/balance\.update|wallet\.set|adjustBalance/);
 });
