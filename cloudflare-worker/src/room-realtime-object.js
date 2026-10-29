@@ -1292,7 +1292,9 @@ export class RoomRealtimeObject extends DurableObject {
       if (String(attachment.mode || "room") !== "room") continue;
       if (normalizeRoomId(attachment.roomId) !== roomId) continue;
       if (String(attachment.uid || "").trim() !== uid) continue;
-      hidden = hidden || attachment.ghostMode === true;
+      hidden = hidden || attachment.ghostMode === true ||
+        attachment.hiddenRoomEntry === true ||
+        attachment.mysteriousMode === true;
       try {
         socket.serializeAttachment({ ...attachment, ...patch });
         updated += 1;
