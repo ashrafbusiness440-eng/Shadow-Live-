@@ -2334,6 +2334,37 @@ export async function roomSeatAction(db,uid,body){
           ],
         };
       }
+    }else if(action==="refreshStoreCosmetics"){
+      // Authenticated speaker only. Re-evaluate published Store art in this
+      // existing room transaction after a verified equip/unequip action.
+      // Never trust an asset key or another user's UID from the request.
+      const mySeatIndex=seats.findIndex(seat=>seat.uid===uid);
+      if(mySeatIndex<0)throw new ApiError("speaker_seat_required",403);
+      const seat=seats[mySeatIndex];
+      const mysteriousActive=activeMysteriousIdentity(actor);
+      const [cosmetics,storeWave]=await Promise.all([
+        activeCosmetics(db,uid,["voice_wave"],tx),
+        mysteriousActive
+          ?Promise.resolve(null)
+          :verifiedStoreSeatWave(db,tx,uid).catch(()=>null),
+      ]);
+      const voiceWave=cosmetics.voice_wave||{};
+      const vipCosmetics=vipCosmeticsFromUser(actor,Date.now());
+      const vipExpiryMs=timestampToEpochMs(actor.vipExpiresAt);
+      const vipWaveAssetKey=vipCosmetics.keys.audioWave;
+      const legacyWaveActive=
+        Boolean(clean(voiceWave.assetKey)||clean(voiceWave.imageUrl));
+      seats[mySeatIndex]={
+        ...seat,
+        voiceWaveRewardId:clean(voiceWave.rewardId),
+        voiceWaveAssetKey:storeWave?.assetKey||
+          clean(voiceWave.assetKey)||vipWaveAssetKey,
+        voiceWaveImageUrl:storeWave?.imageUrl||clean(voiceWave.imageUrl),
+        voiceWaveExpiresAtMs:storeWave
+          ?(storeWave.expiresAtMs??Number.MAX_SAFE_INTEGER)
+          :legacyWaveActive
+            ?Number(voiceWave.expiresAtMs||0):vipExpiryMs,
+      };
     }else if(action==="muteSeat"||action==="unmuteSeat"){
       const seatIndex=seats.findIndex(seat=>seat.uid===uid);
       if(seatIndex<0)throw new ApiError("speaker_seat_required",403);
