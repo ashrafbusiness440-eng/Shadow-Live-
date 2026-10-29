@@ -273,7 +273,7 @@ test("581B tampered, missing and refund-pending evidence is never certified",asy
 });
 
 test("579F ordered recent receipt query occurs before limit and keeps timestamp ties",async()=>{
-  const db=dbFor();
+  const db=dbFor({role:"owner",accountStatus:"active"});
   const queried=[];
   db.runQuery=async(path,params)=>{
     queried.push({path,params});
@@ -314,4 +314,18 @@ test("579F invalid and absent receipt dates are not mistaken for financial total
   assert.equal(result.hasNextPage,false);
   assert.ok(!("totalRevenue" in result));
   assert.ok(!("netCoins" in result));
+});
+
+test("579F delegated staff never receive an encoded operation-ID page cursor",async()=>{
+  const db=dbFor();
+  db.runQuery=async()=>Array.from({length:51},(_,i)=>({
+    id:"buyer_1__store_purchase_"+String(10000+i).padStart(12,"0"),
+    data:{...receipt,acquiredAtMs:100000-i},
+  }));
+  const result=await loadStoreUserPurchases(db,token,"123456");
+  assert.equal(result.receipts.length,50);
+  assert.equal(result.moreMayExist,true);
+  assert.equal(result.hasNextPage,false);
+  assert.equal(result.nextCursor,null);
+  assert.ok(result.receipts.every(row=>!("operationId" in row)));
 });
