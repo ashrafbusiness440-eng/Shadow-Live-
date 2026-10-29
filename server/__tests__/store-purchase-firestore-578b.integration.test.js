@@ -84,7 +84,7 @@ function emulatorStoreClient(db){
   };
 }
 async function seed(suffix,{coins=40000,purchasingEnabled=true,
-  walletMirror=coins}={}){
+  walletMirror=undefined}={}){
   const uid=userId(suffix);
   const user={coins,accountStatus:"active",role:"user",
     wealthPoints:0,effectiveVipLevel:2};
@@ -121,7 +121,7 @@ test("578B purchase commits wallet/entitlement/ledger/receipt/audit atomically i
   assert.equal(result.deliveryStatus,"delivered");
   const row=await inspect(uid,operationId(suffix));
   assert.equal(row.user.coins,15000);
-  assert.equal(row.user.balance,40000);
+  assert.equal("balance" in row.user,false);
   assert.equal(row.entitlement.data().ownerUid,uid);
   assert.equal(row.entitlement.data().source,"purchase");
   assert.equal(row.entitlement.data().expiresAtMs,NOW+7*86400000);
