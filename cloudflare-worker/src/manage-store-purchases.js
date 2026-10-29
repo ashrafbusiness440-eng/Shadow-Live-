@@ -310,6 +310,17 @@ export async function loadStoreFinancialSourcePageForOwner(
   };
 }
 
+// One-account, index-only COUNT parity among the four receipt/operation/
+// debit/audit sources. This is NOT individual proof or a revenue report.
+// Reuse the exact same Owner + recent-login + target gate as financial pages.
+export async function loadStoreFinancialCoverageForOwner(
+  db,token,rawTargetId){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  const {targetUid,searchedId}=await resolveStoreAdminTarget(db,rawTargetId);
+  const coverage=await db.readStoreFinancialCoverageCounts(targetUid);
+  return {searchedId,targetUid,...coverage};
+}
+
 export async function manageStorePurchases(request,env) {
   if(request.method!=="POST") {
     return json(request,env,{ok:false,code:"method_not_allowed"},405);
@@ -320,7 +331,8 @@ export async function manageStorePurchases(request,env) {
     if(body?.action!=="history"&&body?.action!=="verify_operation"&&
         body?.action!=="review_selected"&&
         body?.action!=="financial_page"&&
-        body?.action!=="financial_source_page") {
+        body?.action!=="financial_source_page"&&
+        body?.action!=="financial_coverage") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -337,7 +349,9 @@ export async function manageStorePurchases(request,env) {
           :body.action==="financial_source_page"
             ?await loadStoreFinancialSourcePageForOwner(
               db,token,targetId,body?.source,body?.cursor)
-            :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+            :body.action==="financial_coverage"
+              ?await loadStoreFinancialCoverageForOwner(db,token,targetId)
+              :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
