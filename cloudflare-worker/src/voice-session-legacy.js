@@ -1,6 +1,7 @@
 import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqual} from "node:crypto";
 import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv,configureLegacyEnv} from "./legacy-firebase-admin-shim.js";
 import {activeMicSegments} from "./mic-activity.js";
+import {resolveStoreVisuals} from "./store-presentation.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
 import {loadUserLevelPolicy} from "./user-level-policy.js";
@@ -1881,12 +1882,15 @@ export async function announceRoomEntrance(db,uid,roomId){
     throw new ApiError("room_unavailable",404);
   }
 
-  const [cosmetics,userSnap,profileSnap]=await Promise.all([
+  const [cosmetics,userSnap,profileSnap,storeVisuals]=await Promise.all([
     activeCosmetics(db,uid,["entrance"]),
     db.collection("users").doc(uid).get(),
     db.collection("public_profiles").doc(uid).get(),
+    resolveStoreVisuals(db,uid).catch(()=>({})),
   ]);
   const entrance=cosmetics.entrance||{};
+  const storeEntrance=storeVisuals.entranceEffects;
+  const hasStoreEntrance=Boolean(storeEntrance);
   const user=userSnap.data()||{};
   const mysteriousMode=activeMysteriousIdentity(user);
   const mysteriousId=mysteriousMode?clean(user.mysteriousId):"";
@@ -1896,7 +1900,7 @@ export async function announceRoomEntrance(db,uid,roomId){
   const hasVipRoomEntrance=
     vipCosmetics.level>=9&&clean(vipCosmetics.keys.entryStrip).length>0;
   const hasMysteriousEntrance=mysteriousMode;
-  if(!hasRewardEntrance&&!hasVipRoomEntrance&&!hasMysteriousEntrance){
+  if(!hasStoreEntrance&&!hasRewardEntrance&&!hasVipRoomEntrance&&!hasMysteriousEntrance){
     return {ok:true,announced:false,roomId};
   }
 
@@ -1918,20 +1922,24 @@ export async function announceRoomEntrance(db,uid,roomId){
       :(vipCosmetics.level>0?"VIP":""),
     rewardId:mysteriousMode
       ?"mysterious_person_entry"
-      :(hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry"),
+      :(hasStoreEntrance?"store_"+storeEntrance.productId
+        :(hasRewardEntrance?clean(entrance.rewardId):"vip_room_entry")),
     assetKey:mysteriousMode
       ?"mysterious.entrance"
-      :(hasRewardEntrance
-        ?clean(entrance.assetKey)
-        :clean(vipCosmetics.keys.entryStrip)),
+      :(hasStoreEntrance?storeEntrance.assetKey
+        :(hasRewardEntrance
+          ?clean(entrance.assetKey)
+          :clean(vipCosmetics.keys.entryStrip))),
     imageUrl:mysteriousMode
       ?""
-      :(hasRewardEntrance?clean(entrance.imageUrl):""),
+      :(hasStoreEntrance?storeEntrance.imageUrl
+        :(hasRewardEntrance?clean(entrance.imageUrl):"")),
     rewardExpiresAtMs:mysteriousMode
       ?timestampToEpochMs(user.mysteriousExpiresAt)
-      :(hasRewardEntrance
-        ?Number(entrance.expiresAtMs||0)
-        :timestampToEpochMs(user.vipExpiresAt)),
+      :(hasStoreEntrance?Number(storeEntrance.expiresAtMs||0)
+        :(hasRewardEntrance
+          ?Number(entrance.expiresAtMs||0)
+          :timestampToEpochMs(user.vipExpiresAt))),
     eventAtMs,
   };
   const delivered=await broadcastRoomRealtimeEvent(
