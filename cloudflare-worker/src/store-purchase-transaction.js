@@ -3,6 +3,7 @@
 // gated until atomicity, permissions, CI and live E2E are signed off.
 import {prepareStorePurchase,validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
+import {prepareStoreRenewal} from "./store-renewal-policy.js";
 import {loadUserLevelPolicy,userLevelSummaries} from "./user-level-policy.js";
 import {effectiveVipLevel} from "./user-level-visibility.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
@@ -27,6 +28,9 @@ export async function commitStorePurchaseOffline(
   if(verifiedToken?.firebase?.sign_in_provider==="anonymous")
     fail("account_required");
   const key=validateStorePurchaseOperationId(body?.operationId);
+  const operationType=body?.action==="renew"?"renew":
+    body?.action===undefined||body?.action==="purchase"?"purchase":null;
+  if(operationType===null)fail("invalid_store_purchase_action");
   const productId=clean(body?.productId);
   if(!/^[1-9][0-9]{5,8}$/.test(productId))
     fail("invalid_store_product_id");
@@ -51,6 +55,7 @@ export async function commitStorePurchaseOffline(
       assertUserDocumentSessionState(verifiedToken,user.data||{});
       if(op.exists){
         if(op.data?.buyerUid!==uid||op.data?.productId!==productId||
+            (op.data?.kind||"purchase")!==operationType||
             op.data?.status!=="completed")
           fail("store_operation_id_conflict");
         const response=op.data?.result;
@@ -106,33 +111,57 @@ export async function commitStorePurchaseOffline(
           typeof asset.data.rawUrl!=="string"||
           !/^https:\/\//.test(asset.data.rawUrl.trim()))
         fail("store_asset_not_published");
-      // No double charge for active, expired, or revoked ownership.
-      // Renewal/stacking requires an independently approved policy.
-      if(entitlement.exists)fail("store_item_already_owned");
+      // Plain purchases still reject any prior entitlement. Renewal requires
+      // an explicit fresh-action quote and a valid existing PAID item. This
+      // engine remains behind the independent production release switch.
+      if(operationType==="purchase"&&entitlement.exists)
+        fail("store_item_already_owned");
+      if(operationType==="renew"&&!entitlement.exists)
+        fail("store_renewal_item_not_owned");
+      const renewal=operationType==="renew"
+        ?prepareStoreRenewal({
+            entitlement:entitlement.data,uid,quote,
+            expectedExpiresAtMs:body.expectedCurrentExpiresAtMs,nowMs,
+          })
+        :null;
       if(before<quote.priceCoins)fail("insufficient_balance");
       const after=before-quote.priceCoins;
       const createdAt=new Date(nowMs);
+      const expiresAtMs=renewal?.expiresAtMs??quote.expiresAtMs;
       const result={
         operationId:key,productId:quote.productId,priceCoins:quote.priceCoins,
-        durationDays:quote.durationDays,acquiredAtMs:nowMs,
-        expiresAtMs:quote.expiresAtMs,deliveryStatus:"delivered",
+        durationDays:quote.durationDays,
+        acquiredAtMs:renewal?.acquiredAtMs??nowMs,
+        expiresAtMs,deliveryStatus:"delivered",
+        renewal:renewal!==null,
+        ...(renewal?{previousExpiresAtMs:renewal.previousExpiresAtMs}:{}),
       };
       await db.commit(tx,[
         db.writeUpdate(walletPath,{
           coins:after,walletUpdatedAt:createdAt,
         },["coins","walletUpdatedAt"]),
-        db.writeCreate(entitlementPath,{
-          ownerUid:uid,productId:quote.productId,nameAr:quote.nameAr,
-          category:quote.category,assetKey:quote.assetKey,
-          source:"purchase",status:"active",equipped:false,
-          acquiredAtMs:nowMs,expiresAtMs:quote.expiresAtMs,
-          purchaseOperationId:key,priceCoins:quote.priceCoins,
-          updatedAt:createdAt,
-        }),
+        ...(renewal?[
+          db.writeUpdate(entitlementPath,{
+            expiresAtMs:renewal.expiresAtMs,
+            renewalCount:renewal.renewalCount,
+            lastRenewalOperationId:key,
+            updatedAt:createdAt,
+          },["expiresAtMs","renewalCount","lastRenewalOperationId","updatedAt"]),
+        ]:[
+          db.writeCreate(entitlementPath,{
+            ownerUid:uid,productId:quote.productId,nameAr:quote.nameAr,
+            category:quote.category,assetKey:quote.assetKey,
+            source:"purchase",status:"active",equipped:false,
+            acquiredAtMs:nowMs,expiresAtMs:quote.expiresAtMs,
+            purchaseOperationId:key,priceCoins:quote.priceCoins,
+            updatedAt:createdAt,
+          }),
+        ]),
         db.writeCreate(ledgerPath,{
           userId:uid,asset:"coins",delta:-quote.priceCoins,
           openingBalance:before,closingBalance:after,
           reason:"store_item_purchase",sourceType:"storePurchase",
+          renewal:renewal!==null,
           sourceId:operationKey,idempotencyKey:operationKey,createdAt,
         }),
         db.writeCreate(receiptPath,{
@@ -141,16 +170,19 @@ export async function commitStorePurchaseOffline(
           category:quote.category,assetKey:quote.assetKey,
           rarity:quote.rarity,priceCoins:quote.priceCoins,
           durationDays:quote.durationDays,
-          acquiredAtMs:nowMs,expiresAtMs:quote.expiresAtMs,
+          acquiredAtMs:nowMs,expiresAtMs,
+          renewal:renewal!==null,
+          ...(renewal?{previousExpiresAtMs:renewal.previousExpiresAtMs}:{}),
           deliveryStatus:"delivered",refundStatus:"none",createdAt,
         }),
         db.writeCreate(opPath,{
-          buyerUid:uid,productId:quote.productId,status:"completed",
-          result,createdAt,
+          buyerUid:uid,productId:quote.productId,kind:operationType,
+          status:"completed",result,createdAt,
         }),
         db.writeCreate("admin_audit_logs/store_purchase_"+operationKey,{
           actorUid:uid,targetType:"store_entitlement",
-          targetId:entitlementPath,action:"purchaseStoreItem",
+          targetId:entitlementPath,
+          action:renewal?"renewStoreItem":"purchaseStoreItem",
           operationId:key,priceCoins:quote.priceCoins,createdAt,
         }),
       ]);
