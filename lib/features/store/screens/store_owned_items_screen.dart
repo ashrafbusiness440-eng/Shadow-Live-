@@ -15,6 +15,7 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
   StoreOwnedItemsResult? _result;
   String? _error;
   bool _loading = true;
+  String? _changingId;
 
   static const _sources = <String, String>{
     'purchase': 'شراء',
@@ -49,6 +50,22 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
     }
   }
 
+  Future<void> _setEquipped(StoreOwnedItem item) async {
+    if (_changingId != null) return;
+    setState(() => _changingId = item.productId);
+    try {
+      await _service.setEquipped(item, equipped: !item.equipped);
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('تعذّر تغيير التجهيز. تأكد من صلاحية المقتنى ثم حاول مجددًا.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _changingId = null);
+    }
+  }
+
   String _date(int milliseconds) {
     final date = DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
     return '${date.day}/${date.month}/${date.year}';
@@ -70,7 +87,7 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
 
   Widget _card(StoreOwnedItem item) {
     final label = switch (item.lifecycleState) {
-      'active' => 'صالح للاستخدام',
+      'active' => item.equipped ? 'مجهّز حاليًا' : 'صالح للاستخدام',
       'expired' => 'منتهي الصلاحية',
       'revoked' => 'ملغى',
       _ => 'غير متاح للاستخدام',
@@ -97,6 +114,19 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
                 style: TextStyle(
                   color: item.active ? Colors.green : Colors.orange,
                   fontWeight: FontWeight.w600)),
+              if (item.active) Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: OutlinedButton.icon(
+                  onPressed: _changingId != null ? null
+                    : () => _setEquipped(item),
+                  icon: _changingId == item.productId
+                    ? const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(item.equipped ? Icons.check_circle
+                        : Icons.auto_awesome),
+                  label: Text(item.equipped ? 'إلغاء التجهيز' : 'تجهيز'),
+                ),
+              ),
             ],
           )),
         ]),
@@ -154,8 +184,8 @@ class _StoreOwnedItemsScreenState extends State<StoreOwnedItemsScreen> {
                     ),
                     const Padding(
                       padding: EdgeInsets.all(12),
-                      child: Text('تجهيز منتجات المتجر سيُتاح بعد اكتمال '
-                        'التحقق من الملكية والصلاحية في الخادم.',
+                      child: Text('يمكن تجهيز منتج واحد من كل فئة. '
+                        'المقتنيات المنتهية أو الملغاة غير قابلة للتجهيز.',
                         textAlign: TextAlign.center),
                     ),
                   ]),
