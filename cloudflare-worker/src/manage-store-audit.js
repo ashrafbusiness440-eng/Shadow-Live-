@@ -46,8 +46,9 @@ const STORE_OPERATION_ACTIONS=Object.freeze({
 });
 export function projectStoreOperationAudit(data={}) {
   if(!data||data.targetType!=="store_entitlement")return null;
-  const action=STORE_OPERATION_ACTIONS[clean(data.action)];
-  if(!action)return null;
+  const rawAction=clean(data.action);
+  if(!Object.hasOwn(STORE_OPERATION_ACTIONS,rawAction))return null;
+  const action=STORE_OPERATION_ACTIONS[rawAction];
   const match=/^user_store_entitlements\/([A-Za-z0-9_-]{1,128})\/items\/([1-9][0-9]{5,8})$/
     .exec(clean(data.targetId));
   if(!match||!validUid(clean(data.actorUid)))return null;
