@@ -1527,7 +1527,7 @@ export class RoomRealtimeObject extends DurableObject {
         entryEffectKey: "",
         storeChatBubbleKey:
           !attachment.mysteriousMode &&
-          /^store\\.item\\.[1-9][0-9]{5,8}\\.visual$/.test(
+          /^store\.item\.[1-9][0-9]{5,8}\.visual$/.test(
             String(attachment.storeChatBubbleKey||"")) &&
           (Number(attachment.storeChatBubbleExpiresAtMs||0)===0 ||
             Number(attachment.storeChatBubbleExpiresAtMs||0)>nowMs)
@@ -1536,7 +1536,7 @@ export class RoomRealtimeObject extends DurableObject {
           Number(attachment.storeChatBubbleExpiresAtMs||0),
         storeNameEffectKey:
           !attachment.mysteriousMode &&
-          /^store\\.item\\.[1-9][0-9]{5,8}\\.visual$/.test(
+          /^store\.item\.[1-9][0-9]{5,8}\.visual$/.test(
             String(attachment.storeNameEffectKey||"")) &&
           (Number(attachment.storeNameEffectExpiresAtMs||0)===0 ||
             Number(attachment.storeNameEffectExpiresAtMs||0)>nowMs)
