@@ -62,7 +62,15 @@ class StoreVisualPresentationService {
   final String _base;
   final Future<String?> Function() _tokenProvider;
 
-  Future<StoreVerifiedFrame?> loadFrame(String uid) async {
+  Future<StoreVerifiedFrame?> loadFrame(String uid) =>
+      _loadVisual(uid, 'frames');
+
+  // Reuse the same verified owner-scoped projection; never read an editable
+  // public profile field to infer a purchased profile card.
+  Future<StoreVerifiedFrame?> loadProfileCard(String uid) =>
+      _loadVisual(uid, 'profileCards');
+
+  Future<StoreVerifiedFrame?> _loadVisual(String uid, String category) async {
     final userId = uid.trim();
     if (userId.isEmpty) return null;
     final token = await _tokenProvider();
@@ -79,7 +87,7 @@ class StoreVisualPresentationService {
       if (result is! Map || result['ok'] != true ||
           result['visuals'] is! Map) return null;
       final visual = StoreVerifiedFrame.fromResponse(
-        (result['visuals'] as Map)['frames'],
+        (result['visuals'] as Map)[category],
       );
       return visual != null && visual.activeNow ? visual : null;
     } catch (_) {
