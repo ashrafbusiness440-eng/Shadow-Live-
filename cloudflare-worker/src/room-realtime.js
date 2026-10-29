@@ -146,6 +146,8 @@ function roomRealtimeIdentityPresentation(
   const vipCosmetics = vipCosmeticsFromUser(user, Date.now());
   const storeFrame=storeVisuals.frames;
   const storeEntrance=storeVisuals.entranceEffects;
+  const storeBubble=storeVisuals.chatBubbles;
+  const storeName=storeVisuals.nameEffects;
   // A Firestore-writable public profile is not proof of Store entitlement.
   const legacyFrameKey=clean(publicProfile.activeProfileFrameAssetKey);
   const safeLegacyFrameKey=legacyFrameKey.startsWith("store.item.")
@@ -183,6 +185,10 @@ function roomRealtimeIdentityPresentation(
       gameLevel: Math.max(0, Number(levelMetadata.gameLevel || 0)),
       vipLevel: vipCosmetics.level,
       entryEffectKey: storeEntrance?.assetKey || vipCosmetics.keys.entryStrip,
+      storeChatBubbleKey: storeBubble?.assetKey || "",
+      storeChatBubbleExpiresAtMs: storeBubble?.expiresAtMs ?? 0,
+      storeNameEffectKey: storeName?.assetKey || "",
+      storeNameEffectExpiresAtMs: storeName?.expiresAtMs ?? 0,
     },
     user,
   );
@@ -658,6 +664,12 @@ export async function roomRealtime(request, env) {
           hiddenRoomEntry: activeHiddenRoomEntry(profileData, Date.now()),
           vipLevel: Math.max(0, Number(identityPresentation.vipLevel || 0)),
           entryEffectKey: String(identityPresentation.entryEffectKey || ""),
+          storeChatBubbleKey: String(identityPresentation.storeChatBubbleKey || ""),
+          storeChatBubbleExpiresAtMs:
+            Number(identityPresentation.storeChatBubbleExpiresAtMs || 0),
+          storeNameEffectKey: String(identityPresentation.storeNameEffectKey || ""),
+          storeNameEffectExpiresAtMs:
+            Number(identityPresentation.storeNameEffectExpiresAtMs || 0),
           reconnectAttempt: Math.max(
             0,
             Math.min(3, Number(body.reconnectAttempt || 0)),

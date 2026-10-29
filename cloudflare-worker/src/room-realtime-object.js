@@ -683,6 +683,10 @@ export class RoomRealtimeObject extends DurableObject {
     const hiddenRoomEntry = body.hiddenRoomEntry === true;
     const vipLevel = Math.max(0, Math.min(10, Number(body.vipLevel || 0)));
     const entryEffectKey = String(body.entryEffectKey || "").trim();
+    const storeChatBubbleKey=String(body.storeChatBubbleKey||"").trim();
+    const storeChatBubbleExpiresAtMs=Number(body.storeChatBubbleExpiresAtMs||0);
+    const storeNameEffectKey=String(body.storeNameEffectKey||"").trim();
+    const storeNameEffectExpiresAtMs=Number(body.storeNameEffectExpiresAtMs||0);
     const mode = String(body.mode || "room") === "rocket_feed"
       ? "rocket_feed"
       : "room";
@@ -722,6 +726,8 @@ export class RoomRealtimeObject extends DurableObject {
       hiddenRoomEntry,
       vipLevel,
       entryEffectKey,
+      storeChatBubbleKey,storeChatBubbleExpiresAtMs,
+      storeNameEffectKey,storeNameEffectExpiresAtMs,
       mode,
       reconnectAttempt,
     });
@@ -846,6 +852,10 @@ export class RoomRealtimeObject extends DurableObject {
       hiddenRoomEntry: record.hiddenRoomEntry === true,
       vipLevel: Math.max(0, Math.min(10, Number(record.vipLevel || 0))),
       entryEffectKey: String(record.entryEffectKey || ""),
+      storeChatBubbleKey:String(record.storeChatBubbleKey||""),
+      storeChatBubbleExpiresAtMs:Number(record.storeChatBubbleExpiresAtMs||0),
+      storeNameEffectKey:String(record.storeNameEffectKey||""),
+      storeNameEffectExpiresAtMs:Number(record.storeNameEffectExpiresAtMs||0),
       recentChat: [],
       reconnectAttempt,
     });
@@ -1226,6 +1236,10 @@ export class RoomRealtimeObject extends DurableObject {
       gameLevel: Math.max(0, Math.min(21, Number(body.gameLevel || 0))),
       vipLevel: Math.max(0, Math.min(10, Number(body.vipLevel || 0))),
       entryEffectKey: String(body.entryEffectKey || "").trim(),
+      storeChatBubbleKey:String(body.storeChatBubbleKey||""),
+      storeChatBubbleExpiresAtMs:Number(body.storeChatBubbleExpiresAtMs||0),
+      storeNameEffectKey:String(body.storeNameEffectKey||""),
+      storeNameEffectExpiresAtMs:Number(body.storeNameEffectExpiresAtMs||0),
       canModerateChat: body.canModerateChat === true,
     };
     let updated = 0;
@@ -1511,6 +1525,24 @@ export class RoomRealtimeObject extends DurableObject {
         systemKind: animatedEmoji ? "animated_emoji" : "",
         vipLevel,
         entryEffectKey: "",
+        storeChatBubbleKey:
+          !attachment.mysteriousMode &&
+          /^store\.item\.[1-9][0-9]{5,8}\.visual$/.test(
+            String(attachment.storeChatBubbleKey||"")) &&
+          (Number(attachment.storeChatBubbleExpiresAtMs||0)===0 ||
+            Number(attachment.storeChatBubbleExpiresAtMs||0)>nowMs)
+            ?String(attachment.storeChatBubbleKey):"",
+        storeChatBubbleExpiresAtMs:
+          Number(attachment.storeChatBubbleExpiresAtMs||0),
+        storeNameEffectKey:
+          !attachment.mysteriousMode &&
+          /^store\.item\.[1-9][0-9]{5,8}\.visual$/.test(
+            String(attachment.storeNameEffectKey||"")) &&
+          (Number(attachment.storeNameEffectExpiresAtMs||0)===0 ||
+            Number(attachment.storeNameEffectExpiresAtMs||0)>nowMs)
+            ?String(attachment.storeNameEffectKey):"",
+        storeNameEffectExpiresAtMs:
+          Number(attachment.storeNameEffectExpiresAtMs||0),
       },
     });
     safeSend(

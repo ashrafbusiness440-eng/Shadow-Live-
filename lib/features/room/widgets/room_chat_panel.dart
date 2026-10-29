@@ -20,6 +20,19 @@ import 'cosmetic_effect_widgets.dart';
 import '../../vip/utils/vip_cosmetic_policy.dart';
 import '../../vip/widgets/vip_cosmetic_asset.dart';
 
+String verifiedStoreChatVisualKey(
+  String key, int expiresAtMs, {
+  required bool effectsEnabled,
+  required bool mysteriousMode,
+  int? nowMs,
+}) {
+  if (!effectsEnabled || mysteriousMode ||
+      !RegExp(r'^store[.]item[.][1-9][0-9]{5,8}[.]visual$')
+          .hasMatch(key)) return '';
+  final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+  return expiresAtMs == 0 || expiresAtMs > now ? key : '';
+}
+
 class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
     super.key,
@@ -390,12 +403,24 @@ class _RoomChatPanelState extends State<RoomChatPanel> {
 
     final mine = message.senderUid == _uid;
     final mentionedMe = message.mentionUids.contains(_uid);
-    final vipBubbleKey = widget.roomEffectsEnabled && message.vipLevel >= 2
-        ? ShadowAssetKeys.vipChatBubble(message.vipLevel.clamp(2, 10))
-        : '';
-    final vipNameKey = widget.roomEffectsEnabled && message.vipLevel >= 10
-        ? ShadowAssetKeys.vipNameEffect(message.vipLevel.clamp(10, 10))
-        : '';
+    final verifiedBubble = verifiedStoreChatVisualKey(
+      message.storeChatBubbleKey, message.storeChatBubbleExpiresAtMs,
+      effectsEnabled: widget.roomEffectsEnabled,
+      mysteriousMode: message.mysteriousMode);
+    final verifiedName = verifiedStoreChatVisualKey(
+      message.storeNameEffectKey, message.storeNameEffectExpiresAtMs,
+      effectsEnabled: widget.roomEffectsEnabled,
+      mysteriousMode: message.mysteriousMode);
+    final vipBubbleKey = verifiedBubble.isNotEmpty
+        ? verifiedBubble
+        : widget.roomEffectsEnabled && message.vipLevel >= 2
+            ? ShadowAssetKeys.vipChatBubble(message.vipLevel.clamp(2, 10))
+            : '';
+    final vipNameKey = verifiedName.isNotEmpty
+        ? verifiedName
+        : widget.roomEffectsEnabled && message.vipLevel >= 10
+            ? ShadowAssetKeys.vipNameEffect(message.vipLevel.clamp(10, 10))
+            : '';
     final fallbackColor = mine
         ? const Color(0xFF4F1E96).withValues(alpha: .72)
         : mentionedMe
@@ -1132,6 +1157,14 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
       );
     }
 
+    final verifiedBubble = verifiedStoreChatVisualKey(
+      message.storeChatBubbleKey, message.storeChatBubbleExpiresAtMs,
+      effectsEnabled: widget.roomEffectsEnabled,
+      mysteriousMode: message.mysteriousMode);
+    final verifiedName = verifiedStoreChatVisualKey(
+      message.storeNameEffectKey, message.storeNameEffectExpiresAtMs,
+      effectsEnabled: widget.roomEffectsEnabled,
+      mysteriousMode: message.mysteriousMode);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onLongPress: () => _showMessageActions(message),
@@ -1194,16 +1227,19 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                           ),
                         ),
                         if (!message.mysteriousMode &&
-                            VipCosmeticPolicy.nameEffectKey(
-                              message.vipLevel,
-                            ).isNotEmpty) ...[
+                            (verifiedName.isNotEmpty ||
+                             VipCosmeticPolicy.nameEffectKey(
+                               message.vipLevel,
+                             ).isNotEmpty)) ...[
                           const SizedBox(width: 4),
                           SizedBox.square(
                             dimension: 17,
                             child: VipCosmeticAssetLayer(
-                              assetKey: VipCosmeticPolicy.nameEffectKey(
-                                message.vipLevel,
-                              ),
+                              assetKey: verifiedName.isNotEmpty
+                                  ? verifiedName
+                                  : VipCosmeticPolicy.nameEffectKey(
+                                      message.vipLevel,
+                                    ),
                               fit: BoxFit.contain,
                             ),
                           ),
@@ -1235,8 +1271,9 @@ class _RoomChatFeedState extends State<RoomChatFeed> {
                     ],
                     const SizedBox(height: 3),
                     VipCosmeticSurface(
-                      assetKey:
-                          VipCosmeticPolicy.chatBubbleKey(message.vipLevel),
+                      assetKey: verifiedBubble.isNotEmpty
+                          ? verifiedBubble
+                          : VipCosmeticPolicy.chatBubbleKey(message.vipLevel),
                       borderRadius: BorderRadius.circular(12),
                       assetOpacity: .32,
                       fallbackDecoration: BoxDecoration(

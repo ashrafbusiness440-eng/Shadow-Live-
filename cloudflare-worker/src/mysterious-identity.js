@@ -54,6 +54,10 @@ export function applyMysteriousIdentityPresentation(
     activeProfileFrameExpiresAtMs: 0,
     activeProfileFramePermanent: false,
     entryEffectKey: "",
+    storeChatBubbleKey: "",
+    storeChatBubbleExpiresAtMs: 0,
+    storeNameEffectKey: "",
+    storeNameEffectExpiresAtMs: 0,
     mysteriousMode: true,
     mysteriousId,
   };
