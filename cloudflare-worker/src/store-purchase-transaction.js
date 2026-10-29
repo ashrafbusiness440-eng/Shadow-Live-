@@ -87,6 +87,17 @@ export async function commitStorePurchaseOffline(
         buyer:{uid,accountStatus:"active"},
         vipLevel:effectiveVipLevel(buyer),wealthLevel,nowMs,
       });
+      // The client consents to this exact catalog price and duration.
+      // Quote validation runs inside the debit transaction. Never let a
+      // stale product sheet silently charge a higher price or changed term.
+      if(!Number.isSafeInteger(body?.expectedPriceCoins) ||
+          body.expectedPriceCoins<=0 ||
+          !Number.isSafeInteger(body?.expectedDurationDays) ||
+          body.expectedDurationDays<0)
+        fail("invalid_store_purchase_quote");
+      if(body.expectedPriceCoins!==quote.priceCoins ||
+          body.expectedDurationDays!==quote.durationDays)
+        fail("store_purchase_quote_changed");
       const [asset,entitlement]=await Promise.all([
         db.get("app_asset_registry/"+quote.assetKey,tx),
         db.get(entitlementPath,tx),
