@@ -215,6 +215,9 @@ async function setStorePurchasing(db,payload,body,env){
             prior.data?.enabled!==body.enabled ||
             prior.data?.status!=="completed" || !prior.data?.result)
           throw new StoreCatalogError("operation_id_conflict",409);
+        if(config.data?.revision!==prior.data.result.revision ||
+            (config.data?.purchasingEnabled===true)!==prior.data.enabled)
+          throw new StoreCatalogError("store_rollout_state_changed",409);
         await db.rollback(tx);tx=null;
         return {ok:true,duplicate:true,...prior.data.result};
       }
