@@ -150,7 +150,7 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
         leading: Icon(Icons.security_outlined),
         title: Text('سجل تعديلات المتجر'),
         subtitle: Text('عرض للقراءة فقط من السجلات الحقيقية. '
-            'لا يُظهر سجلات الحسابات الأخرى أو يتيح تعديل المنتجات.'),
+            'تفاصيل عمليات المستخدمين تظهر للمالك فقط، ولا يمكن تعديل السجلات.'),
       )),
       Align(alignment: Alignment.centerRight,child: OutlinedButton.icon(
         onPressed: _loading ? null : _load,
