@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
-import {selectPublicStoreItems} from "../../cloudflare-worker/src/public-store-catalog.js";
+import {selectPublicStoreItems,isPublicStoreCheckoutAvailable} from "../../cloudflare-worker/src/public-store-catalog.js";
 
 const item = (id, enabled = true) => ({
   id, nameAr:"إطار ملكي", category:"frames", priceCoins:2500,
@@ -48,7 +48,8 @@ test("public Store catalog advertises checkout only behind both server release g
     import.meta.url),"utf8");
   const menu = readFileSync(new URL("../../lib/main.dart",import.meta.url),"utf8");
   assert.match(api,/storeCheckoutIssuanceEnabled\(env\)/);
-  assert.match(api,/config\.purchasingEnabled === true/);
+  assert.match(api,/config\?\.purchasingEnabled === true/);
+  assert.match(api,/isPublicStoreCheckoutAvailable\(config,env\)/);
   assert.match(api,/ok:true, purchasingEnabled/);
   assert.match(api,/item\.enabled !== true/);
   assert.match(api,/method_not_allowed/);
@@ -59,6 +60,19 @@ test("public Store catalog advertises checkout only behind both server release g
   assert.match(screen,/_buyItem\(item, sheetContext, updateSheet\)/);
   assert.match(menu,/PublicStoreCatalogScreen\(\)/);
   assert.doesNotMatch(api,/adjustBalance|grantEntitlement|coinBalance|writeUpdate|writeCreate/);
+});
+
+test("public checkout readiness is false unless Worker and catalog flags both match",()=>{
+  const release={STORE_PURCHASE_ISSUANCE_ENABLED:"owner-purchases-v1"};
+  assert.equal(isPublicStoreCheckoutAvailable({},release),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:true},{}),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:false},release),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:"true"},release),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:true},{
+    STORE_PURCHASE_ISSUANCE_ENABLED:"true",
+  }),false);
+  assert.equal(isPublicStoreCheckoutAvailable({purchasingEnabled:true},release),
+    true);
 });
 
 test("scheduled products respect exact UTC start and end while old items stay visible",()=>{
