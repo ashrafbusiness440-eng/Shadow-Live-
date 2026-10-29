@@ -11,7 +11,8 @@ import {validStoreEntitlementDocument}
 
 const clean=v=>String(v??"").trim();
 const validUid=v=>/^[A-Za-z0-9_-]{1,128}$/.test(v);
-const VISUAL_CATEGORIES=Object.freeze(["frames","entranceEffects"]);
+const VISUAL_CATEGORIES=Object.freeze(["frames","entranceEffects",
+  "chatBubbles","nameEffects"]);
 
 function isActiveUser(data={}){
   return clean(data.accountStatus||"active")==="active" &&
