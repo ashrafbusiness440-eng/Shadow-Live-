@@ -574,6 +574,8 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
         dirty = false;
         saving = false;
         pendingSaveOperationId = null;
+        pendingPurchasingOperationId = null;
+        pendingPurchasingEnabled = null;
         purchasingEnabled = false;
         items = (result['items'] as List)
             .map((e) => Map<String, dynamic>.from(e as Map)).toList();
