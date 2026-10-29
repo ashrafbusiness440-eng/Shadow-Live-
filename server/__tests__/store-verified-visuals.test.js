@@ -98,6 +98,23 @@ test("Admin-style legacy room reader uses bounded direct document gets",async()=
   assert.equal(out.entranceEffects.productId,"200002");
 });
 
+test("deployed legacy Firestore shim collection().doc() supports room entrance",async()=>{
+  const c=setup();
+  const fromParts=parts=>({
+    collection(name){return fromParts([...parts,name]);},
+    doc(id){return fromParts([...parts,id]);},
+    async get(){
+      const path=parts.join("/");
+      const value=c.docs.get(path);
+      return {exists:c.docs.has(path),data:()=>value};
+    },
+  });
+  const db={collection:name=>fromParts([name])};
+  const visuals=await resolveStoreVisuals(db,uid,now);
+  assert.equal(visuals.entranceEffects.assetKey,"store.item.200002.visual");
+  assert.equal(visuals.frames.assetKey,"store.item.200001.visual");
+});
+
 test("store presentation is read only and room renders verified visuals before mystery",async()=>{
   const method=await storePresentation(
     new Request("https://example.com/api/store-presentation"),{});
