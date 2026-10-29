@@ -234,60 +234,7 @@ class _StorePurchaseHistoryPanelState
   Widget _record(Map<String, dynamic> item) {
     final operationId = item['operationId'];
     final eligible = _canVerifyReceipts && operationId is String &&
-      RegExp(r'^[A-Za-z0-9_-]{12,100}
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const Card(child: ListTile(
-        leading: Icon(Icons.lock_outline),
-        title: Text('سجل مشتريات المتجر — قراءة فقط'),
-        subtitle: Text('يعرض إيصالات شراء حقيقية محفوظة لحساب محدد، '
-          'ولا ينشئ عمليات شراء أو يخصم الكوينز. الشراء غير مفعل حالياً.'),
-      )),
-      const SizedBox(height: 8),
-      TextField(
-        controller: _id,
-        enabled: !_loading,
-        textDirection: TextDirection.ltr,
-        decoration: const InputDecoration(
-          labelText: 'معرّف المستخدم (ID)',
-          hintText: 'رقم المستخدم أو UID',
-          border: OutlineInputBorder(),
-          prefixIcon: Icon(Icons.person_search_outlined),
-        ),
-        onSubmitted: (_) => _load(),
-      ),
-      const SizedBox(height: 8),
-      Align(alignment: Alignment.centerRight, child: FilledButton.icon(
-        onPressed: _loading ? null : _load,
-        icon: const Icon(Icons.search),
-        label: const Text('عرض المشتريات'),
-      )),
-      if (_loading) const LinearProgressIndicator(),
-      if (_error != null) Padding(
-        padding: const EdgeInsets.all(8),
-        child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent)),
-      ),
-      if (_target != null) ...[
-        const SizedBox(height: 12),
-        Text('السجل: ${_receipts.length} • الحساب: $_target'),
-        if (_receipts.isNotEmpty) _receiptSampleSummary(),
-        if (_receipts.isEmpty) const Card(child: ListTile(
-          title: Text('لا توجد إيصالات شراء حقيقية محفوظة لهذا الحساب.'),
-        )),
-        for (final item in _receipts) _record(item),
-        if (_more) const Padding(
-          padding: EdgeInsets.all(8),
-          child: Text('يظهر أول 50 إيصالاً مسترجعاً فقط. '
-            'هذا ليس السجل التاريخي الكامل.'),
-        ),
-      ],
-    ],
-  );
-}
-).hasMatch(operationId);
+      RegExp(r'^[A-Za-z0-9_-]{12,100}$').hasMatch(operationId);
     final evidence = eligible ? _evidenceByOperation[operationId] : null;
     return Card(child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
