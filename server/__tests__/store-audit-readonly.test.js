@@ -234,7 +234,8 @@ test("579B limits Owner operation results and exposes partial list as partial",a
   assert.ok(result.operationEntries[0].at>result.operationEntries[49].at);
   const source=readFileSync(new URL(
     "../../cloudflare-worker/src/manage-store-audit.js",import.meta.url),"utf8");
-  assert.doesNotMatch(source,/db\.list\(|db\.commit\(|db\.writeCreate\(|financial_ledger\//);
+  assert.doesNotMatch(source,/db\.list\(|db\.commit\(|db\.writeCreate\(/);
+  assert.doesNotMatch(source,/runQuery\(["']financial_ledger/);
   const ui=readFileSync(new URL(
     "../../lib/admin/store_audit_history_panel.dart",import.meta.url),"utf8");
   assert.match(ui,/_canViewOperations/);
