@@ -5,6 +5,8 @@ import {verifyFirebaseIdToken} from "./firebase-auth.js";
 import {firestoreClient} from "./firestore.js";
 import {commitStoreGrantRevokeOffline}
   from "./store-grant-revoke-transaction.js";
+import {refreshRevokedStoreGrantInLiveRoom}
+  from "./store-grant-revoke-live.js";
 
 const clean=v=>String(v??"").trim();
 export const STORE_GRANT_REVOKE_RELEASE_VALUE="owner-grant-revoke-v1";
@@ -33,9 +35,15 @@ export async function manageStoreGrantRevoke(request,env){
     const token=await verifyFirebaseIdToken(request,env,{
       checkUserState:false,
     });
-    const result=await commitStoreGrantRevokeOffline(
-      firestoreClient(env),token,body);
-    return json(request,env,result,200,{"Cache-Control":"no-store"});
+    const db=firestoreClient(env);
+    const result=await commitStoreGrantRevokeOffline(db,token,body);
+    // The entitlement is already committed. A transient DO/room error must
+    // never turn a successful revoke into a false financial/admin failure.
+    // Returning pending_refresh is explicit, not an invented live success.
+    const live=await refreshRevokedStoreGrantInLiveRoom(db,env,result)
+      .catch(()=>({status:"pending_refresh"}));
+    return json(request,env,{...result,liveRefresh:live.status},200,
+      {"Cache-Control":"no-store"});
   }catch(error){
     const quota=firestoreQuotaResponse(request,env,error);
     if(quota)return quota;
