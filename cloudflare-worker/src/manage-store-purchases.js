@@ -93,6 +93,10 @@ function encodeReceiptCursor(doc,uid){
 export async function loadStoreUserPurchases(db,token,rawTargetId,rawCursor=null) {
   const actor=await authorizedStorePurchaseActor(db,token);
   const isOwner=actor.role==="owner";
+  // Delegated history viewers cannot navigate a cursor carrying encoded
+  // financial receipt document IDs, even when submitted by hand.
+  if(!isOwner&&rawCursor!==null&&rawCursor!==undefined&&rawCursor!=="")
+    throw Error("forbidden");
   const {targetUid,searchedId}=await resolveStoreAdminTarget(db,rawTargetId);
   const startAfter=decodeReceiptCursor(rawCursor,targetUid);
   // Indexed bounded query: order BEFORE limit, with document-ID tie breaker.
@@ -177,7 +181,18 @@ export async function reviewStorePurchaseEvidenceBatchForOwner(
   return {
     ok:true,scope:"selected_operations_only",inspected:evidence.length,
     verified:evidence.filter(row=>row.verified).length,
+    verifiedPurchases:evidence.filter(row=>
+      row.verified&&row.kind==="purchase").length,
+    verifiedRenewals:evidence.filter(row=>
+      row.verified&&row.kind==="renew").length,
     needsReview:evidence.filter(row=>!row.verified).length,
+    requiresRefundReview:evidence.filter(row=>
+      row.code==="requires_refund_review").length,
+    incompleteEvidence:evidence.filter(row=>
+      row.code==="not_found"||row.code==="incomplete_evidence").length,
+    conflictingEvidence:evidence.filter(row=>!row.verified&&
+      !["not_found","incomplete_evidence","requires_refund_review"]
+        .includes(row.code)).length,
     financialReportComplete:false,netRevenueCertified:false,
     evidence,
   };
