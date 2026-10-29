@@ -2,6 +2,7 @@ import {json, readJson, firestoreQuotaResponse} from "./http.js";
 import {verifyFirebaseIdToken, assertUserDocumentSessionState} from "./firebase-auth.js";
 import {firestoreClient} from "./firestore.js";
 import {commitStorePurchaseOffline} from "./store-purchase-transaction.js";
+import {readStoreEquipSlots,storeEntitlementEquipped} from "./store-equip.js";
 import {
   STORE_PURCHASING_ENABLED,
   validStoreEntitlementDocument,
@@ -91,10 +92,13 @@ export async function myStoreItems(request, env) {
     }
     assertUserDocumentSessionState(token, user.data || {});
     const docs = await db.list(`user_store_entitlements/${uid}/items`, 100);
+    const selection=await db.get(`user_store_equipped/${uid}`);
+    const slots=readStoreEquipSlots(selection,uid);
     const nowMs = Date.now();
     const items = docs
       .map(doc => validStoreEntitlementDocument(doc.data, uid, nowMs))
       .filter(Boolean)
+      .map(item=>({...item,equipped:storeEntitlementEquipped(item,slots)}))
       .sort((a, b) => b.acquiredAtMs - a.acquiredAtMs ||
         a.productId.localeCompare(b.productId));
     return json(request, env, {
