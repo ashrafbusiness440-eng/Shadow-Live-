@@ -84,7 +84,10 @@ test("purchase history only reads one target by ID and bounded indexed receipts"
   assert.deepEqual(db.reads,[
     "users/auditor_1","public_ids/123456","users/buyer_1",
     {path:"store_purchase_receipts",params:{
-      filters:[{field:"buyerUid",op:"==",value:"buyer_1"}],limit:50,
+      filters:[{field:"buyerUid",op:"==",value:"buyer_1"}],
+      orderBy:[{field:"acquiredAtMs",direction:"desc"},
+        {field:"__name__",direction:"desc"}],
+      startAfter:[],limit:51,
     }},
   ]);
   const code=readFileSync(new URL(
@@ -267,4 +270,48 @@ test("581B tampered, missing and refund-pending evidence is never certified",asy
     ownerEvidenceDb(),token,"123456","store_missing_operation_0001","200001");
   assert.deepEqual(notFound,{ok:true,verified:false,
     operationId:"store_missing_operation_0001",code:"not_found"});
+});
+
+test("579F ordered recent receipt query occurs before limit and keeps timestamp ties",async()=>{
+  const db=dbFor();
+  const queried=[];
+  db.runQuery=async(path,params)=>{
+    queried.push({path,params});
+    return Array.from({length:51},(_,i)=>({
+      id:"buyer_1__store_purchase_"+String(10000+i).padStart(12,"0"),
+      data:{...receipt,operationId:"store_purchase_"+String(10000+i).padStart(12,"0"),
+        acquiredAtMs:100000-Math.floor(i/2)},
+    }));
+  };
+  const first=await loadStoreUserPurchases(db,token,"123456");
+  assert.equal(first.receipts.length,50);
+  assert.equal(first.moreMayExist,true);
+  assert.equal(first.hasNextPage,true);
+  assert.ok(first.nextCursor);
+  assert.equal(queried[0].params.limit,51);
+  assert.deepEqual(queried[0].params.orderBy,[
+    {field:"acquiredAtMs",direction:"desc"},
+    {field:"__name__",direction:"desc"},
+  ]);
+  await loadStoreUserPurchases(db,token,"123456",first.nextCursor);
+  assert.equal(queried[1].params.startAfter[0],100000-Math.floor(49/2));
+  assert.match(queried[1].params.startAfter[1].referencePath,
+    /^store_purchase_receipts\/buyer_1__store_purchase_/);
+  await assert.rejects(
+    ()=>loadStoreUserPurchases(db,token,"123456",
+      btoa(JSON.stringify({uid:"victim",at:100000,id:"victim__store_purchase_000000000001"}))),
+    /invalid_store_receipt_cursor/);
+  assert.equal(queried.length,2);
+});
+test("579F invalid and absent receipt dates are not mistaken for financial totals",async()=>{
+  const db=dbFor();
+  db.runQuery=async()=>[
+    {id:"buyer_1__store_purchase_000000000001",data:{...receipt,acquiredAtMs:200}},
+    {id:"buyer_1__store_purchase_000000000002",data:{...receipt,acquiredAtMs:-1}},
+  ];
+  const result=await loadStoreUserPurchases(db,token,"123456");
+  assert.equal(result.receipts.length,1);
+  assert.equal(result.hasNextPage,false);
+  assert.ok(!("totalRevenue" in result));
+  assert.ok(!("netCoins" in result));
 });
