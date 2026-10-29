@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import {resolveStoreVisuals} from "./store-presentation.js";
 import { resolveRoomFollowTargets } from "./room-follow-lookup.js";
 import { roomEntryRestricted } from "./room-chat-restriction.js";
 import { loadUserLevelPolicy } from "./user-level-policy.js";
@@ -140,8 +141,11 @@ function roomRealtimeIdentityPresentation(
   publicProfile = {},
   user = {},
   levelMetadata = {},
+  storeVisuals = {},
 ) {
   const vipCosmetics = vipCosmeticsFromUser(user, Date.now());
+  const storeFrame=storeVisuals.frames;
+  const storeEntrance=storeVisuals.entranceEffects;
   return applyMysteriousIdentityPresentation(
     {
       displayName: clean(
@@ -156,31 +160,29 @@ function roomRealtimeIdentityPresentation(
       profileAvatarAsset: clean(
         publicProfile.profileAvatarAsset || user.profileAvatarAsset
       ),
-      activeProfileFrameAssetKey: clean(
-        publicProfile.activeProfileFrameAssetKey
-      ),
-      activeProfileFrameImageUrl: clean(
-        publicProfile.activeProfileFrameImageUrl
-      ),
-      activeProfileFrameExpiresAtMs: Math.max(
-        0,
-        Number(publicProfile.activeProfileFrameExpiresAtMs || 0),
-      ),
-      activeProfileFramePermanent:
-        publicProfile.activeProfileFramePermanent === true,
+      activeProfileFrameAssetKey: storeFrame?.assetKey ||
+        clean(publicProfile.activeProfileFrameAssetKey),
+      activeProfileFrameImageUrl: storeFrame?.imageUrl ||
+        clean(publicProfile.activeProfileFrameImageUrl),
+      activeProfileFrameExpiresAtMs: storeFrame
+        ? (storeFrame.expiresAtMs ?? 0)
+        : Math.max(0,Number(publicProfile.activeProfileFrameExpiresAtMs||0)),
+      activeProfileFramePermanent: storeFrame
+        ? storeFrame.expiresAtMs===null
+        : publicProfile.activeProfileFramePermanent === true,
       publicId: clean(publicProfile.publicId || user.publicId),
       wealthLevel: Math.max(0, Number(levelMetadata.wealthLevel || 0)),
       attractionLevel: Math.max(0, Number(levelMetadata.attractionLevel || 0)),
       gameLevel: Math.max(0, Number(levelMetadata.gameLevel || 0)),
       vipLevel: vipCosmetics.level,
-      entryEffectKey: vipCosmetics.keys.entryStrip,
+      entryEffectKey: storeEntrance?.assetKey || vipCosmetics.keys.entryStrip,
     },
     user,
   );
 }
 
 async function refreshRealtimeIdentity(env, db, roomId, uid) {
-  const [room, user, levelPolicy, publicProfile] = await Promise.all([
+  const [room, user, levelPolicy, publicProfile, storeVisuals] = await Promise.all([
     roomAdmissionCache.get(
       roomId,
       () => ticketFirestoreLimiter.run(() => db.get(`rooms/${roomId}`)),
@@ -190,6 +192,8 @@ async function refreshRealtimeIdentity(env, db, roomId, uid) {
     ticketFirestoreLimiter.run(() =>
       loadPublicProfilePresentation(db, uid)
     ),
+    ticketFirestoreLimiter.run(()=>
+      resolveStoreVisuals(db,uid).catch(()=>({}))),
   ]);
   if (!room.exists || room.data?.isActive === false) {
     throw new Error("room_unavailable");
@@ -202,6 +206,7 @@ async function refreshRealtimeIdentity(env, db, roomId, uid) {
     publicProfile,
     userData,
     levelMetadata,
+    storeVisuals,
   );
   const response = await roomObject(env, roomId).fetch(
     "https://room-realtime.internal/presence/identity",
@@ -523,7 +528,7 @@ export async function roomRealtime(request, env) {
 
       const db = firestoreClient(env);
       const uid = String(payload.sub || "");
-      const [room, user, ban, levelPolicy, publicProfile] =
+      const [room, user, ban, levelPolicy, publicProfile, storeVisuals] =
         await Promise.all([
           roomAdmissionCache.get(
             roomId,
@@ -537,6 +542,8 @@ export async function roomRealtime(request, env) {
           ticketFirestoreLimiter.run(() =>
             loadPublicProfilePresentation(db, uid)
           ),
+          ticketFirestoreLimiter.run(()=>
+            resolveStoreVisuals(db,uid).catch(()=>({}))),
         ]);
       if (!room.exists || room.data?.isActive === false) {
         return json(request, env, { ok: false, code: "room_unavailable" }, 404);
@@ -555,6 +562,7 @@ export async function roomRealtime(request, env) {
         publicProfile,
         profileData,
         levelMetadata,
+        storeVisuals,
       );
       const vipCosmetics = vipCosmeticsFromUser(profileData, Date.now());
       const roomType = clean(roomData.roomType || roomData.type || "personal");
