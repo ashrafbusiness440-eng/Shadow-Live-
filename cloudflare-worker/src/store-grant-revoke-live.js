@@ -42,7 +42,7 @@ export async function scrubRevokedStoreWaveSeat(db,roomId,uid,productId) {
         voiceWaveExpiresAtMs:0};
     });
     if(!changed){
-      await db.rollback(tx);open=false;return false;
+      await db.rollback(tx);open=false;return true;
     }
     await db.commit(tx,[db.writeUpdate(path,{seats},["seats"])]);
     open=false;
@@ -72,7 +72,8 @@ export async function refreshRevokedStoreGrantInLiveRoom(
   if(!locator.exists||!validRoom(roomId))
     return {status:"not_in_room"};
   const present=await isPresent(env.ROOM_REALTIME,roomId,uid);
-  if(present!==true)return {status:"not_in_room"};
+  if(present===false)return {status:"not_in_room"};
+  if(present!==true)return {status:"unavailable"};
   let identityRefreshed=false;
   let seatCleared=category!=="voiceWaves";
   let notified=false;
@@ -95,7 +96,9 @@ export async function refreshRevokedStoreGrantInLiveRoom(
         method:"POST",headers:{"content-type":"application/json"},
         body:JSON.stringify({roomId,uid,category}),
       });
-    notified=response.ok;
+    const confirmation=response.ok
+      ?await response.json().catch(()=>({})):{};
+    notified=response.ok && confirmation.present===true;
   }catch(_){}
   return {
     status:identityRefreshed&&notified&&seatCleared
