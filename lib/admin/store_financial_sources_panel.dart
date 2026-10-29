@@ -26,6 +26,10 @@ class _StoreFinancialSourcesPanelState
   bool _loading = false;
   int _pageNumber = 0;
   int _generation = 0;
+  int _coverageGeneration = 0;
+  bool _loadingCoverage = false;
+  Map<String, dynamic>? _coverage;
+  String? _coverageError;
 
   static const _labels = <String, String>{
     'operations': 'عمليات الشراء والتجديد',
@@ -38,6 +42,10 @@ class _StoreFinancialSourcesPanelState
     super.didUpdateWidget(oldWidget);
     if (widget.targetId != oldWidget.targetId) {
       _generation++;
+      _coverageGeneration++;
+      _loadingCoverage = false;
+      _coverage = null;
+      _coverageError = null;
       _page = null;
       _cursor = null;
       _error = null;
@@ -49,6 +57,7 @@ class _StoreFinancialSourcesPanelState
   @override
   void dispose() {
     _generation++;
+    _coverageGeneration++;
     super.dispose();
   }
 
@@ -62,6 +71,60 @@ class _StoreFinancialSourcesPanelState
       _error = null;
       _pageNumber = 0;
     });
+  }
+
+  Future<void> _loadCoverage() async {
+    if (_loadingCoverage) return;
+    final targetId = widget.targetId;
+    final generation = ++_coverageGeneration;
+    setState(() { _loadingCoverage = true; _coverageError = null; });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'financial_coverage', 'targetId': targetId,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200 || body is! Map ||
+          body['ok'] != true || body['searchedId'] != targetId ||
+          body['scope'] != 'one_buyer_indexed_counts' ||
+          body['countCap'] != 501 ||
+          body['counts'] is! Map ||
+          (body['counts'] as Map).length != 4 ||
+          !const ['receipts', 'operations', 'ledger', 'audit']
+            .every((key) => body['counts'][key] is int &&
+              body['counts'][key] >= 0 &&
+              body['counts'][key] <= 501) ||
+          body['cardinalitiesComparable'] is! bool ||
+          body['sourceCountsEqual'] is! bool ||
+          body['countMismatch'] is! bool ||
+          body['cappedSources'] is! List ||
+          body['recordsIndividuallyReconciled'] != false ||
+          body['partialEvidenceOnly'] != true ||
+          body['financialReportComplete'] != false ||
+          body['netRevenueCertified'] != false ||
+          body['refundSettlementCertified'] != false) {
+        throw const FormatException('invalid_financial_coverage');
+      }
+      if (!mounted || generation != _coverageGeneration ||
+          widget.targetId != targetId) return;
+      setState(() => _coverage = Map<String, dynamic>.from(body));
+    } catch (_) {
+      if (!mounted || generation != _coverageGeneration) return;
+      setState(() => _coverageError =
+        'تعذّر مطابقة أعداد المصادر. لا يوجد أي تعديل مالي.');
+    } finally {
+      if (mounted && generation == _coverageGeneration) {
+        setState(() => _loadingCoverage = false);
+      }
+    }
   }
 
   Future<void> _load({bool next = false}) async {
@@ -145,6 +208,40 @@ class _StoreFinancialSourcesPanelState
             'يكشف العمليات أو قيود الخصم أو سجلات التدقيق '
             'التي لا تملك أدلة شراء كاملة. حتى 10 سجلات بالصفحة. '
             'لا يمثّل إجمالي مبيعات المتجر أو تسوية الاستردادات.'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _loadingCoverage ? null : _loadCoverage,
+            icon: const Icon(Icons.rule_folder_outlined),
+            label: Text(_loadingCoverage
+              ? 'جارٍ فحص أعداد المصادر...'
+              : 'مقارنة أعداد الإيصالات والقيود لهذا الحساب'),
+          ),
+          if (_loadingCoverage) const LinearProgressIndicator(),
+          if (_coverageError != null)
+            Text(_coverageError!,
+              style: const TextStyle(color: Colors.orangeAccent)),
+          if (_coverage != null) ...[
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              for (final entry in const <String, String>{
+                'receipts': 'الإيصالات',
+                'operations': 'العمليات',
+                'ledger': 'قيود الكوينز',
+                'audit': 'سجل التدقيق',
+              }.entries)
+                Chip(label: Text(
+                  '${entry.value}: ${_coverage!['counts'][entry.key]}')),
+            ]),
+            Text(_coverage!['cardinalitiesComparable'] == false
+              ? 'وصل مصدر واحد أو أكثر إلى حد الفحص (501). '
+                'لا يمكن الجزم بمطابقة الأعداد؛ راجع الصفحات بالتفصيل.'
+              : _coverage!['countMismatch'] == true
+                ? 'يوجد اختلاف بعدد السجلات بين المصادر. '
+                  'يحتاج فحص العمليات والقيود بشكل مستقل.'
+                : 'الأعداد متساوية ضمن نطاق الحساب، '
+                  'لكن هذا وحده لا يثبت صحة كل عملية أو الإيرادات.'),
+            const Text('هذا فحص أعداد مفهرس ومحدود لحساب واحد فقط. '
+              'ليس تقريراً شاملاً للمتجر ولا إثباتاً لصافي الكوينز.'),
+          ],
           const SizedBox(height: 8),
           Wrap(spacing: 5, runSpacing: 4, children: [
             for (final entry in _labels.entries)
