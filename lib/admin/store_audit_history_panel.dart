@@ -18,7 +18,10 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
   String? _error;
   bool _loaded = false;
   bool _more = false;
+  bool _canViewOperations = false;
+  bool _moreOperations = false;
   List<Map<String, dynamic>> _entries = [];
+  List<Map<String, dynamic>> _operationEntries = [];
 
   @override
   void initState() {
@@ -52,11 +55,29 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
       if (raw.length > 50 || raw.any((entry) => entry is! Map)) {
         throw const FormatException('invalid_store_audit');
       }
+      // A Worker from an older deployment may not yet expose operations.
+      // In that case continue showing catalog history, never guess an
+      // Owner's permission from the Flutter client.
+      final canViewOperations = parsed['canViewOperations'] == true;
+      final rawOperations = parsed['operationEntries'];
+      if (canViewOperations &&
+          (rawOperations is! List || rawOperations.length > 50 ||
+              rawOperations.any((entry) => entry is! Map) ||
+              parsed['moreOperationsMayExist'] is! bool)) {
+        throw const FormatException('invalid_store_operation_audit');
+      }
       if (!mounted) return;
       setState(() {
         _entries = raw.map((e) =>
           Map<String, dynamic>.from(e as Map)).toList(growable: false);
         _more = parsed['moreMayExist'] as bool;
+        _canViewOperations = canViewOperations;
+        _moreOperations = canViewOperations &&
+            parsed['moreOperationsMayExist'] == true;
+        _operationEntries = canViewOperations
+            ? (rawOperations as List).map((entry) =>
+                Map<String, dynamic>.from(entry as Map)).toList(growable: false)
+            : [];
         _loaded = true;
       });
     } catch (error) {
@@ -94,6 +115,33 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
     ));
   }
 
+  String _operationName(String action) => switch (action) {
+    'grant' => 'منح منتج',
+    'revoke' => 'سحب منحة',
+    'purchase' => 'شراء منتج',
+    'renew' => 'تجديد منتج',
+    _ => 'عملية متجر',
+  };
+
+  Widget _operation(Map<String, dynamic> entry) {
+    final action = (entry['action'] ?? '').toString();
+    final at = DateTime.tryParse((entry['at'] ?? '').toString())?.toLocal();
+    final date = at == null ? 'وقت غير متاح'
+        : '${at.day}/${at.month}/${at.year}';
+    final amount = entry['priceCoins'];
+    return Card(child: ListTile(
+      leading: const Icon(Icons.receipt_long_outlined),
+      title: Text('${_operationName(action)} • $date'),
+      subtitle: Text(
+        'رقم المنتج: ${entry['productId']}\n'
+        'حساب المستفيد: ${entry['targetUid']}\n'
+        'بواسطة: ${entry['actorUid']}'
+        '${amount is int && amount > 0 ? ' • $amount كوينز' : ''}',
+      ),
+      isThreeLine: true,
+    ));
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -123,6 +171,27 @@ class _StoreAuditHistoryPanelState extends State<StoreAuditHistoryPanel> {
         child: Text('تم عرض 50 نتيجة كحد أقصى. '
             'هذه القائمة لا تعني أن جميع التعديلات القديمة معروضة.'),
       ),
+      if (_canViewOperations) ...[
+        const SizedBox(height: 12),
+        const Divider(),
+        const ListTile(
+          leading: Icon(Icons.admin_panel_settings_outlined),
+          title: Text('سجل عمليات المتجر'),
+          subtitle: Text('منح المنتجات وسحبها والشراء والتجديد. '
+              'للمالك فقط، عرض للقراءة من سجلات حقيقية. '
+              'لا يحتوي على بيانات المحفظة الخاصة.'),
+        ),
+        if (_loaded && _operationEntries.isEmpty)
+          const Card(child: ListTile(
+            title: Text('لا توجد عمليات متجر محفوظة في النتائج المعروضة.'),
+          )),
+        for (final entry in _operationEntries) _operation(entry),
+        if (_moreOperations) const Padding(
+          padding: EdgeInsets.all(8),
+          child: Text('يظهر حتى 50 سجل عملية. '
+              'قد توجد عمليات أقدم خارج النتائج الحالية.'),
+        ),
+      ],
     ],
   );
 }
