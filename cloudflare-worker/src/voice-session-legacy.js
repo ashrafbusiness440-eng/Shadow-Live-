@@ -197,6 +197,26 @@ function defaultCosmeticAssetKey(type,id){
   const safeId=clean(id).replace(/[^A-Za-z0-9_.-]/g,"_");
   return safeId?"cosmetics."+clean(type)+"."+safeId:"";
 }
+// Transaction-bound adaptation of the existing Store resolver. A seat receives
+// only the owner's equipped/published .visual, never the client's asset name.
+// One equipment read, and at most one entitlement + Studio read if selected.
+export async function verifiedStoreSeatWave(db,tx,uid,nowMs=Date.now()){
+  const reader={
+    async get(path){
+      const parts=path.split("/");
+      if(![2,4].includes(parts.length)||
+          parts.some(part=>!/^[A-Za-z0-9_.-]+$/.test(part)))
+        throw Error("invalid_store_visual_path");
+      let ref=db.collection(parts[0]).doc(parts[1]);
+      if(parts.length===4)ref=ref.collection(parts[2]).doc(parts[3]);
+      const snap=await tx.get(ref);
+      return {exists:snap.exists,data:snap.exists?(snap.data()||{}):null};
+    },
+  };
+  const visuals=await resolveStoreVisuals(reader,uid,nowMs,["voiceWaves"]);
+  return visuals.voiceWaves||null;
+}
+
 async function activeCosmetics(db,uid,types,tx=null){
   if(!uid||!Array.isArray(types)||types.length===0)return {};
   const rootRef=db.collection("user_rewards").doc(uid);
@@ -2226,6 +2246,10 @@ export async function roomSeatAction(db,uid,body){
       );
       const frame=cosmetics.frame||{};
       const voiceWave=cosmetics.voice_wave||{};
+      // Preserve privacy and existing reward/VIP wave fallback. Store reads
+      // are bounded within the very same room seat transaction.
+      const storeWave=mysteriousActive?null:
+        await verifiedStoreSeatWave(db,tx,uid).catch(()=>null);
       const vipCosmetics=vipCosmeticsFromUser(actor,Date.now());
       const vipExpiryMs=timestampToEpochMs(actor.vipExpiresAt);
       const selectedVipFrameLevel=Math.max(
@@ -2244,11 +2268,14 @@ export async function roomSeatAction(db,uid,body){
         ?Number(frame.expiresAtMs||0)
         :vipExpiryMs;
       const vipWaveAssetKey=vipCosmetics.keys.audioWave;
-      const effectiveWaveAssetKey=clean(voiceWave.assetKey)||vipWaveAssetKey;
-      const effectiveWaveImageUrl=clean(voiceWave.imageUrl);
-      const effectiveWaveExpiresAtMs=clean(voiceWave.assetKey)||clean(voiceWave.imageUrl)
-        ?Number(voiceWave.expiresAtMs||0)
-        :vipExpiryMs;
+      const effectiveWaveAssetKey=
+        storeWave?.assetKey||clean(voiceWave.assetKey)||vipWaveAssetKey;
+      const effectiveWaveImageUrl=
+        storeWave?.imageUrl||clean(voiceWave.imageUrl);
+      const effectiveWaveExpiresAtMs=storeWave
+        ?(storeWave.expiresAtMs??Number.MAX_SAFE_INTEGER)
+        :(clean(voiceWave.assetKey)||clean(voiceWave.imageUrl)
+          ?Number(voiceWave.expiresAtMs||0):vipExpiryMs);
       const existingSeat=currentSeatIndex>=0?seats[currentSeatIndex]:null;
       const keepMicActive=
         !roomMicRestricted(actor) &&
