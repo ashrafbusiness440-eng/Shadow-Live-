@@ -557,11 +557,24 @@ test("578D never approves missing audit or mismatched operation and receipt",asy
   assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
     db,{buyerUid:uid,operationId:key}),
   {ok:false,code:"incomplete_evidence"});
+  const auditPath="admin_audit_logs/store_purchase_"+uid+"__"+key;
+  await firestore.doc(auditPath).set({
+    actorUid:uid,targetType:"store_entitlement",
+    targetId:"user_store_entitlements/"+uid+"/items/"+productId,
+    action:"purchaseStoreItem",operationId:key,priceCoins:PRICE,
+    createdAt:new Date(NOW),
+  });
   await firestore.doc("store_purchase_receipts/"+uid+"__"+key)
     .update({priceCoins:PRICE+1});
   assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
     db,{buyerUid:uid,operationId:key}),
-  {ok:false,code:"incomplete_evidence"});
+  {ok:false,code:"receipt_mismatch"});
+  await firestore.doc("store_purchase_receipts/"+uid+"__"+key)
+    .update({priceCoins:PRICE});
+  await firestore.doc(auditPath).update({actorUid:"another_owner"});
+  assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
+    db,{buyerUid:uid,operationId:key}),
+  {ok:false,code:"audit_mismatch"});
   assert.deepEqual(await certifyStorePurchaseEvidenceOffline(
     db,{buyerUid:"unrelated_account",operationId:key}),
   {ok:false,code:"not_found"});
