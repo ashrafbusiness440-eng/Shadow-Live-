@@ -21,6 +21,8 @@ class _StorePurchaseHistoryPanelState
   final _id = TextEditingController();
   bool _loading = false;
   bool _loadingMore = false;
+  bool _reviewingBatch = false;
+  String? _batchNote;
   String? _nextCursor;
   String? _error;
   String? _target;
@@ -60,6 +62,8 @@ class _StorePurchaseHistoryPanelState
       _more = false;
       _nextCursor = null;
       _loadingMore = false;
+      _reviewingBatch = false;
+      _batchNote = null;
       _canVerifyReceipts = false;
       _verifyingOperationId = null;
       _evidenceByOperation.clear();
@@ -126,7 +130,7 @@ class _StorePurchaseHistoryPanelState
   }
 
   Future<void> _loadMore() async {
-    if (_loading || _loadingMore || !_canVerifyReceipts ||
+    if (_loading || _loadingMore || _reviewingBatch || !_canVerifyReceipts ||
         _nextCursor == null || _target == null ||
         _verifyingOperationId != null) return;
     final target = _target!;
@@ -233,7 +237,7 @@ class _StorePurchaseHistoryPanelState
   }
 
   Future<void> _verifyEvidence(String operationId, String productId) async {
-    if (_loading || _verifyingOperationId != null || !_canVerifyReceipts ||
+    if (_loading || _reviewingBatch || _verifyingOperationId != null || !_canVerifyReceipts ||
         _target == null) return;
     final target = _target!;
     final currentGeneration = _generation;
@@ -278,6 +282,75 @@ class _StorePurchaseHistoryPanelState
     } finally {
       if (mounted && currentGeneration == _generation) {
         setState(() => _verifyingOperationId = null);
+      }
+    }
+  }
+
+  Future<void> _reviewFirstFive() async {
+    if (_loading || _loadingMore || _reviewingBatch ||
+        _verifyingOperationId != null || !_canVerifyReceipts ||
+        _target == null) return;
+    final selected = _receipts.where((row) =>
+      row['operationId'] is String && row['productId'] is String)
+        .take(5).map((row) => {
+          'operationId': row['operationId'],
+          'productId': row['productId'],
+        }).toList(growable: false);
+    if (selected.isEmpty) return;
+    final target = _target!;
+    final currentGeneration = _generation;
+    setState(() { _reviewingBatch = true; _batchNote = null; });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'review_selected', 'targetId': target,
+          'operations': selected,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200 || body is! Map ||
+          body['ok'] != true ||
+          body['scope'] != 'selected_operations_only' ||
+          body['financialReportComplete'] != false ||
+          body['netRevenueCertified'] != false ||
+          body['inspected'] != selected.length ||
+          body['evidence'] is! List ||
+          (body['evidence'] as List).length != selected.length) {
+        throw const FormatException('invalid_store_review');
+      }
+      final expected = selected.map((row) => row['operationId']).toSet();
+      final results = body['evidence'] as List;
+      if (results.any((x) => x is! Map ||
+          !expected.contains(x['operationId']) ||
+          x['verified'] is! bool)) {
+        throw const FormatException('invalid_store_review');
+      }
+      if (!mounted || currentGeneration != _generation ||
+          _target != target) return;
+      setState(() {
+        for (final item in results) {
+          final result = Map<String, dynamic>.from(item as Map);
+          _evidenceByOperation[result['operationId'] as String] = result;
+        }
+        _batchNote = 'تم فحص أدلة ${body['inspected']} عمليات محددة؛ '
+          'المتطابقة: ${body['verified']}، '
+          'تحتاج مراجعة: ${body['needsReview']}. '
+          'ليست هذه إيرادات شاملة ولا تسوية مالية.';
+      });
+    } catch (_) {
+      if (!mounted || currentGeneration != _generation) return;
+      setState(() => _batchNote =
+        'تعذّر فحص الدفعة. لم تتغير أرصدة المستخدمين أو بيانات الشراء.');
+    } finally {
+      if (mounted && currentGeneration == _generation) {
+        setState(() => _reviewingBatch = false);
       }
     }
   }
@@ -386,6 +459,22 @@ class _StorePurchaseHistoryPanelState
         const SizedBox(height: 12),
         Text('السجل: ${_receipts.length} • الحساب: $_target'),
         if (_receipts.isNotEmpty) _receiptSampleSummary(),
+        if (_canVerifyReceipts && _receipts.any((row) =>
+            row['operationId'] is String && row['productId'] is String))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: OutlinedButton.icon(
+              onPressed: _loading || _loadingMore || _reviewingBatch ||
+                  _verifyingOperationId != null ? null : _reviewFirstFive,
+              icon: const Icon(Icons.fact_check_outlined),
+              label: Text(_reviewingBatch
+                  ? 'جارٍ فحص الأدلة...' : 'فحص أدلة أول 5 عمليات معروضة'),
+            ),
+          ),
+        if (_batchNote != null) Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(_batchNote!),
+        ),
         if (_receipts.isEmpty) const Card(child: ListTile(
           title: Text('لا توجد إيصالات شراء حقيقية محفوظة لهذا الحساب.'),
         )),
