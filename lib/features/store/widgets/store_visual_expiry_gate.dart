@@ -21,6 +21,7 @@ class StoreVisualExpiryGate extends StatefulWidget {
 
 class _StoreVisualExpiryGateState extends State<StoreVisualExpiryGate> {
   Timer? _deadline;
+  bool _deadlineReached = false;
 
   @override
   void initState() {
@@ -37,13 +38,17 @@ class _StoreVisualExpiryGateState extends State<StoreVisualExpiryGate> {
   void _schedule() {
     _deadline?.cancel();
     _deadline = null;
+    _deadlineReached = false;
     final timestamp = widget.expiresAtMs;
     if (timestamp == null) return; // Permanent verified item.
     final remaining = timestamp - DateTime.now().millisecondsSinceEpoch;
-    if (remaining <= 0) return;
+    if (remaining <= 0) {
+      _deadlineReached = true;
+      return;
+    }
     // One scheduled repaint, not a timer loop or background API polling.
     _deadline = Timer(Duration(milliseconds: remaining), () {
-      if (mounted) setState(() {});
+      if (mounted) setState(() => _deadlineReached = true);
     });
   }
 
@@ -56,8 +61,8 @@ class _StoreVisualExpiryGateState extends State<StoreVisualExpiryGate> {
   @override
   Widget build(BuildContext context) {
     final timestamp = widget.expiresAtMs;
-    final active =
-        timestamp == null || timestamp > DateTime.now().millisecondsSinceEpoch;
+    final active = !_deadlineReached &&
+        (timestamp == null || timestamp > DateTime.now().millisecondsSinceEpoch);
     return widget.builder(context, active);
   }
 }
