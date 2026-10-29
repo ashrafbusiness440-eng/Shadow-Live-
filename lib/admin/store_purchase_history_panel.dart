@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'store_receipt_sample_summary.dart';
 
 /// View-only server-authorized receipt history for one account at a time.
 class StorePurchaseHistoryPanel extends StatefulWidget {
@@ -120,6 +121,38 @@ class _StorePurchaseHistoryPanelState
     _ => 'غير معروف',
   };
 
+  Widget _receiptSampleSummary() {
+    final sample = StoreReceiptSampleSummary.fromEntries(_receipts);
+    Widget stat(String label, int value) => Chip(label: Text('$label: $value'));
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ملخص حالات الإيصالات المعروضة',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          const Text('لهذا الحساب فقط، من النتائج المسترجعة (حتى 50 إيصالاً). '
+              'هذه أعداد حالات، وليست إجمالي مبيعات أو إيرادات أو '
+              'إثباتاً لصحة رصيد الكوينز. وقد توجد إيصالات أخرى.'),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            stat('إيصالات تمت مراجعتها', sample.inspected),
+            stat('تم التسليم', sample.delivered),
+            stat('قيد التنفيذ', sample.pending),
+            stat('تعذّر التسليم', sample.failed),
+            stat('حالة تسليم غير معروفة', sample.unknownDelivery),
+            stat('طلبات استرداد', sample.refundRequested),
+            stat('تم الاسترداد', sample.refunded),
+            stat('استرداد مرفوض', sample.refundRejected),
+            stat('حالة استرداد غير معروفة', sample.unknownRefund),
+            stat('تحتاج مراجعة حالة', sample.reviewFlagged),
+          ]),
+        ],
+      ),
+    ));
+  }
+
   Widget _record(Map<String, dynamic> item) => Card(
     child: ListTile(
       leading: const Icon(Icons.receipt_long_outlined),
@@ -173,6 +206,7 @@ class _StorePurchaseHistoryPanelState
       if (_target != null) ...[
         const SizedBox(height: 12),
         Text('السجل: ${_receipts.length} • الحساب: $_target'),
+        if (_receipts.isNotEmpty) _receiptSampleSummary(),
         if (_receipts.isEmpty) const Card(child: ListTile(
           title: Text('لا توجد إيصالات شراء حقيقية محفوظة لهذا الحساب.'),
         )),
