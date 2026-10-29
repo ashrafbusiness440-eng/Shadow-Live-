@@ -148,8 +148,14 @@ class _StoreGrantRevokeActionState extends State<StoreGrantRevokeAction> {
       _pendingOperationId = null;
       _pendingSignature = null;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('تم سحب المنحة وتسجيل العملية بنجاح.'),
+        final liveStatus = (result['liveRefresh'] ?? '').toString();
+        final pendingLive = liveStatus == 'pending_refresh' ||
+            liveStatus == 'unavailable';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(pendingLive
+              ? 'تم سحب المنحة. تحديث مؤثراتها داخل الغرفة لم يتأكد بعد؛ '
+                  'سيُعاد التحقق عند إعادة الدخول.'
+              : 'تم سحب المنحة وتسجيل العملية بنجاح.'),
         ));
       }
     } catch (error) {
