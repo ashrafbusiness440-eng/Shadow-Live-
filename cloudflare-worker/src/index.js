@@ -42,6 +42,7 @@ import { publicStoreCatalog } from "./public-store-catalog.js";
 import { storePurchase, myStoreItems } from "./store-entitlements.js";
 import { storePurchaseReceiptStatus } from "./store-purchase-receipt-status.js";
 import { storeEquip } from "./store-equip.js";
+import { storePresentation } from "./store-presentation.js";
 import { manageStoreInventory } from "./manage-store-inventory.js";
 import { manageStoreAudit } from "./manage-store-audit.js";
 import { manageStorePurchases } from "./manage-store-purchases.js";
@@ -139,6 +140,9 @@ async function dispatchRequest(request, env, ctx) {
   }
   if (url.pathname === "/api/store-purchase-status") {
     return storePurchaseReceiptStatus(request, env);
+  }
+  if (url.pathname === "/api/store-presentation") {
+    return storePresentation(request, env);
   }
   if (url.pathname === "/api/store-equip") {
     return storeEquip(request, env);
