@@ -592,6 +592,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     frameScale: 1.12,
                     protectAvatarCenter: true,
                     userId: uid,
+                    verifyStoreFrame: true,
                     backgroundColor: const Color(0xFF171D31),
                     placeholderColor: Colors.white54,
                     fallbackProfile: profile,
