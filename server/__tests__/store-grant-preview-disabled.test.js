@@ -116,6 +116,31 @@ test("preview uses public ID, published image, scoped entitlement; never sends i
   assert.equal(already.canGrant,false);
 });
 
+test("Owner preview exposes confirmation only with Worker release flag and eligibility",async()=>{
+  const owner=mockDb({...viewer,role:"owner"});
+  const ready=await previewStoreGrant(
+    owner,token,"123456","200001",Date.now(),true);
+  assert.equal(ready.grantEnabled,true);
+  assert.equal(ready.canGrant,true);
+  assert.equal(ready.alreadyHasProduct,false);
+  const viewerDb=mockDb();
+  const viewerPreview=await previewStoreGrant(
+    viewerDb,token,"123456","200001",Date.now(),true);
+  assert.equal(viewerPreview.grantEnabled,true);
+  assert.equal(viewerPreview.canGrant,false,
+    "previewStoreGrants never grants issue permission");
+  owner.docs.set("user_store_entitlements/target_1/items/200001",{
+    status:"revoked",ownerUid:"target_1",
+  });
+  const existing=await previewStoreGrant(
+    owner,token,"123456","200001",Date.now(),true);
+  assert.equal(existing.canGrant,false);
+  const deleted=mockDb({...viewer,role:"owner"});
+  deleted.docs.get("users/target_1").authDeleted=true;
+  await assert.rejects(()=>previewStoreGrant(
+    deleted,token,"123456","200001",Date.now(),true),/target_not_active/);
+});
+
 test("grant preview blocks hidden, scheduled, expired or unpublished products",async()=>{
   for(const [mutation,code] of [
     [{enabled:false},"store_product_unavailable"],
