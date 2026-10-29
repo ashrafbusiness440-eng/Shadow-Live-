@@ -85,4 +85,7 @@ test("Shadow Control only offers Owner grant confirmation behind verified previe
   assert.match(ui,/'confirmation': 'confirmed'/);
   assert.match(ui,/_pendingOperationId \?\?= _newOperationId\(\)/);
   assert.match(ui,/لن يتم خصم كوينز/);
+  assert.match(ui,/reason.length < 5/);
+  assert.match(ui,/operationId\x27: operationId/);
+  assert.match(ui,/if \(_issuing\) const LinearProgressIndicator/);
 });
