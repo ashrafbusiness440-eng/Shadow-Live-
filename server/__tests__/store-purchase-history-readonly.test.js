@@ -5,6 +5,7 @@ import {
   canViewStorePurchases,projectStorePurchaseReceipt,loadStoreUserPurchases,
   verifyStorePurchaseEvidenceForOwner,reviewStorePurchaseEvidenceBatchForOwner,
   loadStoreUserFinancialEvidencePage,loadStoreFinancialSourcePageForOwner,
+  loadStoreFinancialCoverageForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
@@ -756,4 +757,50 @@ test("604 malformed source page cannot falsely claim the next page was audited",
   assert.equal(report.paginationBlocked,true);
   assert.equal(report.nextCursor,null);
   assert.equal(report.financialReportComplete,false);
+});
+
+test("605 one-buyer Store source coverage is Owner/recent-auth guarded",async()=>{
+  const db=ownerEvidenceDb();
+  let counts=0;
+  db.readStoreFinancialCoverageCounts=async(uid)=>{
+    counts++;
+    assert.equal(uid,"buyer_1");
+    return {ok:true,scope:"one_buyer_indexed_counts",
+      counts:{receipts:1,operations:1,ledger:1,audit:1},
+      countCap:501,cappedSources:[],
+      cardinalitiesComparable:true,sourceCountsEqual:true,
+      countMismatch:false,recordsIndividuallyReconciled:false,
+      partialEvidenceOnly:true,financialReportComplete:false,
+      netRevenueCertified:false,refundSettlementCertified:false};
+  };
+  const result=await loadStoreFinancialCoverageForOwner(db,token,"123456");
+  assert.equal(result.ok,true);
+  assert.equal(result.searchedId,"123456");
+  assert.equal(result.countMismatch,false);
+  assert.equal(result.recordsIndividuallyReconciled,false);
+  assert.equal(result.financialReportComplete,false);
+  assert.equal(result.netRevenueCertified,false);
+  assert.equal(counts,1);
+  assert.deepEqual(db.reads,[
+    "users/auditor_1","public_ids/123456","users/buyer_1",
+  ]);
+  for(const actor of [viewer,{role:"user",accountStatus:"active"},
+    {role:"admin",adminEnabled:true,capabilities:["viewStorePurchases"]}]){
+    const staff=dbFor(actor);
+    staff.readStoreFinancialCoverageCounts=async()=>{
+      throw Error("delegated_source_counts_must_not_run");
+    };
+    await assert.rejects(()=>
+      loadStoreFinancialCoverageForOwner(staff,token,"123456"),/forbidden/);
+    assert.deepEqual(staff.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  stale.readStoreFinancialCoverageCounts=async()=>{
+    throw Error("stale_source_counts_must_not_run");
+  };
+  await assert.rejects(()=>loadStoreFinancialCoverageForOwner(
+    stale,{...token,auth_time:1},"123456"),/recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+  assert.equal(db.commit instanceof Function,true);
+  assert.equal(db.list instanceof Function,true);
 });
