@@ -34,6 +34,7 @@ void main() {
       }),
     );
     final catalog = await service.load();
+    expect(catalog.purchasingEnabled, isFalse);
     expect(catalog.items.single.id, '200001');
     expect(catalog.items.single.priceCoins, 1200);
     expect(catalog.items.single.minWealthLevel, 15);
@@ -41,7 +42,7 @@ void main() {
     service.close();
   });
 
-  test('public store rejects purchase activation from response', () async {
+  test('public store accepts server-advertised purchase availability', () async {
     final service = PublicStoreCatalogService(
       apiBase: 'https://example.com/api',
       client: MockClient((request) async =>
@@ -49,6 +50,19 @@ void main() {
           'ok': true, 'purchasingEnabled': true,
           'categories': {}, 'items': [],
         }), 200)),
+    );
+    final result = await service.load();
+    expect(result.purchasingEnabled, isTrue);
+    service.close();
+  });
+
+  test('public store rejects malformed purchase availability', () async {
+    final service = PublicStoreCatalogService(
+      apiBase: 'https://example.com/api',
+      client: MockClient((request) async => http.Response(jsonEncode({
+        'ok': true, 'purchasingEnabled': 'true',
+        'categories': {}, 'items': [],
+      }), 200)),
     );
     await expectLater(service.load(), throwsFormatException);
     service.close();
