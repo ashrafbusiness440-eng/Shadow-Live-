@@ -460,5 +460,37 @@ jobs:
             }
           }
 
+          // Store purchase history must not be considered deploy-ready merely
+          // because the Admin API accepted creation of a composite index.
+          // This runs ONLY on index-sync deploys, not in a Worker request.
+          const storeIndex=byCollection.get('store_purchase_receipts')
+            ?.find((item) => fieldSignature(item.fields) ===
+              'buyerUid:order:ASCENDING|acquiredAtMs:order:DESCENDING');
+          if(storeIndex){
+            const group='store_purchase_receipts';
+            const parent='projects/' + projectId +
+              '/databases/(default)/collectionGroups/' + group;
+            const url='https://firestore.googleapis.com/v1/projects/' +
+              encodeURIComponent(projectId) +
+              '/databases/(default)/collectionGroups/' + group;
+            const signature=indexSignature(storeIndex);
+            let ready=false;
+            for(let attempt=0;attempt<24;attempt++){
+              const matched=(await listIndexes(url)).find(item =>
+                String(item?.name || '').startsWith(parent + '/indexes/') &&
+                indexSignature(item) === signature);
+              if(matched?.state==='READY'){
+                console.log('Store purchase receipts index READY:', matched.name);
+                ready=true;
+                break;
+              }
+              if(matched?.state==='NEEDS_REPAIR')
+                throw new Error('store_receipt_index_needs_repair');
+              if(attempt<23)
+                await new Promise(resolve=>setTimeout(resolve,5000));
+            }
+            if(!ready)throw new Error('store_receipt_index_not_ready');
+          }
+
           console.log('Firestore composite index sync completed.');
           NODE
