@@ -149,7 +149,7 @@ test("entitlement lifecycle is read-only, time-aware and revocation wins over ex
     {...ent,status:"forged"},"user_one",5000),null);
 });
 
-test("user-owned Store items display the server lifecycle without enabling equipment", () => {
+test("user-owned Store items show equipment only after server confirmation", () => {
   const model=readFileSync(new URL(
     "../../lib/features/store/services/store_owned_items_service.dart",
     import.meta.url),"utf8");
@@ -159,9 +159,12 @@ test("user-owned Store items display the server lifecycle without enabling equip
   assert.match(model,/final String lifecycleState;/);
   assert.match(model,/value\['lifecycleState'\]/);
   assert.match(model,/invalid_store_entitlement_state/);
-  assert.match(screen,/'active' => 'صالح للاستخدام'/);
+  assert.match(screen,/'active' => item.equipped/);
+  assert.match(screen,/إلغاء التجهيز/);
+  assert.match(screen,/Future<void> _setEquipped/);
+  assert.match(model,/Future<void> setEquipped/);
   assert.match(screen,/'expired' => 'منتهي الصلاحية'/);
   assert.match(screen,/'revoked' => 'ملغى'/);
-  assert.match(screen,/تجهيز منتجات المتجر سيُتاح بعد اكتمال/);
+  assert.match(screen,/يمكن تجهيز منتج واحد من كل فئة/);
   assert.doesNotMatch(screen,/storePurchase\(|grantStoreItem\(|equipStoreItem\(/);
 });
