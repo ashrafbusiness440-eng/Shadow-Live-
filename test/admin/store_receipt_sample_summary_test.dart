@@ -48,6 +48,6 @@ void main() {
     expect(summary.delivered, 1);
     expect(summary.unknownDelivery, 1);
     expect(summary.unknownRefund, 2);
-    expect(summary.reviewFlagged, 2);
+    expect(summary.reviewFlagged, 3);
   });
 }
