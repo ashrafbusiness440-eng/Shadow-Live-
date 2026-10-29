@@ -175,7 +175,7 @@ function roomRealtimeIdentityPresentation(
           : 0,
       activeProfileFramePermanent: storeFrame
         ? storeFrame.expiresAtMs===null
-        : safeLegacyFrameKey &&
+        : Boolean(safeLegacyFrameKey) &&
           publicProfile.activeProfileFramePermanent === true,
       publicId: clean(publicProfile.publicId || user.publicId),
       wealthLevel: Math.max(0, Number(levelMetadata.wealthLevel || 0)),
