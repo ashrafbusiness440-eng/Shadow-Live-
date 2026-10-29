@@ -509,7 +509,9 @@ class _StoreCatalogControlPageState extends State<StoreCatalogControlPage> {
                       selectedCategory == 'chatBubbles' ||
                       selectedCategory == 'nameEffects' ||
                       selectedCategory == 'profileCards' ||
-                      selectedCategory == 'voiceWaves')
+                      selectedCategory == 'voiceWaves' ||
+                      selectedCategory == 'roomFrames' ||
+                      selectedCategory == 'backgrounds')
                     FutureBuilder<Uri?>(
                       future: ShadowAssetRegistry.remoteUrl(_visualAssetKey(id)),
                       builder: (context, snapshot) => ListTile(

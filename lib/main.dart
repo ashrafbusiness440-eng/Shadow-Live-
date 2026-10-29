@@ -77,6 +77,7 @@ import 'features/games/services/game_runtime_service.dart';
 import 'features/games/widgets/room_game_overlay.dart';
 import 'features/profile/screens/my_items_screen.dart';
 import 'features/store/screens/public_store_catalog_screen.dart';
+import 'features/store/services/store_visual_presentation_service.dart';
 import 'features/agency/screens/public_agency_page.dart';
 import 'features/agency/services/agency_room_link.dart';
 import 'features/agency/widgets/agency_room_image_crop_sheet.dart';
@@ -5833,6 +5834,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     required String roomTitle,
     required String roomPublicId,
     required RoomInsights? insights,
+    StoreVerifiedFrame? storeRoomFrame,
   }) {
     final accent = _roomIdentityAccent;
     final category = _roomCategoryLabel;
@@ -5854,28 +5856,47 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             children: [
               GestureDetector(
                 onTap: _showRoomInfoSheet,
-                child: Container(
-                  padding: const EdgeInsets.all(1.5),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: accent.withValues(alpha: .72),
-                    ),
-                  ),
-                  child: CircleAvatar(
-                    radius: 20.5,
-                    backgroundColor: const Color(0xFF171D2B),
-                    backgroundImage: _roomHeaderImageUrl.isEmpty
-                        ? null
-                        : NetworkImage(_roomHeaderImageUrl),
-                    child: _roomHeaderImageUrl.isEmpty
-                        ? Icon(
-                            _isOfficialRoom
-                                ? Icons.shield_rounded
-                                : Icons.person_rounded,
-                            color: accent.withValues(alpha: .8),
-                          )
-                        : null,
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(1.5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: accent.withValues(alpha: .72),
+                          ),
+                        ),
+                        child: CircleAvatar(
+                          radius: 20.5,
+                          backgroundColor: const Color(0xFF171D2B),
+                          backgroundImage: _roomHeaderImageUrl.isEmpty
+                              ? null
+                              : NetworkImage(_roomHeaderImageUrl),
+                          child: _roomHeaderImageUrl.isEmpty
+                              ? Icon(
+                                  _isOfficialRoom
+                                      ? Icons.shield_rounded
+                                      : Icons.person_rounded,
+                                  color: accent.withValues(alpha: .8),
+                                )
+                              : null,
+                        ),
+                      ),
+                      if (storeRoomFrame != null && storeRoomFrame.activeNow)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CosmeticAssetVisual(
+                              assetKey: storeRoomFrame.assetKey,
+                              imageUrl: storeRoomFrame.imageUrl,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -6878,6 +6899,39 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   // A room gets at most one refresh of the default asset, not a network
   // lookup per frame or per keyboard/seat repaint.
   Future<Uri?>? _defaultRoomBackgroundFuture;
+  Future<Map<String, StoreVerifiedFrame>>? _storeRoomDecorationsFuture;
+  String _storeRoomDecorationsScope = '';
+
+  // One read-only authenticated request per joined room/owner/viewer, shared
+  // between the header frame and the background. No per-seat or repaint reads.
+  Future<Map<String, StoreVerifiedFrame>>? _verifiedStoreRoomDecorations(
+    String ownerUid,
+  ) {
+    final viewerUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (const bool.fromEnvironment('E2E_ROOM_TEST') ||
+        !_voiceSession.active || _voiceJoining || _isOfficialRoom ||
+        ownerUid.isEmpty || viewerUid.isEmpty) {
+      return null;
+    }
+    final scope = '${_voiceSession.roomId}|$ownerUid|$viewerUid';
+    if (_storeRoomDecorationsScope != scope ||
+        _storeRoomDecorationsFuture == null) {
+      _storeRoomDecorationsScope = scope;
+      _storeRoomDecorationsFuture = _loadVerifiedRoomDecorations(ownerUid);
+    }
+    return _storeRoomDecorationsFuture;
+  }
+
+  Future<Map<String, StoreVerifiedFrame>> _loadVerifiedRoomDecorations(
+    String uid,
+  ) async {
+    final service = StoreVisualPresentationService();
+    try {
+      return await service.loadRoomDecorations(uid);
+    } finally {
+      service.close();
+    }
+  }
 
   Widget _buildRoomBackground({
     required String rewardImageUrl,
@@ -7020,9 +7074,25 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   return Stack(
                     children: [
                       Positioned.fill(
-                        child: _buildRoomBackground(
-                          rewardImageUrl: rewardBackgroundImageUrl,
-                          rewardAssetKey: rewardBackgroundAssetKey,
+                        child: FutureBuilder<Map<String, StoreVerifiedFrame>>(
+                          future: _verifiedStoreRoomDecorations(ownerUid),
+                          builder: (context, snapshot) {
+                            final visual = snapshot.data?['backgrounds'];
+                            final fallback = _buildRoomBackground(
+                              rewardImageUrl: rewardBackgroundImageUrl,
+                              rewardAssetKey: rewardBackgroundAssetKey,
+                            );
+                            if (visual == null || !visual.activeNow) {
+                              return fallback;
+                            }
+                            return Image.network(
+                              visual.imageUrl,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null ? child : fallback,
+                              errorBuilder: (_, __, ___) => fallback,
+                            );
+                          },
                         ),
                       ),
                       Positioned.fill(
@@ -7048,10 +7118,14 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                           child: Column(
                             children: [
-                              _buildRoomHeader(
-                                roomTitle: roomTitle,
-                                roomPublicId: roomPublicId,
-                                insights: insights,
+                              FutureBuilder<Map<String, StoreVerifiedFrame>>(
+                                future: _verifiedStoreRoomDecorations(ownerUid),
+                                builder: (context, snapshot) => _buildRoomHeader(
+                                  roomTitle: roomTitle,
+                                  roomPublicId: roomPublicId,
+                                  insights: insights,
+                                  storeRoomFrame: snapshot.data?['roomFrames'],
+                                ),
                               ),
                               const SizedBox(height: 6),
                               _buildRoomInsightsBar(),
