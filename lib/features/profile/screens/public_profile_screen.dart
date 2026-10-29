@@ -27,6 +27,7 @@ import '../widgets/registry_badge.dart';
 import '../widgets/user_level_badges.dart';
 import '../widgets/profile_avatar_with_frame.dart';
 import '../widgets/profile_identity_info_line.dart';
+import '../widgets/store_verified_profile_card_backdrop.dart';
 
 class PublicProfileScreen extends StatefulWidget {
   const PublicProfileScreen({super.key, required this.userId});
@@ -727,7 +728,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             : null,
       ),
       padding: const EdgeInsets.fromLTRB(18, 92, 18, 18),
-      child: Column(
+      child: StoreVerifiedProfileCardBackdrop(
+        userId: widget.userId,
+        child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           ProfileAvatarWithFrame(
@@ -775,6 +778,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           ],
           _publicLevelBadges(),
         ],
+        ),
       ),
     ));
   }
