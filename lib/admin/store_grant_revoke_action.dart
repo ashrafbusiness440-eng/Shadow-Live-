@@ -28,6 +28,7 @@ class StoreGrantRevokeAction extends StatefulWidget {
 
 class _StoreGrantRevokeActionState extends State<StoreGrantRevokeAction> {
   bool _sending = false;
+  bool _dialogOpen = false;
   String? _pendingSignature;
   String? _pendingOperationId;
 
@@ -50,13 +51,16 @@ class _StoreGrantRevokeActionState extends State<StoreGrantRevokeAction> {
   }
 
   Future<void> _confirmAndRevoke() async {
-    if (_sending || widget.item['source'] != 'admin_grant' ||
+    if (_sending || _dialogOpen || widget.item['source'] != 'admin_grant' ||
         widget.item['lifecycleState'] == 'revoked') return;
     final productId = widget.item['productId']?.toString() ?? '';
     if (!RegExp(r'^[1-9][0-9]{5,8}$').hasMatch(productId)) return;
     final targetUid = widget.targetUid;
     final reasonInput = TextEditingController();
-    final reason = await showDialog<String>(
+    _dialogOpen = true;
+    String? reason;
+    try {
+      reason = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('سحب منحة المتجر'),
@@ -90,7 +94,10 @@ class _StoreGrantRevokeActionState extends State<StoreGrantRevokeAction> {
         ],
       ),
     );
-    reasonInput.dispose();
+    } finally {
+      _dialogOpen = false;
+      reasonInput.dispose();
+    }
     if (!mounted || reason == null || _sending ||
         targetUid != widget.targetUid ||
         productId != widget.item['productId']?.toString()) return;
