@@ -27,6 +27,19 @@ async function readStoreDocument(db,path){
     const snap=await db.doc(path).get();
     return {exists:snap.exists,data:snap.exists?(snap.data()||{}):null};
   }
+  // The deployed legacy Firestore shim provides collection().doc(),
+  // not the root db.doc() convenience method of Firebase Admin.
+  if(typeof db?.collection==="function"){
+    const parts=path.split("/");
+    if((parts.length!==2&&parts.length!==4)||
+        parts.some(part=>!/^[A-Za-z0-9_.-]+$/.test(part)))
+      throw Error("store_visual_reader_unavailable");
+    let ref=db.collection(parts[0]).doc(parts[1]);
+    for(let index=2;index<parts.length;index+=2)
+      ref=ref.collection(parts[index]).doc(parts[index+1]);
+    const snap=await ref.get();
+    return {exists:snap.exists,data:snap.exists?(snap.data()||{}):null};
+  }
   throw Error("store_visual_reader_unavailable");
 }
 
