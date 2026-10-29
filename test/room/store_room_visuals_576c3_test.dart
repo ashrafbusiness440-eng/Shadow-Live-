@@ -66,6 +66,31 @@ void main() {
     service.close();
   });
 
+  test('invalid frame cannot suppress a separately verified background', () async {
+    final service = StoreVisualPresentationService(
+      tokenProvider: () async => 'token',
+      client: MockClient((_) async => http.Response(jsonEncode({
+        'ok': true,
+        'visuals': {
+          'roomFrames': {
+            'assetKey': 'store.item.200008.icon',
+            'imageUrl': 'https://example.test/icon.webp',
+            'expiresAtMs': null,
+          },
+          'backgrounds': {
+            'assetKey': 'store.item.200009.visual',
+            'imageUrl': 'https://example.test/valid.webp',
+            'expiresAtMs': null,
+          },
+        },
+      }), 200)),
+    );
+    final visuals = await service.loadRoomDecorations('room-owner');
+    expect(visuals.containsKey('roomFrames'), isFalse);
+    expect(visuals['backgrounds']?.activeNow, isTrue);
+    service.close();
+  });
+
   test('network or authorization failure leaves both legacy room visuals', () async {
     final denied = StoreVisualPresentationService(
       tokenProvider: () async => null,
