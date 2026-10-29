@@ -23,6 +23,9 @@ class _StorePurchaseHistoryPanelState
   String? _error;
   String? _target;
   bool _more = false;
+  bool _canVerifyReceipts = false;
+  String? _verifyingOperationId;
+  final Map<String, Map<String, dynamic>> _evidenceByOperation = {};
   List<Map<String, dynamic>> _receipts = [];
   int _generation = 0;
 
@@ -53,6 +56,9 @@ class _StorePurchaseHistoryPanelState
       _target = null;
       _receipts = [];
       _more = false;
+      _canVerifyReceipts = false;
+      _verifyingOperationId = null;
+      _evidenceByOperation.clear();
     });
     try {
       final user = controlAuth.currentUser;
@@ -86,6 +92,9 @@ class _StorePurchaseHistoryPanelState
         _receipts = records.map((entry) =>
           Map<String, dynamic>.from(entry as Map)).toList(growable: false);
         _more = value['moreMayExist'] as bool;
+        // Only a server-authorized Owner receives operation IDs and this flag.
+        // An older Worker safely defaults to no verification action.
+        _canVerifyReceipts = value['canVerifyReceipts'] == true;
       });
     } catch (error) {
       if (!mounted || currentGeneration != _generation) return;
@@ -153,21 +162,121 @@ class _StorePurchaseHistoryPanelState
     ));
   }
 
-  Widget _record(Map<String, dynamic> item) => Card(
-    child: ListTile(
-      leading: const Icon(Icons.receipt_long_outlined),
-      title: Text(item['nameAr']?.toString() ?? 'منتج من المتجر'),
-      subtitle: Text(
-        'رقم المنتج: ${item['productId']}\n'
-        'السعر المسجل: ${item['priceCoins']} كوينز\n'
-        'التاريخ: ${_date(item['acquiredAtMs'])} • '
-        'الصلاحية: ${_date(item['expiresAtMs'])}\n'
-        '${_delivery(item['deliveryStatus']?.toString() ?? '')} • '
-        '${_refund(item['refundStatus']?.toString() ?? '')}',
-      ),
-      isThreeLine: true,
-    ),
-  );
+  Future<void> _verifyEvidence(String operationId, String productId) async {
+    if (_loading || _verifyingOperationId != null || !_canVerifyReceipts ||
+        _target == null) return;
+    final target = _target!;
+    final currentGeneration = _generation;
+    setState(() {
+      _verifyingOperationId = operationId;
+      _evidenceByOperation.remove(operationId);
+    });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'verify_operation',
+          'targetId': target,
+          'operationId': operationId,
+          'productId': productId,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final parsed = jsonDecode(response.body);
+      if (response.statusCode != 200 || parsed is! Map ||
+          parsed['ok'] != true || parsed['operationId'] != operationId ||
+          parsed['verified'] is! bool) throw const FormatException();
+      if (parsed['verified'] == true &&
+          (!(parsed['kind'] == 'purchase' || parsed['kind'] == 'renew') ||
+           parsed['certifiedAmountCoins'] is! int ||
+           (parsed['certifiedAmountCoins'] as int) <= 0)) {
+        throw const FormatException();
+      }
+      if (!mounted || currentGeneration != _generation) return;
+      setState(() => _evidenceByOperation[operationId] =
+        Map<String, dynamic>.from(parsed));
+    } catch (_) {
+      if (!mounted || currentGeneration != _generation) return;
+      setState(() => _evidenceByOperation[operationId] = {
+        'verified': false, 'code': 'unavailable',
+      });
+    } finally {
+      if (mounted && currentGeneration == _generation) {
+        setState(() => _verifyingOperationId = null);
+      }
+    }
+  }
+
+  String _evidenceText(Map<String, dynamic> evidence) {
+    if (evidence['verified'] == true) {
+      return 'تم تطابق أدلة هذه العملية: '
+          '${evidence['certifiedAmountCoins']} كوينز. '
+          'هذا تحقق تاريخي لعملية واحدة، وليس إثباتاً للرصيد الحالي '
+          'أو لإجمالي الإيرادات.';
+    }
+    return switch (evidence['code']) {
+      'requires_refund_review' =>
+        'توجد حالة استرداد تستلزم مراجعة منفصلة. لم يتم اعتماد العملية.',
+      'incomplete_evidence' || 'not_found' =>
+        'أدلة العملية غير مكتملة أو غير موجودة. يلزم مراجعتها.',
+      'operation_mismatch' || 'receipt_mismatch' ||
+      'ledger_mismatch' || 'audit_mismatch' =>
+        'يوجد اختلاف بين سجلات العملية. يلزم مراجعة البيانات.',
+      _ => 'تعذّر التحقق من أدلة العملية. جرّب مجدداً.',
+    };
+  }
+
+  Widget _record(Map<String, dynamic> item) {
+    final operationId = item['operationId'];
+    final eligible = _canVerifyReceipts && operationId is String &&
+      RegExp(r'^[A-Za-z0-9_-]{12,100}$').hasMatch(operationId);
+    final evidence = eligible ? _evidenceByOperation[operationId] : null;
+    return Card(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.receipt_long_outlined),
+          title: Text(item['nameAr']?.toString() ?? 'منتج من المتجر'),
+          subtitle: Text(
+            'رقم المنتج: ${item['productId']}\n'
+            'السعر المسجل: ${item['priceCoins']} كوينز\n'
+            'التاريخ: ${_date(item['acquiredAtMs'])} • '
+            'الصلاحية: ${_date(item['expiresAtMs'])}\n'
+            '${_delivery(item['deliveryStatus']?.toString() ?? '')} • '
+            '${_refund(item['refundStatus']?.toString() ?? '')}',
+          ),
+          isThreeLine: true,
+        ),
+        if (eligible)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 12, end: 12, bottom: 8),
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: OutlinedButton.icon(
+                onPressed: _loading || _verifyingOperationId != null
+                    ? null : () => _verifyEvidence(
+                        operationId, item['productId'].toString()),
+                icon: const Icon(Icons.fact_check_outlined),
+                label: Text(_verifyingOperationId == operationId
+                    ? 'جارٍ التحقق...' : 'التحقق من أدلة الشراء'),
+              ),
+            ),
+          ),
+        if (evidence != null)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 12, end: 12, bottom: 12),
+            child: Text(_evidenceText(evidence),
+              style: TextStyle(color: evidence['verified'] == true
+                ? Colors.green : Colors.orangeAccent)),
+          ),
+      ],
+    ));
+  }
 
   @override
   Widget build(BuildContext context) => Column(

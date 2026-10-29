@@ -1,6 +1,7 @@
-// 578D: offline-only, read-only financial evidence certification.
-// Not imported by a production Worker route; never settles, refunds,
-// repairs balances, scans collections, or authorizes checkout.
+// 578D/579E: read-only evidence certification of ONE Store operation.
+// Reused by the Owner-authorized admin history action only (and offline tests).
+// Never settles, refunds, repairs balances, scans collections, or authorizes
+// checkout. Not an all-time revenue or full-wallet certification.
 import {validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
 
@@ -17,8 +18,10 @@ const failure=code=>({ok:false,code});
 // spend, expiration, or revocation does not rewrite historical evidence.
 // This is one-operation evidence certification, NOT full-wallet reconciliation.
 export async function certifyStorePurchaseEvidenceOffline(
-  db,{buyerUid,operationId}={}){
+  db,{buyerUid,operationId,expectedProductId}={}){
   if(!validUid(buyerUid))return failure("invalid_buyer");
+  if(expectedProductId!==undefined&&!validProduct(expectedProductId))
+    return failure("invalid_product");
   let key;
   try{key=validateStorePurchaseOperationId(operationId);}
   catch(_){return failure("invalid_operation");}
@@ -45,6 +48,7 @@ export async function certifyStorePurchaseEvidenceOffline(
   const expiry=result.expiresAtMs;
   if((kind!=="purchase"&&!renewal)||op.status!=="completed"||
       op.buyerUid!==buyerUid||!validProduct(op.productId)||
+      (expectedProductId!==undefined&&op.productId!==expectedProductId)||
       result.operationId!==key||result.productId!==op.productId||
       result.deliveryStatus!=="delivered"||
       result.renewal!==renewal||
