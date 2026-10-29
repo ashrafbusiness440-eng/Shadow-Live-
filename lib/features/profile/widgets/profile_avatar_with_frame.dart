@@ -6,6 +6,7 @@ import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
 import '../services/profile_visual_identity_service.dart';
+import '../../store/services/store_visual_presentation_service.dart';
 
 class ProfileAvatarWithFrame extends StatefulWidget {
   const ProfileAvatarWithFrame({
@@ -23,6 +24,7 @@ class ProfileAvatarWithFrame extends StatefulWidget {
     this.useVipFallback = false,
     this.frameScale = 1.22,
     this.protectAvatarCenter = false,
+    this.verifyStoreFrame = false,
   });
 
   final double diameter;
@@ -42,6 +44,8 @@ class ProfileAvatarWithFrame extends StatefulWidget {
   /// Profile header only. Keep ornate art away from the central face while
   /// preserving its animation and existing visual-identity cache.
   final bool protectAvatarCenter;
+  /// Use only on full/quick profile headers to avoid per-avatar network fanout.
+  final bool verifyStoreFrame;
 
   @override
   State<ProfileAvatarWithFrame> createState() => _ProfileAvatarWithFrameState();
@@ -49,6 +53,7 @@ class ProfileAvatarWithFrame extends StatefulWidget {
 
 class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   Future<ProfileVisualIdentity>? _future;
+  Future<StoreVerifiedFrame?>? _storeFrameFuture;
   StreamSubscription<String>? _invalidationSub;
 
   @override
@@ -84,7 +89,8 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     final snapshotChanged = widget.fallbackIsVisualSnapshot &&
         _snapshotSignature(oldWidget.fallbackProfile) !=
             _snapshotSignature(widget.fallbackProfile);
-    if (oldWidget.userId != widget.userId || snapshotChanged) {
+    if (oldWidget.userId != widget.userId || snapshotChanged ||
+        oldWidget.verifyStoreFrame != widget.verifyStoreFrame) {
       _reload();
     }
   }
@@ -106,11 +112,15 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
       ].join('|');
 
   void _reload({bool allowPrime = true}) {
+    final uid = widget.userId.trim();
+    _storeFrameFuture = widget.verifyStoreFrame && !widget.snapshotOnly &&
+        uid.isNotEmpty
+      ? StoreVisualPresentationService().loadFrame(uid)
+      : null;
     if (widget.snapshotOnly) {
       _future = null;
       return;
     }
-    final uid = widget.userId.trim();
     if (uid.isEmpty) {
       _future = null;
       return;
@@ -210,18 +220,38 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     return avatar;
   }
 
+  Widget _renderWithVerifiedStoreFrame(Map<String, dynamic> profile) {
+    final future = _storeFrameFuture;
+    if (future == null) return _render(profile);
+    return FutureBuilder<StoreVerifiedFrame?>(
+      future: future,
+      builder: (context, snapshot) {
+        final frame = snapshot.data;
+        if (frame == null || !frame.activeNow) return _render(profile);
+        // Only this verified response may override the existing public frame.
+        return _render(<String, dynamic>{
+          ...profile,
+          'activeProfileFrameAssetKey': frame.assetKey,
+          'activeProfileFrameImageUrl': frame.imageUrl,
+          'activeProfileFrameExpiresAtMs': frame.expiresAtMs ?? 0,
+          'activeProfileFramePermanent': frame.expiresAtMs == null,
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fallback = widget.fallbackProfile;
     if (widget.snapshotOnly) return _render(fallback);
     final future = _future;
-    if (future == null) return _render(fallback);
+    if (future == null) return _renderWithVerifiedStoreFrame(fallback);
 
     return FutureBuilder<ProfileVisualIdentity>(
       future: future,
       builder: (context, snapshot) {
         final identity = snapshot.data;
-        if (identity == null) return _render(fallback);
+        if (identity == null) return _renderWithVerifiedStoreFrame(fallback);
 
         final loaded = identity.toProfileMap();
         // Quick/public profiles already have a freshly fetched public record.
@@ -244,7 +274,8 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
             }
           }
         }
-        return _render(<String, dynamic>{...fallback, ...loaded});
+        return _renderWithVerifiedStoreFrame(
+          <String, dynamic>{...fallback, ...loaded});
       },
     );
   }
