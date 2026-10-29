@@ -148,3 +148,20 @@ test("entitlement lifecycle is read-only, time-aware and revocation wins over ex
   assert.equal(validStoreEntitlementDocument(
     {...ent,status:"forged"},"user_one",5000),null);
 });
+
+test("user-owned Store items display the server lifecycle without enabling equipment", () => {
+  const model=readFileSync(new URL(
+    "../../lib/features/store/services/store_owned_items_service.dart",
+    import.meta.url),"utf8");
+  const screen=readFileSync(new URL(
+    "../../lib/features/store/screens/store_owned_items_screen.dart",
+    import.meta.url),"utf8");
+  assert.match(model,/final String lifecycleState;/);
+  assert.match(model,/value\['lifecycleState'\]/);
+  assert.match(model,/invalid_store_entitlement_state/);
+  assert.match(screen,/'active' => 'صالح للاستخدام'/);
+  assert.match(screen,/'expired' => 'منتهي الصلاحية'/);
+  assert.match(screen,/'revoked' => 'ملغى'/);
+  assert.match(screen,/تجهيز منتجات المتجر سيُتاح بعد اكتمال/);
+  assert.doesNotMatch(screen,/storePurchase\(|grantStoreItem\(|equipStoreItem\(/);
+});
