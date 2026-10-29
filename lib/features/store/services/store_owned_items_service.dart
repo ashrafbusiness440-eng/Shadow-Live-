@@ -14,6 +14,7 @@ class StoreOwnedItem {
     required this.expiresAtMs,
     required this.active,
     required this.expired,
+    required this.lifecycleState,
   });
 
   final String productId;
@@ -25,6 +26,8 @@ class StoreOwnedItem {
   final int? expiresAtMs;
   final bool active;
   final bool expired;
+  /// Server-projected lifecycle; legacy clients may fall back to prior flags.
+  final String lifecycleState;
 
   factory StoreOwnedItem.fromJson(Map<String, dynamic> value) {
     final id = value['productId']?.toString() ?? '';
@@ -39,6 +42,19 @@ class StoreOwnedItem {
         !const {'purchase', 'admin_grant', 'reward'}.contains(value['source'])) {
       throw const FormatException('invalid_store_entitlement');
     }
+    final rawState = value['lifecycleState'];
+    if (rawState != null &&
+        !const {'active', 'expired', 'revoked'}.contains(rawState)) {
+      throw const FormatException('invalid_store_entitlement_state');
+    }
+    // No state field in older responses: preserve the legacy status label.
+    final state = rawState is String
+        ? rawState
+        : value['active'] == true
+            ? 'active'
+            : value['expired'] == true
+                ? 'expired'
+                : 'unavailable';
     return StoreOwnedItem(
       productId: id,
       nameAr: (value['nameAr'] ?? '').toString(),
@@ -49,6 +65,7 @@ class StoreOwnedItem {
       expiresAtMs: value['expiresAtMs'] as int?,
       active: value['active'] as bool,
       expired: value['expired'] as bool,
+      lifecycleState: state,
     );
   }
 }
