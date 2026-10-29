@@ -19,6 +19,7 @@ import '../services/user_level_service.dart';
 import 'registry_badge.dart';
 import 'user_level_badges.dart';
 import 'profile_avatar_with_frame.dart';
+import 'store_verified_profile_card_backdrop.dart';
 
 class QuickProfileAction {
   const QuickProfileAction({
@@ -251,6 +252,9 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             return VipProfileIdentitySurface(
               vipLevel: vip,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+              child: StoreVerifiedProfileCardBackdrop(
+              userId: widget.userId,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
               child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: Column(
@@ -474,6 +478,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                   const SizedBox(height: 12),
                   TextButton.icon(onPressed: _openFull, icon: const Icon(Icons.open_in_new_rounded), label: const Text('عرض الملف الشخصي الكامل')),
                 ],
+              ),
               ),
             ));
           },
