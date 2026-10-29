@@ -141,9 +141,14 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   String _text(Map<String, dynamic> profile, String key) =>
       (profile[key] ?? '').toString().trim();
 
-  bool _frameActive(Map<String, dynamic> profile) {
+  bool _frameActive(Map<String, dynamic> profile,
+      {bool verifiedStoreFrame = false}) {
     final key = _text(profile, 'activeProfileFrameAssetKey');
     if (key.isEmpty) return false;
+    // Directly writable legacy profiles cannot grant a Store visual.
+    // Room snapshots come from the server-verified presence admission.
+    if (key.startsWith('store.item.') &&
+        !verifiedStoreFrame && !widget.snapshotOnly) return false;
     if (profile['activeProfileFramePermanent'] == true) return true;
     final expiresAt =
         (profile['activeProfileFrameExpiresAtMs'] as num?)?.toInt() ??
@@ -174,13 +179,14 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     );
   }
 
-  Widget _render(Map<String, dynamic> profile) {
+  Widget _render(Map<String, dynamic> profile,
+      {bool verifiedStoreFrame = false}) {
     final avatar = SizedBox.square(
       dimension: widget.diameter,
       child: _baseAvatar(profile),
     );
 
-    if (_frameActive(profile)) {
+    if (_frameActive(profile, verifiedStoreFrame: verifiedStoreFrame)) {
       final frameAssetKey =
           _text(profile, 'activeProfileFrameAssetKey');
       final frameImageUrl =
@@ -241,7 +247,7 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
           'activeProfileFrameImageUrl': frame.imageUrl,
           'activeProfileFrameExpiresAtMs': frame.expiresAtMs ?? 0,
           'activeProfileFramePermanent': frame.expiresAtMs == null,
-        });
+        }, verifiedStoreFrame: true);
       },
     );
   }
