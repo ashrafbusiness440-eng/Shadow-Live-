@@ -383,3 +383,115 @@ test("580A an expired equipped grant disappears without an extra wallet write",a
     "user_store_entitlements/"+uid+"/items/"+productId
   ).get()).data().equipped,true);
 });
+
+test("580B concurrent checkouts with the same operation ID stay isolated by buyer",async()=>{
+  const a=await seed("580b_buyer_a",{coins:75000});
+  const b=await seed("580b_buyer_b",{coins:50000});
+  const sharedOperation="store_580b_same_operation_two_buyers_01";
+  // Identical client operation IDs are valid for distinct authenticated
+  // accounts; neither buyer may share the other's receipt or entitlement.
+  const [purchaseA,purchaseB]=await Promise.all([
+    commitStorePurchaseOffline(a.db,verifiedToken(a.uid),
+      request("580b_buyer_a",{operationId:sharedOperation}),null,NOW),
+    commitStorePurchaseOffline(b.db,verifiedToken(b.uid),
+      request("580b_buyer_b",{operationId:sharedOperation}),null,NOW),
+  ]);
+  assert.equal(purchaseA.deliveryStatus,"delivered");
+  assert.equal(purchaseB.deliveryStatus,"delivered");
+  const [accountA,accountB]=await Promise.all([
+    inspect(a.uid,sharedOperation),inspect(b.uid,sharedOperation),
+  ]);
+  assert.equal(accountA.user.coins,50000);
+  assert.equal(accountB.user.coins,25000);
+  for(const [uid,row] of [[a.uid,accountA],[b.uid,accountB]]){
+    assert.equal(row.entitlement.data().ownerUid,uid);
+    assert.equal(row.receipt.data().buyerUid,uid);
+    assert.equal(row.ledger.data().userId,uid);
+    assert.equal(row.ledger.data().delta,-PRICE);
+    assert.equal(row.op.data().buyerUid,uid);
+  }
+  await firestore.doc("app_asset_registry/store.item.200001.visual").set({
+    published:true,rawUrl:"https://example.com/two-account-frame.webp",
+  });
+  const [equippedA,equippedB]=await Promise.all([
+    commitStoreEquip(a.db,verifiedToken(a.uid),
+      {action:"equip",productId},NOW+10),
+    commitStoreEquip(b.db,verifiedToken(b.uid),
+      {action:"equip",productId},NOW+10),
+  ]);
+  assert.equal(equippedA.changed,true);
+  assert.equal(equippedB.changed,true);
+  // A newly created reader simulates reconnect / re-fetch without polling
+  // and proves that visual state comes from each account's server records.
+  const freshReader=emulatorStoreClient(firestore);
+  assert.equal((await resolveStoreVisuals(freshReader,a.uid,NOW+20))
+    .frames.productId,productId);
+  assert.equal((await resolveStoreVisuals(freshReader,b.uid,NOW+20))
+    .frames.productId,productId);
+  await commitStoreEquip(a.db,verifiedToken(a.uid),
+    {action:"unequip",category:"frames"},NOW+30);
+  assert.deepEqual(await resolveStoreVisuals(freshReader,a.uid,NOW+40),{});
+  assert.equal((await resolveStoreVisuals(freshReader,b.uid,NOW+40))
+    .frames.productId,productId);
+  assert.equal((await inspect(a.uid,sharedOperation)).user.coins,50000);
+  assert.equal((await inspect(b.uid,sharedOperation)).user.coins,25000);
+});
+
+test("580B revoke of one Owner grant never removes another user's equipped item",async()=>{
+  const a=await seed("580b_grantee_a",
+    {coins:30000,purchasingEnabled:false});
+  const b=await seed("580b_grantee_b",
+    {coins:60000,purchasingEnabled:false});
+  const ownerUid="store580b_owner";
+  const current=Date.now();
+  await firestore.doc("users/"+ownerUid).set({
+    role:"owner",accountStatus:"active",
+  });
+  await firestore.doc("app_asset_registry/store.item.200001.visual").set({
+    published:true,rawUrl:"https://example.com/two-grantees-frame.webp",
+  });
+  const ownerToken={sub:ownerUid,iat:Math.floor(current/1000),
+    auth_time:Math.floor(current/1000)};
+  const grantA="store_580b_grant_grantee_a_001";
+  const grantB="store_580b_grant_grantee_b_001";
+  await Promise.all([
+    commitStoreGrantOffline(a.db,ownerToken,{
+      targetId:a.uid,productId,operationId:grantA,
+      reason:"اختبار عزل المنح بين المستخدمين",
+    },current),
+    commitStoreGrantOffline(b.db,ownerToken,{
+      targetId:b.uid,productId,operationId:grantB,
+      reason:"اختبار عزل المنح بين المستخدمين",
+    },current),
+  ]);
+  await Promise.all([
+    commitStoreEquip(a.db,verifiedToken(a.uid),
+      {action:"equip",productId},current+10),
+    commitStoreEquip(b.db,verifiedToken(b.uid),
+      {action:"equip",productId},current+10),
+  ]);
+  assert.ok((await resolveStoreVisuals(a.db,a.uid,current+20)).frames);
+  assert.ok((await resolveStoreVisuals(b.db,b.uid,current+20)).frames);
+  const revoke=await commitStoreGrantRevokeOffline(a.db,ownerToken,{
+    targetUid:a.uid,productId,
+    operationId:"store_580b_revoke_grantee_a_001",
+    reason:"سحب منحة المستخدم الأول فقط",
+  },current+30);
+  assert.equal(revoke.revoked,true);
+  assert.deepEqual(await resolveStoreVisuals(a.db,a.uid,current+40),{});
+  assert.equal((await resolveStoreVisuals(b.db,b.uid,current+40))
+    .frames.productId,productId);
+  assert.equal((await firestore.doc(
+    "user_store_equipped/"+b.uid).get()).data().slots.frames,productId);
+  assert.equal((await firestore.doc(
+    "user_store_entitlements/"+b.uid+"/items/"+productId
+  ).get()).data().status,"active");
+  for(const [uid,coins,operation] of [
+    [a.uid,30000,grantA],[b.uid,60000,grantB],
+  ]){
+    assert.equal((await firestore.doc("users/"+uid).get()).data().coins,
+      coins);
+    assert.equal((await firestore.doc(
+      "financial_ledger/store_"+uid+"__"+operation).get()).exists,false);
+  }
+});
