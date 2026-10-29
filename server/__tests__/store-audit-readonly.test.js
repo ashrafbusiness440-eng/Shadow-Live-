@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {
-  canViewStoreAudit,projectStoreCatalogAudit,loadStoreCatalogAudit,
-  manageStoreAudit,
+  canViewStoreAudit,projectStoreCatalogAudit,projectStoreOperationAudit,
+  loadStoreCatalogAudit,manageStoreAudit,
 } from "../../cloudflare-worker/src/manage-store-audit.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
@@ -76,7 +76,7 @@ test("audit history query stays bounded and never reads or writes user purchases
   }]);
   const code=readFileSync(new URL(
     "../../cloudflare-worker/src/manage-store-audit.js",import.meta.url),"utf8");
-  assert.doesNotMatch(code,/db\.commit\(|db\.writeCreate\(|db\.writeUpdate\(|user_store_entitlements\//);
+  assert.doesNotMatch(code,/db\.commit\(|db\.writeCreate\(|db\.writeUpdate\(/);
   assert.match(code,/Cache-Control":"no-store/);
   const routes=readFileSync(new URL(
     "../../cloudflare-worker/src/index.js",import.meta.url),"utf8");
@@ -140,4 +140,106 @@ test("audit projection bounds product IDs and warns when more than 50 rows may e
   assert.equal(result.entries.length,50);
   assert.equal(result.moreMayExist,true);
   assert.equal(result.resultLimit,50);
+});
+
+const opLog={
+  actorUid:"owner_uid",targetType:"store_entitlement",
+  targetId:"user_store_entitlements/target_uid/items/200001",
+  action:"purchaseStoreItem",operationId:"store_purchase_operation_0001",
+  priceCoins:25000,createdAt:new Date("2026-10-29T12:00:00.000Z"),
+  reason:"PRIVATE_REASON",walletBalance:45000,
+  email:"private@never-show.invalid",authToken:"PRIVATE_TOKEN",
+};
+test("579B operational audit projection excludes financial/privacy secrets",()=>{
+  const purchase=projectStoreOperationAudit(opLog);
+  assert.deepEqual(purchase,{
+    action:"purchase",actorUid:"owner_uid",targetUid:"target_uid",
+    productId:"200001",at:"2026-10-29T12:00:00.000Z",
+    priceCoins:25000,
+  });
+  assert.equal(JSON.stringify(purchase).includes("PRIVATE"),false);
+  for(const [action,expected] of [
+    ["grantStoreItem","grant"],["revokeStoreGrant","revoke"],
+    ["renewStoreItem","renew"]]){
+    const row={...opLog,action};
+    const value=projectStoreOperationAudit(row);
+    assert.equal(value.action,expected);
+    assert.equal(Object.hasOwn(value,"priceCoins"),
+      expected==="renew");
+  }
+  for(const invalid of [
+    {...opLog,targetType:"users"},
+    {...opLog,targetId:"users/target_uid"},
+    {...opLog,targetId:"user_store_entitlements/../items/200001"},
+    {...opLog,targetId:"user_store_entitlements/target_uid/items/000001"},
+    {...opLog,actorUid:"bad/uid"},
+    {...opLog,operationId:"short"},
+    {...opLog,action:"toString"},
+    {...opLog,action:"updateUserBalance"},
+    {...opLog,createdAt:"invalid-date"},
+    {...opLog,priceCoins:"25000"},
+    {...opLog,priceCoins:null},
+    {...opLog,priceCoins:-1},
+  ])assert.equal(projectStoreOperationAudit(invalid),null);
+});
+
+test("579B Owner gets bounded operation list; audit-only admin gets no private query",async()=>{
+  const ownerDb=mockDb({role:"owner",accountStatus:"active"});
+  ownerDb.runQuery=async(path,params)=>{
+    ownerDb.reads.push({path,params});
+    return params.filters[0].value==="store_entitlement"
+      ?[{data:opLog},{data:{...opLog,action:"unknown_action"}}]
+      :[{data:log}];
+  };
+  const owner=await loadStoreCatalogAudit(ownerDb,token);
+  assert.equal(owner.canViewOperations,true);
+  assert.equal(owner.operationEntries.length,1);
+  assert.equal(owner.operationEntries[0].targetUid,"target_uid");
+  assert.equal(owner.moreOperationsMayExist,false);
+  assert.deepEqual(ownerDb.reads,[
+    "users/auditor_uid",
+    {path:"admin_audit_logs",params:{
+      filters:[{field:"targetType",op:"==",value:"store_catalog"}],
+      limit:50,
+    }},
+    {path:"admin_audit_logs",params:{
+      filters:[{field:"targetType",op:"==",value:"store_entitlement"}],
+      limit:50,
+    }},
+  ]);
+  const staff=mockDb();
+  const staffResult=await loadStoreCatalogAudit(staff,token);
+  assert.equal(staffResult.canViewOperations,false);
+  assert.deepEqual(staffResult.operationEntries,[]);
+  assert.equal(staffResult.moreOperationsMayExist,false);
+  assert.equal(staff.reads.filter(x=>typeof x==="object").length,1);
+});
+
+test("579B limits Owner operation results and exposes partial list as partial",async()=>{
+  const ownerDb=mockDb({role:"owner",accountStatus:"active"});
+  ownerDb.runQuery=async(path,params)=>{
+    assert.equal(path,"admin_audit_logs");
+    assert.equal(params.limit,50);
+    if(params.filters[0].value==="store_entitlement"){
+      return Array.from({length:50},(_,i)=>({data:{
+        ...opLog,createdAt:new Date(
+          Date.parse("2026-10-29T12:00:00.000Z")+i*1000),
+      }}));
+    }
+    return [];
+  };
+  const result=await loadStoreCatalogAudit(ownerDb,token);
+  assert.equal(result.operationEntries.length,50);
+  assert.equal(result.moreOperationsMayExist,true);
+  assert.ok(result.operationEntries[0].at>result.operationEntries[49].at);
+  const source=readFileSync(new URL(
+    "../../cloudflare-worker/src/manage-store-audit.js",import.meta.url),"utf8");
+  assert.doesNotMatch(source,/db\.list\(|db\.commit\(|db\.writeCreate\(|financial_ledger\//);
+  const ui=readFileSync(new URL(
+    "../../lib/admin/store_audit_history_panel.dart",import.meta.url),"utf8");
+  assert.match(ui,/_canViewOperations/);
+  assert.match(ui,/if \(_canViewOperations\)/);
+  assert.match(ui,/سجل عمليات المتجر/);
+  assert.match(ui,/قد توجد عمليات أقدم خارج النتائج الحالية/);
+  assert.match(ui,/parsed\['canViewOperations'\] == true/);
 });
