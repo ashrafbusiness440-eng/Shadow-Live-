@@ -192,6 +192,8 @@ test("inventory control shows lifecycle and only Owner-gated grant revoke",()=>{
   assert.match(backend,/actor\.data\?\.role==="owner"&&revocationReleaseEnabled/);
   assert.match(backend,/storeGrantRevokeEnabled\(env\)/);
   assert.match(action,/showDialog<String>/);
+  assert.match(action,/_sending \|\| _dialogOpen/);
+  assert.match(action,/_dialogOpen = false/);
   assert.match(action,/confirmation': 'confirmed'/);
   assert.match(action,/pendingOperationId/);
   assert.match(action,/result\['operationId'\] != operationId/);
