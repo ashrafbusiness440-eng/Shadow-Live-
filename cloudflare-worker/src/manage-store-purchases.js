@@ -143,6 +143,46 @@ export async function verifyStorePurchaseEvidenceForOwner(
   };
 }
 
+// Financial evidence workbench: at most FIVE explicitly selected historical
+// operations for ONE target. This is never a financial revenue/settlement report.
+export async function reviewStorePurchaseEvidenceBatchForOwner(
+  db,token,rawTargetId,rawEntries){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  if(!Array.isArray(rawEntries)||rawEntries.length<1||rawEntries.length>5)
+    throw Error("invalid_store_review_selection");
+  const seen=new Set();
+  const entries=rawEntries.map(row=>{
+    if(!row||typeof row!=="object"||Array.isArray(row))
+      throw Error("invalid_store_review_selection");
+    const operationId=validateStorePurchaseOperationId(row.operationId);
+    const productId=cleanStoreId(row.productId);
+    if(!/^[1-9][0-9]{5,8}$/.test(productId)||
+        seen.has(operationId)) throw Error("invalid_store_review_selection");
+    seen.add(operationId);
+    return {operationId,productId};
+  });
+  const {targetUid}=await resolveStoreAdminTarget(db,rawTargetId);
+  // Reuse the certified four-document engine. No wallet reads, scans,
+  // time-range sums, refunds, or balance repairs; max 20 exact reads.
+  const evidence=await Promise.all(entries.map(async row=>{
+    const result=await certifyStorePurchaseEvidenceOffline(db,{
+      buyerUid:targetUid,operationId:row.operationId,
+      expectedProductId:row.productId,
+    });
+    return {operationId:row.operationId,verified:result.ok,
+      ...(result.ok?{
+        kind:result.kind,certifiedAmountCoins:result.certifiedAmountCoins,
+      }:{code:result.code})};
+  }));
+  return {
+    ok:true,scope:"selected_operations_only",inspected:evidence.length,
+    verified:evidence.filter(row=>row.verified).length,
+    needsReview:evidence.filter(row=>!row.verified).length,
+    financialReportComplete:false,netRevenueCertified:false,
+    evidence,
+  };
+}
+
 export async function manageStorePurchases(request,env) {
   if(request.method!=="POST") {
     return json(request,env,{ok:false,code:"method_not_allowed"},405);
@@ -150,7 +190,8 @@ export async function manageStorePurchases(request,env) {
   try {
     const token=await verifyFirebaseIdToken(request,env,{checkUserState:false});
     const body=await readJson(request);
-    if(body?.action!=="history"&&body?.action!=="verify_operation") {
+    if(body?.action!=="history"&&body?.action!=="verify_operation"&&
+        body?.action!=="review_selected") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -158,7 +199,10 @@ export async function manageStorePurchases(request,env) {
     const result=body.action==="verify_operation"
       ?await verifyStorePurchaseEvidenceForOwner(
         db,token,targetId,body?.operationId,body?.productId)
-      :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+      :body.action==="review_selected"
+        ?await reviewStorePurchaseEvidenceBatchForOwner(
+          db,token,targetId,body?.operations)
+        :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
@@ -167,12 +211,14 @@ export async function manageStorePurchases(request,env) {
     if(["unauthorized","forbidden","recent_auth_required",
         "invalid_target_id","invalid_store_product_id",
         "invalid_store_purchase_operation_id",
-        "invalid_store_receipt_cursor","not_found"].includes(code)) {
+        "invalid_store_receipt_cursor","invalid_store_review_selection",
+        "not_found"].includes(code)) {
       return json(request,env,{ok:false,code},
         code==="forbidden"?403:
         (code==="invalid_target_id"||code==="invalid_store_product_id"||
           code==="invalid_store_purchase_operation_id"||
-          code==="invalid_store_receipt_cursor")?400:
+          code==="invalid_store_receipt_cursor"||
+          code==="invalid_store_review_selection")?400:
         code==="not_found"?404:401);
     }
     return json(request,env,{ok:false,code:"store_purchases_unavailable"},503);
