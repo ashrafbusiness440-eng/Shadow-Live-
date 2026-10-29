@@ -234,9 +234,24 @@ export async function loadStoreUserFinancialEvidencePage(
       !Number.isSafeInteger(receipt.acquiredAtMs)||
       receipt.acquiredAtMs<0)
       return {verified:false,code:"invalid_receipt_identity"};
+    // The indexed query and four exact reads are not a single Firestore
+    // snapshot. Reject a refund/incomplete status observed in EITHER read:
+    // never certify on an older or contradictory receipt view.
+    if(receipt.refundStatus!=="none")
+      return {operationId:opKey,productId,verified:false,
+        code:"requires_refund_review"};
+    if(receipt.deliveryStatus!=="delivered"||
+        !Number.isSafeInteger(receipt.priceCoins)||
+        receipt.priceCoins<=0||typeof receipt.renewal!=="boolean")
+      return {operationId:opKey,productId,verified:false,
+        code:"invalid_receipt_financial_state"};
     const check=await certifyStorePurchaseEvidenceOffline(db,{
       buyerUid:targetUid,operationId:opKey,expectedProductId:productId,
     });
+    if(check.ok&&(check.certifiedAmountCoins!==receipt.priceCoins||
+        (check.kind==="renew")!==receipt.renewal))
+      return {operationId:opKey,productId,verified:false,
+        code:"conflicting_receipt_snapshot"};
     return {
       operationId:opKey,productId,verified:check.ok,
       ...(check.ok?{
