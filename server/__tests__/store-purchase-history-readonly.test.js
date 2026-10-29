@@ -3,7 +3,7 @@ import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {
   canViewStorePurchases,projectStorePurchaseReceipt,loadStoreUserPurchases,
-  manageStorePurchases,
+  verifyStorePurchaseEvidenceForOwner,manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
 import {manageUserAccessInternals} from "../../cloudflare-worker/src/manage-user-access.js";
@@ -140,4 +140,125 @@ test("history handler disallows mutations and only accepts history action",async
   const code=readFileSync(new URL(
     "../../cloudflare-worker/src/index.js",import.meta.url),"utf8");
   assert.match(code,/url\.pathname === "\/api\/manage-store-purchases"/);
+});
+
+const evidenceOperationId="store_purchase_owner_review_0001";
+function ownerEvidenceDb(){
+  const owner={role:"owner",accountStatus:"active"};
+  const db=dbFor(owner);
+  const key="buyer_1__"+evidenceOperationId;
+  const product="200001",price=14000,at=100000;
+  db.docs.set("store_purchase_operations/"+key,{
+    buyerUid:"buyer_1",productId:product,kind:"purchase",
+    status:"completed",result:{
+      operationId:evidenceOperationId,productId:product,priceCoins:price,
+      durationDays:0,acquiredAtMs:at,expiresAtMs:null,
+      deliveryStatus:"delivered",renewal:false,
+    },
+  });
+  db.docs.set("store_purchase_receipts/"+key,{
+    buyerUid:"buyer_1",operationId:evidenceOperationId,productId:product,
+    priceCoins:price,durationDays:0,acquiredAtMs:at,
+    expiresAtMs:null,deliveryStatus:"delivered",refundStatus:"none",
+    renewal:false,privateCard:"NEVER_EXPOSE",
+  });
+  db.docs.set("financial_ledger/store_"+key,{
+    userId:"buyer_1",asset:"coins",delta:-price,
+    openingBalance:50000,closingBalance:36000,
+    reason:"store_item_purchase",sourceType:"storePurchase",renewal:false,
+    sourceId:key,idempotencyKey:key,privateWallet:"NEVER_EXPOSE",
+  });
+  db.docs.set("admin_audit_logs/store_purchase_"+key,{
+    actorUid:"buyer_1",targetType:"store_entitlement",
+    targetId:"user_store_entitlements/buyer_1/items/"+product,
+    action:"purchaseStoreItem",operationId:evidenceOperationId,
+    priceCoins:price,privateEmail:"NEVER_EXPOSE",
+  });
+  db.commit=()=>{throw Error("verification_must_not_write")};
+  db.list=()=>{throw Error("verification_must_not_scan")};
+  return db;
+}
+
+test("579E Owner-only history exposes verified operation keys but staff never sees keys",async()=>{
+  const staff=dbFor();
+  const regular=await loadStoreUserPurchases(staff,token,"123456");
+  assert.equal(regular.canVerifyReceipts,false);
+  assert.equal(regular.receipts[0].operationId,undefined);
+  const owner=ownerEvidenceDb();
+  const result=await loadStoreUserPurchases(owner,token,"123456");
+  assert.equal(result.canVerifyReceipts,true);
+  assert.equal(result.receipts[0].operationId,"private_op_001");
+  assert.equal(result.receipts[0].privateEmail,undefined);
+  const invalid=projectStorePurchaseReceipt(
+    {...receipt,operationId:"../bad"},"buyer_1",true);
+  assert.equal(invalid.operationId,undefined);
+});
+
+test("579E evidence inspection reuses four exact docs, no wallet totals or settlement",async()=>{
+  const db=ownerEvidenceDb();
+  const view=await verifyStorePurchaseEvidenceForOwner(
+    db,token,"١٢٣٤٥٦",evidenceOperationId);
+  assert.deepEqual(view,{
+    ok:true,operationId:evidenceOperationId,verified:true,
+    kind:"purchase",certifiedAmountCoins:14000,
+  });
+  assert.deepEqual(db.reads,[
+    "users/auditor_1","public_ids/123456","users/buyer_1",
+    "store_purchase_operations/buyer_1__"+evidenceOperationId,
+    "store_purchase_receipts/buyer_1__"+evidenceOperationId,
+    "financial_ledger/store_buyer_1__"+evidenceOperationId,
+    "admin_audit_logs/store_purchase_buyer_1__"+evidenceOperationId,
+  ]);
+  assert.equal(JSON.stringify(view).includes("NEVER_EXPOSE"),false);
+  assert.equal(db.reads.filter(row=>typeof row==="object").length,0);
+});
+
+test("581B only Owner with a recent live session can inspect financial evidence",async()=>{
+  for(const actor of [
+    viewer,{...viewer,capabilities:["manageStore","viewStoreAudit",
+      "viewStorePurchases"]},
+    {role:"admin",adminEnabled:true,capabilities:["viewStorePurchases"]},
+    {role:"user",adminEnabled:true,capabilities:["viewStorePurchases"]},
+    {role:"owner",accountStatus:"deleting"},
+  ]){
+    const db=dbFor(actor);
+    await assert.rejects(()=>verifyStorePurchaseEvidenceForOwner(
+      db,token,"123456",evidenceOperationId),/forbidden|unauthorized/);
+    assert.deepEqual(db.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  await assert.rejects(()=>verifyStorePurchaseEvidenceForOwner(
+    stale,{...token,auth_time:1},"123456",evidenceOperationId),
+    /recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+  const bad=ownerEvidenceDb();
+  await assert.rejects(()=>verifyStorePurchaseEvidenceForOwner(
+    bad,token,"123456","../bad"),/invalid_store_purchase_operation_id/);
+  assert.deepEqual(bad.reads,["users/auditor_1"]);
+});
+
+test("581B tampered, missing and refund-pending evidence is never certified",async()=>{
+  for(const mutate of [
+    db=>db.docs.delete("financial_ledger/store_buyer_1__"+evidenceOperationId),
+    db=>db.docs.get("financial_ledger/store_buyer_1__"+
+      evidenceOperationId).closingBalance=50000,
+    db=>db.docs.get("store_purchase_receipts/buyer_1__"+
+      evidenceOperationId).refundStatus="requested",
+    db=>db.docs.get("admin_audit_logs/store_purchase_buyer_1__"+
+      evidenceOperationId).actorUid="another_buyer",
+  ]){
+    const db=ownerEvidenceDb();
+    mutate(db);
+    const result=await verifyStorePurchaseEvidenceForOwner(
+      db,token,"123456",evidenceOperationId);
+    assert.equal(result.ok,true);
+    assert.equal(result.verified,false);
+    assert.ok(["incomplete_evidence","ledger_mismatch",
+      "requires_refund_review","audit_mismatch"].includes(result.code));
+    assert.equal(result.certifiedAmountCoins,undefined);
+  }
+  const notFound=await verifyStorePurchaseEvidenceForOwner(
+    ownerEvidenceDb(),token,"123456","store_missing_operation_0001");
+  assert.deepEqual(notFound,{ok:true,verified:false,
+    operationId:"store_missing_operation_0001",code:"not_found"});
 });
