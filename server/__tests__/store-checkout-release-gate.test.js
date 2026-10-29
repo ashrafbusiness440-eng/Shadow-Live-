@@ -3,6 +3,7 @@ import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {
   storePurchase,storeCheckoutIssuanceEnabled,STORE_PURCHASE_RELEASE_VALUE,
+  isConfirmedStorePurchaseAction,
 } from "../../cloudflare-worker/src/store-entitlements.js";
 import {
   manageStoreGrantIssue,storeGrantIssuanceEnabled,STORE_GRANT_RELEASE_VALUE,
@@ -170,4 +171,21 @@ test("581A even a valid grant/revoke flag requires explicit confirmation",async(
     const body=await response.json();
     assert.match(body.code,/invalid_.*_confirmation/);
   }
+});
+
+test("579F renewal is routed only with confirmation and never bypasses OFF gate",async()=>{
+  assert.equal(isConfirmedStorePurchaseAction({action:"renew",confirmation:"confirmed"}),true);
+  assert.equal(isConfirmedStorePurchaseAction({action:"purchase",confirmation:"confirmed"}),true);
+  for(const action of ["renew","purchase"]){
+    assert.equal(isConfirmedStorePurchaseAction({action,confirmation:"preview"}),false);
+    const response=await storePurchase(request({action}),{});
+    assert.equal(response.status,423);
+    assert.equal((await response.json()).code,"purchasing_disabled");
+  }
+  for(const action of ["grant","revoke","preview",null]){
+    assert.equal(isConfirmedStorePurchaseAction({action,confirmation:"confirmed"}),false);
+  }
+  const src=readFileSync(new URL("../../cloudflare-worker/src/store-entitlements.js",import.meta.url),"utf8");
+  assert.match(src,/store_renewal_item_not_owned/);
+  assert.match(src,/store_renewal_quote_changed/);
 });
