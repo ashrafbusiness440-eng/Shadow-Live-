@@ -7,6 +7,8 @@ import {validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
 import {certifyStorePurchaseEvidenceOffline}
   from "./store-purchase-reconciliation-offline.js";
+import {reviewStoreFinancialSourcePage}
+  from "./store-financial-source-review.js";
 import {
   cleanStoreId,validStoreUid,hasRecentStoreAdminLogin,resolveStoreAdminTarget,
 } from "./store-admin-target.js";
@@ -292,6 +294,22 @@ export async function loadStoreUserFinancialEvidencePage(
   };
 }
 
+// Same verified Owner/recent-session/target gate as the existing receipt
+// report; the source engine deliberately has no independent authorization.
+export async function loadStoreFinancialSourcePageForOwner(
+  db,token,rawTargetId,rawSource,rawCursor=null){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  if(!["operations","ledger","audit"].includes(rawSource))
+    throw Error("invalid_store_financial_source");
+  const {targetUid,searchedId}=await resolveStoreAdminTarget(db,rawTargetId);
+  return {
+    searchedId,targetUid,
+    ...await reviewStoreFinancialSourcePage(db,{
+      buyerUid:targetUid,source:rawSource,cursor:rawCursor,
+    }),
+  };
+}
+
 export async function manageStorePurchases(request,env) {
   if(request.method!=="POST") {
     return json(request,env,{ok:false,code:"method_not_allowed"},405);
@@ -301,7 +319,8 @@ export async function manageStorePurchases(request,env) {
     const body=await readJson(request);
     if(body?.action!=="history"&&body?.action!=="verify_operation"&&
         body?.action!=="review_selected"&&
-        body?.action!=="financial_page") {
+        body?.action!=="financial_page"&&
+        body?.action!=="financial_source_page") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -315,7 +334,10 @@ export async function manageStorePurchases(request,env) {
         :body.action==="financial_page"
           ?await loadStoreUserFinancialEvidencePage(
             db,token,targetId,body?.cursor)
-          :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+          :body.action==="financial_source_page"
+            ?await loadStoreFinancialSourcePageForOwner(
+              db,token,targetId,body?.source,body?.cursor)
+            :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
@@ -325,13 +347,16 @@ export async function manageStorePurchases(request,env) {
         "invalid_target_id","invalid_store_product_id",
         "invalid_store_purchase_operation_id",
         "invalid_store_receipt_cursor","invalid_store_review_selection",
+        "invalid_store_financial_source","invalid_store_financial_source_cursor",
         "not_found"].includes(code)) {
       return json(request,env,{ok:false,code},
         code==="forbidden"?403:
         (code==="invalid_target_id"||code==="invalid_store_product_id"||
           code==="invalid_store_purchase_operation_id"||
           code==="invalid_store_receipt_cursor"||
-          code==="invalid_store_review_selection")?400:
+          code==="invalid_store_review_selection"||
+          code==="invalid_store_financial_source"||
+          code==="invalid_store_financial_source_cursor")?400:
         code==="not_found"?404:401);
     }
     return json(request,env,{ok:false,code:"store_purchases_unavailable"},503);

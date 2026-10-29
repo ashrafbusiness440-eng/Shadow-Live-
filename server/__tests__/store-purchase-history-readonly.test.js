@@ -4,7 +4,7 @@ import {test} from "node:test";
 import {
   canViewStorePurchases,projectStorePurchaseReceipt,loadStoreUserPurchases,
   verifyStorePurchaseEvidenceForOwner,reviewStorePurchaseEvidenceBatchForOwner,
-  loadStoreUserFinancialEvidencePage,
+  loadStoreUserFinancialEvidencePage,loadStoreFinancialSourcePageForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
@@ -582,5 +582,178 @@ test("603 financial evidence page never drops malformed last receipt into a sile
   assert.equal(report.hasMore,true);
   assert.equal(report.nextCursor,null);
   assert.equal(report.paginationBlocked,true);
+  assert.equal(report.financialReportComplete,false);
+});
+
+test("604 Owner reconciles independent operation, ledger and audit sources",async()=>{
+  const docs={
+    operations:"store_purchase_operations/buyer_1__"+evidenceOperationId,
+    ledger:"financial_ledger/store_buyer_1__"+evidenceOperationId,
+    audit:"admin_audit_logs/store_purchase_buyer_1__"+evidenceOperationId,
+  };
+  for(const source of ["operations","ledger","audit"]){
+    const db=ownerEvidenceDb();
+    const fullPath=docs[source];
+    db.runQuery=async(path,params)=>{
+      db.reads.push({path,params});
+      assert.equal(path,fullPath.split("/")[0]);
+      assert.equal(params.limit,11);
+      assert.deepEqual(params.orderBy,
+        [{field:"__name__",direction:"desc"}]);
+      assert.equal(params.startAfter.length,0);
+      assert.equal(params.filters[0].value,"buyer_1");
+      if(source==="ledger")
+        assert.deepEqual(params.filters[1],{
+          field:"sourceType",op:"==",value:"storePurchase",
+        });
+      if(source==="audit")
+        assert.deepEqual(params.filters[1],{
+          field:"action",op:"in",
+          value:["purchaseStoreItem","renewStoreItem"],
+        });
+      return [{id:fullPath.split("/")[1],
+        data:{...db.docs.get(fullPath)}}];
+    };
+    const output=await loadStoreFinancialSourcePageForOwner(
+      db,token,"123456",source);
+    assert.equal(output.ok,true);
+    assert.equal(output.scope,"one_buyer_source_page");
+    assert.equal(output.source,source);
+    assert.equal(output.searchedId,"123456");
+    assert.equal(output.inspected,1);
+    assert.equal(output.verified,1);
+    assert.equal(output.needsReview,0);
+    assert.equal(output.verifiedPurchaseCoins,14000);
+    assert.equal(output.verifiedRenewalCoins,0);
+    assert.equal(output.orphanOrConflicting,0);
+    assert.equal(output.hasMore,false);
+    assert.equal(output.financialReportComplete,false);
+    assert.equal(output.netRevenueCertified,false);
+    assert.equal(output.refundSettlementCertified,false);
+    assert.deepEqual(output.evidence,[{
+      operationId:evidenceOperationId,verified:true,
+      kind:"purchase",certifiedAmountCoins:14000,
+    }]);
+    assert.equal(db.reads.length,8);
+    const publicData=JSON.stringify(output);
+    for(const secret of ["NEVER_EXPOSE","privateWallet","privateEmail",
+      "openingBalance","closingBalance"])
+      assert.equal(publicData.includes(secret),false);
+  }
+});
+
+test("604 source-side orphan and independently refunded receipt cannot earn Coins",async()=>{
+  for(const source of ["operations","ledger","audit"]){
+    for(const mutator of [
+      db=>db.docs.delete("store_purchase_receipts/buyer_1__"+evidenceOperationId),
+      db=>{db.docs.get("store_purchase_receipts/buyer_1__"+
+        evidenceOperationId).refundStatus="refunded";},
+    ]){
+      const db=ownerEvidenceDb();
+      const suffix=source==="operations"?"buyer_1__":
+        source==="ledger"?"store_buyer_1__":"store_purchase_buyer_1__";
+      const path=(source==="operations"?"store_purchase_operations":
+        source==="ledger"?"financial_ledger":"admin_audit_logs")+
+        "/"+suffix+evidenceOperationId;
+      const snapshot={...db.docs.get(path)};
+      mutator(db);
+      db.runQuery=async(path,params)=>[{id:suffix+evidenceOperationId,
+        data:snapshot}];
+      const report=await loadStoreFinancialSourcePageForOwner(
+        db,token,"123456",source);
+      assert.equal(report.verified,0);
+      assert.equal(report.needsReview,1);
+      assert.equal(report.verifiedPurchaseCoins,0);
+      assert.equal(report.orphanOrConflicting,1);
+      assert.ok(["incomplete_evidence","requires_refund_review"]
+        .includes(report.evidence[0].code));
+      assert.equal(report.financialReportComplete,false);
+    }
+  }
+});
+
+test("604 source pages fail closed on stale source state and malformed identity",async()=>{
+  for(const source of ["operations","ledger","audit"]){
+    const db=ownerEvidenceDb();
+    const prefix=source==="operations"?"buyer_1__":
+      source==="ledger"?"store_buyer_1__":"store_purchase_buyer_1__";
+    const collection=source==="operations"?"store_purchase_operations":
+      source==="ledger"?"financial_ledger":"admin_audit_logs";
+    const data={...db.docs.get(collection+"/"+prefix+evidenceOperationId)};
+    if(source==="operations")data.result={...data.result,priceCoins:777};
+    if(source==="ledger")data.delta=-777;
+    if(source==="audit")data.priceCoins=777;
+    db.runQuery=async()=>[
+      {id:prefix+evidenceOperationId,data},
+      {id:"../bad",data},
+      {id:prefix+evidenceOperationId,data},
+    ];
+    const report=await loadStoreFinancialSourcePageForOwner(
+      db,token,"123456",source);
+    assert.equal(report.verified,0);
+    assert.equal(report.needsReview,3);
+    assert.equal(report.verifiedPurchaseCoins,0);
+    assert.equal(report.evidence[0].code,"conflicting_source_snapshot");
+    assert.equal(report.evidence[1].code,"invalid_or_duplicate_source_key");
+    assert.equal(report.evidence[2].code,"invalid_or_duplicate_source_key");
+  }
+});
+
+test("604 Owner source cursor is bound to exact account and source",async()=>{
+  const source="ledger",db=ownerEvidenceDb();
+  const prefix="store_buyer_1__";
+  const key=evidenceOperationId;
+  const data=db.docs.get("financial_ledger/"+prefix+key);
+  let page=0;
+  db.runQuery=async(path,params)=>{
+    db.reads.push({path,params});
+    page++;
+    if(page===1)return Array.from({length:11},(_,i)=>({
+      id:prefix+key+"_"+String(i).padStart(2,"0"),
+      data:{...data,sourceId:"buyer_1__"+key},
+    }));
+    return [];
+  };
+  const report=await loadStoreFinancialSourcePageForOwner(
+    db,token,"123456",source);
+  assert.equal(report.pageLimit,10);
+  assert.equal(report.hasMore,true);
+  assert.ok(report.nextCursor);
+  const next=await loadStoreFinancialSourcePageForOwner(
+    db,token,"123456",source,report.nextCursor);
+  assert.equal(next.inspected,0);
+  assert.deepEqual(db.reads.filter(x=>typeof x==="object")[1]
+    .params.startAfter,[{
+      referencePath:"financial_ledger/"+
+        prefix+key+"_09",
+    }]);
+  await assert.rejects(()=>loadStoreFinancialSourcePageForOwner(
+    db,token,"123456","audit",report.nextCursor),
+    /invalid_store_financial_source_cursor/);
+  await assert.rejects(()=>loadStoreFinancialSourcePageForOwner(
+    db,token,"another_user","ledger",report.nextCursor),
+    /not_found/);
+  const staff=dbFor();
+  await assert.rejects(()=>loadStoreFinancialSourcePageForOwner(
+    staff,token,"123456","ledger"),/forbidden/);
+  assert.deepEqual(staff.reads,["users/auditor_1"]);
+  const stale=ownerEvidenceDb();
+  await assert.rejects(()=>loadStoreFinancialSourcePageForOwner(
+    stale,{...token,auth_time:1},"123456","ledger"),
+    /recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+});
+
+test("604 malformed source page cannot falsely claim the next page was audited",async()=>{
+  const db=ownerEvidenceDb();
+  db.runQuery=async()=>Array.from({length:11},(_,i)=>({
+    id:i===9?null:"buyer_1__"+evidenceOperationId+"_"+i,
+    data:{buyerUid:"buyer_1"},
+  }));
+  const report=await loadStoreFinancialSourcePageForOwner(
+    db,token,"123456","operations");
+  assert.equal(report.hasMore,true);
+  assert.equal(report.paginationBlocked,true);
+  assert.equal(report.nextCursor,null);
   assert.equal(report.financialReportComplete,false);
 });
