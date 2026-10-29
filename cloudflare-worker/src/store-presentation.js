@@ -19,12 +19,23 @@ function isActiveUser(data={}){
     data.deletionProcessing!==true && data.authDeleted!==true;
 }
 
+// The same resolver serves Worker REST and the existing Admin-style legacy
+// room entrance path. Neither adapter permits arbitrary collection listing.
+async function readStoreDocument(db,path){
+  if(typeof db?.get==="function")return db.get(path);
+  if(typeof db?.doc==="function"){
+    const snap=await db.doc(path).get();
+    return {exists:snap.exists,data:snap.exists?(snap.data()||{}):null};
+  }
+  throw Error("store_visual_reader_unavailable");
+}
+
 // Null means the slot/entitlement/asset is absent, invalid or expired.
 // The positive result is safe to show other users. No private purchase/grant
 // markers, actor identity, ledger, user document or raw equipment slots leak.
 export async function resolveStoreVisuals(db,uid,nowMs=Date.now()){
   if(!validUid(uid)||!Number.isSafeInteger(nowMs)||nowMs<0)return {};
-  const selection=await db.get("user_store_equipped/"+uid);
+  const selection=await readStoreDocument(db,"user_store_equipped/"+uid);
   if(!selection.exists)return {};
   let slots;
   try{slots=readStoreEquipSlots(selection,uid);}
@@ -33,7 +44,7 @@ export async function resolveStoreVisuals(db,uid,nowMs=Date.now()){
   if(!entries.length)return {};
   const resolved=await Promise.all(entries.map(async category=>{
     const id=slots[category];
-    const entitlement=await db.get(
+    const entitlement=await readStoreDocument(db,
       "user_store_entitlements/"+uid+"/items/"+id);
     if(!entitlement.exists)return null;
     const item=validStoreEntitlementDocument(
@@ -43,7 +54,7 @@ export async function resolveStoreVisuals(db,uid,nowMs=Date.now()){
     // Product identity and category are server-owned. The published visual
     // is independent of the thumbnail used in Store catalogue listings.
     const visualKey="store.item."+id+".visual";
-    const visual=await db.get("app_asset_registry/"+visualKey);
+    const visual=await readStoreDocument(db,"app_asset_registry/"+visualKey);
     const rawUrl=clean(visual.data?.rawUrl);
     if(!visual.exists||visual.data?.published!==true||
         !/^https:\/\//.test(rawUrl))return null;
