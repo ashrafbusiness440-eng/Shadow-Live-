@@ -83,6 +83,21 @@ test("legacy and malformed equipment fail closed without breaking other cosmetic
   assert.deepEqual(await resolveStoreVisuals(e.db,"../../other",now),{});
 });
 
+test("Admin-style legacy room reader uses bounded direct document gets",async()=>{
+  const c=setup();
+  const db={
+    doc(path){
+      return {get:async()=>{
+        const value=c.docs.get(path);
+        return {exists:c.docs.has(path),data:()=>value};
+      }};
+    },
+  };
+  const out=await resolveStoreVisuals(db,uid,now);
+  assert.equal(out.frames.assetKey,"store.item.200001.visual");
+  assert.equal(out.entranceEffects.productId,"200002");
+});
+
 test("store presentation is read only and room renders verified visuals before mystery",async()=>{
   const method=await storePresentation(
     new Request("https://example.com/api/store-presentation"),{});
@@ -91,6 +106,8 @@ test("store presentation is read only and room renders verified visuals before m
     "../../cloudflare-worker/src/index.js",import.meta.url),"utf8");
   const room=readFileSync(new URL(
     "../../cloudflare-worker/src/room-realtime.js",import.meta.url),"utf8");
+  const legacy=readFileSync(new URL(
+    "../../cloudflare-worker/src/voice-session-legacy.js",import.meta.url),"utf8");
   const source=readFileSync(new URL(
     "../../cloudflare-worker/src/store-presentation.js",import.meta.url),"utf8");
   assert.match(route,/url\.pathname === "\/api\/store-presentation"/);
@@ -98,6 +115,11 @@ test("store presentation is read only and room renders verified visuals before m
   assert.match(room,/storeEntrance\?\.assetKey \|\| vipCosmetics/);
   assert.match(room,/storeFrame\?\.assetKey/);
   assert.match(room,/applyMysteriousIdentityPresentation/);
+  assert.match(room,/safeLegacyFrameKey/);
+  assert.match(legacy,/hasStoreEntrance/);
+  assert.match(legacy,/storeEntrance\.assetKey/);
+  assert.match(legacy,/resolveStoreVisuals\(db,uid\)/);
+  assert.match(legacy,/mysteriousMode[\s\S]*hasStoreEntrance/);
   assert.doesNotMatch(source,/db\.commit\(|writeCreate\(|writeUpdate\(/);
   assert.doesNotMatch(source,/db\.list\(|runQuery\(/);
 });
