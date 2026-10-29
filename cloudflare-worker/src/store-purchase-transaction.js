@@ -3,6 +3,7 @@
 // gated until atomicity, permissions, CI and live E2E are signed off.
 import {prepareStorePurchase,validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
+import {prepareStoreRenewal} from "./store-renewal-policy.js";
 import {loadUserLevelPolicy,userLevelSummaries} from "./user-level-policy.js";
 import {effectiveVipLevel} from "./user-level-visibility.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
@@ -106,29 +107,45 @@ export async function commitStorePurchaseOffline(
           typeof asset.data.rawUrl!=="string"||
           !/^https:\/\//.test(asset.data.rawUrl.trim()))
         fail("store_asset_not_published");
-      // No double charge for active, expired, or revoked ownership.
-      // Renewal/stacking requires an independently approved policy.
-      if(entitlement.exists)fail("store_item_already_owned");
+      // Reuse the exact original entitlement document: extending its time
+      // does not mint duplicate inventory or bypass admin revocation.
+      let term;
+      try{
+        term=prepareStoreRenewal({
+          existing:entitlement.exists?entitlement.data:null,
+          uid,quote,nowMs,
+        });
+      }catch(error){fail(clean(error?.message)||"invalid_store_renewal");}
       if(before<quote.priceCoins)fail("insufficient_balance");
       const after=before-quote.priceCoins;
       const createdAt=new Date(nowMs);
       const result={
         operationId:key,productId:quote.productId,priceCoins:quote.priceCoins,
         durationDays:quote.durationDays,acquiredAtMs:nowMs,
-        expiresAtMs:quote.expiresAtMs,deliveryStatus:"delivered",
+        expiresAtMs:term.expiresAtMs,deliveryStatus:"delivered",
+        renewal:term.renewal,renewalCount:term.renewalCount,
+        previousExpiresAtMs:term.previousExpiresAtMs,
       };
       await db.commit(tx,[
         db.writeUpdate(walletPath,{
           coins:after,walletUpdatedAt:createdAt,
         },["coins","walletUpdatedAt"]),
-        db.writeCreate(entitlementPath,{
-          ownerUid:uid,productId:quote.productId,nameAr:quote.nameAr,
-          category:quote.category,assetKey:quote.assetKey,
-          source:"purchase",status:"active",equipped:false,
-          acquiredAtMs:nowMs,expiresAtMs:quote.expiresAtMs,
-          purchaseOperationId:key,priceCoins:quote.priceCoins,
-          updatedAt:createdAt,
-        }),
+        term.renewal
+          ?db.writeUpdate(entitlementPath,{
+            status:"active",equipped:term.equipped,
+            expiresAtMs:term.expiresAtMs,
+            lastRenewalOperationId:key,renewalCount:term.renewalCount,
+            updatedAt:createdAt,
+          },["status","equipped","expiresAtMs","lastRenewalOperationId",
+            "renewalCount","updatedAt"])
+          :db.writeCreate(entitlementPath,{
+            ownerUid:uid,productId:quote.productId,nameAr:quote.nameAr,
+            category:quote.category,assetKey:quote.assetKey,
+            source:"purchase",status:"active",equipped:false,
+            acquiredAtMs:nowMs,expiresAtMs:term.expiresAtMs,
+            purchaseOperationId:key,priceCoins:quote.priceCoins,
+            renewalCount:0,updatedAt:createdAt,
+          }),
         db.writeCreate(ledgerPath,{
           userId:uid,asset:"coins",delta:-quote.priceCoins,
           openingBalance:before,closingBalance:after,
@@ -141,7 +158,8 @@ export async function commitStorePurchaseOffline(
           category:quote.category,assetKey:quote.assetKey,
           rarity:quote.rarity,priceCoins:quote.priceCoins,
           durationDays:quote.durationDays,
-          acquiredAtMs:nowMs,expiresAtMs:quote.expiresAtMs,
+          acquiredAtMs:nowMs,expiresAtMs:term.expiresAtMs,
+          renewal:term.renewal,previousExpiresAtMs:term.previousExpiresAtMs,
           deliveryStatus:"delivered",refundStatus:"none",createdAt,
         }),
         db.writeCreate(opPath,{
@@ -150,7 +168,8 @@ export async function commitStorePurchaseOffline(
         }),
         db.writeCreate("admin_audit_logs/store_purchase_"+operationKey,{
           actorUid:uid,targetType:"store_entitlement",
-          targetId:entitlementPath,action:"purchaseStoreItem",
+          targetId:entitlementPath,action:term.renewal
+            ?"renewStoreItem":"purchaseStoreItem",
           operationId:key,priceCoins:quote.priceCoins,createdAt,
         }),
       ]);
