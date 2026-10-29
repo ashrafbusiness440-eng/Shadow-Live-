@@ -7,6 +7,7 @@ import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
 import '../services/profile_visual_identity_service.dart';
 import '../../store/services/store_visual_presentation_service.dart';
+import '../../store/widgets/store_visual_expiry_gate.dart';
 
 class ProfileAvatarWithFrame extends StatefulWidget {
   const ProfileAvatarWithFrame({
@@ -241,13 +242,18 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
         final frame = snapshot.data;
         if (frame == null || !frame.activeNow) return _render(profile);
         // Only this verified response may override the existing public frame.
-        return _render(<String, dynamic>{
-          ...profile,
-          'activeProfileFrameAssetKey': frame.assetKey,
-          'activeProfileFrameImageUrl': frame.imageUrl,
-          'activeProfileFrameExpiresAtMs': frame.expiresAtMs ?? 0,
-          'activeProfileFramePermanent': frame.expiresAtMs == null,
-        }, verifiedStoreFrame: true);
+        return StoreVisualExpiryGate(
+          expiresAtMs: frame.expiresAtMs,
+          builder: (context, active) => !active
+              ? _render(profile)
+              : _render(<String, dynamic>{
+                  ...profile,
+                  'activeProfileFrameAssetKey': frame.assetKey,
+                  'activeProfileFrameImageUrl': frame.imageUrl,
+                  'activeProfileFrameExpiresAtMs': frame.expiresAtMs ?? 0,
+                  'activeProfileFramePermanent': frame.expiresAtMs == null,
+                }, verifiedStoreFrame: true),
+        );
       },
     );
   }
