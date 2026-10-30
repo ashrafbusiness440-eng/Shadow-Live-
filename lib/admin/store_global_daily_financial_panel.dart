@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
+import 'store_refund_posting_day_panel.dart';
 
 /// Read-only Owner daily financial investigation across ALL Store buyers.
 /// Not a revenue report. Server rechecks Owner and recent authentication.
@@ -380,6 +381,11 @@ class _StoreGlobalDailyFinancialPanelState
             const Text('لا تُشمل السجلات التي لا تحمل تاريخًا مفهرسًا. '
               'هذه ليست إيرادات المتجر ولا صافي كوينز معتمدًا.'),
           ],
+          const SizedBox(height: 12),
+          StoreRefundPostingDayPanel(
+            key: ValueKey('refund-posting-${_dayString()}'),
+            day: _dayString(),
+          ),
           const SizedBox(height: 12),
           Text('مراجعة مبيعات اليوم — صفحات متطابقة',
             style: Theme.of(context).textTheme.titleMedium),
