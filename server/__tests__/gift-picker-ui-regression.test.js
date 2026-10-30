@@ -168,3 +168,29 @@ test("diary gifts open the unified picker directly with no legacy sheet in the a
     true,
   );
 });
+
+test("newly published gift art and a missing catalog have manual recovery", () => {
+  const picker = source(
+    "../../lib/features/gift/widgets/unified_gift_picker_sheet.dart",
+  );
+  const registry = source("../../lib/core/assets/shadow_asset_registry.dart");
+  const catalog = source(
+    "../../lib/features/gift/services/gift_catalog_service.dart",
+  );
+  const control = source("../../lib/admin/gift_catalog_control_page.dart");
+
+  assert.equal(registry.includes("Duration(seconds: 60)"), true);
+  assert.equal(registry.includes("previous.expiresAt.isAfter(now)"), true);
+  assert.equal(registry.includes("static void invalidate(String key)"), true);
+  assert.equal(picker.includes("forceRefresh: forceRefresh"), true);
+  assert.equal(picker.includes("_load(forceRefresh: true)"), true);
+  assert.equal(picker.includes("ShadowAssetRegistry.invalidate(gift.assetKey)"), true);
+  assert.equal(picker.includes("تحديث الهدايا"), true);
+  assert.equal(picker.includes("جرّب تحديث القائمة"), true);
+  assert.equal(control.includes("child: Text(saveAsDraft ? 'حفظ المسودة' : 'اعتماد وحفظ')"), true);
+  assert.match(control, /hasUnsavedChanges = true;[\s\S]*?await save\(\);/);
+  assert.equal(control.includes("احفظ تغييرات الفئات أولاً"), true);
+  // Do not render hidden/disabled gifts simply because a stale cache exists.
+  assert.equal(catalog.includes("A valid empty public catalog"), true);
+  assert.equal(catalog.includes("return items;"), true);
+});

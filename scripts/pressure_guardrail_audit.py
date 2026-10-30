@@ -303,10 +303,15 @@ def main() -> int:
         if loader not in service:
             failures.append(f"Step 8 regression: {label} cached API loader is missing")
 
-    if (
-        "GiftCatalogService.loadCatalog()" not in app_main
-        and "GiftCatalogService.loadCatalog()" not in read("lib/features/gift/widgets/room_gift_sheet.dart")
-        and "GiftCatalogService.loadCatalog()" not in unified_gift_picker
+    # Include named-argument loads: forceRefresh stays within the shared
+    # GiftCatalogService API and never opens a new per-user listener.
+    if not any(
+        "GiftCatalogService.loadCatalog(" in source
+        for source in (
+            app_main,
+            read("lib/features/gift/widgets/room_gift_sheet.dart"),
+            unified_gift_picker,
+        )
     ):
         failures.append("Step 8 regression: active gift UI is not using the cached catalog API")
     if "RechargeConfigService.watchPackages()" in recharge_screen or "_packageSubscription" in recharge_screen:
@@ -801,7 +806,21 @@ def main() -> int:
             failures.append(
                 f"Levels Stage 08 asset regression: registry mapping missing {required}"
             )
-    if "_cache.putIfAbsent" not in level_asset_registry:
+    # Both original putIfAbsent and a bounded TTL entry share one Future per
+    # asset key, rather than sending a request per rendering.
+    shared_asset_future = (
+        "_cache.putIfAbsent" in level_asset_registry
+        or all(
+            marker in level_asset_registry
+            for marker in (
+                "Map<String, _AssetUrlCacheEntry>",
+                "previous.future",
+                "_cache[key] = _AssetUrlCacheEntry(future",
+                "previous.expiresAt.isAfter(now)",
+            )
+        )
+    )
+    if not shared_asset_future:
         failures.append(
             "Levels Stage 08 pressure regression: Asset Registry lost shared Future cache"
         )

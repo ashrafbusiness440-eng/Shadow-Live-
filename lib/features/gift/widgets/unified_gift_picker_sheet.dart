@@ -174,10 +174,33 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     if (mounted) unawaited(_loadWealth());
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceRefresh = false}) async {
+    if (forceRefresh) {
+      if (_sending || _loading || !mounted) return;
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
-      final catalog = await GiftCatalogService.loadCatalog();
+      // A newly published gift/category must not be hidden behind a prior
+      // catalog response. This is a deliberate user action, not polling.
+      final catalog = await GiftCatalogService.loadCatalog(
+        forceRefresh: forceRefresh,
+      );
       if (!mounted) return;
+      if (forceRefresh) {
+        // Also discard old per-key published image URLs. Publishing an asset
+        // does not change its stable assetKey.
+        for (final gift in catalog) {
+          ShadowAssetRegistry.invalidate(gift.assetKey);
+          ShadowAssetRegistry.invalidate(gift.effectiveEffectAssetKey);
+        }
+        for (final category in GiftCatalogService.categoryOrder) {
+          final key = GiftCatalogService.categoryImageKey(category);
+          if (key.isNotEmpty) ShadowAssetRegistry.invalidate(key);
+        }
+      }
       final categories = catalog
           .where((gift) => gift.isAvailableIn(widget.giftContext))
           .map(_uiCategoryForGift).toSet();
@@ -186,10 +209,12 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           : (categories.isEmpty ? 'general' : categories.first);
       setState(() {
         _catalog = catalog;
+        _selected = null;
         _category = initialCategory;
         _balanceCoins = GiftCatalogService.cachedBalanceCoins;
         _bagQuantities = GiftCatalogService.cachedBagQuantities;
         _loading = false;
+        _error = null;
       });
     } catch (_) {
       if (!mounted) return;
@@ -198,6 +223,41 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         _error = 'تعذر تحميل الهدايا حالياً.';
       });
     }
+  }
+
+  Widget _emptyGiftState({bool loadFailed = false}) {
+    final noAvailableGifts = _availableCatalog.isEmpty;
+    final description = loadFailed
+        ? 'تعذر تحميل الهدايا. تأكد من الاتصال ثم حاول مجددًا.'
+        : noAvailableGifts
+            ? 'لا توجد هدايا متاحة هنا حالياً. '
+              'جرّب تحديث القائمة أو العودة لاحقاً.'
+            : _category == 'bag'
+                ? 'حقيبتك فارغة حالياً.'
+                : 'لا توجد هدايا في هذا القسم حالياً.';
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              description,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white60),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _sending || _loading
+                ? null
+                : () => _load(forceRefresh: true),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('تحديث الهدايا'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _uiCategoryForGift(GiftCatalogItem gift) =>
@@ -1007,13 +1067,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                     child: CircularProgressIndicator(color: Color(0xFF8A3DFF)),
                   )
                 : _error != null
-                    ? Center(
-                        child: Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white60),
-                        ),
-                      )
+                    ? _emptyGiftState(loadFailed: true)
                     : Column(
                         children: [
                           Container(
@@ -1033,12 +1087,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                           const SizedBox(height: 4),
                           Expanded(
                             child: _visible.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                      'لا توجد هدايا في هذا القسم حالياً',
-                                      style: TextStyle(color: Colors.white54),
-                                    ),
-                                  )
+                                ? _emptyGiftState()
                                 : GridView.builder(
                                     itemCount: _visible.length,
                                     gridDelegate:
