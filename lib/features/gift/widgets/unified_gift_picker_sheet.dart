@@ -16,12 +16,14 @@ class GiftPickerSendResult {
     this.wealthDeltaCoins = 0,
     this.bagQuantityRemaining,
     this.message = '',
+    this.recipientCount = 1,
   });
 
   final int? balanceCoins;
   final int wealthDeltaCoins;
   final int? bagQuantityRemaining;
   final String message;
+  final int recipientCount;
 }
 
 typedef GiftPickerSender = Future<GiftPickerSendResult> Function(
@@ -38,6 +40,7 @@ class UnifiedGiftPickerSheet extends StatefulWidget {
     required this.canSend,
     required this.onSend,
     this.giftContext = 'room',
+    this.comboContextKey = '',
   });
 
   final String title;
@@ -45,12 +48,14 @@ class UnifiedGiftPickerSheet extends StatefulWidget {
   final bool canSend;
   final GiftPickerSender onSend;
   final String giftContext;
+  final String comboContextKey;
 
   @override
   State<UnifiedGiftPickerSheet> createState() => _UnifiedGiftPickerSheetState();
 }
 
-class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
+class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
+    with SingleTickerProviderStateMixin {
   List<GiftCatalogItem> _catalog = const [];
   GiftCatalogItem? _selected;
   String _category = 'general';
@@ -67,18 +72,81 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   bool _loading = true;
   bool _sending = false;
   String? _error;
+  late final AnimationController _comboCountdown;
+  GiftCatalogItem? _comboGift;
+  int _comboQuantity = 1;
+  int _comboRecipientCount = 1;
+  int _comboTotal = 0;
+  bool _comboBag = false;
+
 
   @override
   void initState() {
     super.initState();
     _balanceCoins = GiftCatalogService.cachedBalanceCoins;
     _levelService = UserLevelService();
+    _comboCountdown = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _clearCombo());
+        }
+      });
     _load();
     unawaited(_loadWealth());
   }
 
   @override
+  void didUpdateWidget(covariant UnifiedGiftPickerSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.comboContextKey != widget.comboContextKey) {
+      _clearCombo();
+    }
+  }
+
+  void _clearCombo() {
+    _comboCountdown.stop();
+    _comboCountdown.reset();
+    _comboGift = null;
+    _comboTotal = 0;
+  }
+
+  void _restartCombo(GiftCatalogItem gift, bool bag, int recipientCount) {
+    if (_comboGift?.id != gift.id || _comboQuantity != _quantity ||
+        _comboBag != bag) {
+      _comboTotal = 0;
+    }
+    _comboGift = gift;
+    _comboQuantity = _quantity;
+    _comboRecipientCount = recipientCount < 1 ? 1 : recipientCount;
+    _comboBag = bag;
+    _comboTotal += _quantity * _comboRecipientCount;
+    _comboCountdown.forward(from: 0);
+    if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      HapticFeedback.lightImpact();
+    }
+    setState(() {});
+  }
+
+  bool get _canCombo {
+    final gift = _comboGift;
+    if (gift == null || _sending || !widget.canSend ||
+        !gift.isAvailableIn(widget.giftContext) ||
+        _lockedGiftLabel(gift) != null ||
+        _comboQuantity != _quantity ||
+        gift.id != _selected?.id ||
+        _comboBag != (_category == 'bag')) return false;
+    final requiredQuantity = _comboQuantity * _comboRecipientCount;
+    if (_comboBag) {
+      return (_bagQuantities[gift.id] ?? 0) >= requiredQuantity;
+    }
+    return (_balanceCoins ?? 0) >= gift.priceCoins * requiredQuantity;
+  }
+
+  @override
   void dispose() {
+    _comboCountdown.dispose();
     _customQuantityController.dispose();
     _customQuantityFocus.dispose();
     _levelService?.close();
@@ -210,6 +278,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       setState(() {
         _catalog = catalog;
         _selected = null;
+        _clearCombo();
         _category = initialCategory;
         _balanceCoins = GiftCatalogService.cachedBalanceCoins;
         _bagQuantities = GiftCatalogService.cachedBagQuantities;
@@ -408,6 +477,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       return;
     }
     setState(() => _sending = true);
+    _comboCountdown.stop();
     final useGiftBag = _category == 'bag';
     GiftPickerSendResult? confirmed;
     // Only the network send belongs to this failure handler. A local UI
@@ -485,7 +555,10 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       if (mounted) setState(() => _sending = false);
     }
 
-    if (confirmed == null || !mounted) return;
+    if (confirmed == null || !mounted) {
+      if (mounted) setState(() => _clearCombo());
+      return;
+    }
     try {
       final result = confirmed;
       if (result.balanceCoins != null) {
@@ -507,6 +580,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       // display issue is non-financial and must not be presented as a failed gift.
     }
     if (!mounted) return;
+    _restartCombo(gift, useGiftBag, confirmed.recipientCount);
     final message = confirmed.message.trim();
     if (message.isNotEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -640,6 +714,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
             onTap: _sending
                 ? null
                 : () => setState(() {
+                      _clearCombo();
                       _category = value;
                       _customQuantityOpen = false;
                       if (_selected != null &&
@@ -703,7 +778,10 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     final selected = _selected?.id == gift.id && locked == null;
     final bagCount = _bagQuantities[gift.id] ?? 0;
     return InkWell(
-      onTap: _sending || locked != null ? null : () => setState(() => _selected = gift),
+      onTap: _sending || locked != null ? null : () => setState(() {
+        _clearCombo();
+        _selected = gift;
+      }),
       borderRadius: BorderRadius.circular(13),
       child: Opacity(
         opacity: locked == null ? 1 : .42,
@@ -865,6 +943,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       return;
     }
     setState(() {
+      _clearCombo();
       _quantity = value;
       _customQuantityOpen = false;
     });
@@ -879,6 +958,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           : value == null
               ? _openCustomQuantity
               : () => setState(() {
+                    _clearCombo();
                     _quantity = value;
                     _customQuantityOpen = false;
                   }),
@@ -1034,6 +1114,57 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
             ),
             const SizedBox(height: 6),
           ],
+          if (_comboGift != null && _comboCountdown.isAnimating)
+            Row(
+              textDirection: TextDirection.ltr,
+              children: [
+                SizedBox(
+                  width: 72,
+                  height: 57,
+                  child: AnimatedBuilder(
+                    animation: _comboCountdown,
+                    builder: (context, _) => Center(
+                      child: SizedBox(
+                        width: 52,
+                        height: 52,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox.expand(
+                              child: CircularProgressIndicator(
+                                value: 1 - _comboCountdown.value,
+                                strokeWidth: 3.5,
+                                color: const Color(0xFFBB87FF),
+                                backgroundColor: Colors.white12,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'إعادة إرسال نفس الهدية',
+                              padding: const EdgeInsets.all(3),
+                              onPressed: _canCombo ? _send : null,
+                              icon: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 25,
+                                    height: 25,
+                                    child: _giftImage(_comboGift!, fallbackSize: 19),
+                                  ),
+                                  Text('×$_comboTotal',
+                                    style: const TextStyle(fontSize: 9,
+                                      color: Colors.amberAccent,
+                                      fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           Row(
             textDirection: TextDirection.ltr,
             children: [
