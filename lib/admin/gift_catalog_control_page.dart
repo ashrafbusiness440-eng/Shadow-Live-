@@ -931,6 +931,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           }
           autoSaveStatus.value = 'تم حفظ المسودة تلقائياً';
         } catch (failure) {
+          // Keep the in-memory progress visible without another page reload.
+          if (mounted) setState(() => editorDraft = snapshot);
           autoSaveStatus.value =
               failure.toString().contains('gift_editor_conflict')
                   ? 'تم تعديل المسودة من نافذة أخرى، ولم نكتب فوق التعديلات الأحدث.'
@@ -1610,7 +1612,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     );
 
     autoSaveTimer?.cancel();
-    if (result == null && progressChanged) saveProgressNow();
+    // Include the last keystroke even when approval is pressed before debounce.
+    if (progressChanged) saveProgressNow();
     await lastAutoSave;
     autoSaveStatus.dispose();
 
