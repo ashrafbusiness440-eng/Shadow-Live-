@@ -480,13 +480,42 @@ export async function handler(req, res) {
         });
       }
       // Administrative editing must see the current revision, not a stale cache.
-      const snap = await ref.get();
+      const [snap, editorSnapshot] = await Promise.all([
+        ref.get(),
+        db.collection("gift_catalog_editor_drafts").doc(uid).get(),
+      ]);
       return out(res, 200, {
         ok: true,
         canGrantBag,
         exists: snap.exists,
         config: snap.exists ? snap.data() : null,
+        editorDraft: editorSnapshot.exists ? (editorSnapshot.data()?.payload || null) : null,
       });
+    }
+
+    // Partial, private editor progress is never published in the Gift Catalog.
+    // It uses a separate per-admin document, so typing cannot change the
+    // catalog's optimistic revision or invalidate the public cache.
+    if (action === "autosaveEditor") {
+      const payload = req.body?.payload;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          JSON.stringify(payload).length > 12000 ||
+          Object.keys(payload).length > 42) {
+        throw Error("invalid_gift_editor_draft");
+      }
+      const key = clean(payload.id);
+      if (!/^[a-z0-9_]{2,64}$/.test(key)) throw Error("invalid_gift_id");
+      await db.collection("gift_catalog_editor_drafts").doc(uid).set({
+        payload, updatedAt: FieldValue.serverTimestamp(),
+      });
+      return out(res, 200, { ok: true });
+    }
+
+    if (action === "clearEditor") {
+      await db.collection("gift_catalog_editor_drafts").doc(uid).set({
+        payload: null, updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return out(res, 200, { ok: true });
     }
 
     if (action === "save") {
