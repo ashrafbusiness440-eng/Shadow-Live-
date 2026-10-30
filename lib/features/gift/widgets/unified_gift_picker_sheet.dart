@@ -1131,44 +1131,44 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
                 SizedBox(
                   width: 72,
                   height: 57,
-                  child: AnimatedBuilder(
-                    animation: _comboCountdown,
-                    builder: (context, _) => Center(
-                      child: SizedBox(
-                        width: 52,
-                        height: 52,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            SizedBox.expand(
-                              child: CircularProgressIndicator(
+                  child: Center(
+                    child: SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox.expand(
+                            child: AnimatedBuilder(
+                              animation: _comboCountdown,
+                              builder: (_, __) => CircularProgressIndicator(
                                 value: 1 - _comboCountdown.value,
                                 strokeWidth: 3.5,
                                 color: const Color(0xFFBB87FF),
                                 backgroundColor: Colors.white12,
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'إعادة إرسال نفس الهدية',
-                              padding: const EdgeInsets.all(3),
-                              onPressed: _canCombo ? _send : null,
-                              icon: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: 25,
-                                    height: 25,
-                                    child: _giftImage(_comboGift!, fallbackSize: 19),
-                                  ),
-                                  Text('×$_comboTotal',
-                                    style: const TextStyle(fontSize: 9,
-                                      color: Colors.amberAccent,
-                                      fontWeight: FontWeight.w900)),
-                                ],
-                              ),
+                          ),
+                          IconButton(
+                            tooltip: 'إعادة إرسال نفس الهدية',
+                            padding: const EdgeInsets.all(3),
+                            onPressed: _canCombo ? _send : null,
+                            icon: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 25,
+                                  height: 25,
+                                  child: _giftImage(_comboGift!, fallbackSize: 19),
+                                ),
+                                Text('×$_comboTotal',
+                                  style: const TextStyle(fontSize: 9,
+                                    color: Colors.amberAccent,
+                                    fontWeight: FontWeight.w900)),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
