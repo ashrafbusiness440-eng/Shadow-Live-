@@ -558,10 +558,10 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
       if (mounted) setState(() => _sending = false);
     }
 
-    if (confirmed == null || !mounted) {
-      if (mounted) setState(() => _clearCombo());
-      return;
-    }
+    // A failed/unknown send cannot continue a combo. Keep the original
+    // explicit post-network success guard used by the gift safety tests.
+    if (confirmed == null && mounted) setState(() => _clearCombo());
+    if (confirmed == null || !mounted) return;
     try {
       final result = confirmed;
       if (result.balanceCoins != null) {
