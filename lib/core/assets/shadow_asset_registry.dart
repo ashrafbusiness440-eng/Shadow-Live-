@@ -16,7 +16,9 @@ abstract final class ShadowAssetRegistry {
   static final Map<String, _AssetUrlCacheEntry> _cache =
       <String, _AssetUrlCacheEntry>{};
 
-  static void invalidate(String key) => _cache.remove(key);
+  static void invalidate(String key) {
+    _cache.remove(key);
+  }
 
   static Uri _endpoint(String key) {
     final base = Uri.parse(apiBase.trim().isEmpty ? fallbackApiBase : apiBase);
