@@ -1070,8 +1070,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   const SizedBox(height: 10),
                   SwitchListTile(
                     value: isAnimated,
-                    onChanged: (value) =>
-                        setLocal(() => isAnimated = value),
+                    onChanged: (value) {
+                      setLocal(() => isAnimated = value);
+                      markProgressDirty();
+                    },
                     title: const Text('علامة الحركة القديمة في الكتالوج'),
                     subtitle: const Text(
                       'الصور الجديدة لقائمة الهدايا ثابتة؛ ملف الحركة مستقل '
@@ -1233,7 +1235,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       value: saveAsDraft,
                       onChanged: editSavedDraft || hasUnsavedChanges || categoryUnsaved
                           ? null
-                          : (value) => setLocal(() => saveAsDraft = value),
+                          : (value) {
+                              setLocal(() => saveAsDraft = value);
+                              markProgressDirty();
+                            },
                       title: const Text('حفظ الهدية كمسودة'),
                       subtitle: const Text('لا تظهر الهدية للمستخدمين إلا بعد نشرها من قسم المسودات.'),
                       contentPadding: EdgeInsets.zero,
@@ -1253,13 +1258,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       contentPadding: EdgeInsets.zero,
                       title: Text(place.$2),
                       value: allowedContexts.contains(place.$1),
-                      onChanged: (selected) => setLocal(() {
-                        if (selected == true) {
-                          allowedContexts.add(place.$1);
-                        } else {
-                          allowedContexts.remove(place.$1);
-                        }
-                      }),
+                      onChanged: (selected) {
+                        setLocal(() {
+                          if (selected == true) {
+                            allowedContexts.add(place.$1);
+                          } else {
+                            allowedContexts.remove(place.$1);
+                          }
+                        });
+                        markProgressDirty();
+                      },
                     ),
                   const SizedBox(height: 10),
                   const ListTile(
@@ -1275,7 +1283,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       if (visibleFrom != null)
                         IconButton(
                           tooltip: 'إلغاء موعد البداية',
-                          onPressed: () => setLocal(() => visibleFrom = null),
+                          onPressed: () {
+                            setLocal(() => visibleFrom = null);
+                            markProgressDirty();
+                          },
                           icon: const Icon(Icons.close_rounded),
                         ),
                       IconButton(
@@ -1284,6 +1295,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                           final selected = await chooseGiftMoment(dialogContext, visibleFrom);
                           if (selected != null && dialogContext.mounted) {
                             setLocal(() => visibleFrom = selected);
+                            markProgressDirty();
                           }
                         },
                         icon: const Icon(Icons.calendar_month_outlined),
@@ -1298,7 +1310,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       if (visibleUntil != null)
                         IconButton(
                           tooltip: 'إلغاء موعد النهاية',
-                          onPressed: () => setLocal(() => visibleUntil = null),
+                          onPressed: () {
+                            setLocal(() => visibleUntil = null);
+                            markProgressDirty();
+                          },
                           icon: const Icon(Icons.close_rounded),
                         ),
                       IconButton(
@@ -1307,6 +1322,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                           final selected = await chooseGiftMoment(dialogContext, visibleUntil);
                           if (selected != null && dialogContext.mounted) {
                             setLocal(() => visibleUntil = selected);
+                            markProgressDirty();
                           }
                         },
                         icon: const Icon(Icons.calendar_month_outlined),
@@ -1316,13 +1332,19 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   const SizedBox(height: 8),
                   SwitchListTile(
                     value: enabled,
-                    onChanged: (value) => setLocal(() => enabled = value),
+                    onChanged: (value) {
+                      setLocal(() => enabled = value);
+                      markProgressDirty();
+                    },
                     title: const Text('الهدية مفعلة'),
                     contentPadding: EdgeInsets.zero,
                   ),
                   SwitchListTile(
                     value: featured,
-                    onChanged: (value) => setLocal(() => featured = value),
+                    onChanged: (value) {
+                      setLocal(() => featured = value);
+                      markProgressDirty();
+                    },
                     title: const Text('هدية مميزة في الكتالوج'),
                     contentPadding: EdgeInsets.zero,
                   ),
