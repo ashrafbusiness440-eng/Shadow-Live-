@@ -502,6 +502,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
         'room_gift_recipient_limit' => 'عدد المستلمين أكبر من الحد الآمن للإرسال الجماعي.',
         'room_gift_write_limit' => 'تعذر إتمام الإرسال الجماعي بهذه المجموعة دفعة واحدة.',
         'recipient_required' => 'اختر مستلماً واحداً على الأقل.',
+        'gift_recipients_changed' => 'تغيّر المستلمون أثناء تجهيز الإرسال. تأكد من الاختيار ثم حاول مجددًا.',
         'room_presence_unavailable' => 'تعذر تأكيد الموجودين في الغرفة حالياً.',
         'relationship_gift_not_eligible' => 'هذه الهدية مخصصة لعلاقة مؤهلة.',
         'invalid_affinity_base_points' => 'إعداد نقاط هذه الهدية يحتاج مراجعة من الإدارة.',
