@@ -7,6 +7,7 @@ import {
   loadStoreUserFinancialEvidencePage,loadStoreFinancialSourcePageForOwner,
   loadStoreFinancialCoverageForOwner,
   loadStoreGlobalDailyPageForOwner,
+  loadStoreGlobalDailyCoverageForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
@@ -844,5 +845,45 @@ test("606 all-buyer UTC daily finances require exact Owner and recent auth",asyn
   await assert.rejects(()=>loadStoreGlobalDailyPageForOwner(
     stale,{...token,auth_time:1},yesterday,"operations"),
     /recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+});
+
+test("608 all-buyer UTC day source counts require recent Owner login",async()=>{
+  const db=ownerEvidenceDb();
+  const day=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  let calls=0;
+  db.readStoreGlobalDailyCoverageCounts=async(value)=>{
+    calls++;
+    assert.equal(value,day);
+    return {ok:true,scope:"all_buyers_one_utc_day_indexed_counts",day,
+      counts:{receipts:2,operations:2,ledger:1,audit:2},
+      countCap:501,cappedSources:[],cardinalitiesComparable:true,
+      sourceCountsEqual:false,countMismatch:true,
+      historicalRowsWithoutDateNotCovered:true,
+      sourceCompletenessCertified:false,
+      recordsIndividuallyReconciled:false,
+      legacyBackfillCertified:false,partialEvidenceOnly:true,
+      financialReportComplete:false,netRevenueCertified:false,
+      refundSettlementCertified:false};
+  };
+  const data=await loadStoreGlobalDailyCoverageForOwner(db,token,day);
+  assert.equal(data.scope,"all_buyers_one_utc_day_indexed_counts");
+  assert.equal(data.countMismatch,true);
+  assert.equal(data.financialReportComplete,false);
+  assert.equal(calls,1);
+  assert.deepEqual(db.reads,["users/auditor_1"]);
+  const staff=dbFor(viewer);
+  staff.readStoreGlobalDailyCoverageCounts=async()=>{
+    throw Error("staff_must_not_count_global");
+  };
+  await assert.rejects(()=>loadStoreGlobalDailyCoverageForOwner(
+    staff,token,day),/forbidden/);
+  assert.deepEqual(staff.reads,["users/auditor_1"]);
+  const stale=ownerEvidenceDb();
+  stale.readStoreGlobalDailyCoverageCounts=async()=>{
+    throw Error("stale_must_not_count_global");
+  };
+  await assert.rejects(()=>loadStoreGlobalDailyCoverageForOwner(
+    stale,{...token,auth_time:1},day),/recent_auth_required/);
   assert.deepEqual(stale.reads,["users/auditor_1"]);
 });
