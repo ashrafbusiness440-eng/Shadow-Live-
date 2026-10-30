@@ -1,0 +1,36 @@
+name: Store Finance Production Historical Acceptance (read only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/store_finance_production_presence.mjs'
+      - '.github/workflows/store-finance-production-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-store-production-historical-acceptance
+  cancel-in-progress: false
+
+jobs:
+  production-historical-presence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test fail-closed probe without production credentials
+        run: node --test server/__tests__/store-finance-production-presence.test.js
+      - name: Prove zero historical Store financial records, or explicitly block acceptance
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/store_finance_production_presence.mjs
