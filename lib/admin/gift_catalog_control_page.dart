@@ -746,6 +746,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
          (index != null && savedProgress['kind'] == 'edit' &&
           savedProgress['id'] == current?.id))
         ? savedProgress : null;
+    if (savedProgress != null && resume == null && !editSavedDraft) {
+      editing = false;
+      message('عندك مسودة تلقائية محفوظة. أكملها أو احذفها قبل فتح هدية أخرى.');
+      return;
+    }
     // Never reuse an ID already in the catalog, saved drafts or an unsaved
     // draft. Existing gift IDs remain immutable for historical ledgers.
     final generatedId = index == null && !editSavedDraft
@@ -774,16 +779,26 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           (template == null || editSavedDraft ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default'),
     );
     final placeholder = TextEditingController(
-      text: current?.localPlaceholder ??
+      text: resume?['localPlaceholder']?.toString() ??
+          current?.localPlaceholder ??
           'assets/images/gifts/gift_placeholder.webp',
     );
-    var enabled = template == null || editSavedDraft ? (current?.enabled ?? true) : false;
-    var featured = current?.featured ?? false;
-    final allowedContexts = (current?.allowedContexts ?? const ['room', 'chat', 'diary']).toSet();
-    DateTime? visibleFrom = (current?.visibleFromMs ?? 0) > 0
-        ? DateTime.fromMillisecondsSinceEpoch(current!.visibleFromMs) : null;
-    DateTime? visibleUntil = (current?.visibleUntilMs ?? 0) > 0
-        ? DateTime.fromMillisecondsSinceEpoch(current!.visibleUntilMs) : null;
+    var enabled = resume?['enabled'] is bool
+        ? resume!['enabled'] as bool
+        : (template == null || editSavedDraft ? (current?.enabled ?? true) : false);
+    var featured = resume?['featured'] is bool
+        ? resume!['featured'] as bool : current?.featured ?? false;
+    final allowedContexts = (resume?['allowedContexts'] is List
+        ? (resume!['allowedContexts'] as List).whereType<String>().toList()
+        : current?.allowedContexts ?? const ['room', 'chat', 'diary']).toSet();
+    final startMs = (resume?['visibleFromMs'] as num?)?.toInt() ??
+        current?.visibleFromMs ?? 0;
+    final endMs = (resume?['visibleUntilMs'] as num?)?.toInt() ??
+        current?.visibleUntilMs ?? 0;
+    DateTime? visibleFrom = startMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(startMs) : null;
+    DateTime? visibleUntil = endMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(endMs) : null;
     var category = resume?['category']?.toString() ?? current?.category ?? 'general';
     var minVipLevel = (resume?['minVipLevel'] as num?)?.toInt() ??
         current?.effectiveMinVipLevel ?? 0;
@@ -792,7 +807,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     final effectContexts = (resume?['effectContexts'] is List
         ? (resume!['effectContexts'] as List).whereType<String>().toList()
         : current?.effectContexts ?? const ['room']).toSet();
-    var isAnimated = template == null || editSavedDraft ? (current?.isAnimated ?? false) : false;
+    var isAnimated = resume?['isAnimated'] is bool
+        ? resume!['isAnimated'] as bool
+        : (template == null || editSavedDraft ? (current?.isAnimated ?? false) : false);
     var effectMode = resume?['effectMode']?.toString() ??
         (template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none');
     final effectAssetKey = TextEditingController(
@@ -800,7 +817,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         (template == null || editSavedDraft ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default'),
     );
     final effectSoundAssetKey = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.effectSoundAssetKey ?? '') : '',
+      text: resume?['effectSoundAssetKey']?.toString() ??
+          (template == null || editSavedDraft ? (current?.effectSoundAssetKey ?? '') : ''),
     );
     final effectMinQuantity = TextEditingController(
       text: resume?['effectMinQuantity']?.toString() ??
@@ -837,6 +855,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       'nameAr': nameAr.text,
       'priceText': price.text,
       'assetKey': assetKey.text,
+      'localPlaceholder': placeholder.text,
       'category': category,
       'minVipLevel': minVipLevel,
       'minWealthLevel': minWealthLevel,
@@ -2208,6 +2227,42 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (editorDraft != null)
+              ListTile(
+                leading: const Icon(Icons.autorenew_rounded,
+                  color: Colors.amberAccent),
+                title: Text('مسودة تلقائية: ${editorDraft?['nameAr'] ?? 'هدية جديدة'}'),
+                subtitle: const Text('محفوظة بشكل خاص ولم تُنشر. يمكنك استكمالها.'),
+                trailing: Wrap(
+                  spacing: 2,
+                  children: [
+                    TextButton(
+                      onPressed: editing || saving ? null : () {
+                        final value = editorDraft;
+                        if (value?['kind'] == 'edit') {
+                          final existing = gifts.indexWhere(
+                            (g) => g.id == value?['id']);
+                          if (existing >= 0) editGift(existing);
+                        } else {
+                          editGift();
+                        }
+                      },
+                      child: const Text('استكمال'),
+                    ),
+                    TextButton(
+                      onPressed: editing || saving ? null : () async {
+                        try {
+                          await post({'action': 'clearEditor'});
+                          if (mounted) setState(() => editorDraft = null);
+                        } catch (_) {
+                          message('تعذر حذف المسودة التلقائية.');
+                        }
+                      },
+                      child: const Text('حذف'),
+                    ),
+                  ],
+                ),
+              ),
             ListTile(
               leading: const Icon(Icons.edit_note_outlined),
               title: const Text('مسودات الهدايا'),
