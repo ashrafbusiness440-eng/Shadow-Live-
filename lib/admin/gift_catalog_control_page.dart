@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'control_api_endpoints.dart';
 import 'control_asset_manager_page.dart';
@@ -46,6 +47,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
   GiftCatalogItem? pendingDraft;
   Map<String, dynamic>? editorDraft;
+  int editorDraftRevision = 0;
+
+  String get _editorBackupKey =>
+      'shadow_gift_editor_${controlAuth.currentUser?.uid ?? 'signed_out'}';
   bool statsOnly = false;
   bool canGrantBag = false;
   bool statsTotalsLoading = false;
@@ -209,7 +214,25 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-      final savedEditor = body['editorDraft'];
+      final remoteEditor = body['editorDraft'];
+      final remoteEditorRevision =
+          (body['editorDraftRevision'] as num?)?.toInt() ?? 0;
+      Map<String, dynamic>? localEditor;
+      try {
+        final preferences = await SharedPreferences.getInstance();
+        final backup = preferences.getString(_editorBackupKey);
+        if (backup != null) {
+          final decoded = jsonDecode(backup);
+          if (decoded is Map &&
+              decoded['editorRevision'] == remoteEditorRevision &&
+              decoded['payload'] is Map) {
+            localEditor = Map<String, dynamic>.from(decoded['payload'] as Map);
+          }
+        }
+      } catch (_) {
+        // Keep the server copy when browser persistence is unavailable.
+      }
+      final savedEditor = localEditor ?? remoteEditor;
       final rawDrafts = config is Map ? config['drafts'] : null;
       final loadedDrafts = rawDrafts is List
           ? rawDrafts.whereType<Map>().map((item) =>
@@ -233,8 +256,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         if (isStatsOnly) selectedSection = 3;
         drafts = isStatsOnly ? <GiftCatalogItem>[] : loadedDrafts;
         pendingDraft = null;
-        editorDraft = savedEditor is Map
+        editorDraft = isStatsOnly ? null : savedEditor is Map
             ? Map<String, dynamic>.from(savedEditor) : null;
+        editorDraftRevision = remoteEditorRevision;
         gifts = isStatsOnly ? <GiftCatalogItem>[] :
             loaded.isEmpty
                 ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
@@ -848,6 +872,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     // settles rather than one request per keystroke.
     Timer? autoSaveTimer;
     Future<void> lastAutoSave = Future<void>.value();
+    int draftRevision = editorDraftRevision;
     bool progressChanged = false;
     final autoSaveStatus = ValueNotifier<String>(
         resume == null ? 'مسودة تلقائية غير محفوظة بعد' : 'تم استرجاع المسودة التلقائية');
@@ -883,11 +908,33 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       autoSaveTimer?.cancel();
       final snapshot = editorSnapshot();
       lastAutoSave = lastAutoSave.then((_) async {
+        // Retain pending changes locally before attempting a network write.
         try {
-          await post({'action': 'autosaveEditor', 'payload': snapshot});
+          final preferences = await SharedPreferences.getInstance();
+          await preferences.setString(_editorBackupKey, jsonEncode({
+            'editorRevision': draftRevision, 'payload': snapshot,
+          }));
+        } catch (_) {}
+        try {
+          final response = await post({
+            'action': 'autosaveEditor',
+            'expectedEditorRevision': draftRevision,
+            'payload': snapshot,
+          });
+          draftRevision =
+              (response['editorDraftRevision'] as num).toInt();
+          if (mounted) {
+            setState(() {
+              editorDraftRevision = draftRevision;
+              editorDraft = snapshot;
+            });
+          }
           autoSaveStatus.value = 'تم حفظ المسودة تلقائياً';
-        } catch (_) {
-          autoSaveStatus.value = 'تعذّر حفظ المسودة — تحقق من الاتصال';
+        } catch (failure) {
+          autoSaveStatus.value =
+              failure.toString().contains('gift_editor_conflict')
+                  ? 'تم تعديل المسودة من نافذة أخرى، ولم نكتب فوق التعديلات الأحدث.'
+                  : 'تعذّر الحفظ على الخادم؛ احتفظنا بنسخة على هذا الجهاز.';
         }
       });
     }
@@ -1586,7 +1633,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       await storeDraft(result);
       if (pendingDraft == null) {
         try {
-          await post({'action': 'clearEditor'});
+          final cleared = await post({
+            'action': 'clearEditor',
+            'expectedEditorRevision': editorDraftRevision,
+          });
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.remove(_editorBackupKey);
+          } catch (_) {}
+          editorDraftRevision = (cleared['editorDraftRevision'] as num).toInt();
           if (mounted) setState(() => editorDraft = null);
         } catch (_) {}
       }
@@ -1605,7 +1660,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     await save();
     if (!hasUnsavedChanges) {
       try {
-        await post({'action': 'clearEditor'});
+        final cleared = await post({
+            'action': 'clearEditor',
+            'expectedEditorRevision': editorDraftRevision,
+          });
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.remove(_editorBackupKey);
+          } catch (_) {}
+          editorDraftRevision = (cleared['editorDraftRevision'] as num).toInt();
         if (mounted) setState(() => editorDraft = null);
       } catch (_) {}
     }
@@ -2280,7 +2343,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     TextButton(
                       onPressed: editing || saving ? null : () async {
                         try {
-                          await post({'action': 'clearEditor'});
+                          final cleared = await post({
+            'action': 'clearEditor',
+            'expectedEditorRevision': editorDraftRevision,
+          });
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.remove(_editorBackupKey);
+          } catch (_) {}
+          editorDraftRevision = (cleared['editorDraftRevision'] as num).toInt();
                           if (mounted) setState(() => editorDraft = null);
                         } catch (_) {
                           message('تعذر حذف المسودة التلقائية.');
