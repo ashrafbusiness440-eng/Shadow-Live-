@@ -302,6 +302,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         (result['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
     return GiftPickerSendResult(
       balanceCoins: balance,
+      recipientCount: recipientCount,
       wealthDeltaCoins: paidCost,
       bagQuantityRemaining:
           (result['bagQuantityRemaining'] as num?)?.toInt(),
@@ -488,6 +489,11 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       UnifiedGiftPickerSheet(
         title: 'الهدايا',
         recipientArea: _recipientArea(),
+        comboContextKey: [
+          widget.roomId,
+          _recipientMode,
+          ...(_currentSelectedIds.toList()..sort()),
+        ].join('|'),
         canSend: _canSend,
         onSend: _send,
       );
