@@ -272,6 +272,11 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
+    // Freeze the intended recipients before any asynchronous reconnect.
+    // A change during reconnection must never redirect a paid send.
+    final modeAtTap = _recipientMode;
+    final idsAtTap = _currentSelectedIds.toList(growable: false)..sort();
+    final recipientsAtTap = idsAtTap.join('|');
     // Recover the EXISTING room connection on demand (no new listener).
     // Even if reconnect is unavailable, send the request and let the
     // server independently verify sender/recipient live-room presence.
@@ -284,19 +289,23 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         // non-authoritative local connectivity error.
       }
     }
+    if (modeAtTap != _recipientMode ||
+        recipientsAtTap != (_currentSelectedIds.toList()..sort()).join('|')) {
+      throw StateError('gift_recipients_changed');
+    }
     final result = await _gifts.send(
       roomId: widget.roomId,
       giftId: gift.id,
       quantity: quantity,
-      recipientMode: _recipientMode,
-      recipientIds: _currentSelectedIds.toList(growable: false),
+      recipientMode: modeAtTap,
+      recipientIds: idsAtTap,
       useGiftBag: useGiftBag,
     );
     final balance = (result['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
     final recipientCount =
         (result['recipientCount'] as num?)?.toInt() ??
-        (_recipientMode == 'users' ? _selectedIds.length : 0);
+        (modeAtTap == 'users' ? idsAtTap.length : 0);
     final totalCost = (result['totalCost'] as num?)?.toInt() ?? 0;
     final paidCost =
         (result['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
