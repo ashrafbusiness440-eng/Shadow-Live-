@@ -6,6 +6,7 @@ import {
   verifyStorePurchaseEvidenceForOwner,reviewStorePurchaseEvidenceBatchForOwner,
   loadStoreUserFinancialEvidencePage,loadStoreFinancialSourcePageForOwner,
   loadStoreFinancialCoverageForOwner,
+  loadStoreGlobalDailyPageForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
@@ -803,4 +804,45 @@ test("605 one-buyer Store source coverage is Owner/recent-auth guarded",async()=
   assert.deepEqual(stale.reads,["users/auditor_1"]);
   assert.equal(db.commit instanceof Function,true);
   assert.equal(db.list instanceof Function,true);
+});
+
+test("606 all-buyer UTC daily finances require exact Owner and recent auth",async()=>{
+  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const db=ownerEvidenceDb();
+  db.runQuery=async(path,query)=>{
+    db.reads.push({path,query});
+    assert.equal(path,"store_purchase_operations");
+    assert.equal(query.limit,11);
+    assert.equal(query.filters.length,2);
+    assert.deepEqual(query.orderBy,[
+      {field:"createdAt",direction:"desc"},
+      {field:"__name__",direction:"desc"},
+    ]);
+    return [];
+  };
+  const report=await loadStoreGlobalDailyPageForOwner(
+    db,token,yesterday,"operations");
+  assert.equal(report.ok,true);
+  assert.equal(report.scope,"all_buyers_one_day_one_source_page");
+  assert.equal(report.inspected,0);
+  assert.equal(report.missingDateFieldsNotCovered,true);
+  assert.equal(report.financialReportComplete,false);
+  assert.equal(report.sourceCompletenessCertified,false);
+  assert.deepEqual(db.reads.map(x=>typeof x==="string"?x:x.path),[
+    "users/auditor_1",undefined,
+  ]);
+  for(const actor of [viewer,{role:"admin",adminEnabled:true,
+    capabilities:["viewStorePurchases","viewStoreAudit"]}]){
+    const notOwner=dbFor(actor);
+    notOwner.runQuery=async()=>{throw Error("forbidden_must_not_query")};
+    await assert.rejects(()=>loadStoreGlobalDailyPageForOwner(
+      notOwner,token,yesterday,"operations"),/forbidden/);
+    assert.deepEqual(notOwner.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  stale.runQuery=async()=>{throw Error("stale_must_not_query")};
+  await assert.rejects(()=>loadStoreGlobalDailyPageForOwner(
+    stale,{...token,auth_time:1},yesterday,"operations"),
+    /recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
 });
