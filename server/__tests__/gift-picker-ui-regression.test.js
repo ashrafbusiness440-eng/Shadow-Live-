@@ -186,7 +186,7 @@ test("newly published gift art and a missing catalog have manual recovery", () =
   assert.equal(picker.includes("_load(forceRefresh: true)"), true);
   assert.equal(picker.includes("ShadowAssetRegistry.invalidate(gift.assetKey)"), true);
   assert.equal(picker.includes("تحديث الهدايا"), true);
-  assert.equal(picker.includes("حفظ كتالوج الهدايا"), true);
+  assert.equal(picker.includes("جرّب تحديث القائمة"), true);
   assert.equal(control.includes("تم اعتماد الهدية محلياً."), true);
   // Do not render hidden/disabled gifts simply because a stale cache exists.
   assert.equal(catalog.includes("A valid empty public catalog"), true);
