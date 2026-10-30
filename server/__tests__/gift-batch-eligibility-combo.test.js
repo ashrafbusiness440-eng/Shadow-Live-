@@ -73,6 +73,19 @@ test("picker disables locked gift cards, has confirmed four-second combo",()=>{
   assert.ok(room.includes("comboContextKey:"));
 });
 
+test("room combo locks recipient selection before asynchronous reconnection",()=> {
+  const room = read("../../lib/features/gift/widgets/room_gift_sheet.dart");
+  const picker = read("../../lib/features/gift/widgets/unified_gift_picker_sheet.dart");
+  const snapshot = room.indexOf("final modeAtTap = _recipientMode;");
+  const reconnect = room.indexOf("await ensurePresence();", snapshot);
+  const reject = room.indexOf("throw StateError('gift_recipients_changed');", reconnect);
+  const send = room.indexOf("final result = await _gifts.send(", reconnect);
+  assert.ok(snapshot >= 0 && reconnect > snapshot && reject > reconnect && send > reject);
+  assert.ok(room.includes("recipientMode: modeAtTap"));
+  assert.ok(room.includes("recipientIds: idsAtTap"));
+  assert.ok(picker.includes("'gift_recipients_changed'"));
+});
+
 test("private effects observe existing message stream and do not replay history",()=>{
   const chat=read("../../lib/features/chat/screens/private_chat_screen.dart");
   const server=read("../../cloudflare-worker/src/chat-safety-actions.js");
