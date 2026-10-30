@@ -9,6 +9,9 @@ import { GIFT_STATS_PAGE_LIMIT, safeGiftTransactionRow, summarizeRecentGiftTrans
 import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
 import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
+import { validateGiftEligibility } from "../gift-eligibility-policy.js";
+import { activeEffectiveVipLevelFromUser } from "../vip-runtime.js";
+import { loadUserLevelPolicy, levelFromPoints } from "../user-level-policy.js";
 
 const EFFECT_MODES = new Set(["none", "seat", "cinematic", "legendary"]);
 
@@ -130,6 +133,8 @@ function publicCatalog(config) {
       featured: item.featured === true,
       sortOrder: Number(item.sortOrder || 0),
       minVipLevel: giftMinVipLevel(item),
+      minWealthLevel: Number(item.minWealthLevel || 0),
+      effectContexts: Array.isArray(item.effectContexts) ? item.effectContexts : ["room"],
       assetKey: clean(item.assetKey || "gifts.placeholder.default"),
       localPlaceholder: clean(
         item.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
@@ -188,6 +193,14 @@ function validateGifts(raw, categoryIds) {
       Number.isSafeInteger(rawMinVipLevel) && rawMinVipLevel >= 0 && rawMinVipLevel <= 10
         ? rawMinVipLevel
         : -1;
+    const minWealthLevel = Number(item?.minWealthLevel ?? 0);
+    const effectContexts = item?.effectContexts ?? ["room"];
+    validateGiftEligibility({ category, minVipLevel, minWealthLevel });
+    if (!Array.isArray(effectContexts) || effectContexts.length > 2 ||
+        new Set(effectContexts).size !== effectContexts.length ||
+        effectContexts.some((value) => !["room", "chat"].includes(value))) {
+      throw Error("invalid_gift_effect_contexts");
+    }
     const assetKey = clean(item?.assetKey || "gifts.placeholder.default");
     const localPlaceholder = clean(
       item?.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
@@ -291,6 +304,8 @@ function validateGifts(raw, categoryIds) {
       enabled,
       featured,
       minVipLevel,
+      minWealthLevel,
+      effectContexts,
       sortOrder: index,
       assetKey,
       localPlaceholder,
@@ -330,12 +345,15 @@ export async function handler(req, res) {
       const user = userSnap.data() || {};
       assertUserDocumentSessionState(decoded, user);
       const balance = Math.max(0, Number(user.coins ?? user.balance ?? 0));
+      const levelPolicy = await loadUserLevelPolicy(db);
       return out(res, 200, {
         ok: true,
         gifts: publicCatalog(state.config),
         categories: giftCategoryDefinitions(state.config).filter((cat) => cat.enabled),
         bag,
         balance: Number.isSafeInteger(balance) ? balance : 0,
+        senderVipLevel: activeEffectiveVipLevelFromUser(user, Date.now()),
+        senderWealthLevel: levelFromPoints(levelPolicy.wealth, Number(user.wealthPoints || 0)),
       });
     }
 
