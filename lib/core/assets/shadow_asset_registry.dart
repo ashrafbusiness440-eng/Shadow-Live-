@@ -1,10 +1,22 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+class _AssetUrlCacheEntry {
+  const _AssetUrlCacheEntry(this.future, this.expiresAt);
+  final Future<Uri?> future;
+  final DateTime expiresAt;
+}
+
 abstract final class ShadowAssetRegistry {
   static const apiBase = String.fromEnvironment('SHADOW_ASSET_API_BASE');
   static const fallbackApiBase = 'https://shadow-live.ashraf-business-440.workers.dev';
-  static final Map<String, Future<Uri?>> _cache = <String, Future<Uri?>>{};
+  // A published replacement keeps the same assetKey but gets a new, versioned
+  // rawUrl. Do not pin the previous rawUrl for the app's whole lifetime.
+  static const Duration _cacheLifetime = Duration(seconds: 60);
+  static final Map<String, _AssetUrlCacheEntry> _cache =
+      <String, _AssetUrlCacheEntry>{};
+
+  static void invalidate(String key) => _cache.remove(key);
 
   static Uri _endpoint(String key) {
     final base = Uri.parse(apiBase.trim().isEmpty ? fallbackApiBase : apiBase);
@@ -12,9 +24,16 @@ abstract final class ShadowAssetRegistry {
   }
 
   static Future<Uri?> remoteUrl(String key, {http.Client? client, bool refresh = false}) {
-    if (refresh) _cache.remove(key);
+    // Explicit test clients must not share the app-wide registry cache.
     if (client != null) return _loadRemoteUrl(key, client: client);
-    return _cache.putIfAbsent(key, () => _loadRemoteUrl(key));
+    final now = DateTime.now();
+    final previous = _cache[key];
+    if (!refresh && previous != null && previous.expiresAt.isAfter(now)) {
+      return previous.future;
+    }
+    final future = _loadRemoteUrl(key);
+    _cache[key] = _AssetUrlCacheEntry(future, now.add(_cacheLifetime));
+    return future;
   }
 
   static Future<Uri?> _loadRemoteUrl(String key, {http.Client? client}) async {
