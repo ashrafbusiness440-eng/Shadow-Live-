@@ -85,8 +85,13 @@ test("partial editor progress is private, debounced and never stored as a publis
   const server=read("../../cloudflare-worker/src/legacy-economy/gift-catalog.js");
   const editor=read("../../lib/admin/gift_catalog_control_page.dart");
   assert.ok(server.includes('db.collection("gift_catalog_editor_drafts").doc(uid)'));
-  assert.ok(server.includes('if (action === "autosaveEditor")'));
-  assert.ok(server.includes('if (action === "clearEditor")'));
+  assert.ok(server.includes('if (action === "autosaveEditor" || action === "clearEditor")'));
+  assert.ok(server.includes('priorRevision !== expectedRevision'));
+  assert.ok(server.includes('throw Error("gift_editor_conflict")'));
+  assert.ok(server.includes('db.runTransaction(async (tx) =>'));
+  assert.ok(server.includes('editorDraftRevision: nextRevision'));
+  assert.ok(editor.includes('SharedPreferences.getInstance()'));
+  assert.ok(editor.includes("'expectedEditorRevision': draftRevision"));
   assert.ok(editor.includes("Duration(milliseconds: 1400)"));
   assert.ok(editor.includes("تم حفظ المسودة تلقائياً"));
   assert.ok(editor.includes("استكمال"));
