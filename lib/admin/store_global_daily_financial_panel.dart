@@ -273,7 +273,8 @@ class _StoreGlobalDailyFinancialPanelState
               ChoiceChip(
                 label: Text(source.value),
                 selected: _source == source.key,
-                onSelected: _loading ? null : (checked) {
+                onSelected: _loading || _loadingCoverage
+                    ? null : (checked) {
                   if (!checked) return;
                   setState(() {
                     _source = source.key;
