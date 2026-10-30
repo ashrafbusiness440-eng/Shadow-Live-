@@ -160,10 +160,11 @@ test("orphan, missing or altered source suppresses all financial amounts",async(
         "__store_refund_orphan_999";
     if(fault==="wrong_time")
       x.pages.audit[6].data.createdAt=new Date(refundAt+1000);
+    // Queries use ID DESC: index 24 is on page 1; index 0 is page 2.
     if(fault==="wrong_amount")
-      x.pages.receipts[0].data.refundedCoins=amount+1;
+      x.pages.receipts[24].data.refundedCoins=amount+1;
     if(fault==="bad_refund_status")
-      x.pages.receipts[0].data.refundStatus="requested";
+      x.pages.receipts[24].data.refundStatus="requested";
     if(fault==="bad_credit_proof")
       x.docs.get("financial_ledger/store_refund_"+id).closingBalance=1;
     const result=await run(x.db);
