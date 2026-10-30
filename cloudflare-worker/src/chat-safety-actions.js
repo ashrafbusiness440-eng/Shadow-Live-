@@ -1,6 +1,9 @@
 import { json, readJson } from "./http.js";
 import { giftCategoryEnabled } from "./gift-category-policy.js";
 import { giftAvailableFor } from "./gift-availability-policy.js";
+import { validateGiftEligibility } from "./gift-eligibility-policy.js";
+import { loadUserLevelPolicy, levelFromPoints } from "./user-level-policy.js";
+import { giftVisualPolicy } from "./gift-visual-policy.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import { filterContent } from "./content-filter.js";
@@ -802,20 +805,23 @@ export async function sendGift(db, uid, body, options = {}) {
       senderData,
       now.getTime(),
     );
-    const requiredGiftVipLevel = (() => {
-      const explicit = Number(giftData.minVipLevel);
-      if (
-        Number.isSafeInteger(explicit) &&
-        explicit >= 0 &&
-        explicit <= 10
-      ) {
-        return explicit;
-      }
-      return clean(giftData.category) === "vip" ? 4 : 0;
-    })();
+    const eligibility = validateGiftEligibility(giftData);
+    const requiredGiftVipLevel = eligibility.minVipLevel;
     if (requiredGiftVipLevel > 0 && senderVip < requiredGiftVipLevel) {
       throw new ApiError("vip_gift_requires_level", 403);
     }
+    if (eligibility.minWealthLevel > 0) {
+      const policy = await loadUserLevelPolicy(db, { transaction });
+      const wealthLevel = levelFromPoints(
+        policy.wealth, Number(senderData.wealthPoints || 0),
+      );
+      if (wealthLevel < eligibility.minWealthLevel) {
+        throw new ApiError("wealth_gift_requires_level", 403);
+      }
+    }
+    const chatEffect = contextType === "chat" &&
+        (giftData.effectContexts ?? ["room"]).includes("chat")
+      ? giftVisualPolicy(giftData, quantity).roomEffect : null;
     const vipGiftVisualKey = vipCosmeticAssetKey(
       senderVip,
       "giftVisual",
@@ -1459,6 +1465,11 @@ export async function sendGift(db, uid, body, options = {}) {
           assetKey,
           vipLevel: senderVip,
           vipGiftVisualKey,
+          giftEffectEventId: chatEffect ? "chat_gift_fx_" + key : "",
+          giftEffectAssetKey: chatEffect?.assetKey || "",
+          giftEffectDurationMs: chatEffect?.durationMs || 0,
+          giftEffectMode: chatEffect?.mode || "none",
+          giftEffectSize: chatEffect?.size || 0,
           createdAt: now,
           createdAtMs: now.getTime(),
         }),
