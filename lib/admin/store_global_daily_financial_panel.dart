@@ -148,8 +148,10 @@ class _StoreGlobalDailyFinancialPanelState
           body['netRevenueCertified'] != false ||
           body['refundSettlementCertified'] != false ||
           body['productionFinancialWritesPerformed'] != false ||
-          body['reviewStatus'] != 'reviewed' ||
-          body['pageAmountsAvailable'] != true ||
+          (body['reviewStatus'] != 'reviewed' &&
+              body['reviewStatus'] != 'blocked') ||
+          ((body['reviewStatus'] == 'reviewed') !=
+              (body['pageAmountsAvailable'] == true)) ||
           body['hasMore'] is! bool ||
           body['cursorSnapshotCertified'] != false ||
           body['allPagesReviewed'] != false ||
@@ -160,12 +162,16 @@ class _StoreGlobalDailyFinancialPanelState
           body['inspected'] is! int ||
           body['verified'] != body['inspected'] ||
           body['inspected'] < 0 || body['inspected'] > 20 ||
-          [body['pageGrossCoins'],body['pageRefundedCoins'],
-            body['pageNetCoins'],body['pagePurchases'],
-            body['pageRenewals']]
-            .any((x) => x is! int || x < 0) ||
-          body['pageGrossCoins'] !=
-            body['pageRefundedCoins'] + body['pageNetCoins'] ||
+          (body['reviewStatus'] == 'reviewed' &&
+            ([body['pageGrossCoins'],body['pageRefundedCoins'],
+              body['pageNetCoins'],body['pagePurchases'],
+              body['pageRenewals']]
+              .any((x) => x is! int || x < 0) ||
+              body['pageGrossCoins'] !=
+                body['pageRefundedCoins'] + body['pageNetCoins'])) ||
+          (body['reviewStatus'] == 'blocked' &&
+            [body['pageGrossCoins'],body['pageRefundedCoins'],
+              body['pageNetCoins']].any((x) => x != null)) ||
           (body['hasMore'] == true &&
             (body['nextCursor'] is! String ||
              (body['nextCursor'] as String).isEmpty)) ||
@@ -395,6 +401,7 @@ class _StoreGlobalDailyFinancialPanelState
             Text(_statementError!,style: const TextStyle(
               color: Colors.orangeAccent)),
           if (_statement != null) ...[
+            if (_statement!['reviewStatus'] == 'reviewed') ...[
             Text('الصفحة: $_statementPageNumber • '
               'عمليات متطابقة: ${_statement!['verified']}'),
             Text('إجمالي كوينز هذه الصفحة: '
@@ -416,6 +423,8 @@ class _StoreGlobalDailyFinancialPanelState
             if (_statement!['hasMore'] == false)
               const Text('انتهت صفحات العمليات المفهرسة وقت الفحص. '
                 'هذا لا يثبت إغلاقًا محاسبيًا نهائيًا.'),
+            ] else const Text('هذه الصفحة تحتوي سجلات متعارضة أو غير '
+              'مكتملة؛ تم حجب جميع المبالغ إلى حين مراجعتها.'),
             const Text('الصافي هنا بحسب يوم البيع الأصلي '
               'وحالة الاسترداد الحالية، وليس يوم قيد الاسترداد. '
               'الصفحات لا تشترك في لقطة بيانات ثابتة؛ '
