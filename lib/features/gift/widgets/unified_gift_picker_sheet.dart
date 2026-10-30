@@ -479,6 +479,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     setState(() => _sending = true);
     _comboCountdown.stop();
     final useGiftBag = _category == 'bag';
+    final recipientsAtSend = widget.comboContextKey;
     GiftPickerSendResult? confirmed;
     // Only the network send belongs to this failure handler. A local UI
     // update must never turn a confirmed server gift into a "send failed".
@@ -580,7 +581,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
       // display issue is non-financial and must not be presented as a failed gift.
     }
     if (!mounted) return;
-    _restartCombo(gift, useGiftBag, confirmed.recipientCount);
+    if (recipientsAtSend == widget.comboContextKey &&
+        _selected?.id == gift.id && _quantity == _comboQuantity &&
+        _category == (useGiftBag ? 'bag' : _category)) {
+      _restartCombo(gift, useGiftBag, confirmed.recipientCount);
+    } else {
+      setState(() => _clearCombo());
+    }
     final message = confirmed.message.trim();
     if (message.isNotEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -1114,7 +1121,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
             ),
             const SizedBox(height: 6),
           ],
-          if (_comboGift != null && _comboCountdown.isAnimating)
+          if (_comboGift != null && (_comboCountdown.isAnimating || _sending))
             Row(
               textDirection: TextDirection.ltr,
               children: [
