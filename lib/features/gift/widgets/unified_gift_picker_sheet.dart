@@ -346,6 +346,20 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         _ => null,
       };
 
+  String? _lockedGiftLabel(GiftCatalogItem gift) {
+    final vip = gift.effectiveMinVipLevel;
+    if (vip > 0 && (GiftCatalogService.cachedSenderVipLevel ?? -1) < vip) {
+      return 'VIP $vip';
+    }
+    final wealth = gift.minWealthLevel;
+    if (wealth > 0 && (_wealth?.level ??
+        GiftCatalogService.cachedSenderWealthLevel ?? -1) < wealth) {
+      final upper = wealth == 31 ? 35 : wealth + 4;
+      return 'LV $wealth–$upper';
+    }
+    return null;
+  }
+
   String _giftEmoji(String id) => switch (id) {
         'rose' => '🌹',
         'coffee' => '☕',
@@ -384,7 +398,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   Future<void> _send() async {
     final gift = _selected;
-    if (gift == null || !widget.canSend || _sending) return;
+    if (gift == null || !widget.canSend || _sending ||
+        _lockedGiftLabel(gift) != null) return;
     if (!gift.isAvailableIn(widget.giftContext)) {
       setState(() {
         _selected = null;
@@ -684,12 +699,17 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   }
 
   Widget _giftCard(GiftCatalogItem gift) {
-    final selected = _selected?.id == gift.id;
+    final locked = _lockedGiftLabel(gift);
+    final selected = _selected?.id == gift.id && locked == null;
     final bagCount = _bagQuantities[gift.id] ?? 0;
     return InkWell(
-      onTap: _sending ? null : () => setState(() => _selected = gift),
+      onTap: _sending || locked != null ? null : () => setState(() => _selected = gift),
       borderRadius: BorderRadius.circular(13),
-      child: AnimatedContainer(
+      child: Opacity(
+        opacity: locked == null ? 1 : .42,
+        child: Stack(
+          children: [
+            AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.fromLTRB(5, 5, 5, 6),
         decoration: BoxDecoration(
@@ -790,6 +810,26 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+            if (locked != null)
+              Positioned(
+                top: 2,
+                right: 2,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF292132),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+                    child: Text(locked,
+                      style: const TextStyle(color: Colors.amberAccent,
+                          fontSize: 9, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -922,7 +962,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     final bagCount = gift == null ? 0 : (_bagQuantities[gift.id] ?? 0);
     final bagAllowed = _category != 'bag' || bagCount >= _quantity;
     final sendEnabled =
-        gift != null && widget.canSend && !_sending && bagAllowed;
+        gift != null && widget.canSend && !_sending && bagAllowed &&
+        _lockedGiftLabel(gift) == null;
 
     return Container(
       padding: const EdgeInsets.only(top: 6),
