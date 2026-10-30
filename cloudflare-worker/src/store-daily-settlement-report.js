@@ -101,10 +101,67 @@ function sumCoins(previous,value){
   return previous+value;
 }
 
+// Deterministic, scope-bound cursor. It does not encode totals or confer
+// permission: the Owner is reauthorized on every independent page.
+function decodeDayPageCursor(raw,day,bounds){
+  if(raw===null||raw===undefined||raw==="")return null;
+  if(typeof raw!=="string"||raw.length>650)
+    throw Error("invalid_store_settlement_cursor");
+  try{
+    const value=JSON.parse(atob(raw));
+    if(value?.day!==day||!validUid(value?.uid)||
+        typeof value?.opId!=="string"||
+        !Number.isSafeInteger(value?.atMs)||
+        value.atMs<bounds.start||value.atMs>=bounds.end)
+      throw Error("invalid");
+    const opId=validateStorePurchaseOperationId(value.opId);
+    if(value.uid+"__"+opId!==value.id)
+      throw Error("invalid");
+    return {uid:value.uid,opId,id:value.id,atMs:value.atMs};
+  }catch(_){throw Error("invalid_store_settlement_cursor");}
+}
+function encodeDayPageCursor(day,entry,atMs){
+  return btoa(JSON.stringify({day,uid:entry.uid,
+    opId:entry.opId,id:entry.id,atMs}));
+}
+function cursorForSource(source,cursor){
+  if(!cursor)return [];
+  const stamp=source==="receipts"?cursor.atMs:new Date(cursor.atMs);
+  const prefix=source==="ledger"?"store_":
+    source==="audit"?"store_purchase_":"";
+  return [stamp,{referencePath:SOURCES[source].collection+
+    "/"+prefix+cursor.id}];
+}
+// Each page is a disjoint *review* of the sale-day cohort. This is not
+// accounting-period net cashflow: a refund credited on another date still
+// reduces this cohort's current net, and late writes are not ruled out.
+export async function reviewStoreDailySettlementPage(
+  db,{day,cursor=null,nowMs=Date.now()}={}){
+  return reviewStoreDailySettlement(db,{
+    day,cursor,nowMs,paginated:true,
+  });
+}
+
 export async function reviewStoreDailySettlement(
-  db,{day,nowMs=Date.now()}={}){
+  db,{day,nowMs=Date.now(),cursor=null,paginated=false}={}){
+  const pageMode=paginated===true;
   const bounds=storeGlobalDayBounds(day,nowMs);
-  const collections={};
+  const decoded=pageMode?decodeDayPageCursor(cursor,day,bounds):null;
+  const collections={},sentinels={},sourceMore={};
+  const blockPage=code=>{
+    const result=block(day,counts,code);
+    return pageMode?{
+      ...result,
+      scope:"all_buyers_one_utc_day_four_source_settlement_page",
+      pageLimit:STORE_DAILY_SETTLEMENT_MAX,
+      pageAmountsAvailable:false,
+      hasMore:false,nextCursor:null,
+      cursorSnapshotCertified:false,allPagesReviewed:false,
+      accountingBasis:"sale_day_cohort_current_refund_state",
+      refundPostingDayCertified:false,
+      independentRefundSourceCoverageCertified:false,
+    }:result;
+  };
   const counts={};
   // Four independent index-bounded sources, never just receipts. Limit+1
   // both rejects large days and establishes page completeness within index.
@@ -127,36 +184,78 @@ export async function reviewStoreDailySettlement(
         {field:"__name__",direction:"desc"},
       ],
       limit:STORE_DAILY_SETTLEMENT_MAX+1,
+      ...(pageMode?{startAfter:cursorForSource(source,decoded)}:{}),
     });
     if(!Array.isArray(rows)||
         rows.length>STORE_DAILY_SETTLEMENT_MAX+1)
       throw Error("store_daily_statement_bad_query");
     counts[source]=rows.length;
-    if(rows.length>STORE_DAILY_SETTLEMENT_MAX)
-      return block(day,counts,"day_exceeds_safe_operation_limit");
+    if(rows.length>STORE_DAILY_SETTLEMENT_MAX&&!pageMode)
+      return blockPage("day_exceeds_safe_operation_limit");
+    sourceMore[source]=rows.length>STORE_DAILY_SETTLEMENT_MAX;
+    const selected=pageMode?rows.slice(0,STORE_DAILY_SETTLEMENT_MAX):rows;
     const map=new Map();
-    for(const row of rows){
+    for(const row of selected){
       const identity=rowIdentity(source,row);
       const time=timestampMs(source,row?.data?.[config.field]);
       if(!identity||!Number.isSafeInteger(time)||
           time<bounds.start||time>=bounds.end||map.has(identity.id))
-        return block(day,counts,"invalid_or_duplicate_source_identity");
+        return blockPage("invalid_or_duplicate_source_identity");
       map.set(identity.id,{row,identity});
     }
     collections[source]=map;
+    if(pageMode&&sourceMore[source]){
+      const extra=rows[STORE_DAILY_SETTLEMENT_MAX];
+      const extraId=rowIdentity(source,extra);
+      const extraTime=timestampMs(source,extra?.data?.[config.field]);
+      if(!extraId||!Number.isSafeInteger(extraTime)||
+          extraTime<bounds.start||extraTime>=bounds.end)
+        return blockPage("invalid_source_page_boundary");
+      sentinels[source]={...extraId,atMs:extraTime};
+    }
+  }
+  if(pageMode){
+    const hasMore=Object.values(sourceMore)[0];
+    if(Object.values(sourceMore).some(x=>x!==hasMore))
+      return blockPage("source_page_boundary_mismatch");
+    if(hasMore){
+      const first=sentinels.receipts;
+      if(Object.values(sentinels).some(x=>
+          x.id!==first.id||x.atMs!==first.atMs))
+        return blockPage("source_page_boundary_mismatch");
+    }
   }
   // Identity parity, NOT mere aggregate count equality. Refund ledger/audit
   // entries are checked per purchase via exact reads below.
   const receiptIds=[...collections.receipts.keys()];
   if(Object.values(collections).some(map=>map.size!==receiptIds.length||
       receiptIds.some(id=>!map.has(id))))
-    return block(day,counts,"source_operation_ids_mismatch");
+    return blockPage("source_operation_ids_mismatch");
+  // The chronological order and timestamp must match in every source.
+  // Without this, a missing mid-page row could offset the cursor and
+  // silently skip or repeat another user's operation.
+  if(pageMode){
+    const ordered=[...collections.receipts.entries()];
+    for(const [source,map] of Object.entries(collections)){
+      const entries=[...map.entries()];
+      if(entries.length!==ordered.length||
+          entries.some(([id,value],i)=>{
+            const [expectedId,expected]=ordered[i];
+            const rowAt=timestampMs(source,
+              value.row.data?.[SOURCES[source].field]);
+            const receiptAt=timestampMs("receipts",
+              expected.row.data?.acquiredAtMs);
+            return id!==expectedId||rowAt!==receiptAt;
+          }))
+        return blockPage("source_page_order_or_time_mismatch");
+    }
+  }
   let gross=0,refunded=0,net=0,purchases=0,renewals=0;
   for(const id of receiptIds){
     const receipt=collections.receipts.get(id);
     const x=receipt.row.data||{};
     if(!validProduct(x.productId))
-      return block(day,counts,"invalid_receipt_product");
+      return blockPage("invalid_receipt_product");
     // Six exact reads per purchase; includes an independent refund ledger
     // and refund approval audit; no current balance or whole-user data.
     const proof=await inspectStoreFinancialSettlementOffline(db,{
@@ -165,23 +264,50 @@ export async function reviewStoreDailySettlement(
       expectedProductId:x.productId,
     });
     if(!proof.verified)
-      return block(day,counts,"operation_or_refund_proof_failed");
+      return blockPage("operation_or_refund_proof_failed");
     for(const source of Object.keys(SOURCES)){
       if(!sourceMatches(source,collections[source].get(id).row,
           {...proof,productId:x.productId},
           collections[source].get(id).identity))
-        return block(day,counts,"source_snapshot_conflict");
+        return blockPage("source_snapshot_conflict");
     }
     gross=sumCoins(gross,proof.grossCoins);
     refunded=sumCoins(refunded,proof.refundedCoins);
     net=sumCoins(net,proof.netCoins);
     if(proof.kind==="purchase")purchases++;
     else if(proof.kind==="renew")renewals++;
-    else return block(day,counts,"unknown_purchase_kind");
+    else return blockPage("unknown_purchase_kind");
   }
   if(gross-refunded!==net)
     throw Error("store_daily_statement_amount_mismatch");
-  return {...reportBase(day,counts),
+  const base=reportBase(day,counts);
+  if(pageMode){
+    const hasMore=sourceMore.receipts;
+    const last=hasMore?collections.receipts.get(receiptIds.at(-1)):null;
+    const lastAt=last?timestampMs("receipts",
+      last.row.data?.acquiredAtMs):null;
+    const nextCursor=hasMore&&last&&Number.isSafeInteger(lastAt)
+      ?encodeDayPageCursor(day,last.identity,lastAt):null;
+    if(hasMore&&!nextCursor)
+      return blockPage("invalid_source_page_boundary");
+    return {...base,
+      scope:"all_buyers_one_utc_day_four_source_settlement_page",
+      pageLimit:STORE_DAILY_SETTLEMENT_MAX,
+      inspected:receiptIds.length,verified:receiptIds.length,
+      reviewStatus:"reviewed",pageAmountsAvailable:true,
+      pageGrossCoins:gross,pageRefundedCoins:refunded,
+      pageNetCoins:net,pagePurchases:purchases,pageRenewals:renewals,
+      hasMore,nextCursor,
+      // Current refund state is attributed to the ORIGINAL sale cohort,
+      // not to the refund's transaction/posting date.
+      accountingBasis:"sale_day_cohort_current_refund_state",
+      refundPostingDayCertified:false,
+      independentRefundSourceCoverageCertified:false,
+      cursorSnapshotCertified:false,
+      allPagesReviewed:false,
+    };
+  }
+  return {...base,
     inspected:receiptIds.length,verified:receiptIds.length,
     reviewStatus:"reviewed",periodAmountsAvailable:true,
     reviewedGrossCoins:gross,reviewedRefundedCoins:refunded,

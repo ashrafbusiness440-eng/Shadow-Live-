@@ -9,6 +9,7 @@ import {
   loadStoreGlobalDailyPageForOwner,
   loadStoreGlobalDailyCoverageForOwner,
   loadStoreDailySettlementForOwner,
+  loadStoreDailySettlementPageForOwner,
   loadStoreSelectedSettlementStatementForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
@@ -951,4 +952,41 @@ test("611 full-day Store settlement remains Owner+recent login only",async()=>{
   await assert.rejects(()=>loadStoreDailySettlementForOwner(
     stale,{...token,auth_time:1},day),/recent_auth_required/);
   assert.deepEqual(stale.reads,["users/auditor_1"]);
+});
+
+test("612 paged all-buyer Store report requires exact Owner recent login each page",async()=>{
+  const day=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const db=ownerEvidenceDb();
+  const queries=[];
+  db.runQuery=async(collection,options)=>{
+    queries.push({collection,options});
+    return [];
+  };
+  const result=await loadStoreDailySettlementPageForOwner(db,token,day);
+  assert.equal(result.scope,
+    "all_buyers_one_utc_day_four_source_settlement_page");
+  assert.equal(result.reviewStatus,"reviewed");
+  assert.equal(result.pageGrossCoins,0);
+  assert.equal(result.hasMore,false);
+  assert.equal(result.allPagesReviewed,false);
+  assert.equal(result.financialReportComplete,false);
+  assert.equal(queries.length,4);
+  for(const actor of [viewer,{role:"user",accountStatus:"active"}]){
+    const bad=dbFor(actor);
+    bad.runQuery=async()=>{throw Error("must_not_query");};
+    await assert.rejects(()=>loadStoreDailySettlementPageForOwner(
+      bad,token,day),/forbidden/);
+    assert.deepEqual(bad.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  stale.runQuery=async()=>{throw Error("stale_owner_must_not_query");};
+  await assert.rejects(()=>loadStoreDailySettlementPageForOwner(
+    stale,{...token,auth_time:1},day),/recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+  const invalid=ownerEvidenceDb();
+  invalid.runQuery=async()=>{throw Error("invalid_cursor_must_not_query");};
+  await assert.rejects(()=>loadStoreDailySettlementPageForOwner(
+    invalid,token,day,"invalid-base64!"),
+    /invalid_store_settlement_cursor/);
+  assert.deepEqual(invalid.reads,["users/auditor_1"]);
 });
