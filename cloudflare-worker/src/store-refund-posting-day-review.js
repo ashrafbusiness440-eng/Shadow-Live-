@@ -98,7 +98,7 @@ export async function reviewStoreRefundPostingDayPage(
   db,{day,cursor=null,nowMs=Date.now()}={}){
   const bounds=storeGlobalDayBounds(day,nowMs);
   const decoded=pageCursor(cursor,day,bounds);
-  const counts={},maps={},sentinels={},more={};
+  const counts={receipts:0,ledger:0,audit:0},maps={},sentinels={},more={};
   for(const [source,config] of Object.entries(SOURCES)){
     const rows=await db.runQuery(config.collection,{
       filters:[
