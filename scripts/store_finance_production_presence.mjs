@@ -84,10 +84,12 @@ export function parseStoreCatalogGate(status,payload){
     return {catalogPresent:false,purchasingEnabled:false};
   }
   if(status!==200||!payload||typeof payload!=="object"||
-    !payload.name||!payload.fields||
-    typeof payload.fields!=="object")
+    typeof payload.name!=="string"||
+    (payload.fields!==undefined&&
+      (!payload.fields||typeof payload.fields!=="object"||
+       Array.isArray(payload.fields))))
     throw Error("invalid_store_catalog_probe");
-  const enabled=payload.fields.purchasingEnabled?.booleanValue;
+  const enabled=payload.fields?.purchasingEnabled?.booleanValue;
   if(enabled!==undefined&&typeof enabled!=="boolean")
     throw Error("invalid_store_catalog_probe");
   return {catalogPresent:true,purchasingEnabled:enabled===true};
