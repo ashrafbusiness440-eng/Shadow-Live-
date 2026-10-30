@@ -18,7 +18,8 @@ const failure=code=>({ok:false,code});
 // spend, expiration, or revocation does not rewrite historical evidence.
 // This is one-operation evidence certification, NOT full-wallet reconciliation.
 export async function certifyStorePurchaseEvidenceOffline(
-  db,{buyerUid,operationId,expectedProductId}={}){
+  db,{buyerUid,operationId,expectedProductId,
+  allowRefundedForSettlement=false}={}){
   if(!validUid(buyerUid))return failure("invalid_buyer");
   if(expectedProductId!==undefined&&!validProduct(expectedProductId))
     return failure("invalid_product");
@@ -79,7 +80,8 @@ export async function certifyStorePurchaseEvidenceOffline(
     return failure("receipt_mismatch");
   // A refund is not a proven original sale; it requires its own separately
   // certified refund ledger before any net revenue can be stated.
-  if(r.refundStatus!=="none")
+  if(r.refundStatus!=="none"&&
+      !(allowRefundedForSettlement===true&&r.refundStatus==="refunded"))
     return failure("requires_refund_review");
   if(l.userId!==buyerUid||l.asset!=="coins"||
       l.sourceType!=="storePurchase"||
@@ -95,5 +97,8 @@ export async function certifyStorePurchaseEvidenceOffline(
       a.action!==(renewal?"renewStoreItem":"purchaseStoreItem")||
       a.operationId!==key||a.priceCoins!==price)
     return failure("audit_mismatch");
-  return {ok:true,kind,certifiedAmountCoins:price};
+  return {ok:true,kind,certifiedAmountCoins:price,
+    ...(allowRefundedForSettlement===true
+      ?{refundStatus:r.refundStatus}:{}),
+  };
 }

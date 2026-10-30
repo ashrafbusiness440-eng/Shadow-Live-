@@ -8,6 +8,7 @@ import {
   loadStoreFinancialCoverageForOwner,
   loadStoreGlobalDailyPageForOwner,
   loadStoreGlobalDailyCoverageForOwner,
+  loadStoreSelectedSettlementStatementForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
 import {storeCatalogInternals} from "../../cloudflare-worker/src/manage-store-catalog.js";
@@ -886,4 +887,38 @@ test("608 all-buyer UTC day source counts require recent Owner login",async()=>{
   await assert.rejects(()=>loadStoreGlobalDailyCoverageForOwner(
     stale,{...token,auth_time:1},day),/recent_auth_required/);
   assert.deepEqual(stale.reads,["users/auditor_1"]);
+});
+
+test("610 selected refund settlement needs exact Owner recent login, <=5 IDs",async()=>{
+  const db=ownerEvidenceDb();
+  const operationId="store_purchase_settlement_001";
+  const result=await loadStoreSelectedSettlementStatementForOwner(db,token,
+    "123456",[{operationId,productId:"200001"}]);
+  assert.equal(result.ok,true);
+  assert.equal(result.scope,"selected_buyer_operations_settlement");
+  assert.equal(result.searchedId,"123456");
+  assert.equal(result.fullSelectionVerified,false);
+  assert.equal(result.financialReportComplete,false);
+  assert.equal("selectedNetCoins" in result,false);
+  assert.deepEqual(db.reads.slice(0,3),[
+    "users/auditor_1","public_ids/123456","users/buyer_1",
+  ]);
+  for(const actor of [viewer,{role:"user",accountStatus:"active"},
+    {role:"admin",adminEnabled:true,
+      capabilities:["viewStorePurchases","viewStoreAudit"]}]){
+    const other=dbFor(actor);
+    await assert.rejects(()=>loadStoreSelectedSettlementStatementForOwner(
+      other,token,"123456",[{operationId,productId:"200001"}]),
+      /forbidden/);
+    assert.deepEqual(other.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  await assert.rejects(()=>loadStoreSelectedSettlementStatementForOwner(
+    stale,{...token,auth_time:1},"123456",
+    [{operationId,productId:"200001"}]),/recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
+  const malformed=ownerEvidenceDb();
+  await assert.rejects(()=>loadStoreSelectedSettlementStatementForOwner(
+    malformed,token,"123456",[]),/invalid_store_settlement_selection/);
+  assert.deepEqual(malformed.reads,["users/auditor_1"]);
 });

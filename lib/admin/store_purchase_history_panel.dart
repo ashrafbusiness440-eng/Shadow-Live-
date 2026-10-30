@@ -24,6 +24,9 @@ class _StorePurchaseHistoryPanelState
   bool _loading = false;
   bool _loadingMore = false;
   bool _reviewingBatch = false;
+  bool _loadingSettlement = false;
+  String? _settlementError;
+  Map<String, dynamic>? _settlement;
   bool _loadingFinancial = false;
   String? _financialCursor;
   Map<String, dynamic>? _financialPage;
@@ -70,6 +73,9 @@ class _StorePurchaseHistoryPanelState
       _nextCursor = null;
       _loadingMore = false;
       _reviewingBatch = false;
+      _loadingSettlement = false;
+      _settlementError = null;
+      _settlement = null;
       _batchNote = null;
       _loadingFinancial = false;
       _financialCursor = null;
@@ -367,6 +373,92 @@ class _StorePurchaseHistoryPanelState
     }
   }
 
+  Future<void> _reviewSelectedFinancialStatement() async {
+    if (_loading || _loadingMore || _reviewingBatch ||
+        _loadingFinancial || _loadingSettlement ||
+        _verifyingOperationId != null || !_canVerifyReceipts ||
+        _target == null) return;
+    final selected = _receipts.where((row) =>
+      row['operationId'] is String && row['productId'] is String)
+      .take(5).map((row) => {
+        'operationId': row['operationId'],
+        'productId': row['productId'],
+      }).toList(growable: false);
+    if (selected.isEmpty) return;
+    final target = _target!,generation = _generation;
+    setState(() {
+      _loadingSettlement = true;
+      _settlementError = null;
+      _settlement = null;
+    });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'selected_financial_statement',
+          'targetId': target,
+          'operations': selected,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200 || body is! Map ||
+          body['ok'] != true ||
+          body['scope'] != 'selected_buyer_operations_settlement' ||
+          body['searchedId'] != target ||
+          body['inspected'] != selected.length ||
+          body['verified'] is! int ||
+          body['needsReview'] is! int ||
+          body['fullSelectionVerified'] is! bool ||
+          body['requiresWholeHistoryReview'] != true ||
+          body['partialEvidenceOnly'] != true ||
+          body['financialReportComplete'] != false ||
+          body['netRevenueCertified'] != false ||
+          body['refundSettlementCertified'] != false ||
+          body['financialWritesPerformed'] != false ||
+          body['evidence'] is! List ||
+          (body['evidence'] as List).length != selected.length) {
+        throw const FormatException('invalid_store_settlement_statement');
+      }
+      final full = body['fullSelectionVerified'] == true;
+      final totals = [
+        body['selectedGrossCoins'],body['selectedRefundedCoins'],
+        body['selectedNetCoins'],
+        body['selectedPurchaseCoins'],body['selectedRenewalCoins'],
+      ];
+      if (full && (totals.any((n) => n is! int || n < 0) ||
+          body['selectedGrossCoins'] !=
+            body['selectedRefundedCoins'] + body['selectedNetCoins'])) {
+        throw const FormatException('invalid_store_settlement_amounts');
+      }
+      if (!full && totals.any((n) => n != null)) {
+        throw const FormatException('partial_settlement_not_allowed');
+      }
+      final ids = selected.map((x) => x['operationId']).toSet();
+      if ((body['evidence'] as List).any((x) =>
+          x is! Map || x['verified'] is! bool ||
+          !ids.contains(x['operationId']))) {
+        throw const FormatException('invalid_store_settlement_rows');
+      }
+      if (!mounted || generation != _generation ||
+          _target != target) return;
+      setState(() => _settlement = Map<String, dynamic>.from(body));
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _settlementError =
+        'تعذّر اعتماد كشف هذه العمليات. لم يتم تغيير أي رصيد.');
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loadingSettlement = false);
+      }
+    }
+  }
+
   Future<void> _loadFinancialPage({bool next = false}) async {
     if (_loading || _loadingMore || _reviewingBatch ||
         _loadingFinancial || _verifyingOperationId != null ||
@@ -630,6 +722,55 @@ class _StorePurchaseHistoryPanelState
                   ? 'جارٍ فحص الأدلة...' : 'فحص أدلة أول 5 عمليات معروضة'),
             ),
           ),
+        if (_canVerifyReceipts && _receipts.any((row) =>
+            row['operationId'] is String && row['productId'] is String))
+          Card(child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('ملخص المبيعات والاستردادات — عمليات محددة',
+                  style: Theme.of(context).textTheme.titleMedium),
+                const Text('يتحقق من 4 أدلة للشراء وقيد وسجل الاسترداد '
+                  'لكل عملية. لا ينفذ استردادًا ولا يعرض رصيد المستخدم.'),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _loading || _loadingMore || _reviewingBatch ||
+                      _loadingFinancial || _loadingSettlement ||
+                      _verifyingOperationId != null
+                      ? null : _reviewSelectedFinancialStatement,
+                  icon: const Icon(Icons.account_balance_outlined),
+                  label: Text(_loadingSettlement
+                    ? 'جارٍ مطابقة الحسابات...'
+                    : 'تدقيق إجمالي ومسترد وصافي أول 5 عمليات'),
+                ),
+                if (_loadingSettlement) const LinearProgressIndicator(),
+                if (_settlementError != null)
+                  Text(_settlementError!,style: const TextStyle(
+                    color: Colors.orangeAccent)),
+                if (_settlement != null) ...[
+                  Text('فُحص: ${_settlement!['inspected']} • '
+                    'مطابق: ${_settlement!['verified']} • '
+                    'يحتاج مراجعة: ${_settlement!['needsReview']}'),
+                  if (_settlement!['fullSelectionVerified'] == true) ...[
+                    Text('إجمالي هذه العمليات: '
+                      '${_settlement!['selectedGrossCoins']} كوينز'),
+                    Text('المبالغ المستردة المثبتة: '
+                      '${_settlement!['selectedRefundedCoins']} كوينز'),
+                    Text('الصافي لهذه العمليات فقط: '
+                      '${_settlement!['selectedNetCoins']} كوينز'),
+                  ] else const Text('توجد أدلة ناقصة أو متعارضة؛ '
+                    'تم حجب جميع المبالغ إلى حين مراجعتها.'),
+                  for (final row in _settlement!['evidence'] as List)
+                    if (row is Map && row['verified'] != true)
+                      Text('عملية تحتاج مراجعة: ${row['operationId']} '
+                        '(${row['code'] ?? 'غير محدد'})'),
+                ],
+                const Text('هذا كشف للعمليات المحددة فقط، وليس '
+                  'إجمالي مبيعات المتجر أو تقرير محاسبة معتمد. '
+                  'الاسترداد والتحويل المالي الحقيقي معطّلان.'),
+              ],
+            ),
+          )),
         if (_batchNote != null) Padding(
           padding: const EdgeInsets.all(8),
           child: Text(_batchNote!),
