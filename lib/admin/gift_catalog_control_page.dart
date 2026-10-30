@@ -725,6 +725,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
 
   Future<void> editGift([int? index, GiftCatalogItem? template, bool editSavedDraft = false]) async {
     if (editing || saving || loading || loadFailed) return;
+    if (categoryUnsaved) {
+      message('احفظ تغييرات الفئات أولاً، ثم أضف أو عدّل الهدية.');
+      return;
+    }
     if (editSavedDraft && (hasUnsavedChanges || categoryUnsaved)) {
       message('احفظ التغييرات الحالية قبل تعديل المسودة.');
       return;
@@ -1345,7 +1349,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                 );
               },
-              child: const Text('اعتماد'),
+              child: Text(saveAsDraft ? 'حفظ المسودة' : 'اعتماد وحفظ'),
             ),
           ],
         ),
@@ -1379,10 +1383,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         gifts[index] = result;
       }
     });
-    // "اعتماد" only edits the local form. It does not publish a gift,
-    // its new category, or any previously drafted Asset Studio image.
-    message('تم اعتماد الهدية محلياً. اضغط «حفظ كتالوج الهدايا» '
-        'لتظهر التغييرات داخل التطبيق.');
+    // Persist the approved gift immediately with the existing transactional
+    // catalog revision guard. Failed writes preserve unsaved edits for retry.
+    await save();
   }
 
   Widget field(
