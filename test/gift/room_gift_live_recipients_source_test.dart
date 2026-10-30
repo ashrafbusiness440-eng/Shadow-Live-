@@ -35,7 +35,13 @@ void main() {
     expect(source.contains('Set<String> get _micIds => _liveSeats'), isTrue);
     expect(source.contains('_selectedIds.intersection(_availableReceiverIds)'),
         isTrue);
-    expect(source.contains('recipientIds: _currentSelectedIds.toList('),
+    // The selection must still come from the live room list, but freeze
+    // it before awaiting reconnection so a later roster change cannot
+    // redirect a charge to an unintended set of recipients.
+    expect(source.contains('final idsAtTap = _currentSelectedIds.toList('),
+        isTrue);
+    expect(source.contains('recipientIds: idsAtTap,'), isTrue);
+    expect(source.contains("throw StateError('gift_recipients_changed')"),
         isTrue);
   });
 
