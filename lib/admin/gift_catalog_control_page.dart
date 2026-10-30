@@ -1379,6 +1379,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         gifts[index] = result;
       }
     });
+    // "اعتماد" only edits the local form. It does not publish a gift,
+    // its new category, or any previously drafted Asset Studio image.
+    message('تم اعتماد الهدية محلياً. اضغط «حفظ كتالوج الهدايا» '
+        'لتظهر التغييرات داخل التطبيق.');
   }
 
   Widget field(
