@@ -151,6 +151,7 @@ class GiftCatalogService {
   static const Duration _freshFor = Duration(seconds: 30);
   static const Duration _staleFor = Duration(minutes: 5);
   static List<GiftCatalogItem>? _cachedCatalog;
+  static String? _cachedOwnerUid;
   static Map<String, String> _categoryNames = <String, String>{};
   static Map<String, String> _categoryImageKeys = <String, String>{};
   static List<String> _categoryOrder = <String>[];
@@ -369,6 +370,13 @@ class GiftCatalogService {
     bool forceRefresh = false,
     http.Client? client,
   }) async {
+    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
+    if (_cachedOwnerUid != ownerUid) {
+      // Balances, eligibility and bag contents are account-scoped. An
+      // in-flight response from a previous login must not cross accounts.
+      clearCacheForTests();
+      _cachedOwnerUid = ownerUid;
+    }
     final now = DateTime.now();
     final cached = _cachedCatalog;
     final loadedAt = _loadedAt;
@@ -385,10 +393,18 @@ class GiftCatalogService {
     _inflight = request;
     try {
       final items = await request;
+      if (_cachedOwnerUid != ownerUid ||
+          FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+        throw StateError('gift_account_changed');
+      }
       _cachedCatalog = List<GiftCatalogItem>.unmodifiable(items);
       _loadedAt = DateTime.now();
       return _cachedCatalog!;
     } catch (_) {
+      if (_cachedOwnerUid != ownerUid ||
+          FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+        rethrow;
+      }
       if (cached != null &&
           loadedAt != null &&
           now.difference(loadedAt) < _staleFor) {
@@ -434,6 +450,10 @@ class GiftCatalogService {
 
       if (response.statusCode != 200 || body['ok'] != true) {
         throw StateError((body['code'] ?? 'gift_catalog_failed').toString());
+      }
+      if (_cachedOwnerUid != user.uid ||
+          FirebaseAuth.instance.currentUser?.uid != user.uid) {
+        throw StateError('gift_account_changed');
       }
       _cachedSenderVipLevel = (body['senderVipLevel'] as num?)?.toInt();
       _cachedSenderWealthLevel = (body['senderWealthLevel'] as num?)?.toInt();
@@ -481,6 +501,7 @@ class GiftCatalogService {
   }
 
   static void clearCacheForTests() {
+    _cachedOwnerUid = null;
     _cachedCatalog = null;
     _categoryNames = <String, String>{};
     _categoryImageKeys = <String, String>{};
