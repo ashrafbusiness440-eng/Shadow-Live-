@@ -480,6 +480,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     _comboCountdown.stop();
     final useGiftBag = _category == 'bag';
     final recipientsAtSend = widget.comboContextKey;
+    final quantityAtSend = _quantity;
+    final categoryAtSend = _category;
     GiftPickerSendResult? confirmed;
     // Only the network send belongs to this failure handler. A local UI
     // update must never turn a confirmed server gift into a "send failed".
@@ -582,8 +584,8 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     }
     if (!mounted) return;
     if (recipientsAtSend == widget.comboContextKey &&
-        _selected?.id == gift.id && _quantity == _comboQuantity &&
-        _category == (useGiftBag ? 'bag' : _category)) {
+        _selected?.id == gift.id && _quantity == quantityAtSend &&
+        _category == categoryAtSend) {
       _restartCombo(gift, useGiftBag, confirmed.recipientCount);
     } else {
       setState(() => _clearCombo());
