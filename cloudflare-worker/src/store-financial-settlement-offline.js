@@ -7,15 +7,22 @@ import {certifyStorePurchaseEvidenceOffline}
   from "./store-purchase-reconciliation-offline.js";
 import {validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
+import {storeAccountingTimestampMs} from "./store-accounting-time.js";
 
 const validUid=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(x);
 const validProduct=x=>typeof x==="string"&&/^[1-9][0-9]{5,8}$/.test(x);
 const coin=x=>Number.isSafeInteger(x)&&x>=0;
 const failure=(code)=>({verified:false,code});
 const PREFIX="store_refund_";
-function checkRefundPair(ledger,audit,{uid,key,price}){
+function checkRefundPair(ledger,audit,{uid,key,price,postingAtMs}){
   const id=uid+"__"+key;
   const l=ledger?.data||{},a=audit?.data||{};
+  // All three independently persisted posting timestamps must match exactly.
+  // A matching per-operation posting date is NOT complete global coverage.
+  if(postingAtMs===null||
+      storeAccountingTimestampMs(l.createdAt)!==postingAtMs||
+      storeAccountingTimestampMs(a.createdAt)!==postingAtMs)
+    return "refund_posting_time_mismatch";
   // Full refunds only. Partial, multiple, chargeback and wallet-credit cases
   // must be independently specified/tested rather than treated as net revenue.
   if(l.userId!==uid||l.asset!=="coins"||
@@ -74,6 +81,7 @@ export async function inspectStoreFinancialSettlementOffline(
     return failure("incomplete_refund_evidence");
   const code=checkRefundPair(ledger,audit,{
     uid:buyerUid,key,price:proof.certifiedAmountCoins,
+    postingAtMs:proof.refundPostingAtMs,
   });
   if(code)return failure(code);
   return {
