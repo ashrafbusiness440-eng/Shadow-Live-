@@ -139,7 +139,7 @@ test("mismatched 21st extra row blocks pagination rather than losing operations"
   assert.equal(r.reviewStatus,"blocked");
   assert.equal(r.periodAmountsAvailable,false);
   assert.equal("pageNetCoins" in r,false);
-  assert.equal(r.blockingReason,"source_page_boundary_mismatch");
+  assert.equal(r.blockingReason,"invalid_source_page_boundary");
 });
 test("one source has no next page: refuse false completeness",async()=>{
   const x=fixture();
