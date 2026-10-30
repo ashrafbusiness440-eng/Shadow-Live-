@@ -4,6 +4,7 @@
 // checkout. Not an all-time revenue or full-wallet certification.
 import {validateStorePurchaseOperationId}
   from "./store-purchase-policy.js";
+import {storeAccountingTimestampMs} from "./store-accounting-time.js";
 
 const validUid=uid=>typeof uid==="string"&&
   /^[A-Za-z0-9_-]{1,128}$/.test(uid);
@@ -83,6 +84,13 @@ export async function certifyStorePurchaseEvidenceOffline(
   if(r.refundStatus!=="none"&&
       !(allowRefundedForSettlement===true&&r.refundStatus==="refunded"))
     return failure("requires_refund_review");
+  // Refund posting time must exist, be UTC, and never predate the sale.
+  // This verifies an individual operation, not a global posting-day census.
+  const refundPostingAtMs=r.refundStatus==="refunded"
+    ?storeAccountingTimestampMs(r.refundedAt):null;
+  if(r.refundStatus==="refunded"&&
+      (refundPostingAtMs===null||refundPostingAtMs<r.acquiredAtMs))
+    return failure("invalid_refund_posting_time");
   if(l.userId!==buyerUid||l.asset!=="coins"||
       l.sourceType!=="storePurchase"||
       l.reason!=="store_item_purchase"||
@@ -99,6 +107,7 @@ export async function certifyStorePurchaseEvidenceOffline(
     return failure("audit_mismatch");
   return {ok:true,kind,certifiedAmountCoins:price,
     ...(allowRefundedForSettlement===true
-      ?{refundStatus:r.refundStatus}:{}),
+      ?{refundStatus:r.refundStatus,
+        ...(r.refundStatus==="refunded"?{refundPostingAtMs}:{}),}:{}),
   };
 }

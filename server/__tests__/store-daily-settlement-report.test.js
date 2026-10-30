@@ -30,7 +30,8 @@ function fixture({refunded=false}={}){
     receipts:{buyerUid:uid,operationId:op,productId,priceCoins:12000,
       acquiredAtMs:at,expiresAtMs:null,durationDays:0,
       deliveryStatus:"delivered",renewal:false,
-      refundStatus:refunded?"refunded":"none"},
+      refundStatus:refunded?"refunded":"none",
+      ...(refunded?{refundedAt:new Date(at+30000)}:{})},
     operations:{buyerUid:uid,productId,kind:"purchase",status:"completed",
       result:{operationId:op,productId,priceCoins:12000,
         acquiredAtMs:at,durationDays:0,expiresAtMs:null,
@@ -56,12 +57,14 @@ function fixture({refunded=false}={}){
       reason:"store_item_refund",sourceId:key,
       idempotencyKey:"store_refund_"+key,delta:12000,
       openingBalance:38000,closingBalance:50000,
+      createdAt:new Date(at+30000),
     });
     canonical.set(docs.refundAudit,{
       actorUid:"the_owner",buyerUid:uid,operationId:op,
       action:"refundStorePurchase",
       targetType:"store_purchase_receipt",targetId:docs.receipts,
       refundedCoins:12000,ledgerId:"store_refund_"+key,
+      createdAt:new Date(at+30000),
     });
   }
   const indexed=Object.fromEntries(Object.keys(sources).map(source=>[

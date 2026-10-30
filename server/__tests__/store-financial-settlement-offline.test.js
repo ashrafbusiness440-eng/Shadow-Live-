@@ -26,7 +26,8 @@ function fixture(status="none"){
         deliveryStatus:"delivered",renewal:false}}],
     [paths.receipt,{buyerUid,operationId,productId,priceCoins:amount,
       durationDays:0,acquiredAtMs:100000,expiresAtMs:null,
-      deliveryStatus:"delivered",renewal:false,refundStatus:status}],
+      deliveryStatus:"delivered",renewal:false,refundStatus:status,
+      ...(status==="refunded"?{refundedAt:new Date(200000)}:{})}],
     [paths.saleLedger,{userId:buyerUid,asset:"coins",delta:-amount,
       sourceType:"storePurchase",reason:"store_item_purchase",
       sourceId:opKey,idempotencyKey:opKey,renewal:false,
@@ -41,6 +42,7 @@ function fixture(status="none"){
       sourceType:"storePurchaseRefund",reason:"store_item_refund",
       sourceId:opKey,idempotencyKey:"store_refund_"+opKey,
       openingBalance:36000,closingBalance:50000,
+      createdAt:new Date(200000),
     });
     records.set(paths.refundAudit,{
       actorUid:"verified_owner",buyerUid,
@@ -48,6 +50,7 @@ function fixture(status="none"){
       targetType:"store_purchase_receipt",
       targetId:"store_purchase_receipts/"+opKey,
       operationId,refundedCoins:amount,ledgerId:"store_refund_"+opKey,
+      createdAt:new Date(200000),
     });
   }
   const reads=[];
@@ -128,6 +131,9 @@ test("refund evidence absent, duplicated or forged causes no net statement",asyn
     "wrong_balance","wrong_source","wrong_idempotency",
     "wrong_audit","wrong_audit_actor","wrong_audit_target",
     "wrong_buyer","wrong_audit_amount",
+    "missing_receipt_refund_time","backdated_receipt_refund_time",
+    "altered_ledger_posting_time","altered_audit_posting_time",
+    "missing_audit_posting_time","non_utc_ledger_posting_time",
   ]){
     const {db,records}=fixture("refunded");
     const ledger=records.get(paths.refundLedger);
@@ -143,6 +149,18 @@ test("refund evidence absent, duplicated or forged causes no net statement",asyn
     if(kind==="wrong_audit_target")audit.targetId="other_receipt";
     if(kind==="wrong_buyer")audit.buyerUid="different";
     if(kind==="wrong_audit_amount")audit.refundedCoins=14001;
+    if(kind==="missing_receipt_refund_time")
+      delete records.get(paths.receipt).refundedAt;
+    if(kind==="backdated_receipt_refund_time")
+      records.get(paths.receipt).refundedAt=new Date(99999);
+    if(kind==="altered_ledger_posting_time")
+      ledger.createdAt=new Date(200001);
+    if(kind==="altered_audit_posting_time")
+      audit.createdAt=new Date(200001);
+    if(kind==="missing_audit_posting_time")
+      delete audit.createdAt;
+    if(kind==="non_utc_ledger_posting_time")
+      ledger.createdAt="1970-01-01T00:03:20+00:00";
     const report=await compileStoreSelectedSettlementStatement(db,{
       buyerUid,operations:[entry],
     });
