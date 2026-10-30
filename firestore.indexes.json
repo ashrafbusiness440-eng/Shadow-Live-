@@ -169,34 +169,6 @@
       ]
     },
     {
-      "collectionGroup": "store_purchase_receipts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "acquiredAtMs",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "store_purchase_operations",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "financial_ledger",
       "queryScope": "COLLECTION",
       "fields": [
