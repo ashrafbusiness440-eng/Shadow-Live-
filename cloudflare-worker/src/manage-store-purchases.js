@@ -9,6 +9,8 @@ import {certifyStorePurchaseEvidenceOffline}
   from "./store-purchase-reconciliation-offline.js";
 import {reviewStoreFinancialSourcePage}
   from "./store-financial-source-review.js";
+import {reviewStoreGlobalDailyPage}
+  from "./store-global-daily-financial-review.js";
 import {
   cleanStoreId,validStoreUid,hasRecentStoreAdminLogin,resolveStoreAdminTarget,
 } from "./store-admin-target.js";
@@ -321,6 +323,14 @@ export async function loadStoreFinancialCoverageForOwner(
   return {searchedId,targetUid,...coverage};
 }
 
+// All-buyer financial evidence is a strictly read-only, one-UTC-day
+// Owner report. Never substitute for all-time gross/net revenue or settlement.
+export async function loadStoreGlobalDailyPageForOwner(
+  db,token,day,source,cursor=null){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  return reviewStoreGlobalDailyPage(db,{day,source,cursor});
+}
+
 export async function manageStorePurchases(request,env) {
   if(request.method!=="POST") {
     return json(request,env,{ok:false,code:"method_not_allowed"},405);
@@ -332,7 +342,8 @@ export async function manageStorePurchases(request,env) {
         body?.action!=="review_selected"&&
         body?.action!=="financial_page"&&
         body?.action!=="financial_source_page"&&
-        body?.action!=="financial_coverage") {
+        body?.action!=="financial_coverage"&&
+        body?.action!=="global_financial_day_page") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -351,7 +362,10 @@ export async function manageStorePurchases(request,env) {
               db,token,targetId,body?.source,body?.cursor)
             :body.action==="financial_coverage"
               ?await loadStoreFinancialCoverageForOwner(db,token,targetId)
-              :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+              :body.action==="global_financial_day_page"
+                ?await loadStoreGlobalDailyPageForOwner(
+                  db,token,body?.day,body?.source,body?.cursor)
+                :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
@@ -362,6 +376,8 @@ export async function manageStorePurchases(request,env) {
         "invalid_store_purchase_operation_id",
         "invalid_store_receipt_cursor","invalid_store_review_selection",
         "invalid_store_financial_source","invalid_store_financial_source_cursor",
+        "invalid_store_global_day","invalid_store_global_source",
+        "invalid_store_global_cursor",
         "not_found"].includes(code)) {
       return json(request,env,{ok:false,code},
         code==="forbidden"?403:
@@ -370,7 +386,10 @@ export async function manageStorePurchases(request,env) {
           code==="invalid_store_receipt_cursor"||
           code==="invalid_store_review_selection"||
           code==="invalid_store_financial_source"||
-          code==="invalid_store_financial_source_cursor")?400:
+          code==="invalid_store_financial_source_cursor"||
+          code==="invalid_store_global_day"||
+          code==="invalid_store_global_source"||
+          code==="invalid_store_global_cursor")?400:
         code==="not_found"?404:401);
     }
     return json(request,env,{ok:false,code:"store_purchases_unavailable"},503);

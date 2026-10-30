@@ -488,6 +488,15 @@ jobs:
               'userId:order:ASCENDING|sourceType:order:ASCENDING'],
             ['admin_audit_logs',
               'actorUid:order:ASCENDING|action:order:ASCENDING'],
+            // Daily all-buyer parity pages need separate date-range indexes
+            // from the per-buyer indexes. Never approve a partial rollout.
+            ['store_purchase_receipts',
+              'acquiredAtMs:order:DESCENDING'],
+            ['store_purchase_operations','createdAt:order:DESCENDING'],
+            ['financial_ledger',
+              'sourceType:order:ASCENDING|createdAt:order:DESCENDING'],
+            ['admin_audit_logs',
+              'action:order:ASCENDING|createdAt:order:DESCENDING'],
           ];
           for(const [group,fieldKey] of requiredStoreIndexes){
             const desiredIndex=(byCollection.get(group)||[])

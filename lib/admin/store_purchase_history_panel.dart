@@ -7,6 +7,7 @@ import 'control_api_endpoints.dart';
 import 'control_firebase.dart';
 import 'store_receipt_sample_summary.dart';
 import 'store_financial_sources_panel.dart';
+import 'store_global_daily_financial_panel.dart';
 
 /// View-only server-authorized receipt history for one account at a time.
 class StorePurchaseHistoryPanel extends StatefulWidget {
@@ -615,6 +616,8 @@ class _StorePurchaseHistoryPanelState
         if (_canVerifyReceipts) _financialEvidencePanel(),
         if (_canVerifyReceipts)
           StoreFinancialSourcesPanel(targetId: _target!),
+        if (_canVerifyReceipts)
+          const StoreGlobalDailyFinancialPanel(),
         if (_canVerifyReceipts && _receipts.any((row) =>
             row['operationId'] is String && row['productId'] is String))
           Padding(
