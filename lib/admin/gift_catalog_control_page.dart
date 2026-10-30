@@ -841,6 +841,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           (current?.affinityBasePoints ?? 0).toString(),
     );
 
+    var saveAsDraft = resume?['saveAsDraft'] == true || editSavedDraft;
+
     // Autosave partial input to a private editor draft. It does not publish
     // or change catalog revision, and sends at most one update after typing
     // settles rather than one request per keystroke.
@@ -871,6 +873,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       'enabled': enabled,
       'featured': featured,
       'isAnimated': isAnimated,
+      'saveAsDraft': saveAsDraft,
       'allowedContexts': allowedContexts.toList(),
       'visibleFromMs': visibleFrom?.millisecondsSinceEpoch ?? 0,
       'visibleUntilMs': visibleUntil?.millisecondsSinceEpoch ?? 0,
@@ -905,7 +908,6 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
 
     bool previewOpen = false;
-    var saveAsDraft = editSavedDraft;
     final result = await showDialog<GiftCatalogItem>(
       context: context,
       barrierDismissible: false,
@@ -1583,8 +1585,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (saveAsDraft) {
       await storeDraft(result);
       if (pendingDraft == null) {
-        try { await post({'action': 'clearEditor'}); editorDraft = null; }
-        catch (_) {}
+        try {
+          await post({'action': 'clearEditor'});
+          if (mounted) setState(() => editorDraft = null);
+        } catch (_) {}
       }
       return;
     }
@@ -1600,8 +1604,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     // catalog revision guard. Failed writes preserve unsaved edits for retry.
     await save();
     if (!hasUnsavedChanges) {
-      try { await post({'action': 'clearEditor'}); editorDraft = null; }
-      catch (_) {}
+      try {
+        await post({'action': 'clearEditor'});
+        if (mounted) setState(() => editorDraft = null);
+      } catch (_) {}
     }
   }
 
