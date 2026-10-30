@@ -8,6 +8,7 @@ import {
   loadStoreFinancialCoverageForOwner,
   loadStoreGlobalDailyPageForOwner,
   loadStoreGlobalDailyCoverageForOwner,
+  loadStoreDailySettlementForOwner,
   loadStoreSelectedSettlementStatementForOwner,
   manageStorePurchases,
 } from "../../cloudflare-worker/src/manage-store-purchases.js";
@@ -921,4 +922,33 @@ test("610 selected refund settlement needs exact Owner recent login, <=5 IDs",as
   await assert.rejects(()=>loadStoreSelectedSettlementStatementForOwner(
     malformed,token,"123456",[]),/invalid_store_settlement_selection/);
   assert.deepEqual(malformed.reads,["users/auditor_1"]);
+});
+
+test("611 full-day Store settlement remains Owner+recent login only",async()=>{
+  const day=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const db=ownerEvidenceDb();
+  const reads=[];
+  db.runQuery=async(collection,options)=>{
+    reads.push({collection,options});
+    return [];
+  };
+  const result=await loadStoreDailySettlementForOwner(db,token,day);
+  assert.equal(result.scope,
+    "all_buyers_one_completed_utc_day_four_source_settlement");
+  assert.equal(result.reviewStatus,"reviewed");
+  assert.equal(result.reviewedGrossCoins,0);
+  assert.equal(result.financialReportComplete,false);
+  assert.equal(reads.length,4);
+  for(const actor of [viewer,{role:"user",accountStatus:"active"}]){
+    const denied=dbFor(actor);
+    denied.runQuery=async()=>{throw Error("untrusted_admin_must_not_query");};
+    await assert.rejects(()=>loadStoreDailySettlementForOwner(
+      denied,token,day),/forbidden/);
+    assert.deepEqual(denied.reads,["users/auditor_1"]);
+  }
+  const stale=ownerEvidenceDb();
+  stale.runQuery=async()=>{throw Error("old_owner_must_not_query");};
+  await assert.rejects(()=>loadStoreDailySettlementForOwner(
+    stale,{...token,auth_time:1},day),/recent_auth_required/);
+  assert.deepEqual(stale.reads,["users/auditor_1"]);
 });
