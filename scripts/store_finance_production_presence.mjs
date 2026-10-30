@@ -89,9 +89,12 @@ export function parseStoreCatalogGate(status,payload){
       (!payload.fields||typeof payload.fields!=="object"||
        Array.isArray(payload.fields))))
     throw Error("invalid_store_catalog_probe");
-  const enabled=payload.fields?.purchasingEnabled?.booleanValue;
-  if(enabled!==undefined&&typeof enabled!=="boolean")
+  const field=payload.fields?.purchasingEnabled;
+  if(field!==undefined&&
+    (!field||typeof field!=="object"||
+      typeof field.booleanValue!=="boolean"))
     throw Error("invalid_store_catalog_probe");
+  const enabled=field?.booleanValue;
   return {catalogPresent:true,purchasingEnabled:enabled===true};
 }
 export function evaluateStoreFinanceHistoricalPresence(
