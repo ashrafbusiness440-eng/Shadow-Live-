@@ -490,32 +490,48 @@ export async function handler(req, res) {
         exists: snap.exists,
         config: snap.exists ? snap.data() : null,
         editorDraft: editorSnapshot.exists ? (editorSnapshot.data()?.payload || null) : null,
+        editorDraftRevision: editorSnapshot.exists ? Number(editorSnapshot.data()?.revision || 0) : 0,
       });
     }
 
     // Partial, private editor progress is never published in the Gift Catalog.
     // It uses a separate per-admin document, so typing cannot change the
     // catalog's optimistic revision or invalidate the public cache.
-    if (action === "autosaveEditor") {
-      const payload = req.body?.payload;
-      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
-          JSON.stringify(payload).length > 12000 ||
-          Object.keys(payload).length > 42) {
-        throw Error("invalid_gift_editor_draft");
+    if (action === "autosaveEditor" || action === "clearEditor") {
+      const expectedRevision = req.body?.expectedEditorRevision;
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        throw Error("invalid_gift_editor_revision");
       }
-      const key = clean(payload.id);
-      if (!/^[a-z0-9_]{2,64}$/.test(key)) throw Error("invalid_gift_id");
-      await db.collection("gift_catalog_editor_drafts").doc(uid).set({
-        payload, updatedAt: FieldValue.serverTimestamp(),
+      const isSave = action === "autosaveEditor";
+      const payload = isSave ? req.body?.payload : null;
+      if (isSave) {
+        if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+            JSON.stringify(payload).length > 12000 ||
+            Object.keys(payload).length > 42) {
+          throw Error("invalid_gift_editor_draft");
+        }
+        const key = clean(payload.id);
+        if (!/^[a-z0-9_]{2,64}$/.test(key)) throw Error("invalid_gift_id");
+        if (!["new", "edit"].includes(payload.kind)) {
+          throw Error("invalid_gift_editor_draft");
+        }
+      }
+      const editorRef = db.collection("gift_catalog_editor_drafts").doc(uid);
+      let nextRevision = 0;
+      await db.runTransaction(async (tx) => {
+        const current = await tx.get(editorRef);
+        const priorRevision = current.exists
+          ? Number(current.data()?.revision || 0) : 0;
+        if (priorRevision !== expectedRevision) {
+          throw Error("gift_editor_conflict");
+        }
+        nextRevision = priorRevision + 1;
+        tx.set(editorRef, {
+          payload, revision: nextRevision,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       });
-      return out(res, 200, { ok: true });
-    }
-
-    if (action === "clearEditor") {
-      await db.collection("gift_catalog_editor_drafts").doc(uid).set({
-        payload: null, updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      return out(res, 200, { ok: true });
+      return out(res, 200, { ok: true, editorDraftRevision: nextRevision });
     }
 
     if (action === "save") {
@@ -800,9 +816,14 @@ export async function handler(req, res) {
         ? 401
         : code === "forbidden"
           ? 403
-          : code === "gift_catalog_conflict"
+          : code === "gift_catalog_conflict" || code === "gift_editor_conflict"
             ? 409
             : [
+              "invalid_gift_editor_draft",
+              "invalid_gift_editor_revision",
+              "invalid_gift_wealth_level",
+              "invalid_gift_eligibility_combination",
+              "invalid_gift_effect_contexts",
               "invalid_gift_categories",
               "invalid_gift_category_id",
               "invalid_gift_category_name",
