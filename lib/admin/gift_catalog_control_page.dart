@@ -769,6 +769,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         ? DateTime.fromMillisecondsSinceEpoch(current!.visibleUntilMs) : null;
     var category = current?.category ?? 'general';
     var minVipLevel = current?.effectiveMinVipLevel ?? 0;
+    var minWealthLevel = current?.minWealthLevel ?? 0;
+    final effectContexts = (current?.effectContexts ?? const ['room']).toSet();
     var isAnimated = template == null || editSavedDraft ? (current?.isAnimated ?? false) : false;
     var effectMode = template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none';
     final effectAssetKey = TextEditingController(
@@ -843,8 +845,9 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       if (value != null) {
                         setLocal(() {
                           category = value;
-                          if (category == 'vip' && minVipLevel == 0) {
-                            minVipLevel = 4;
+                          if (category == 'vip') {
+                            minVipLevel = minVipLevel < 4 ? 4 : minVipLevel;
+                            minWealthLevel = 0;
                           }
                         });
                       }
@@ -852,6 +855,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
+                    key: ValueKey('gift-vip-$minVipLevel-$minWealthLevel'),
                     value: minVipLevel,
                     decoration: const InputDecoration(
                       labelText: 'الحد الأدنى VIP',
@@ -867,8 +871,28 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       DropdownMenuItem(value: 9, child: Text('VIP9+')),
                       DropdownMenuItem(value: 10, child: Text('VIP10')),
                     ],
-                    onChanged: (value) {
+                    onChanged: minWealthLevel > 0 ? null : (value) {
                       if (value != null) setLocal(() => minVipLevel = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    key: ValueKey('gift-wealth-$minVipLevel-$minWealthLevel'),
+                    value: minWealthLevel,
+                    decoration: const InputDecoration(
+                      labelText: 'شرط مستوى الثروة',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 0, child: Text('بدون شرط')),
+                      DropdownMenuItem(value: 11, child: Text('LV 11–15')),
+                      DropdownMenuItem(value: 16, child: Text('LV 16–20')),
+                      DropdownMenuItem(value: 21, child: Text('LV 21–25')),
+                      DropdownMenuItem(value: 26, child: Text('LV 26–30')),
+                      DropdownMenuItem(value: 31, child: Text('LV 31–35')),
+                    ],
+                    onChanged: minVipLevel > 0 || category == 'vip' ? null : (value) {
+                      if (value != null) setLocal(() => minWealthLevel = value);
                     },
                   ),
                   const SizedBox(height: 10),
@@ -935,7 +959,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   DropdownButtonFormField<String>(
                     value: effectMode,
                     decoration: const InputDecoration(
-                      labelText: 'نوع مؤثر الغرفة',
+                      labelText: 'نوع مؤثر الهدية',
                       border: OutlineInputBorder(),
                     ),
                     items: const [
@@ -969,6 +993,28 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       }
                     },
                   ),
+                  const SizedBox(height: 8),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('أين يظهر مؤثر الهدية؟'),
+                    subtitle: Text('يمكن اختيار الغرفة والرسائل الخاصة معاً. هذا مستقل عن أماكن إرسال الهدية.'),
+                  ),
+                  for (final place in const [
+                    ('room', 'الغرف الصوتية'),
+                    ('chat', 'الرسائل الخاصة'),
+                  ])
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(place.$2),
+                      value: effectContexts.contains(place.$1),
+                      onChanged: (selected) => setLocal(() {
+                        if (selected == true) {
+                          effectContexts.add(place.$1);
+                        } else {
+                          effectContexts.remove(place.$1);
+                        }
+                      }),
+                    ),
                   const SizedBox(height: 10),
                   field(
                     effectAssetKey,
@@ -1313,6 +1359,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         (parsedAffinity < 2 || parsedAffinity.isOdd)) ||
                     (!relationshipGift && parsedAffinity != 0) ||
                     allowedContexts.isEmpty ||
+                    (minVipLevel > 0 && minWealthLevel > 0) ||
+                    !const [0, 11, 16, 21, 26, 31].contains(minWealthLevel) ||
                     (visibleFrom != null && visibleUntil != null &&
                         !visibleUntil!.isAfter(visibleFrom!))) {
                   message('راجع بيانات الهدية والمؤثر ونقاط العلاقة.');
@@ -1331,6 +1379,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     assetKey: cleanAsset,
                     localPlaceholder: cleanPlaceholder,
                     minVipLevel: minVipLevel,
+                    minWealthLevel: minWealthLevel,
+                    effectContexts: [
+                      for (final value in const ['room', 'chat'])
+                        if (effectContexts.contains(value)) value,
+                    ],
                     isAnimated: isAnimated,
                     effectMode: effectMode,
                     effectAssetKey: cleanEffectAssetKey,
@@ -2250,6 +2303,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                       assetKey: item.assetKey,
                                       localPlaceholder: item.localPlaceholder,
                                       minVipLevel: item.minVipLevel,
+                                      minWealthLevel: item.minWealthLevel,
+                                      effectContexts: item.effectContexts,
                                       isAnimated: item.isAnimated,
                                       effectMode: item.effectMode,
                                       effectAssetKey: item.effectAssetKey,
