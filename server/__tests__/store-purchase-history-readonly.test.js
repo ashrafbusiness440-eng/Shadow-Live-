@@ -829,7 +829,7 @@ test("606 all-buyer UTC daily finances require exact Owner and recent auth",asyn
   assert.equal(report.financialReportComplete,false);
   assert.equal(report.sourceCompletenessCertified,false);
   assert.deepEqual(db.reads.map(x=>typeof x==="string"?x:x.path),[
-    "users/auditor_1",undefined,
+    "users/auditor_1","store_purchase_operations",
   ]);
   for(const actor of [viewer,{role:"admin",adminEnabled:true,
     capabilities:["viewStorePurchases","viewStoreAudit"]}]){
