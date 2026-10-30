@@ -30,6 +30,12 @@ export async function commitStoreFullRefundOffline(
   const reason=body?.reason;
   if(!validStoreUid(actorUid))fail("unauthorized");
   if(!validStoreUid(buyerUid))fail("invalid_refund_buyer");
+  if(actorUid===buyerUid)fail("self_refund_forbidden");
+  // This engine only supports an exact, full original-price refund.
+  // No client-supplied partial amount or alternate Coins value is accepted.
+  if(body&&["refundedCoins","amountCoins","partial","priceCoins"]
+      .some(field=>Object.hasOwn(body,field)))
+    fail("invalid_refund_amount_override");
   if(!product(productId))fail("invalid_store_product_id");
   if(typeof reason!=="string"||reason.trim().length<5||
       reason.trim().length>200||body?.confirmation!=="confirmed")
