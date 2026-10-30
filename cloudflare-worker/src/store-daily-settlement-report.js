@@ -148,6 +148,20 @@ export async function reviewStoreDailySettlement(
   const bounds=storeGlobalDayBounds(day,nowMs);
   const decoded=pageMode?decodeDayPageCursor(cursor,day,bounds):null;
   const collections={},sentinels={},sourceMore={};
+  const blockPage=code=>{
+    const result=block(day,counts,code);
+    return pageMode?{
+      ...result,
+      scope:"all_buyers_one_utc_day_four_source_settlement_page",
+      pageLimit:STORE_DAILY_SETTLEMENT_MAX,
+      pageAmountsAvailable:false,
+      hasMore:false,nextCursor:null,
+      cursorSnapshotCertified:false,allPagesReviewed:false,
+      accountingBasis:"sale_day_cohort_current_refund_state",
+      refundPostingDayCertified:false,
+      independentRefundSourceCoverageCertified:false,
+    }:result;
+  };
   const counts={};
   // Four independent index-bounded sources, never just receipts. Limit+1
   // both rejects large days and establishes page completeness within index.
@@ -177,7 +191,7 @@ export async function reviewStoreDailySettlement(
       throw Error("store_daily_statement_bad_query");
     counts[source]=rows.length;
     if(rows.length>STORE_DAILY_SETTLEMENT_MAX&&!pageMode)
-      return block(day,counts,"day_exceeds_safe_operation_limit");
+      return blockPage("day_exceeds_safe_operation_limit");
     sourceMore[source]=rows.length>STORE_DAILY_SETTLEMENT_MAX;
     const selected=pageMode?rows.slice(0,STORE_DAILY_SETTLEMENT_MAX):rows;
     const map=new Map();
@@ -186,7 +200,7 @@ export async function reviewStoreDailySettlement(
       const time=timestampMs(source,row?.data?.[config.field]);
       if(!identity||!Number.isSafeInteger(time)||
           time<bounds.start||time>=bounds.end||map.has(identity.id))
-        return block(day,counts,"invalid_or_duplicate_source_identity");
+        return blockPage("invalid_or_duplicate_source_identity");
       map.set(identity.id,{row,identity});
     }
     collections[source]=map;
@@ -196,19 +210,19 @@ export async function reviewStoreDailySettlement(
       const extraTime=timestampMs(source,extra?.data?.[config.field]);
       if(!extraId||!Number.isSafeInteger(extraTime)||
           extraTime<bounds.start||extraTime>=bounds.end)
-        return block(day,counts,"invalid_source_page_boundary");
+        return blockPage("invalid_source_page_boundary");
       sentinels[source]={...extraId,atMs:extraTime};
     }
   }
   if(pageMode){
     const hasMore=Object.values(sourceMore)[0];
     if(Object.values(sourceMore).some(x=>x!==hasMore))
-      return block(day,counts,"source_page_boundary_mismatch");
+      return blockPage("source_page_boundary_mismatch");
     if(hasMore){
       const first=sentinels.receipts;
       if(Object.values(sentinels).some(x=>
           x.id!==first.id||x.atMs!==first.atMs))
-        return block(day,counts,"source_page_boundary_mismatch");
+        return blockPage("source_page_boundary_mismatch");
     }
   }
   // Identity parity, NOT mere aggregate count equality. Refund ledger/audit
@@ -216,7 +230,7 @@ export async function reviewStoreDailySettlement(
   const receiptIds=[...collections.receipts.keys()];
   if(Object.values(collections).some(map=>map.size!==receiptIds.length||
       receiptIds.some(id=>!map.has(id))))
-    return block(day,counts,"source_operation_ids_mismatch");
+    return blockPage("source_operation_ids_mismatch");
   // The chronological order and timestamp must match in every source.
   // Without this, a missing mid-page row could offset the cursor and
   // silently skip or repeat another user's operation.
@@ -233,7 +247,7 @@ export async function reviewStoreDailySettlement(
               expected.row.data?.acquiredAtMs);
             return id!==expectedId||rowAt!==receiptAt;
           }))
-        return block(day,counts,"source_page_order_or_time_mismatch");
+        return blockPage("source_page_order_or_time_mismatch");
     }
   }
   let gross=0,refunded=0,net=0,purchases=0,renewals=0;
@@ -241,7 +255,7 @@ export async function reviewStoreDailySettlement(
     const receipt=collections.receipts.get(id);
     const x=receipt.row.data||{};
     if(!validProduct(x.productId))
-      return block(day,counts,"invalid_receipt_product");
+      return blockPage("invalid_receipt_product");
     // Six exact reads per purchase; includes an independent refund ledger
     // and refund approval audit; no current balance or whole-user data.
     const proof=await inspectStoreFinancialSettlementOffline(db,{
@@ -250,19 +264,19 @@ export async function reviewStoreDailySettlement(
       expectedProductId:x.productId,
     });
     if(!proof.verified)
-      return block(day,counts,"operation_or_refund_proof_failed");
+      return blockPage("operation_or_refund_proof_failed");
     for(const source of Object.keys(SOURCES)){
       if(!sourceMatches(source,collections[source].get(id).row,
           {...proof,productId:x.productId},
           collections[source].get(id).identity))
-        return block(day,counts,"source_snapshot_conflict");
+        return blockPage("source_snapshot_conflict");
     }
     gross=sumCoins(gross,proof.grossCoins);
     refunded=sumCoins(refunded,proof.refundedCoins);
     net=sumCoins(net,proof.netCoins);
     if(proof.kind==="purchase")purchases++;
     else if(proof.kind==="renew")renewals++;
-    else return block(day,counts,"unknown_purchase_kind");
+    else return blockPage("unknown_purchase_kind");
   }
   if(gross-refunded!==net)
     throw Error("store_daily_statement_amount_mismatch");
@@ -275,7 +289,7 @@ export async function reviewStoreDailySettlement(
     const nextCursor=hasMore&&last&&Number.isSafeInteger(lastAt)
       ?encodeDayPageCursor(day,last.identity,lastAt):null;
     if(hasMore&&!nextCursor)
-      return block(day,counts,"invalid_source_page_boundary");
+      return blockPage("invalid_source_page_boundary");
     return {...base,
       scope:"all_buyers_one_utc_day_four_source_settlement_page",
       pageLimit:STORE_DAILY_SETTLEMENT_MAX,
