@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -822,6 +823,68 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
           (current?.affinityBasePoints ?? 0).toString(),
     );
 
+    // Autosave partial input to a private editor draft. It does not publish
+    // or change catalog revision, and sends at most one update after typing
+    // settles rather than one request per keystroke.
+    Timer? autoSaveTimer;
+    Future<void> lastAutoSave = Future<void>.value();
+    bool progressChanged = false;
+    final autoSaveStatus = ValueNotifier<String>(
+        resume == null ? 'مسودة تلقائية غير محفوظة بعد' : 'تم استرجاع المسودة التلقائية');
+    Map<String, dynamic> editorSnapshot() => <String, dynamic>{
+      'kind': index == null ? 'new' : 'edit',
+      'id': id.text.trim(),
+      'nameAr': nameAr.text,
+      'priceText': price.text,
+      'assetKey': assetKey.text,
+      'category': category,
+      'minVipLevel': minVipLevel,
+      'minWealthLevel': minWealthLevel,
+      'effectContexts': effectContexts.toList(),
+      'effectMode': effectMode,
+      'effectAssetKey': effectAssetKey.text,
+      'effectSoundAssetKey': effectSoundAssetKey.text,
+      'effectMinQuantity': effectMinQuantity.text,
+      'effectDurationMs': effectDurationMs.text,
+      'effectSize': effectSize.text,
+      'premiumBannerMinQuantity': premiumBannerMinQuantity.text,
+      'affinityBasePoints': affinityBasePoints.text,
+      'enabled': enabled,
+      'featured': featured,
+      'isAnimated': isAnimated,
+      'allowedContexts': allowedContexts.toList(),
+      'visibleFromMs': visibleFrom?.millisecondsSinceEpoch ?? 0,
+      'visibleUntilMs': visibleUntil?.millisecondsSinceEpoch ?? 0,
+    };
+    void saveProgressNow() {
+      if (editSavedDraft || !progressChanged) return;
+      autoSaveTimer?.cancel();
+      final snapshot = editorSnapshot();
+      lastAutoSave = lastAutoSave.then((_) async {
+        try {
+          await post({'action': 'autosaveEditor', 'payload': snapshot});
+          autoSaveStatus.value = 'تم حفظ المسودة تلقائياً';
+        } catch (_) {
+          autoSaveStatus.value = 'تعذّر حفظ المسودة — تحقق من الاتصال';
+        }
+      });
+    }
+    void markProgressDirty() {
+      if (editSavedDraft) return;
+      progressChanged = true;
+      autoSaveStatus.value = 'جارٍ تجهيز الحفظ التلقائي...';
+      autoSaveTimer?.cancel();
+      autoSaveTimer = Timer(
+        const Duration(milliseconds: 1400), saveProgressNow);
+    }
+    for (final controller in <TextEditingController>[
+      nameAr, price, assetKey, placeholder, effectAssetKey,
+      effectSoundAssetKey, effectMinQuantity, effectDurationMs,
+      effectSize, premiumBannerMinQuantity, affinityBasePoints,
+    ]) {
+      controller.addListener(markProgressDirty);
+    }
+
     bool previewOpen = false;
     var saveAsDraft = editSavedDraft;
     final result = await showDialog<GiftCatalogItem>(
@@ -835,6 +898,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
+                  ValueListenableBuilder<String>(
+                    valueListenable: autoSaveStatus,
+                    builder: (_, status, __) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(status,
+                        style: const TextStyle(
+                          color: Colors.amberAccent, fontSize: 11)),
+                    ),
+                  ),
                   TextFormField(
                     initialValue: id.text,
                     readOnly: true,
@@ -877,6 +949,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             minWealthLevel = 0;
                           }
                         });
+                        markProgressDirty();
                       }
                     },
                   ),
@@ -899,7 +972,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       DropdownMenuItem(value: 10, child: Text('VIP10')),
                     ],
                     onChanged: minWealthLevel > 0 ? null : (value) {
-                      if (value != null) setLocal(() => minVipLevel = value);
+                      if (value != null) {
+                        setLocal(() => minVipLevel = value);
+                        markProgressDirty();
+                      }
                     },
                   ),
                   const SizedBox(height: 10),
@@ -919,7 +995,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       DropdownMenuItem(value: 31, child: Text('LV 31–35')),
                     ],
                     onChanged: minVipLevel > 0 || category == 'vip' ? null : (value) {
-                      if (value != null) setLocal(() => minWealthLevel = value);
+                      if (value != null) {
+                        setLocal(() => minWealthLevel = value);
+                        markProgressDirty();
+                      }
                     },
                   ),
                   const SizedBox(height: 10),
@@ -1017,6 +1096,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             effectMinQuantity.text = '1';
                           }
                         });
+                        markProgressDirty();
                       }
                     },
                   ),
@@ -1034,13 +1114,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       contentPadding: EdgeInsets.zero,
                       title: Text(place.$2),
                       value: effectContexts.contains(place.$1),
-                      onChanged: (selected) => setLocal(() {
-                        if (selected == true) {
-                          effectContexts.add(place.$1);
-                        } else {
-                          effectContexts.remove(place.$1);
-                        }
-                      }),
+                      onChanged: (selected) {
+                        setLocal(() {
+                          if (selected == true) {
+                            effectContexts.add(place.$1);
+                          } else {
+                            effectContexts.remove(place.$1);
+                          }
+                        });
+                        markProgressDirty();
+                      },
                     ),
                   const SizedBox(height: 10),
                   field(
@@ -1436,6 +1519,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       ),
     );
 
+    autoSaveTimer?.cancel();
+    if (result == null && progressChanged) saveProgressNow();
+    await lastAutoSave;
+    autoSaveStatus.dispose();
+
     id.dispose();
     nameAr.dispose();
     price.dispose();
@@ -1453,6 +1541,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (result == null || !mounted) return;
     if (saveAsDraft) {
       await storeDraft(result);
+      if (pendingDraft == null) {
+        try { await post({'action': 'clearEditor'}); editorDraft = null; }
+        catch (_) {}
+      }
       return;
     }
     setState(() {
@@ -1466,6 +1558,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     // Persist the approved gift immediately with the existing transactional
     // catalog revision guard. Failed writes preserve unsaved edits for retry.
     await save();
+    if (!hasUnsavedChanges) {
+      try { await post({'action': 'clearEditor'}); editorDraft = null; }
+      catch (_) {}
+    }
   }
 
   Widget field(
