@@ -32,6 +32,10 @@ class _StoreGlobalDailyFinancialPanelState
   int _pageNumber = 0;
   int _generation = 0;
   int _coverageGeneration = 0;
+  int _statementGeneration = 0;
+  bool _loadingStatement = false;
+  Map<String, dynamic>? _statement;
+  String? _statementError;
   bool _loadingCoverage = false;
   Map<String, dynamic>? _coverage;
   String? _coverageError;
@@ -48,6 +52,7 @@ class _StoreGlobalDailyFinancialPanelState
   void dispose() {
     _generation++;
     _coverageGeneration++;
+    _statementGeneration++;
     super.dispose();
   }
 
@@ -61,6 +66,9 @@ class _StoreGlobalDailyFinancialPanelState
   void _clearPage() {
     _generation++;
     _coverageGeneration++;
+    _statementGeneration++;
+    _statement = null;
+    _statementError = null;
     _coverage = null;
     _coverageError = null;
     _page = null;
@@ -70,7 +78,7 @@ class _StoreGlobalDailyFinancialPanelState
   }
 
   Future<void> _chooseDay() async {
-    if (_loading) return;
+    if (_loading || _loadingCoverage || _loadingStatement) return;
     final utc = DateTime.now().toUtc();
     final yesterday = DateTime.utc(utc.year, utc.month, utc.day)
       .subtract(const Duration(days: 1));
@@ -88,8 +96,85 @@ class _StoreGlobalDailyFinancialPanelState
     });
   }
 
+  Future<void> _loadDailySettlement() async {
+    if (_loading || _loadingCoverage || _loadingStatement) return;
+    final day = _dayString();
+    final generation = ++_statementGeneration;
+    setState(() {
+      _loadingStatement = true;
+      _statement = null;
+      _statementError = null;
+    });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'global_financial_day_settlement',
+          'day': day,
+        }),
+      ).timeout(const Duration(seconds: 40));
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200 || body is! Map ||
+          body['ok'] != true ||
+          body['scope'] !=
+            'all_buyers_one_completed_utc_day_four_source_settlement' ||
+          body['day'] != day ||
+          body['perSourceLimit'] != 20 ||
+          body['sourceCounts'] is! Map ||
+          body['reviewStatus'] is! String ||
+          body['periodAmountsAvailable'] is! bool ||
+          body['snapshotIsolationCertified'] != false ||
+          body['historicalDateCoverageCertified'] != false ||
+          body['externalChargebacksCertified'] != false ||
+          body['fullPeriodSettlementCertified'] != false ||
+          body['financialReportComplete'] != false ||
+          body['netRevenueCertified'] != false ||
+          body['refundSettlementCertified'] != false ||
+          body['productionFinancialWritesPerformed'] != false ||
+          (body['reviewStatus'] != 'reviewed' &&
+              body['reviewStatus'] != 'blocked')) {
+        throw const FormatException('invalid_store_daily_statement');
+      }
+      final reviewed = body['reviewStatus'] == 'reviewed';
+      if (reviewed != (body['periodAmountsAvailable'] == true) ||
+          (reviewed && (
+            body['inspected'] is! int ||
+            body['verified'] != body['inspected'] ||
+            body['inspected'] < 0 || body['inspected'] > 20 ||
+            [body['reviewedGrossCoins'],body['reviewedRefundedCoins'],
+              body['reviewedNetCoins'],body['reviewedPurchases'],
+              body['reviewedRenewals']]
+              .any((x) => x is! int || x < 0) ||
+            body['reviewedGrossCoins'] !=
+              body['reviewedRefundedCoins'] + body['reviewedNetCoins'])) ||
+          (!reviewed && [
+            body['reviewedGrossCoins'],body['reviewedRefundedCoins'],
+            body['reviewedNetCoins'],
+          ].any((x) => x != null))) {
+        throw const FormatException('inconsistent_store_daily_statement');
+      }
+      if (!mounted || generation != _statementGeneration ||
+          day != _dayString()) return;
+      setState(() => _statement = Map<String, dynamic>.from(body));
+    } catch (_) {
+      if (!mounted || generation != _statementGeneration) return;
+      setState(() => _statementError =
+        'تعذّرت مراجعة عمليات اليوم بالكامل، ولم تُعدّل أي أرصدة.');
+    } finally {
+      if (mounted && generation == _statementGeneration) {
+        setState(() => _loadingStatement = false);
+      }
+    }
+  }
+
   Future<void> _loadCoverage() async {
-    if (_loadingCoverage || _loading) return;
+    if (_loadingCoverage || _loading || _loadingStatement) return;
     final day = _dayString();
     final generation = ++_coverageGeneration;
     setState(() {
@@ -151,7 +236,8 @@ class _StoreGlobalDailyFinancialPanelState
   }
 
   Future<void> _load({bool next = false}) async {
-    if (_loading || _loadingCoverage || (next && _cursor == null)) return;
+    if (_loading || _loadingCoverage || _loadingStatement ||
+        (next && _cursor == null)) return;
     final day = _dayString(),source = _source;
     final cursor = next ? _cursor : null;
     final generation = ++_generation;
@@ -233,13 +319,14 @@ class _StoreGlobalDailyFinancialPanelState
             'المبالغ المثبتة هنا للصفحة فقط، وليست إيرادات المتجر.'),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: _loading || _loadingCoverage ? null : _chooseDay,
+            onPressed: _loading || _loadingCoverage || _loadingStatement
+              ? null : _chooseDay,
             icon: const Icon(Icons.calendar_today_outlined),
             label: Text('اليوم (UTC): ${_dayString()}'),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: _loading || _loadingCoverage
+            onPressed: _loading || _loadingCoverage || _loadingStatement
               ? null : _loadCoverage,
             icon: const Icon(Icons.compare_arrows_outlined),
             label: Text(_loadingCoverage
@@ -267,13 +354,53 @@ class _StoreGlobalDailyFinancialPanelState
             const Text('لا تُشمل السجلات التي لا تحمل تاريخًا مفهرسًا. '
               'هذه ليست إيرادات المتجر ولا صافي كوينز معتمدًا.'),
           ],
+          const SizedBox(height: 12),
+          Text('ملخص إجمالي ومسترد وصافي اليوم',
+            style: Theme.of(context).textTheme.titleMedium),
+          const Text('يطابق الإيصالات والعمليات وقيود الكوينز '
+            'وسجلات التدقيق حسب رقم العملية لكل الحسابات، '
+            'ويتحقق من إثبات الاسترداد بشكل منفصل. '
+            'بحد 20 عملية لليوم؛ إذا زاد العدد أو نقص دليل '
+            'فلا تُعرض مبالغ.'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _loading || _loadingCoverage || _loadingStatement
+              ? null : _loadDailySettlement,
+            icon: const Icon(Icons.account_balance_outlined),
+            label: Text(_loadingStatement
+              ? 'جارٍ مطابقة العمليات والاستردادات...'
+              : 'إعداد كشف اليوم من جميع المصادر'),
+          ),
+          if (_loadingStatement) const LinearProgressIndicator(),
+          if (_statementError != null)
+            Text(_statementError!,style: const TextStyle(
+              color: Colors.orangeAccent)),
+          if (_statement != null) ...[
+            if (_statement!['reviewStatus'] == 'reviewed') ...[
+              Text('عمليات متطابقة: ${_statement!['verified']}'),
+              Text('إجمالي كوينز الشراء: '
+                '${_statement!['reviewedGrossCoins']}'),
+              Text('كوينز مستردة بإثبات: '
+                '${_statement!['reviewedRefundedCoins']}'),
+              Text('الصافي المراجع لهذا اليوم: '
+                '${_statement!['reviewedNetCoins']}'),
+              Text('شراء: ${_statement!['reviewedPurchases']} • '
+                'تجديد: ${_statement!['reviewedRenewals']}'),
+            ] else const Text('تعذّر إثبات تطابق جميع مصادر اليوم '
+              'أو تجاوز عدد العمليات حد الفحص. '
+              'تم حجب إجمالي وصافي الكوينز حتى المراجعة.'),
+            const Text('هذا كشف مراجعة ليوم مكتمل ضمن السجلات '
+              'المفهرسة فقط؛ لا يُثبت الإغلاق المحاسبي '
+              'أو عدم وجود معاملات أو استردادات متأخرة '
+              'أو اعتراضات مالية خارج النظام.'),
+          ],
           const SizedBox(height: 8),
           Wrap(spacing: 5,runSpacing: 4,children: [
             for (final source in labels.entries)
               ChoiceChip(
                 label: Text(source.value),
                 selected: _source == source.key,
-                onSelected: _loading || _loadingCoverage
+                onSelected: _loading || _loadingCoverage || _loadingStatement
                     ? null : (checked) {
                   if (!checked) return;
                   setState(() {
@@ -285,7 +412,8 @@ class _StoreGlobalDailyFinancialPanelState
           ]),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: _loading ? null : () => _load(),
+            onPressed: _loading || _loadingStatement
+              ? null : () => _load(),
             icon: const Icon(Icons.fact_check_outlined),
             label: Text(_loading
               ? 'جارٍ التحقق...' : 'فحص أول 10 سجلات لهذا المصدر'),

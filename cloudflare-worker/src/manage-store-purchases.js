@@ -11,6 +11,8 @@ import {reviewStoreFinancialSourcePage}
   from "./store-financial-source-review.js";
 import {reviewStoreGlobalDailyPage}
   from "./store-global-daily-financial-review.js";
+import {reviewStoreDailySettlement}
+  from "./store-daily-settlement-report.js";
 import {compileStoreSelectedSettlementStatement}
   from "./store-financial-settlement-offline.js";
 import {
@@ -349,6 +351,13 @@ export async function loadStoreGlobalDailyPageForOwner(
   return reviewStoreGlobalDailyPage(db,{day,source,cursor});
 }
 
+// Owner-only finite matched-source period statement for ONE completed UTC
+// day. Same recent-login gate as all existing Store financial workbenches.
+export async function loadStoreDailySettlementForOwner(db,token,day){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  return reviewStoreDailySettlement(db,{day});
+}
+
 // Owner-only bounded index cardinality comparison for ONE completed UTC day.
 // Equal counts do not certify amounts, operation IDs, or legacy coverage.
 export async function loadStoreGlobalDailyCoverageForOwner(db,token,day){
@@ -370,7 +379,8 @@ export async function manageStorePurchases(request,env) {
         body?.action!=="financial_coverage"&&
         body?.action!=="global_financial_day_page"&&
         body?.action!=="global_financial_day_coverage"&&
-        body?.action!=="selected_financial_statement") {
+        body?.action!=="selected_financial_statement"&&
+        body?.action!=="global_financial_day_settlement") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -398,7 +408,10 @@ export async function manageStorePurchases(request,env) {
                   :body.action==="selected_financial_statement"
                     ?await loadStoreSelectedSettlementStatementForOwner(
                       db,token,targetId,body?.operations)
-                    :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+                    :body.action==="global_financial_day_settlement"
+                      ?await loadStoreDailySettlementForOwner(
+                        db,token,body?.day)
+                      :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
