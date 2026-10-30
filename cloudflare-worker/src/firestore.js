@@ -4,6 +4,10 @@ import { giftTotalsAggregationRequest, parseGiftTotalsAggregationResponse } from
 import {storeFinancialCountRequest,parseStoreFinancialCountResponse,
   assembleStoreFinancialCoverage,STORE_COVERAGE_SOURCES}
   from "./store-financial-coverage-policy.js";
+import {
+  storeGlobalDailyCountRequest,parseStoreGlobalDailyCount,
+  assembleStoreGlobalDailyCoverage,STORE_GLOBAL_DAY_SOURCES,
+} from "./store-global-daily-coverage-policy.js";
 
 export function parseFirestoreAggregationRows(payload) {
   const content = String(payload ?? "").trim();
@@ -374,7 +378,8 @@ export function firestoreClient(env) {
         body = response.ok && readMode === "batch"
           ? parseFirestoreBatchGetRows(await response.text())
           : response.ok && (operation === "run_gift_aggregate" ||
-            operation === "run_store_source_count")
+            operation === "run_store_source_count" ||
+            operation === "run_store_global_day_count")
             ? parseFirestoreAggregationRows(await response.text())
             : await response.json().catch(() => ({}));
         if (response.ok) {
@@ -631,6 +636,28 @@ export function firestoreClient(env) {
         return [source,parseStoreFinancialCountResponse(source,body)];
       }));
       return assembleStoreFinancialCoverage(Object.fromEntries(rows));
+    },
+
+    async readStoreGlobalDailyCoverageCounts(day) {
+      // Exactly four ONE-DAY index aggregations. Not global all-time scans,
+      // not a full financial reconciliation, never an update to balances.
+      const nowMs=Date.now();
+      const records=await Promise.all(
+        STORE_GLOBAL_DAY_SOURCES.map(async source=>{
+          const request=storeGlobalDailyCountRequest(source,day,nowMs);
+          const collection=request.structuredAggregationQuery
+            .structuredQuery.from[0].collectionId;
+          const {body}=await call(
+            `${root}/documents:runAggregationQuery`,{
+              method:"POST",body:JSON.stringify(request),
+            },{
+              retryTransient:true,operation:"run_store_global_day_count",
+              readMode:"query",resource:collection,
+            });
+          return [source,parseStoreGlobalDailyCount(source,body)];
+        }));
+      return assembleStoreGlobalDailyCoverage(
+        day,Object.fromEntries(records),nowMs);
     },
 
     async runQuery(collectionPath, {

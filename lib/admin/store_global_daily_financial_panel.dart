@@ -31,6 +31,10 @@ class _StoreGlobalDailyFinancialPanelState
   Map<String, dynamic>? _page;
   int _pageNumber = 0;
   int _generation = 0;
+  int _coverageGeneration = 0;
+  bool _loadingCoverage = false;
+  Map<String, dynamic>? _coverage;
+  String? _coverageError;
 
   @override
   void initState() {
@@ -43,6 +47,7 @@ class _StoreGlobalDailyFinancialPanelState
   @override
   void dispose() {
     _generation++;
+    _coverageGeneration++;
     super.dispose();
   }
 
@@ -55,6 +60,9 @@ class _StoreGlobalDailyFinancialPanelState
 
   void _clearPage() {
     _generation++;
+    _coverageGeneration++;
+    _coverage = null;
+    _coverageError = null;
     _page = null;
     _cursor = null;
     _error = null;
@@ -80,8 +88,70 @@ class _StoreGlobalDailyFinancialPanelState
     });
   }
 
+  Future<void> _loadCoverage() async {
+    if (_loadingCoverage || _loading) return;
+    final day = _dayString();
+    final generation = ++_coverageGeneration;
+    setState(() {
+      _loadingCoverage = true;
+      _coverageError = null;
+    });
+    try {
+      final user = controlAuth.currentUser;
+      if (user == null) throw StateError('unauthorized');
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) throw StateError('unauthorized');
+      final response = await http.post(
+        shadowApiEndpoint('manage-store-purchases'),
+        headers: {'authorization': 'Bearer $token',
+          'content-type': 'application/json'},
+        body: jsonEncode({
+          'action': 'global_financial_day_coverage',
+          'day': day,
+        }),
+      ).timeout(const Duration(seconds: 25));
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200 || body is! Map ||
+          body['ok'] != true ||
+          body['scope'] != 'all_buyers_one_utc_day_indexed_counts' ||
+          body['day'] != day ||
+          body['countCap'] != 501 ||
+          body['counts'] is! Map ||
+          (body['counts'] as Map).length != 4 ||
+          !labels.keys.every((key) =>
+            body['counts'][key] is int &&
+            body['counts'][key] >= 0 &&
+            body['counts'][key] <= 501) ||
+          body['cappedSources'] is! List ||
+          body['cardinalitiesComparable'] is! bool ||
+          body['sourceCountsEqual'] is! bool ||
+          body['countMismatch'] is! bool ||
+          body['historicalRowsWithoutDateNotCovered'] != true ||
+          body['sourceCompletenessCertified'] != false ||
+          body['recordsIndividuallyReconciled'] != false ||
+          body['legacyBackfillCertified'] != false ||
+          body['partialEvidenceOnly'] != true ||
+          body['financialReportComplete'] != false ||
+          body['netRevenueCertified'] != false ||
+          body['refundSettlementCertified'] != false) {
+        throw const FormatException('invalid_global_financial_coverage');
+      }
+      if (!mounted || generation != _coverageGeneration ||
+          day != _dayString()) return;
+      setState(() => _coverage = Map<String, dynamic>.from(body));
+    } catch (_) {
+      if (!mounted || generation != _coverageGeneration) return;
+      setState(() => _coverageError =
+        'تعذّرت مقارنة أعداد السجلات لهذا اليوم؛ لم يُعدّل أي رصيد.');
+    } finally {
+      if (mounted && generation == _coverageGeneration) {
+        setState(() => _loadingCoverage = false);
+      }
+    }
+  }
+
   Future<void> _load({bool next = false}) async {
-    if (_loading || (next && _cursor == null)) return;
+    if (_loading || _loadingCoverage || (next && _cursor == null)) return;
     final day = _dayString(),source = _source;
     final cursor = next ? _cursor : null;
     final generation = ++_generation;
@@ -163,17 +233,48 @@ class _StoreGlobalDailyFinancialPanelState
             'المبالغ المثبتة هنا للصفحة فقط، وليست إيرادات المتجر.'),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: _loading ? null : _chooseDay,
+            onPressed: _loading || _loadingCoverage ? null : _chooseDay,
             icon: const Icon(Icons.calendar_today_outlined),
             label: Text('اليوم (UTC): ${_dayString()}'),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _loading || _loadingCoverage
+              ? null : _loadCoverage,
+            icon: const Icon(Icons.compare_arrows_outlined),
+            label: Text(_loadingCoverage
+              ? 'جارٍ مقارنة أعداد المصادر...'
+              : 'قارن عدد السجلات لهذا اليوم عبر المتجر'),
+          ),
+          if (_loadingCoverage) const LinearProgressIndicator(),
+          if (_coverageError != null)
+            Text(_coverageError!,
+              style: const TextStyle(color: Colors.orangeAccent)),
+          if (_coverage != null) ...[
+            Wrap(spacing: 6,runSpacing: 4,children: [
+              for (final entry in labels.entries)
+                Chip(label: Text(
+                  '${entry.value}: ${_coverage!['counts'][entry.key]}')),
+            ]),
+            Text(_coverage!['cardinalitiesComparable'] != true
+              ? 'مصدر واحد أو أكثر وصل للحد (501). '
+                'لا يمكن إثبات تساوي الأعداد؛ يلزم تدقيق مفصّل.'
+              : _coverage!['countMismatch'] == true
+                ? 'يوجد اختلاف في عدد السجلات بين المصادر لهذا اليوم. '
+                  'راجع العمليات والقيود والإيصالات كلّاً على حدة.'
+                : 'أعداد المصادر متساوية ضمن اليوم؛ '
+                  'لكن لا يعني ذلك أن كل عملية مطابقة أو مكتملة.'),
+            const Text('لا تُشمل السجلات التي لا تحمل تاريخًا مفهرسًا. '
+              'هذه ليست إيرادات المتجر ولا صافي كوينز معتمدًا.'),
+          ],
           const SizedBox(height: 8),
           Wrap(spacing: 5,runSpacing: 4,children: [
             for (final source in labels.entries)
               ChoiceChip(
                 label: Text(source.value),
                 selected: _source == source.key,
-                onSelected: _loading ? null : (checked) {
+                onSelected: _loading || _loadingCoverage
+                    ? null : (checked) {
                   if (!checked) return;
                   setState(() {
                     _source = source.key;

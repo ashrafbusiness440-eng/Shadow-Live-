@@ -17,7 +17,7 @@ const sources=Object.freeze({
 });
 const uidPattern=/^[A-Za-z0-9_-]{1,128}$/;
 const documentPattern=/^[A-Za-z0-9_-]{1,360}$/;
-function period(day,nowMs){
+export function storeGlobalDayBounds(day,nowMs){
   if(typeof day!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(day))
     throw Error("invalid_store_global_day");
   const start=Date.parse(day+"T00:00:00.000Z");
@@ -105,7 +105,7 @@ export async function reviewStoreGlobalDailyPage(
   db,{day,source,cursor=null,nowMs=Date.now()}={}){
   if(!Object.hasOwn(sources,source))
     throw Error("invalid_store_global_source");
-  const bounds=period(day,nowMs),config=sources[source];
+  const bounds=storeGlobalDayBounds(day,nowMs),config=sources[source];
   const stamp=source==="receipts"?{start:bounds.start,end:bounds.end}:
     {start:new Date(bounds.start),end:new Date(bounds.end)};
   const filters=[

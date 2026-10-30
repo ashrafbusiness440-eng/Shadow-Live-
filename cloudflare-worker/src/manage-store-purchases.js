@@ -331,6 +331,13 @@ export async function loadStoreGlobalDailyPageForOwner(
   return reviewStoreGlobalDailyPage(db,{day,source,cursor});
 }
 
+// Owner-only bounded index cardinality comparison for ONE completed UTC day.
+// Equal counts do not certify amounts, operation IDs, or legacy coverage.
+export async function loadStoreGlobalDailyCoverageForOwner(db,token,day){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  return db.readStoreGlobalDailyCoverageCounts(day);
+}
+
 export async function manageStorePurchases(request,env) {
   if(request.method!=="POST") {
     return json(request,env,{ok:false,code:"method_not_allowed"},405);
@@ -343,7 +350,8 @@ export async function manageStorePurchases(request,env) {
         body?.action!=="financial_page"&&
         body?.action!=="financial_source_page"&&
         body?.action!=="financial_coverage"&&
-        body?.action!=="global_financial_day_page") {
+        body?.action!=="global_financial_day_page"&&
+        body?.action!=="global_financial_day_coverage") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -365,7 +373,10 @@ export async function manageStorePurchases(request,env) {
               :body.action==="global_financial_day_page"
                 ?await loadStoreGlobalDailyPageForOwner(
                   db,token,body?.day,body?.source,body?.cursor)
-                :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+                :body.action==="global_financial_day_coverage"
+                  ?await loadStoreGlobalDailyCoverageForOwner(
+                    db,token,body?.day)
+                  :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
