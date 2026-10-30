@@ -11,7 +11,7 @@ import {reviewStoreFinancialSourcePage}
   from "./store-financial-source-review.js";
 import {reviewStoreGlobalDailyPage}
   from "./store-global-daily-financial-review.js";
-import {reviewStoreDailySettlement}
+import {reviewStoreDailySettlement,reviewStoreDailySettlementPage}
   from "./store-daily-settlement-report.js";
 import {compileStoreSelectedSettlementStatement}
   from "./store-financial-settlement-offline.js";
@@ -357,6 +357,11 @@ export async function loadStoreDailySettlementForOwner(db,token,day){
   await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
   return reviewStoreDailySettlement(db,{day});
 }
+export async function loadStoreDailySettlementPageForOwner(
+  db,token,day,cursor=null){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  return reviewStoreDailySettlementPage(db,{day,cursor});
+}
 
 // Owner-only bounded index cardinality comparison for ONE completed UTC day.
 // Equal counts do not certify amounts, operation IDs, or legacy coverage.
@@ -380,7 +385,8 @@ export async function manageStorePurchases(request,env) {
         body?.action!=="global_financial_day_page"&&
         body?.action!=="global_financial_day_coverage"&&
         body?.action!=="selected_financial_statement"&&
-        body?.action!=="global_financial_day_settlement") {
+        body?.action!=="global_financial_day_settlement"&&
+        body?.action!=="global_financial_day_settlement_page") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -411,7 +417,10 @@ export async function manageStorePurchases(request,env) {
                     :body.action==="global_financial_day_settlement"
                       ?await loadStoreDailySettlementForOwner(
                         db,token,body?.day)
-                      :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+                      :body.action==="global_financial_day_settlement_page"
+                        ?await loadStoreDailySettlementPageForOwner(
+                          db,token,body?.day,body?.cursor)
+                        :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
@@ -425,6 +434,7 @@ export async function manageStorePurchases(request,env) {
         "invalid_store_global_day","invalid_store_global_source",
         "invalid_store_global_cursor",
         "invalid_store_settlement_selection",
+        "invalid_store_settlement_cursor",
         "not_found"].includes(code)) {
       return json(request,env,{ok:false,code},
         code==="forbidden"?403:
@@ -437,7 +447,8 @@ export async function manageStorePurchases(request,env) {
           code==="invalid_store_global_day"||
           code==="invalid_store_global_source"||
           code==="invalid_store_global_cursor"||
-          code==="invalid_store_settlement_selection")?400:
+          code==="invalid_store_settlement_selection"||
+          code==="invalid_store_settlement_cursor")?400:
         code==="not_found"?404:401);
     }
     return json(request,env,{ok:false,code:"store_purchases_unavailable"},503);
