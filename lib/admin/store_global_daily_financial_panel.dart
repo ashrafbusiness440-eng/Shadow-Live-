@@ -36,6 +36,8 @@ class _StoreGlobalDailyFinancialPanelState
   bool _loadingStatement = false;
   Map<String, dynamic>? _statement;
   String? _statementError;
+  String? _statementCursor;
+  int _statementPageNumber = 0;
   bool _loadingCoverage = false;
   Map<String, dynamic>? _coverage;
   String? _coverageError;
@@ -69,6 +71,8 @@ class _StoreGlobalDailyFinancialPanelState
     _statementGeneration++;
     _statement = null;
     _statementError = null;
+    _statementCursor = null;
+    _statementPageNumber = 0;
     _coverage = null;
     _coverageError = null;
     _page = null;
@@ -96,13 +100,19 @@ class _StoreGlobalDailyFinancialPanelState
     });
   }
 
-  Future<void> _loadDailySettlement() async {
-    if (_loading || _loadingCoverage || _loadingStatement) return;
+  Future<void> _loadDailySettlement({bool next = false}) async {
+    if (_loading || _loadingCoverage || _loadingStatement ||
+        (next && _statementCursor == null)) return;
     final day = _dayString();
+    final requestedCursor = next ? _statementCursor : null;
     final generation = ++_statementGeneration;
     setState(() {
       _loadingStatement = true;
-      _statement = null;
+      if (!next) {
+        _statement = null;
+        _statementCursor = null;
+        _statementPageNumber = 0;
+      }
       _statementError = null;
     });
     try {
@@ -115,20 +125,21 @@ class _StoreGlobalDailyFinancialPanelState
         headers: {'authorization': 'Bearer $token',
           'content-type': 'application/json'},
         body: jsonEncode({
-          'action': 'global_financial_day_settlement',
+          'action': 'global_financial_day_settlement_page',
           'day': day,
+          if (requestedCursor != null) 'cursor': requestedCursor,
         }),
       ).timeout(const Duration(seconds: 40));
       final body = jsonDecode(response.body);
       if (response.statusCode != 200 || body is! Map ||
           body['ok'] != true ||
           body['scope'] !=
-            'all_buyers_one_completed_utc_day_four_source_settlement' ||
+            'all_buyers_one_utc_day_four_source_settlement_page' ||
           body['day'] != day ||
           body['perSourceLimit'] != 20 ||
+          body['pageLimit'] != 20 ||
           body['sourceCounts'] is! Map ||
           body['reviewStatus'] is! String ||
-          body['periodAmountsAvailable'] is! bool ||
           body['snapshotIsolationCertified'] != false ||
           body['historicalDateCoverageCertified'] != false ||
           body['externalChargebacksCertified'] != false ||
@@ -137,35 +148,44 @@ class _StoreGlobalDailyFinancialPanelState
           body['netRevenueCertified'] != false ||
           body['refundSettlementCertified'] != false ||
           body['productionFinancialWritesPerformed'] != false ||
-          (body['reviewStatus'] != 'reviewed' &&
-              body['reviewStatus'] != 'blocked')) {
-        throw const FormatException('invalid_store_daily_statement');
-      }
-      final reviewed = body['reviewStatus'] == 'reviewed';
-      if (reviewed != (body['periodAmountsAvailable'] == true) ||
-          (reviewed && (
-            body['inspected'] is! int ||
-            body['verified'] != body['inspected'] ||
-            body['inspected'] < 0 || body['inspected'] > 20 ||
-            [body['reviewedGrossCoins'],body['reviewedRefundedCoins'],
-              body['reviewedNetCoins'],body['reviewedPurchases'],
-              body['reviewedRenewals']]
-              .any((x) => x is! int || x < 0) ||
-            body['reviewedGrossCoins'] !=
-              body['reviewedRefundedCoins'] + body['reviewedNetCoins'])) ||
-          (!reviewed && [
-            body['reviewedGrossCoins'],body['reviewedRefundedCoins'],
-            body['reviewedNetCoins'],
-          ].any((x) => x != null))) {
-        throw const FormatException('inconsistent_store_daily_statement');
+          body['reviewStatus'] != 'reviewed' ||
+          body['pageAmountsAvailable'] != true ||
+          body['hasMore'] is! bool ||
+          body['cursorSnapshotCertified'] != false ||
+          body['allPagesReviewed'] != false ||
+          body['accountingBasis'] !=
+            'sale_day_cohort_current_refund_state' ||
+          body['refundPostingDayCertified'] != false ||
+          body['independentRefundSourceCoverageCertified'] != false ||
+          body['inspected'] is! int ||
+          body['verified'] != body['inspected'] ||
+          body['inspected'] < 0 || body['inspected'] > 20 ||
+          [body['pageGrossCoins'],body['pageRefundedCoins'],
+            body['pageNetCoins'],body['pagePurchases'],
+            body['pageRenewals']]
+            .any((x) => x is! int || x < 0) ||
+          body['pageGrossCoins'] !=
+            body['pageRefundedCoins'] + body['pageNetCoins'] ||
+          (body['hasMore'] == true &&
+            (body['nextCursor'] is! String ||
+             (body['nextCursor'] as String).isEmpty)) ||
+          (body['hasMore'] == false && body['nextCursor'] != null)) {
+        throw const FormatException('invalid_store_daily_page');
       }
       if (!mounted || generation != _statementGeneration ||
-          day != _dayString()) return;
-      setState(() => _statement = Map<String, dynamic>.from(body));
+          day != _dayString() ||
+          (next && requestedCursor != _statementCursor)) return;
+      setState(() {
+        _statement = Map<String, dynamic>.from(body);
+        _statementCursor = body['nextCursor'] is String &&
+                (body['nextCursor'] as String).isNotEmpty
+            ? body['nextCursor'] as String : null;
+        _statementPageNumber = next ? _statementPageNumber + 1 : 1;
+      });
     } catch (_) {
       if (!mounted || generation != _statementGeneration) return;
       setState(() => _statementError =
-        'تعذّرت مراجعة عمليات اليوم بالكامل، ولم تُعدّل أي أرصدة.');
+        'تعذّرت مراجعة صفحة اليوم، ولم تُعدّل أي أرصدة.');
     } finally {
       if (mounted && generation == _statementGeneration) {
         setState(() => _loadingStatement = false);
@@ -355,44 +375,52 @@ class _StoreGlobalDailyFinancialPanelState
               'هذه ليست إيرادات المتجر ولا صافي كوينز معتمدًا.'),
           ],
           const SizedBox(height: 12),
-          Text('ملخص إجمالي ومسترد وصافي اليوم',
+          Text('مراجعة مبيعات اليوم — صفحات متطابقة',
             style: Theme.of(context).textTheme.titleMedium),
-          const Text('يطابق الإيصالات والعمليات وقيود الكوينز '
-            'وسجلات التدقيق حسب رقم العملية لكل الحسابات، '
-            'ويتحقق من إثبات الاسترداد بشكل منفصل. '
-            'بحد 20 عملية لليوم؛ إذا زاد العدد أو نقص دليل '
-            'فلا تُعرض مبالغ.'),
+          const Text('يطابق أرقام العمليات وأوقاتها عبر الإيصالات '
+            'والعمليات وقيود الكوينز وسجل التدقيق لجميع الحسابات. '
+            'يفحص حتى 20 عملية بكل صفحة، مع متابعة الصفحات التالية. '
+            'المبالغ المعروضة تخص الصفحة فقط.'),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _loading || _loadingCoverage || _loadingStatement
-              ? null : _loadDailySettlement,
+              ? null : () => _loadDailySettlement(),
             icon: const Icon(Icons.account_balance_outlined),
             label: Text(_loadingStatement
               ? 'جارٍ مطابقة العمليات والاستردادات...'
-              : 'إعداد كشف اليوم من جميع المصادر'),
+              : 'فحص أول 20 عملية عبر جميع المصادر'),
           ),
           if (_loadingStatement) const LinearProgressIndicator(),
           if (_statementError != null)
             Text(_statementError!,style: const TextStyle(
               color: Colors.orangeAccent)),
           if (_statement != null) ...[
-            if (_statement!['reviewStatus'] == 'reviewed') ...[
-              Text('عمليات متطابقة: ${_statement!['verified']}'),
-              Text('إجمالي كوينز الشراء: '
-                '${_statement!['reviewedGrossCoins']}'),
-              Text('كوينز مستردة بإثبات: '
-                '${_statement!['reviewedRefundedCoins']}'),
-              Text('الصافي المراجع لهذا اليوم: '
-                '${_statement!['reviewedNetCoins']}'),
-              Text('شراء: ${_statement!['reviewedPurchases']} • '
-                'تجديد: ${_statement!['reviewedRenewals']}'),
-            ] else const Text('تعذّر إثبات تطابق جميع مصادر اليوم '
-              'أو تجاوز عدد العمليات حد الفحص. '
-              'تم حجب إجمالي وصافي الكوينز حتى المراجعة.'),
-            const Text('هذا كشف مراجعة ليوم مكتمل ضمن السجلات '
-              'المفهرسة فقط؛ لا يُثبت الإغلاق المحاسبي '
-              'أو عدم وجود معاملات أو استردادات متأخرة '
-              'أو اعتراضات مالية خارج النظام.'),
+            Text('الصفحة: $_statementPageNumber • '
+              'عمليات متطابقة: ${_statement!['verified']}'),
+            Text('إجمالي كوينز هذه الصفحة: '
+              '${_statement!['pageGrossCoins']}'),
+            Text('كوينز مستردة لهذه الصفحة: '
+              '${_statement!['pageRefundedCoins']}'),
+            Text('صافي هذه الصفحة فقط: '
+              '${_statement!['pageNetCoins']}'),
+            Text('شراء: ${_statement!['pagePurchases']} • '
+              'تجديد: ${_statement!['pageRenewals']}'),
+            if (_statement!['hasMore'] == true &&
+                _statementCursor != null)
+              OutlinedButton.icon(
+                onPressed: _loadingStatement
+                  ? null : () => _loadDailySettlement(next: true),
+                icon: const Icon(Icons.navigate_next),
+                label: const Text('تدقيق 20 عملية إضافية من اليوم'),
+              ),
+            if (_statement!['hasMore'] == false)
+              const Text('انتهت صفحات العمليات المفهرسة وقت الفحص. '
+                'هذا لا يثبت إغلاقًا محاسبيًا نهائيًا.'),
+            const Text('الصافي هنا بحسب يوم البيع الأصلي '
+              'وحالة الاسترداد الحالية، وليس يوم قيد الاسترداد. '
+              'الصفحات لا تشترك في لقطة بيانات ثابتة؛ '
+              'قد تصل تسويات متأخرة أو اعتراضات مالية خارجية. '
+              'هذا ليس تقرير إيرادات نهائيًا معتمدًا.'),
           ],
           const SizedBox(height: 8),
           Wrap(spacing: 5,runSpacing: 4,children: [
