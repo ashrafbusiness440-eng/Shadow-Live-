@@ -11,6 +11,8 @@ import {reviewStoreFinancialSourcePage}
   from "./store-financial-source-review.js";
 import {reviewStoreGlobalDailyPage}
   from "./store-global-daily-financial-review.js";
+import {compileStoreSelectedSettlementStatement}
+  from "./store-financial-settlement-offline.js";
 import {
   cleanStoreId,validStoreUid,hasRecentStoreAdminLogin,resolveStoreAdminTarget,
 } from "./store-admin-target.js";
@@ -149,6 +151,22 @@ export async function verifyStorePurchaseEvidenceForOwner(
       ?{kind:result.kind,certifiedAmountCoins:result.certifiedAmountCoins}
       :{code:result.code}),
   };
+}
+
+// Read-only Owner selected gross/refund/net statement. Six EXACT reads per
+// selected operation and no listing/collection scan. This does not certify
+// whole-history revenue or authorize crediting back Coins.
+export async function loadStoreSelectedSettlementStatementForOwner(
+  db,token,rawTargetId,operations){
+  await authorizedStorePurchaseActor(db,token,{ownerOnly:true});
+  // Validate selection before resolving target and before any finance reads.
+  if(!Array.isArray(operations)||operations.length<1||operations.length>5)
+    throw Error("invalid_store_settlement_selection");
+  const {targetUid,searchedId}=await resolveStoreAdminTarget(db,rawTargetId);
+  const report=await compileStoreSelectedSettlementStatement(db,{
+    buyerUid:targetUid,operations,
+  });
+  return {...report,searchedId};
 }
 
 // Financial evidence workbench: at most FIVE explicitly selected historical
@@ -351,7 +369,8 @@ export async function manageStorePurchases(request,env) {
         body?.action!=="financial_source_page"&&
         body?.action!=="financial_coverage"&&
         body?.action!=="global_financial_day_page"&&
-        body?.action!=="global_financial_day_coverage") {
+        body?.action!=="global_financial_day_coverage"&&
+        body?.action!=="selected_financial_statement") {
       return json(request,env,{ok:false,code:"invalid_action"},400);
     }
     const db=firestoreClient(env);
@@ -376,7 +395,10 @@ export async function manageStorePurchases(request,env) {
                 :body.action==="global_financial_day_coverage"
                   ?await loadStoreGlobalDailyCoverageForOwner(
                     db,token,body?.day)
-                  :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
+                  :body.action==="selected_financial_statement"
+                    ?await loadStoreSelectedSettlementStatementForOwner(
+                      db,token,targetId,body?.operations)
+                    :await loadStoreUserPurchases(db,token,targetId,body?.cursor);
     return json(request,env,result,200,{"Cache-Control":"no-store"});
   } catch(error) {
     const quota=firestoreQuotaResponse(request,env,error);
@@ -389,6 +411,7 @@ export async function manageStorePurchases(request,env) {
         "invalid_store_financial_source","invalid_store_financial_source_cursor",
         "invalid_store_global_day","invalid_store_global_source",
         "invalid_store_global_cursor",
+        "invalid_store_settlement_selection",
         "not_found"].includes(code)) {
       return json(request,env,{ok:false,code},
         code==="forbidden"?403:
@@ -400,7 +423,8 @@ export async function manageStorePurchases(request,env) {
           code==="invalid_store_financial_source_cursor"||
           code==="invalid_store_global_day"||
           code==="invalid_store_global_source"||
-          code==="invalid_store_global_cursor")?400:
+          code==="invalid_store_global_cursor"||
+          code==="invalid_store_settlement_selection")?400:
         code==="not_found"?404:401);
     }
     return json(request,env,{ok:false,code:"store_purchases_unavailable"},503);
