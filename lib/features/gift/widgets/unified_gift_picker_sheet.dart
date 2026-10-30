@@ -792,11 +792,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
         _selected = gift;
       }),
       borderRadius: BorderRadius.circular(13),
-      child: Opacity(
-        opacity: locked == null ? 1 : .42,
-        child: Stack(
-          children: [
-            AnimatedContainer(
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: locked == null ? 1 : .42,
+            child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.fromLTRB(5, 5, 5, 6),
         decoration: BoxDecoration(
@@ -900,6 +900,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
           ],
         ),
       ),
+          ),
             if (locked != null)
               Positioned(
                 top: 2,
@@ -917,8 +918,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
                   ),
                 ),
               ),
-          ],
-        ),
+        ],
       ),
     );
   }
