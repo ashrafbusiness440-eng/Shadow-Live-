@@ -44,6 +44,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
   List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
   GiftCatalogItem? pendingDraft;
+  Map<String, dynamic>? editorDraft;
   bool statsOnly = false;
   bool canGrantBag = false;
   bool statsTotalsLoading = false;
@@ -207,6 +208,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final savedEditor = body['editorDraft'];
       final rawDrafts = config is Map ? config['drafts'] : null;
       final loadedDrafts = rawDrafts is List
           ? rawDrafts.whereType<Map>().map((item) =>
@@ -230,6 +232,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         if (isStatsOnly) selectedSection = 3;
         drafts = isStatsOnly ? <GiftCatalogItem>[] : loadedDrafts;
         pendingDraft = null;
+        editorDraft = savedEditor is Map
+            ? Map<String, dynamic>.from(savedEditor) : null;
         gifts = isStatsOnly ? <GiftCatalogItem>[] :
             loaded.isEmpty
                 ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
@@ -735,26 +739,38 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     }
     editing = true;
     final current = index == null ? template : gifts[index];
+    final savedProgress = editorDraft;
+    final resume = savedProgress != null &&
+        ((index == null && template == null && savedProgress['kind'] == 'new') ||
+         (index != null && savedProgress['kind'] == 'edit' &&
+          savedProgress['id'] == current?.id))
+        ? savedProgress : null;
     // Never reuse an ID already in the catalog, saved drafts or an unsaved
     // draft. Existing gift IDs remain immutable for historical ledgers.
     final generatedId = index == null && !editSavedDraft
-        ? nextGiftNumericId([
+        ? ((resume?['id'] is String &&
+              !gifts.any((g) => g.id == resume!['id']) &&
+              !drafts.any((g) => g.id == resume!['id']))
+            ? resume!['id'] as String : nextGiftNumericId([
             ...gifts.map((gift) => gift.id),
             ...drafts.map((gift) => gift.id),
             if (pendingDraft != null) pendingDraft!.id,
-          ])
+          ]))
         : null;
     final id = TextEditingController(
       text: generatedId ?? (current?.id ?? ''),
     );
     final nameAr = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
+      text: resume?['nameAr']?.toString() ??
+          (template == null || editSavedDraft ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}'),
     );
     final price = TextEditingController(
-      text: current?.priceCoins.toString() ?? '',
+      text: resume?['priceText']?.toString() ??
+          current?.priceCoins.toString() ?? '',
     );
     final assetKey = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
+      text: resume?['assetKey']?.toString() ??
+          (template == null || editSavedDraft ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default'),
     );
     final placeholder = TextEditingController(
       text: current?.localPlaceholder ??
@@ -767,32 +783,43 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         ? DateTime.fromMillisecondsSinceEpoch(current!.visibleFromMs) : null;
     DateTime? visibleUntil = (current?.visibleUntilMs ?? 0) > 0
         ? DateTime.fromMillisecondsSinceEpoch(current!.visibleUntilMs) : null;
-    var category = current?.category ?? 'general';
-    var minVipLevel = current?.effectiveMinVipLevel ?? 0;
-    var minWealthLevel = current?.minWealthLevel ?? 0;
-    final effectContexts = (current?.effectContexts ?? const ['room']).toSet();
+    var category = resume?['category']?.toString() ?? current?.category ?? 'general';
+    var minVipLevel = (resume?['minVipLevel'] as num?)?.toInt() ??
+        current?.effectiveMinVipLevel ?? 0;
+    var minWealthLevel = (resume?['minWealthLevel'] as num?)?.toInt() ??
+        current?.minWealthLevel ?? 0;
+    final effectContexts = (resume?['effectContexts'] is List
+        ? (resume!['effectContexts'] as List).whereType<String>().toList()
+        : current?.effectContexts ?? const ['room']).toSet();
     var isAnimated = template == null || editSavedDraft ? (current?.isAnimated ?? false) : false;
-    var effectMode = template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none';
+    var effectMode = resume?['effectMode']?.toString() ??
+        (template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none');
     final effectAssetKey = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
+      text: resume?['effectAssetKey']?.toString() ??
+        (template == null || editSavedDraft ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default'),
     );
     final effectSoundAssetKey = TextEditingController(
       text: template == null || editSavedDraft ? (current?.effectSoundAssetKey ?? '') : '',
     );
     final effectMinQuantity = TextEditingController(
-      text: (template == null || editSavedDraft ? (current?.effectMinQuantity ?? 0) : 0).toString(),
+      text: resume?['effectMinQuantity']?.toString() ??
+          (template == null || editSavedDraft ? (current?.effectMinQuantity ?? 0) : 0).toString(),
     );
     final effectDurationMs = TextEditingController(
-      text: (current?.effectDurationMs ?? 2200).toString(),
+      text: resume?['effectDurationMs']?.toString() ??
+          (current?.effectDurationMs ?? 2200).toString(),
     );
     final effectSize = TextEditingController(
-      text: (current?.effectSize ?? 0).toString(),
+      text: resume?['effectSize']?.toString() ??
+          (current?.effectSize ?? 0).toString(),
     );
     final premiumBannerMinQuantity = TextEditingController(
-      text: (current?.premiumBannerMinQuantity ?? 0).toString(),
+      text: resume?['premiumBannerMinQuantity']?.toString() ??
+          (current?.premiumBannerMinQuantity ?? 0).toString(),
     );
     final affinityBasePoints = TextEditingController(
-      text: (current?.affinityBasePoints ?? 0).toString(),
+      text: resume?['affinityBasePoints']?.toString() ??
+          (current?.affinityBasePoints ?? 0).toString(),
     );
 
     bool previewOpen = false;
