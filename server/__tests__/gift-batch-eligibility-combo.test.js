@@ -50,6 +50,9 @@ test("admin edits publish only one eligibility and independent effect placements
   assert.ok(admin.includes("مؤثر الهدية"));
   assert.ok(admin.includes("minWealthLevel: minWealthLevel"));
   assert.ok(client.includes("'minWealthLevel': minWealthLevel"));
+  assert.ok(client.includes('static String? _cachedOwnerUid'));
+  assert.ok(client.includes('_cachedOwnerUid != ownerUid'));
+  assert.ok(client.includes("throw StateError('gift_account_changed')"));
   assert.ok(source.includes("validateGiftEligibility("));
   assert.ok(source.includes("effectContexts"));
 });
