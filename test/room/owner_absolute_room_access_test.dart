@@ -50,7 +50,7 @@ void main() {
     expect(state.has('manageIds'), isTrue);
   });
 
-  test('three-dot Room Menu opens without awaiting ghost mode network', () {
+  test('three-dot Room Menu omits removed ghost toggle without network reads', () {
     final source = File('lib/main.dart').readAsStringSync();
     final start = source.indexOf('Future<void> _showRoomMenu()');
     final end = source.indexOf('@override\n  void dispose()', start);
@@ -59,7 +59,7 @@ void main() {
     final menu = source.substring(start, end);
 
     expect(menu.contains('await _roomActions.loadGhostMode()'), isFalse);
-    expect(menu.contains('unawaited(_refreshRoomGhostMode())'), isTrue);
+    expect(menu.contains('unawaited(_refreshRoomGhostMode())'), isFalse);\n    expect(menu.contains('إخفاء الوجود في الغرفة'), isFalse);
     expect(
       menu.contains('_roomModeratorState?.ownerAbsoluteRoomAccess'),
       isTrue,
