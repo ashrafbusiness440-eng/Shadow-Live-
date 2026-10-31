@@ -59,7 +59,8 @@ void main() {
     final menu = source.substring(start, end);
 
     expect(menu.contains('await _roomActions.loadGhostMode()'), isFalse);
-    expect(menu.contains('unawaited(_refreshRoomGhostMode())'), isFalse);\n    expect(menu.contains('إخفاء الوجود في الغرفة'), isFalse);
+    expect(menu.contains('unawaited(_refreshRoomGhostMode())'), isFalse);
+    expect(menu.contains('إخفاء الوجود في الغرفة'), isFalse);
     expect(
       menu.contains('_roomModeratorState?.ownerAbsoluteRoomAccess'),
       isTrue,
