@@ -100,6 +100,10 @@ test("room combo locks recipient selection before asynchronous reconnection",()=
   assert.ok(snapshot >= 0 && reconnect > snapshot && reject > reconnect && send > reject);
   assert.ok(room.includes("recipientMode: modeAtTap"));
   assert.ok(room.includes("recipientIds: idsAtTap"));
+  assert.ok(room.includes("Set<String> get _comboRecipientIds"));
+  assert.ok(room.includes("'all_mics' => _micIds"));
+  assert.ok(room.includes("for (final user in _participants) user.uid"));
+  assert.ok(room.includes("...(_comboRecipientIds.toList()..sort())"));
   assert.ok(picker.includes("'gift_recipients_changed'"));
 });
 
