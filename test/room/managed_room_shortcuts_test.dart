@@ -15,6 +15,19 @@ void main() {
     expect(owned.isOwner, isTrue);
     expect(moderated.isModerator, isTrue);
     expect(owned.room.name, 'غرفة الصوت');
+    final official = ManagedRoomEntry.fromJson(const {
+      'roomId': 'official-vip',
+      'ownerUid': '',
+      'hostUid': 'official-host',
+      'roomType': 'official',
+      'relation': 'moderator',
+    });
+    expect(official.isModerator, isTrue);
+    expect(official.room.toNavigationArguments()['hostId'], 'official-host');
+    expect(() => PersonalRoomInfo.fromJson(const {
+      'roomId': 'official-vip',
+      'ownerUid': '',
+    }), throwsFormatException);
     expect(() => ManagedRoomEntry.fromJson({...base, 'relation': 'visitor'}),
         throwsFormatException);
     expect(() => ManagedRoomEntry.fromJson({'relation': 'owner'}),
