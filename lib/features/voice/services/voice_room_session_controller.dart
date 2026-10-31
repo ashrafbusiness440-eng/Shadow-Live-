@@ -789,6 +789,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
   }
 
+  // Safe error code for a localized retry message. No secrets or tokens.
+  String get roomPresenceFailureCode => _presenceService.lastConnectionError;
+
   Future<bool> ensureRoomPresenceReady() async {
     final id = roomId.trim();
     final generation = _roomSessionGeneration;
@@ -814,6 +817,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await _presenceService.join(targetRoomId);
       if (!_active || roomId != targetRoomId ||
           _roomSessionGeneration != sessionGeneration) return;
+      // A superseded admission can return normally after cancellation. Only
+      // the exact socket acknowledged by server.ready is trusted.
+      if (!_presenceService.isReadyFor(targetRoomId)) return;
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
         'presenceDegraded': false,
