@@ -126,6 +126,15 @@ jobs:
 
       - name: Verify Shadow Live build
         run: |
+          test -s site/live/assets/packages/zego_express_engine/assets/ZegoExpressWebFlutterWrapper.js
+          grep -q 'src="assets/packages/zego_express_engine/assets/ZegoExpressWebFlutterWrapper.js"' site/live/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('site/live/index.html').read_text()
+          bridge = 'assets/packages/zego_express_engine/assets/ZegoExpressWebFlutterWrapper.js'
+          assert html.count(bridge) == 1
+          assert html.index(bridge) < html.index('flutter_bootstrap.js')
+          PY
           test -f site/live/main.dart.js
           grep -q "greedy_cat" site/live/main.dart.js
           grep -q "serverRoundSelections" site/live/main.dart.js
