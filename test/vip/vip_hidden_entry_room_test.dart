@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('VIP7 hidden entry stays independent from VIP5 presence hiding', () {
+  test('VIP7 hidden entry still runs independently of retired ghost room UI', () {
     final mainSource = File('lib/main.dart').readAsStringSync();
     final serviceSource = File(
       'lib/features/room/services/room_action_service.dart',
@@ -15,7 +15,7 @@ void main() {
       'cloudflare-worker/src/room-realtime.js',
     ).readAsStringSync();
 
-    expect(mainSource.contains('إخفاء الوجود في الغرفة'), isTrue);
+    expect(mainSource.contains('إخفاء الوجود في الغرفة'), isFalse);
     // Hidden Entry is a VIP7 privacy entitlement and must not be toggled from
     // the Room Menu. Its only user-facing toggle belongs in Privacy Settings.
     expect(mainSource.contains('الدخول المخفي'), isFalse);
