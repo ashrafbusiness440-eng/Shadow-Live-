@@ -54,5 +54,12 @@ void main() {
   test('sharing does not claim unverified friends are online', () {
     expect(app, isNot(contains("friend.online\n                                        ? 'متصل الآن'")));
     expect(app, contains("subtitle: const Text(\n                                    'صديق'"));
+    final sharing = app.substring(
+      app.indexOf('Future<void> _showShareRoomSheet()'),
+      app.indexOf('Future<void> _showRoomInfoSheet()'),
+    );
+    expect(sharing, contains('final friendsFuture = _roomInvites.loadFriends();'));
+    expect(sharing, contains('future: friendsFuture,'));
+    expect(sharing, isNot(contains('future: _roomInvites.loadFriends(),')));
   });
 }
