@@ -562,7 +562,7 @@ class RoomPresenceService {
       }
 
       // Do not resurrect a room after leave or switch to another room.
-      if (_desiredRoomId.isNotEmpty && _desiredRoomId != id) return false;
+      if (_desiredRoomId != id) return false;
       await join(id);
       return isReadyFor(id);
     } catch (_) {
