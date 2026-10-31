@@ -7,6 +7,7 @@ import '../../features/home/services/discovery_service.dart';
 import '../../features/room/services/room_action_service.dart';
 import '../../features/room/services/room_image_source.dart';
 import '../../features/room/widgets/discovery_room_password_dialog.dart';
+import '../../features/room/widgets/managed_rooms_panel.dart';
 import '../../services/navigation_service.dart';
 
 /// Compatibility wrappers: the shared discovery service owns the rules.
@@ -312,6 +313,44 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
+  void _showManagedRooms() {
+    if (_openingPersonalRoom) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF0D1020),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * .73,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
+              const Center(
+                child: Text(
+                  'غرفي والإشراف',
+                  textDirection: TextDirection.rtl,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ManagedRoomsPanel(
+                sheetMode: true,
+                onOpenPersonalRoom: _openPersonalRoom,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _search() {
     Navigator.push(
       context,
@@ -418,7 +457,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                         ),
                         IconButton(
                           onPressed:
-                              _openingPersonalRoom ? null : _openPersonalRoom,
+                              _openingPersonalRoom ? null : _showManagedRooms,
                           style: IconButton.styleFrom(
                             backgroundColor:
                                 const Color(0xFF8A3DFF).withValues(alpha: .18),
@@ -436,7 +475,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                   Icons.meeting_room_rounded,
                                   color: Color(0xFFFFD54A),
                                 ),
-                          tooltip: 'غرفتي',
+                          tooltip: 'غرفي والإشراف',
                         ),
                         const SizedBox(width: 6),
                         IconButton(
