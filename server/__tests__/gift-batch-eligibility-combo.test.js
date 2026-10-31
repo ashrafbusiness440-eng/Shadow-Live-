@@ -73,6 +73,23 @@ test("picker disables locked gift cards, has confirmed four-second combo",()=>{
   assert.ok(room.includes("comboContextKey:"));
 });
 
+test("uncertain send forbids changed gift intent and preserves the same-key retry", () => {
+  const picker = read("../../lib/features/gift/widgets/unified_gift_picker_sheet.dart");
+  const room = read("../../lib/features/gift/services/room_gift_service.dart");
+  const direct = read("../../lib/features/gift/widgets/direct_gift_sheet.dart");
+  assert.ok(picker.includes("_uncertainSendFingerprint"));
+  assert.ok(picker.includes("_uncertainSendFingerprint != operationFingerprint"));
+  assert.ok(picker.includes("_uncertainSendFingerprint = operationFingerprint"));
+  assert.ok(picker.includes("_uncertainSendFingerprint = null"));
+  assert.ok(picker.includes("const <String>{"));
+  for (const code of ["gift_confirmation_pending", "gift_connection_timeout", "gift_network_unavailable"]) {
+    assert.ok(picker.includes("'" + code + "'"));
+  }
+  assert.ok(picker.includes("retryMatches"));
+  assert.ok(room.includes("_retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty"));
+  assert.ok(direct.includes("_retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty"));
+});
+
 test("room combo locks recipient selection before asynchronous reconnection",()=> {
   const room = read("../../lib/features/gift/widgets/room_gift_sheet.dart");
   const picker = read("../../lib/features/gift/widgets/unified_gift_picker_sheet.dart");
