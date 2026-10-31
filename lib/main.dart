@@ -469,7 +469,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
     final raw = ModalRoute.of(context)?.settings.arguments;
     final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-    _roomArguments = args;
+    // Navigation metadata is not proof of a live presence socket.
+    _roomArguments = <String, dynamic>{
+      ...args,
+      'presenceDegraded': true,
+    };
     final fallbackOwnerName =
         (args['hostName'] ?? args['ownerName'] ?? '').toString().trim();
     if (fallbackOwnerName.isNotEmpty) {
