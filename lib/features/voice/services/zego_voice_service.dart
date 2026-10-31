@@ -6,6 +6,7 @@ import 'package:zego_express_engine/zego_express_engine.dart';
 import '../../chat/services/private_call_signaling_client.dart';
 import 'voice_service.dart';
 import 'voice_token_client.dart';
+import 'zego_login_identity.dart';
 
 /// ZEGOCLOUD implementation hidden behind the provider-neutral [VoiceService].
 ///
@@ -280,14 +281,14 @@ class ZegoVoiceService implements VoiceService {
       loginStarted = true;
       final result = await ZegoExpressEngine.instance.loginRoom(
         roomId,
-        ZegoUser(session.userId, displayName),
+        ZegoUser(session.userId, zegoSdkLoginName(displayName, session.userId)),
         config: ZegoRoomConfig(0, true, roomToken),
       );
       if (result.errorCode != 0) {
         _connectionController.add(VoiceConnectionState.failed);
         throw VoiceException(
-          'zego_login_failed',
-          'ZEGO room login failed with code ${result.errorCode}.',
+          zegoLoginDiagnostic(result.errorCode),
+          'ZEGO room login returned an error code.',
         );
       }
 
@@ -364,12 +365,13 @@ class ZegoVoiceService implements VoiceService {
       final result = await ZegoExpressEngine.instance.loginRoom(
         media.roomId,
         ZegoUser(media.userId,
-          displayName.isEmpty ? 'Shadow Live' : displayName),
+          zegoSdkLoginName(displayName, media.userId)),
         config: ZegoRoomConfig(0, true, media.token),
       );
       if (result.errorCode != 0) {
         throw VoiceException(
-          'zego_call_login_failed', 'Call login error ${result.errorCode}',
+          zegoLoginDiagnostic(result.errorCode, privateCall: true),
+          'ZEGO private call login returned an error code.',
         );
       }
       _joined = true;
