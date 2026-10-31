@@ -1198,7 +1198,16 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
                           IconButton(
                             tooltip: 'إعادة إرسال نفس الهدية',
                             padding: const EdgeInsets.all(3),
-                            onPressed: _canCombo ? _send : null,
+                            onPressed: _canCombo
+                                ? () {
+                                    // One stronger pulse per manual combo tap.
+                                    // Never vibrate for countdown animation ticks.
+                                    if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+                                      HapticFeedback.heavyImpact();
+                                    }
+                                    _send();
+                                  }
+                                : null,
                             icon: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [

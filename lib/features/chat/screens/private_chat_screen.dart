@@ -80,6 +80,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final Set<String> _giftEffectSeenIds = <String>{};
   Map<String, dynamic>? _activeGiftEffect;
   Timer? _giftEffectTimer;
+  int _giftEffectPlayCounter = 0;
+  OverlayEntry? _giftSheetEffectOverlay;
+  double _giftSheetTop = 0;
   // Verified only by the existing public_profiles header stream.
   // No extra listener or polling. Do not enable composer on network errors.
   bool _peerProfileLoaded = false;
@@ -174,23 +177,151 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       final createdAtMs = (message['createdAtMs'] as num?)?.toInt() ?? 0;
       if (eventId.isEmpty || assetKey.isEmpty ||
           !_giftEffectSeenIds.add(eventId)) continue;
+      // Only recent live deliveries auto-play. Opening old chat history
+      // never replays effects unless the user taps an individual gift.
       if (now - createdAtMs < 0 || now - createdAtMs > 12000) continue;
       if (_giftEffectSeenIds.length > 80) {
         _giftEffectSeenIds.remove(_giftEffectSeenIds.first);
       }
-      final duration = ((message['giftEffectDurationMs'] as num?)?.toInt()
-          ?? 2200).clamp(300, 12000).toInt();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_isActiveChatAccount(_openedByUid)) return;
-        _giftEffectTimer?.cancel();
-        setState(() => _activeGiftEffect = {
-          'id': eventId, 'key': assetKey,
-        });
-        _giftEffectTimer = Timer(Duration(milliseconds: duration), () {
-          if (mounted) setState(() => _activeGiftEffect = null);
-        });
+        _playGiftEffect(message);
       });
     }
+  }
+
+  // UI-only replay: never calls the gift API or charges Coins. Both sender
+  // and recipient may tap any stored gift with valid effect metadata.
+  void _playGiftEffect(Map<String, dynamic> message, {bool manual = false}) {
+    if (!_isActiveChatAccount(_openedByUid) ||
+        message['type'] != 'gift') return;
+    final eventId = (message['giftEffectEventId'] ?? '').toString().trim();
+    final assetKey = (message['giftEffectAssetKey'] ?? '').toString().trim();
+    if (eventId.isEmpty || assetKey.isEmpty) {
+      if (manual) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+          content: Text('هذه الهدية لا تحتوي مؤثرًا متحركًا محفوظًا.'),
+          backgroundColor: Color(0xFF282038),
+        ));
+      }
+      return;
+    }
+    final duration = ((message['giftEffectDurationMs'] as num?)?.toInt()
+        ?? 2200).clamp(300, 12000).toInt();
+    final replayId = ++_giftEffectPlayCounter;
+    _giftEffectTimer?.cancel();
+    if (_activeGiftEffect != null) {
+      setState(() => _activeGiftEffect = null);
+      _giftSheetEffectOverlay?.markNeedsBuild();
+    }
+    // A 2-second animation must not expire while downloading its first frame.
+    // Only the newest tap/live delivery may take over the effect layer.
+    unawaited(_showGiftEffectWhenLoaded(
+      eventId, assetKey, duration, replayId, manual: manual,
+    ));
+  }
+
+  Future<void> _showGiftEffectWhenLoaded(
+    String eventId, String assetKey, int duration, int replayId, {
+    required bool manual,
+  }) async {
+    late final Uri effectUrl;
+    try {
+      final url = await ShadowAssetRegistry.remoteUrl(assetKey);
+      if (url == null) throw StateError('missing_gift_effect_asset');
+      effectUrl = url;
+      if (!_isActiveChatAccount(_openedByUid) ||
+          replayId != _giftEffectPlayCounter) return;
+      await precacheImage(NetworkImage(url.toString()), context);
+    } catch (_) {
+      if (manual && _isActiveChatAccount(_openedByUid) &&
+          replayId == _giftEffectPlayCounter) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+          content: Text('تعذّر تحميل مؤثر هذه الهدية. راجع الملف في الاستديو.'),
+          backgroundColor: Color(0xFF282038),
+        ));
+      }
+      return;
+    }
+    if (!_isActiveChatAccount(_openedByUid) ||
+        replayId != _giftEffectPlayCounter) return;
+    setState(() {
+      _activeGiftEffect = {
+        // Unique visual key restarts even the same animation on repeated taps.
+        'id': '$eventId-$replayId',
+        'key': assetKey,
+        // Use the already resolved/preloaded URL, not a second registry fetch.
+        'imageUrl': effectUrl.toString(),
+      };
+    });
+    _giftSheetEffectOverlay?.markNeedsBuild();
+    _giftEffectTimer = Timer(Duration(milliseconds: duration), () {
+      if (!mounted || replayId != _giftEffectPlayCounter) return;
+      setState(() => _activeGiftEffect = null);
+      _giftSheetEffectOverlay?.markNeedsBuild();
+    });
+  }
+
+  Widget _giftEffectVisual() {
+    final effect = _activeGiftEffect;
+    if (effect == null) return const SizedBox.shrink();
+    return SizedBox(
+      width: 260,
+      height: 260,
+      child: CosmeticAssetVisual(
+        key: ValueKey(effect['id']),
+        assetKey: effect['key'].toString(),
+        imageUrl: (effect['imageUrl'] ?? '').toString(),
+      ),
+    );
+  }
+
+  // Insert between modal's dimming barrier and its bottom-sheet entry.
+  // This puts the animation over the chat, UNDER the gift picker, with
+  // pointer events disabled. No new message stream or polling.
+  void _layoutGiftSheetEffectOverlay(BuildContext sheetContext) {
+    if (!_isActiveChatAccount(_openedByUid) || !sheetContext.mounted) return;
+    final route = ModalRoute.of(sheetContext);
+    final overlay = Navigator.of(sheetContext).overlay;
+    final render = sheetContext.findRenderObject();
+    if (route == null || route.overlayEntries.isEmpty || overlay == null ||
+        render is! RenderBox || !render.hasSize) return;
+    final availableHeight = MediaQuery.sizeOf(sheetContext).height;
+    final top = render.localToGlobal(Offset.zero).dy
+        .clamp(0.0, availableHeight).toDouble();
+    if (_giftSheetEffectOverlay != null) {
+      if ((_giftSheetTop - top).abs() >= 1) {
+        _giftSheetTop = top;
+        _giftSheetEffectOverlay!.markNeedsBuild();
+      }
+      return;
+    }
+    _giftSheetTop = top;
+    final entry = OverlayEntry(builder: (_) {
+      if (!_isActiveChatAccount(_openedByUid) ||
+          _activeGiftEffect == null || _giftSheetTop <= 0) {
+        return const SizedBox.shrink();
+      }
+      return Positioned(
+        left: 0,
+        right: 0,
+        top: 0,
+        height: _giftSheetTop,
+        child: IgnorePointer(
+          child: Center(child: _giftEffectVisual()),
+        ),
+      );
+    });
+    overlay.insert(entry, below: route.overlayEntries.last);
+    _giftSheetEffectOverlay = entry;
+    setState(() {});
+  }
+
+  void _removeGiftSheetEffectOverlay() {
+    _giftSheetEffectOverlay?.remove();
+    _giftSheetEffectOverlay?.dispose();
+    _giftSheetEffectOverlay = null;
+    _giftSheetTop = 0;
+    if (mounted) setState(() {});
   }
 
   void _clearPendingTextOperation() {
@@ -925,6 +1056,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       receiverId: widget.otherUid,
       receiverName: widget.otherName,
       conversationId: widget.conversationId,
+      onSheetLayout: _layoutGiftSheetEffectOverlay,
+      onSheetClosed: _removeGiftSheetEffectOverlay,
     );
   }
 
@@ -1398,6 +1531,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
+        onTap: type == 'gift' ? () => _playGiftEffect(data, manual: true) : null,
         onLongPress: type == 'call_event' ? null : () => _showMessageActions(doc),
         child: Container(
         constraints: const BoxConstraints(maxWidth: 300),
@@ -1479,6 +1613,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   @override
   void dispose() {
     _giftEffectTimer?.cancel();
+    _giftSheetEffectOverlay?.remove();
+    _giftSheetEffectOverlay?.dispose();
+    _giftSheetEffectOverlay = null;
     _followBadgeExpiry?.cancel();
     _followQuery.close();
     _storage.close();
@@ -1981,19 +2118,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       );
                     },
                     ),
-                    if (_activeGiftEffect != null)
+                    if (_activeGiftEffect != null &&
+                        _giftSheetEffectOverlay == null)
                       Positioned.fill(
                         child: IgnorePointer(
-                          child: Center(
-                            child: SizedBox(
-                              width: 260,
-                              height: 260,
-                              child: CosmeticAssetVisual(
-                                key: ValueKey(_activeGiftEffect!['id']),
-                                assetKey: _activeGiftEffect!['key'].toString(),
-                              ),
-                            ),
-                          ),
+                          child: Center(child: _giftEffectVisual()),
                         ),
                       ),
                       ],

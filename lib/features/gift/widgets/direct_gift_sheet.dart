@@ -16,22 +16,58 @@ Future<void> showDirectGiftSheet(
   String? conversationId,
   String? diaryId,
   void Function(int quantity, int paidCost)? onGiftSent,
+  // The chat may show an effect between this modal's barrier and sheet.
+  // Other callers (diary/profile) need no overlay.
+  void Function(BuildContext sheetContext)? onSheetLayout,
+  VoidCallback? onSheetClosed,
 }) async {
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: const Color(0xFF0C101A),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-    ),
-    builder: (_) => _DirectGiftContext(
-      receiverId: receiverId,
-      receiverName: receiverName,
-      conversationId: conversationId,
-      diaryId: diaryId,
-      onGiftSent: onGiftSent,
-    ),
-  );
+  Animation<double>? modalAnimation;
+  AnimationStatusListener? onAnimationStatus;
+  try {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) => Builder(
+        builder: (sheetContext) {
+          // Re-measure after entrance finishes: during the opening slide,
+          // the sheet's global top is still moving toward its final position.
+          final animation = ModalRoute.of(sheetContext)?.animation;
+          if (onSheetLayout != null && animation != null &&
+              modalAnimation == null) {
+            modalAnimation = animation;
+            onAnimationStatus = (status) {
+              if (status == AnimationStatus.completed &&
+                  sheetContext.mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (sheetContext.mounted) onSheetLayout(sheetContext);
+                });
+              }
+            };
+            animation.addStatusListener(onAnimationStatus!);
+          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (sheetContext.mounted) onSheetLayout?.call(sheetContext);
+          });
+          return _DirectGiftContext(
+            receiverId: receiverId,
+            receiverName: receiverName,
+            conversationId: conversationId,
+            diaryId: diaryId,
+            onGiftSent: onGiftSent,
+          );
+        },
+      ),
+    );
+  } finally {
+    if (modalAnimation != null && onAnimationStatus != null) {
+      modalAnimation!.removeStatusListener(onAnimationStatus!);
+    }
+    onSheetClosed?.call();
+  }
 }
 
 class _DirectGiftContext extends StatefulWidget {
@@ -251,7 +287,9 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
       wealthDeltaCoins: paidCost,
       bagQuantityRemaining:
           (body['bagQuantityRemaining'] as num?)?.toInt(),
-      message: 'تم إرسال ${gift.nameAr} ×$quantity إلى ${widget.receiverName}',
+      // The gift bubble and updated balance are the confirmation; do not
+      // show a white success Snackbar over the private chat.
+      message: '',
     );
   }
 
