@@ -207,18 +207,51 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     }
     final duration = ((message['giftEffectDurationMs'] as num?)?.toInt()
         ?? 2200).clamp(300, 12000).toInt();
+    final replayId = ++_giftEffectPlayCounter;
     _giftEffectTimer?.cancel();
+    if (_activeGiftEffect != null) {
+      setState(() => _activeGiftEffect = null);
+      _giftSheetEffectOverlay?.markNeedsBuild();
+    }
+    // A 2-second animation must not expire while downloading its first frame.
+    // Only the newest tap/live delivery may take over the effect layer.
+    unawaited(_showGiftEffectWhenLoaded(
+      eventId, assetKey, duration, replayId, manual: manual,
+    ));
+  }
+
+  Future<void> _showGiftEffectWhenLoaded(
+    String eventId, String assetKey, int duration, int replayId, {
+    required bool manual,
+  }) async {
+    try {
+      final url = await ShadowAssetRegistry.remoteUrl(assetKey);
+      if (url == null) throw StateError('missing_gift_effect_asset');
+      if (!_isActiveChatAccount(_openedByUid) ||
+          replayId != _giftEffectPlayCounter) return;
+      await precacheImage(NetworkImage(url.toString()), context);
+    } catch (_) {
+      if (manual && _isActiveChatAccount(_openedByUid) &&
+          replayId == _giftEffectPlayCounter) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+          content: Text('تعذّر تحميل مؤثر هذه الهدية. راجع الملف في الاستديو.'),
+          backgroundColor: Color(0xFF282038),
+        ));
+      }
+      return;
+    }
+    if (!_isActiveChatAccount(_openedByUid) ||
+        replayId != _giftEffectPlayCounter) return;
     setState(() {
-      _giftEffectPlayCounter++;
       _activeGiftEffect = {
         // Unique visual key restarts even the same animation on repeated taps.
-        'id': '$eventId-$_giftEffectPlayCounter',
+        'id': '$eventId-$replayId',
         'key': assetKey,
       };
     });
     _giftSheetEffectOverlay?.markNeedsBuild();
     _giftEffectTimer = Timer(Duration(milliseconds: duration), () {
-      if (!mounted) return;
+      if (!mounted || replayId != _giftEffectPlayCounter) return;
       setState(() => _activeGiftEffect = null);
       _giftSheetEffectOverlay?.markNeedsBuild();
     });
