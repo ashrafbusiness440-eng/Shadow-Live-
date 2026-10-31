@@ -256,7 +256,8 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                 ),
               ),
           ],
-          if (eligible && !hasOwnRoom && widget.showOpenPersonalFallback)
+          if (eligible && accountMatches && !_loading && !_failed &&
+              !hasOwnRoom && widget.showOpenPersonalFallback)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: OutlinedButton.icon(
