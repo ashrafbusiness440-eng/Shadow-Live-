@@ -1910,11 +1910,18 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   final restored =
                       await _voiceSession.ensureRoomPresenceReady();
                   if (!mounted) return;
+                  final code = _voiceSession.roomPresenceDiagnostic;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(restored
                           ? 'عاد اتصال الغرفة بالموجودين.'
-                          : 'تعذّر استعادة اتصال الغرفة. تحقّق من حالة الغرفة ثم أعد المحاولة.'),
+                          : 'تعذّر اتصال الغرفة (رمز: $code).'),
+                      action: restored ? null : SnackBarAction(
+                        label: 'نسخ الرمز',
+                        onPressed: () => Clipboard.setData(
+                          ClipboardData(text: code),
+                        ),
+                      ),
                     ),
                   );
                 }());
