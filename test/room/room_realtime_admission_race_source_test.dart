@@ -89,6 +89,9 @@ void main() {
     expect(join, contains("..['presenceDegraded'] = true;"));
     expect(start, contains('if (!_active || roomId != targetRoomId) return;'));
     expect(start, contains('await _presenceService.join(targetRoomId);'));
+    expect(start, contains('_roomSessionGeneration != sessionGeneration'));
+    expect(join, contains('final sessionGeneration = ++_roomSessionGeneration;'));
+    expect(join, contains('_startPresence(targetRoomId, sessionGeneration)'));
   });
   test('audience never shows stale count or phantom owner as live', () {
     final room = File('lib/main.dart').readAsStringSync();
