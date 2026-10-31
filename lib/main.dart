@@ -2806,12 +2806,19 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           height: micSize,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF151B29),
+                            // An occupied image may have transparent pixels (PNG/WebP).
+                            // No solid backing is painted behind its alpha.
+                            // Empty seats still have a subtle visible outline.
+                            color: seat.profileImageUrl.isNotEmpty
+                                ? null
+                                : seat.occupied
+                                    ? const Color(0x18FFFFFF)
+                                    : const Color(0x10FFFFFF),
                             border: Border.all(
                               color: seat.occupied
-                                  ? const Color(0xFF8A3DFF)
-                                  : Colors.white12,
-                              width: seat.occupied ? 2 : 1,
+                                  ? const Color(0x998A3DFF)
+                                  : const Color(0x33FFFFFF),
+                              width: seat.occupied ? 1.5 : 1,
                             ),
                             image: seat.profileImageUrl.isEmpty
                                 ? null
