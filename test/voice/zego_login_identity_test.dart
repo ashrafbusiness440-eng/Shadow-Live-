@@ -40,14 +40,43 @@ void main() {
     );
   });
 
+  test('1002099 unknown provider errors reveal only a numeric safe subcode', () {
+    expect(zegoSafeExtendedSubcode({'error_code': '1102020'}),
+        1102020);
+    expect(zegoSafeExtendedSubcode({'innerErrorCode': 55}), 55);
+    expect(zegoSafeExtendedSubcode({'message': 'private_token_value'}),
+        isNull);
+    expect(zegoSafeExtendedSubcode({'err_code': 'room_secret'}),
+        isNull);
+    expect(zegoSafeExtendedSubcode({'code': 'https://example.invalid/token'}),
+        isNull);
+    expect(zegoSafeExtendedSubcode({'errorCode': -200}), isNull);
+    expect(zegoSafeExtendedSubcode({'errorCode': '9999999999'}), isNull);
+    expect(
+      zegoLoginDiagnostic(1002099, providerSubcode: 1102020),
+      'zego_login_1002099_sub_1102020',
+    );
+    expect(
+      zegoLoginDiagnostic(1002099, providerSubcode: 1002099),
+      'zego_login_1002099',
+    );
+    expect(
+      zegoLoginDiagnostic(1002099),
+      'zego_login_1002099',
+    );
+  });
+
   test('public rooms and private calls use the same safe transport identity', () {
     final source = File(
       'lib/features/voice/services/zego_voice_service.dart',
     ).readAsStringSync();
     expect(source, contains('zegoSdkLoginName(displayName, session.userId)'));
     expect(source, contains('zegoSdkLoginName(displayName, media.userId)'));
-    expect(source, contains('zegoLoginDiagnostic(result.errorCode)'));
-    expect(source, contains('zegoLoginDiagnostic(result.errorCode, privateCall: true)'));
+    expect(source, contains('zegoLoginDiagnostic('));
+    expect(source, contains('result.errorCode,'));
+    expect(source, contains('privateCall: true,'));
+    expect(source, contains('zegoSafeExtendedSubcode(result.extendedData)'));
+    expect(source, contains('zegoSafeExtendedSubcode(extendedData)'));
     expect(source, isNot(contains('ZegoUser(session.userId, displayName)')));
     expect(source, isNot(contains("'zego_login_failed',")));
     // Existing scoped voice-session tokens and ZEGO cleanup must remain.

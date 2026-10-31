@@ -39,6 +39,7 @@ class ZegoVoiceService implements VoiceService {
   String? _privateCallAccountUid;
   int? _seatIndex;
   bool _tokenRenewalInFlight = false;
+  int? _lastProviderRoomSubcode;
   ZegoMediaPlayer? _roomMediaPlayer;
   ZegoMediaPlayer? _localEffectPlayer;
   bool _publishingForRoomMedia = false;
@@ -146,6 +147,7 @@ class ZegoVoiceService implements VoiceService {
           _connectionController.add(VoiceConnectionState.connected);
           break;
         case ZegoRoomStateChangedReason.LoginFailed:
+          _lastProviderRoomSubcode = zegoSafeExtendedSubcode(extendedData);
           _connectionController.add(VoiceConnectionState.failed);
           break;
         case ZegoRoomStateChangedReason.Reconnecting:
@@ -279,6 +281,7 @@ class ZegoVoiceService implements VoiceService {
       _streamId = '${roomId}_${session.userId}';
       final roomToken = token != null && token.isNotEmpty ? token : session.token;
       loginStarted = true;
+      _lastProviderRoomSubcode = null;
       final result = await ZegoExpressEngine.instance.loginRoom(
         roomId,
         ZegoUser(session.userId, zegoSdkLoginName(displayName, session.userId)),
@@ -287,7 +290,11 @@ class ZegoVoiceService implements VoiceService {
       if (result.errorCode != 0) {
         _connectionController.add(VoiceConnectionState.failed);
         throw VoiceException(
-          zegoLoginDiagnostic(result.errorCode),
+          zegoLoginDiagnostic(
+            result.errorCode,
+            providerSubcode: zegoSafeExtendedSubcode(result.extendedData) ??
+                _lastProviderRoomSubcode,
+          ),
           'ZEGO room login returned an error code.',
         );
       }
@@ -362,6 +369,7 @@ class ZegoVoiceService implements VoiceService {
       _privateCallAccountUid = accountUid;
       _accessCode = null;
       loginStarted = true;
+      _lastProviderRoomSubcode = null;
       final result = await ZegoExpressEngine.instance.loginRoom(
         media.roomId,
         ZegoUser(media.userId,
@@ -370,7 +378,12 @@ class ZegoVoiceService implements VoiceService {
       );
       if (result.errorCode != 0) {
         throw VoiceException(
-          zegoLoginDiagnostic(result.errorCode, privateCall: true),
+          zegoLoginDiagnostic(
+            result.errorCode,
+            privateCall: true,
+            providerSubcode: zegoSafeExtendedSubcode(result.extendedData) ??
+                _lastProviderRoomSubcode,
+          ),
           'ZEGO private call login returned an error code.',
         );
       }
