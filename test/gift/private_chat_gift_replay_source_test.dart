@@ -24,7 +24,9 @@ void main() {
     expect(manualReplay, contains('_giftEffectTimer?.cancel()'));
     expect(manualReplay, isNot(contains('widget.onSend(')));
     expect(manualReplay, isNot(contains('RoomGiftService')));
-    expect(manualReplay, isNot(contains('Coins')));
+    expect(manualReplay, isNot(contains('updateCachedBalance(')));
+    expect(manualReplay, contains('unawaited(_showGiftEffectWhenLoaded('));
+    expect(chat, contains('await precacheImage(NetworkImage(url.toString()), context);'));
   });
 
   test('modal gift animations go above barrier but below gift picker', () {
