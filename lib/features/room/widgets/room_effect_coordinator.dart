@@ -415,6 +415,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
     super.key,
     required this.coordinator,
     this.entranceTop = 100,
+    this.effectTop = 245,
     this.joinTop,
     this.joinBottom = 96,
   });
@@ -423,6 +424,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
   // Position the entrance above the microphone grid. A separate, very short
   // join notice appears above chat, using this SAME coordinator/queue.
   final double entranceTop;
+  final double effectTop;
   final double? joinTop;
   final double joinBottom;
 
@@ -434,6 +436,12 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
         if (!coordinator.visualEnabled) return const SizedBox.shrink();
         final event = coordinator.currentCinematic;
         final roomJoin = coordinator.currentRoomJoin;
+        // A joiner with a verified entrance should not see two redundant
+        // welcome bars over the same avatar.
+        final duplicateEntrance = event != null &&
+            event.kind == 'entrance' &&
+            roomJoin != null &&
+            event.recipientUids.any(roomJoin.recipientUids.contains);
         if (event == null && roomJoin == null) {
           return const SizedBox.shrink();
         }
@@ -458,6 +466,20 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                   right: 0,
                   child: _AnimatedEntranceBanner(
                     key: ValueKey('entrance-banner-${event.eventId}'),
+                    event: event,
+                  ),
+                ),
+              // The earned entry artwork is independent from the identity
+              // bar. Keep it above chat, not inside the mic/header strip.
+              if (event != null && event.kind == 'entrance' &&
+                  !event.isVehicleEntrance)
+                Positioned(
+                  top: effectTop,
+                  left: 0,
+                  right: 0,
+                  height: 118,
+                  child: _AnimatedEntranceChatEffect(
+                    key: ValueKey('entrance-chat-effect-${event.eventId}'),
                     event: event,
                   ),
                 ),
@@ -487,7 +509,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (roomJoin != null)
+              if (roomJoin != null && !duplicateEntrance)
                 Positioned(
                   left: 14,
                   right: 14,
@@ -540,10 +562,15 @@ class _AnimatedEntranceBanner extends StatelessWidget {
               SizedBox(
                 width: 24,
                 height: 24,
-                child: CosmeticAssetVisual(
-                  assetKey: event.assetKey,
-                  imageUrl: event.imageUrl,
-                  fit: BoxFit.contain,
+                child: CircleAvatar(
+                  backgroundColor: const Color(0xFF322449),
+                  backgroundImage: event.profileImageUrl.trim().isEmpty
+                      ? null
+                      : NetworkImage(event.profileImageUrl),
+                  child: event.profileImageUrl.trim().isEmpty
+                      ? const Icon(Icons.person_rounded,
+                          size: 17, color: Colors.white70)
+                      : null,
                 ),
               ),
               Flexible(child: _EntranceWelcomeStrip(
@@ -574,6 +601,59 @@ class _AnimatedEntranceBanner extends StatelessWidget {
                     : 1.0;
             return Opacity(
               opacity: opacity.toDouble(),
+              child: Transform.translate(
+                offset: Offset((progress - .5) * travel, 0),
+                child: child,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Non-vehicle entrance artwork passes above the chat. It shares the exact
+/// same verified entrance event and lifespan as the bar: no extra stream,
+/// Firestore subscription, timer or transaction is ever created.
+class _AnimatedEntranceChatEffect extends StatelessWidget {
+  const _AnimatedEntranceChatEffect({
+    super.key,
+    required this.event,
+  });
+
+  final RoomVisualEffect event;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final artwork = SizedBox(
+      width: 190,
+      height: 108,
+      child: CosmeticAssetVisual(
+        assetKey: event.assetKey,
+        imageUrl: event.imageUrl,
+        fit: BoxFit.contain,
+      ),
+    );
+    if (reduceMotion) return Center(child: artwork);
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final travel = bounds.maxWidth + 190;
+        return TweenAnimationBuilder<double>(
+          key: ValueKey('room-entry-chat-motion-${event.eventId}'),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: Duration(milliseconds: event.durationMs),
+          curve: Curves.easeInOut,
+          child: Center(child: artwork),
+          builder: (context, progress, child) {
+            final alpha = progress < .10
+                ? (progress / .10).clamp(0.0, 1.0)
+                : progress > .90
+                    ? ((1 - progress) / .10).clamp(0.0, 1.0)
+                    : 1.0;
+            return Opacity(
+              opacity: alpha.toDouble(),
               child: Transform.translate(
                 offset: Offset((progress - .5) * travel, 0),
                 child: child,
