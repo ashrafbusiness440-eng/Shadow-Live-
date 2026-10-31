@@ -159,6 +159,12 @@ jobs:
             sleep 2
           done
 
+      - name: Install pinned browser smoke dependency
+        working-directory: .
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          command -v google-chrome
+
       - name: Verify production room ticket, two-user presence, chat and gift
         working-directory: .
         env:

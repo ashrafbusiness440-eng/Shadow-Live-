@@ -113,10 +113,19 @@ class RoomPresenceService {
   String _joinRoomId = '';
   String _readyRoomId = '';
   String _lastConnectionError = 'room_realtime_not_connected';
+  String _lastFailureStage = 'ticket';
 
   // Safe, bounded failure codes from the existing ticket/socket path.
   // No telemetry listener or additional backend request is required.
   String get lastConnectionError => _lastConnectionError;
+
+  // Expose only bounded status codes, never exception details or tickets.
+  String get connectionDiagnostic {
+    final code = _lastConnectionError;
+    final safe = RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(code)
+        ? code : 'unexpected_failure';
+    return '${_lastFailureStage}_$safe';
+  }
 
   Stream<RoomRealtimeEvent> get events => _eventsController.stream;
 
@@ -176,6 +185,7 @@ class RoomPresenceService {
       if (type.isEmpty) return;
       if (type == 'server.ready') {
         _lastConnectionError = '';
+        _lastFailureStage = 'ready';
         _readyRoomId = _desiredRoomId;
         final ready = _readyCompleter;
         if (ready != null && !ready.isCompleted) ready.complete();
@@ -374,6 +384,7 @@ class RoomPresenceService {
     _socketSubscription = null;
     _readyRoomId = '';
     _lastConnectionError = 'room_realtime_disconnected';
+    _lastFailureStage = wasReady ? 'socket' : 'ready';
     final ready = _readyCompleter;
     if (ready != null && !ready.isCompleted) {
       ready.completeError(StateError('room_realtime_disconnected'));
@@ -398,6 +409,7 @@ class RoomPresenceService {
   }) async {
     if (_desiredRoomId != roomId || generation != _generation) return;
 
+    var failureStage = 'ticket';
     try {
       final ticket = await _post('room-realtime', {
         'action': 'ticket',
@@ -408,6 +420,7 @@ class RoomPresenceService {
 
       final socketPath = (ticket['socketPath'] ?? '').toString();
       if (socketPath.isEmpty) throw StateError('realtime_socket_missing');
+      failureStage = 'socket';
       final connection = await connectRoomPresenceSocket(
         _socketUri(socketPath),
       );
@@ -453,6 +466,7 @@ class RoomPresenceService {
         cancelOnError: false,
       );
 
+      failureStage = 'ready';
       await ready.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () =>
@@ -469,6 +483,7 @@ class RoomPresenceService {
       // Failure of a superseded request must not overwrite the error/status
       // of a different room's successful admission.
       if (_desiredRoomId == roomId && generation == _generation) {
+        _lastFailureStage = failureStage;
         _lastConnectionError = switch (error) {
           TimeoutException() => 'room_realtime_ready_timeout',
           http.ClientException() => 'room_network_unavailable',

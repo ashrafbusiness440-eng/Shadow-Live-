@@ -114,6 +114,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Map<String, dynamic> get roomArguments =>
       Map<String, dynamic>.unmodifiable(_roomArguments);
 
+  // Safe diagnostic only: connection stage and a server-defined code.
+  String get roomPresenceDiagnostic => _presenceService.connectionDiagnostic;
   Stream<RoomRealtimeEvent> get realtimeEvents => _presenceService.events;
   Stream<Map<String, dynamic>> get roomStateEvents =>
       _roomStateController.stream;
