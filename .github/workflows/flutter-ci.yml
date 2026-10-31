@@ -260,7 +260,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       - name: Build voice-room E2E web
-        run: flutter build web --dart-define=E2E_ROOM_TEST=true --dart-define=E2E_GAME_TEST=true
+        run: |
+          flutter build web --dart-define=E2E_ROOM_TEST=true --dart-define=E2E_GAME_TEST=true
+          test -s build/web/assets/packages/zego_express_engine/assets/ZegoExpressWebFlutterWrapper.js
+          grep -q 'src="assets/packages/zego_express_engine/assets/ZegoExpressWebFlutterWrapper.js"' build/web/index.html
       - name: Start voice-room E2E server
         run: |
           python3 -m http.server 8089 --directory build/web > /tmp/shadow-room-e2e-server.log 2>&1 &
