@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/features/room/services/room_seat_service.dart';
 
 void main() {
-  test('audience strip and people sheet include both seated users and listeners', () {
+  test('audience strip shows verified listeners and seated members; roster retains mic seats', () {
     final source = File('lib/main.dart').readAsStringSync();
     final start = source.indexOf('Widget _buildRoomAudienceStrip()');
     final end = source.indexOf('Future<void> _showRoomParticipantsSheet()', start);
@@ -12,14 +12,17 @@ void main() {
     final strip = source.substring(start, end);
     expect(strip.contains('_voiceSession.roomParticipants'), isTrue);
     expect(source.contains('int get _roomAudienceTotalCount {'), isTrue);
-    expect(source.contains('return max(reported, activeUids.length);'), isTrue);
+    expect(source.contains('return max(reported, activeUids.length);'), isFalse);
+    expect(source.contains('return max(0, reported);'), isTrue);
+    expect(source.contains("return '—';"), isTrue);
     expect(source.contains('for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])'), isTrue);
-    expect(strip.contains('final total = _roomAudienceTotalCount;'), isTrue);
-    expect(source.contains('_roomAudienceTotalCount.toString(),'), isTrue);
-    expect(strip.contains('...seatByUid.keys.where((uid) => uid != ownerUid)'), isTrue);
+    expect(strip.contains('final totalLabel = _roomAudienceCountLabel;'), isTrue);
+    expect(source.contains('_roomAudienceCountLabel,'), isTrue);
+    expect(strip.contains('...seatByUid.keys.where((uid) =>'), isTrue);
+    expect(strip.contains('profileByUid.containsKey(uid)'), isTrue);
     expect(strip.contains('...profileByUid.keys.where((uid) =>'), isTrue);
     expect(strip.contains("].take(20).toList(growable: false);"), isTrue);
-    expect(strip.contains('if (ownerUid.isNotEmpty) ownerUid,'), isTrue);
+    expect(strip.contains('if (ownerUid.isNotEmpty && profileByUid.containsKey(ownerUid))'), isTrue);
     expect(strip.contains('final profileUid = visibleUids[index];'), isTrue);
     expect(strip.contains('seat?.profileImageUrl'), isTrue);
     expect(strip.contains('if (isOwnerTile)'), isTrue);
