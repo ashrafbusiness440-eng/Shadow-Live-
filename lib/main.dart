@@ -424,6 +424,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             RoomSupporter(uid: 's2', rank: 2, displayName: 'B', profileImageUrl: '', totalSupport: 6000, dailySupport: 6000),
             RoomSupporter(uid: 's3', rank: 3, displayName: 'C', profileImageUrl: '', totalSupport: 2500, dailySupport: 2500),
           ],
+          attraction: const <RoomSupporter>[],
           ranking: [],
         );
       });
@@ -2938,7 +2939,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     const SizedBox(height: 8),
                     Expanded(
                       child: (attractionTab ? attraction : supporters).isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
                                 rankingsLoadFailed
                                     ? 'تعذر تحميل الترتيب حالياً'
