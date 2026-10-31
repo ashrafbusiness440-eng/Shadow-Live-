@@ -124,7 +124,7 @@ class PersonalRoomInfo {
       passwordProtected: json['passwordProtected'] == true ||
           (json['visibility'] ?? '').toString() == 'password',
       isActive: json['isActive'] != false,
-      level: ((json['level'] as num?)?.toInt() ?? 1).clamp(1, 100),
+      level: ((json['level'] as num?)?.toInt() ?? 1).clamp(1, 100).toInt(),
     );
   }
 }
