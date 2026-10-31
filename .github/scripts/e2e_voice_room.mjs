@@ -23,6 +23,7 @@ const previews = [
   { name: '20-ranked-active', seats: 20, supporters: 'filled', stars: 'on' },
   { name: '22-empty-active', seats: 22, supporters: 'empty', stars: 'on' },
   { name: '20-vip-entry-toast', seats: 20, supporters: 'filled', stars: 'on', effects: true },
+  { name: '10-voice-admission-failed', seats: 10, supporters: 'empty', stars: 'off', voiceFailed: true },
 ];
 const stage = await browser.newPage({
   viewport: { width: 390, height: 844 },
@@ -39,6 +40,7 @@ for (const preview of previews) {
     supporters: preview.supporters,
     stars: preview.stars,
     room_stage_fx: preview.effects ? '1' : '0',
+    room_stage_join_failed: preview.voiceFailed ? '1' : '0',
   });
   const stageReady = stage.waitForEvent('console', {
     predicate: msg => msg.text().includes(
@@ -57,6 +59,30 @@ for (const preview of previews) {
     fullPage: true,
   });
   console.log('ROOM_STAGE_VISUAL_CAPTURED:' + preview.name);
+  if (preview.voiceFailed) {
+    // Screenshot the same real Flutter room widget across three independent
+    // failed admissions to catch stale overlays and layout regressions.
+    for (let repeat = 1; repeat <= 3; repeat++) {
+      const readyAgain = stage.waitForEvent('console', {
+        predicate: msg => msg.text().includes('ROOM_E2E_STAGE_READY:10:empty:'),
+        timeout: 30000,
+      });
+      await stage.reload({ waitUntil: 'domcontentloaded' });
+      await readyAgain;
+      // Flutter's READY marker precedes the async wallpaper image paint.
+      // Validate the *rendered* stage, not an incomplete black background.
+      await stage.waitForTimeout(1400);
+      const capture = await stage.screenshot({
+        path: 'room-e2e-screenshots/stage-admission-failed-repeat-' +
+          repeat + '.png',
+        fullPage: true,
+      });
+      if (capture.length < 120000) {
+        throw new Error('ROOM_STAGE_WALLPAPER_NOT_PAINTED_REPEAT_' + repeat);
+      }
+      console.log('ROOM_ADMISSION_FAILURE_VISUAL_REPEATED:' + repeat);
+    }
+  }
 }
 await stage.close();
 if (visualDiagnostics.length) {
