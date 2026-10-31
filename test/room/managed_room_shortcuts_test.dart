@@ -34,6 +34,35 @@ void main() {
         throwsFormatException);
   });
 
+  test('profile card consumes room image and refuses stale attendance counts', () {
+    final parsed = ManagedRoomEntry.fromJson(const {
+      'roomId': 'personal_user1',
+      'ownerUid': 'user1',
+      'ownerName': 'مالك الغرفة',
+      'ownerLocation': 'الإمارات',
+      'roomType': 'agency',
+      'agencyRoomImageUrl': 'https://assets.example/agency-room.png',
+      'coverImageUrl': 'https://assets.example/old-cover.png',
+      'onlineCount': 999,
+      'publicId': '183',
+      'relation': 'owner',
+    });
+    expect(parsed.room.coverImageUrl,
+        'https://assets.example/agency-room.png');
+    expect(parsed.room.ownerLocation, 'الإمارات');
+    expect(parsed.room.publicId, '183');
+    final panel = File(
+      'lib/features/room/widgets/managed_rooms_panel.dart',
+    ).readAsStringSync();
+    expect(panel, contains("key: Key('managed-room-presence-unverified')"));
+    expect(panel, contains("'الحضور: —'"));
+    expect(panel, isNot(contains('item.room.onlineCount')));
+    expect(panel, contains('item.room.ownerLocation'));
+    expect(panel, contains('item.room.publicId'));
+    expect(panel, contains('widget.profileStyle'));
+    expect(panel, contains('if (eligible && accountMatches && !_loading && !_failed &&'));
+  });
+
   test('shared room cards reuse server read and existing password admission', () {
     final panel = File(
       'lib/features/room/widgets/managed_rooms_panel.dart',

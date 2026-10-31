@@ -28,7 +28,10 @@ class ProfilePersonalRoomTab extends StatelessWidget {
       key: const Key('own-profile-rooms-content'),
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
       children: [
-        Container(
+        // Kept only for isolated widget tests and offline fallback previews.
+        // The actual profile now presents the one authoritative managed-room
+        // list instead of duplicating a large static "my room" placeholder.
+        if (!showManagedRooms) Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: const Color(0xFF0C1728),
@@ -106,7 +109,8 @@ class ProfilePersonalRoomTab extends StatelessWidget {
         ManagedRoomsPanel(
           onOpenPersonalRoom: onOpenPersonalRoom,
           openingPersonalRoom: opening,
-          showOpenPersonalFallback: false,
+          showOpenPersonalFallback: true,
+          profileStyle: true,
         ),
         ],
         const SizedBox(height: 12),

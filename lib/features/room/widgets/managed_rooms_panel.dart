@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../services/room_action_service.dart';
 import 'discovery_room_password_dialog.dart';
+import 'managed_room_country_flag.dart';
 
 /// One explicit, bounded server read per surface open. The server verifies
 /// each current room role; the client still uses ordinary room admission.
@@ -14,12 +15,15 @@ class ManagedRoomsPanel extends StatefulWidget {
     this.sheetMode = false,
     this.openingPersonalRoom = false,
     this.showOpenPersonalFallback = true,
+    this.profileStyle = false,
   });
 
   final VoidCallback onOpenPersonalRoom;
   final bool sheetMode;
   final bool openingPersonalRoom;
   final bool showOpenPersonalFallback;
+  /// Full room metadata on the owner's profile, not the compact shortcut sheet.
+  final bool profileStyle;
 
   @override
   State<ManagedRoomsPanel> createState() => _ManagedRoomsPanelState();
@@ -164,7 +168,7 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
               Card(
                 key: ValueKey('managed-room-${item.room.roomId}'),
                 color: const Color(0xFF15192A),
-                margin: const EdgeInsets.symmetric(vertical: 5),
+                margin: EdgeInsets.symmetric(vertical: widget.profileStyle ? 6 : 5),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 5,
@@ -172,8 +176,8 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: SizedBox(
-                      width: 44,
-                      height: 44,
+                      width: widget.profileStyle ? 56 : 44,
+                      height: widget.profileStyle ? 56 : 44,
                       child: item.room.coverImageUrl.isEmpty
                           ? const ColoredBox(
                               color: Color(0xFF322449),
@@ -199,14 +203,46 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                       color: Colors.white, fontWeight: FontWeight.w800,
                     ),
                   ),
-                  subtitle: Text(
-                    '${item.isOwner ? "غرفتي" : "مشرف"} • ${item.room.ownerName.isNotEmpty ? item.room.ownerName : (item.room.roomType == "official" ? "غرفة رسمية" : "مالك الغرفة")}'
-                    ' • ${item.room.category} • LV${item.room.level}'
-                    '${item.room.publicId.isEmpty ? "" : " • ID: ${item.room.publicId}"}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white60, fontSize: 11),
-                  ),
+                  subtitle: widget.profileStyle
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            item.isOwner
+                                ? 'غرفتي الخاصة'
+                                : 'مشرف • ${item.room.ownerName.isEmpty ? "مالك الغرفة" : item.room.ownerName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Color(0xFFFFD54A),
+                              fontSize: 11),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${item.room.ownerLocation.isEmpty ? "الدولة: —" : "${managedRoomCountryFlag(item.room.ownerLocation)} ${item.room.ownerLocation}".trim()}'
+                            '  •  ID: ${item.room.publicId.isEmpty ? "—" : item.room.publicId}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70,
+                              fontSize: 11),
+                          ),
+                          const SizedBox(height: 3),
+                          const Text(
+                            'الحضور: —',
+                            key: Key('managed-room-presence-unverified'),
+                            style: TextStyle(color: Colors.white54,
+                              fontSize: 11),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        '${item.isOwner ? "غرفتي" : "مشرف"} • ${item.room.ownerName.isNotEmpty ? item.room.ownerName : (item.room.roomType == "official" ? "غرفة رسمية" : "مالك الغرفة")}'
+                        ' • ${item.room.category} • LV${item.room.level}'
+                        '${item.room.publicId.isEmpty ? "" : " • ID: ${item.room.publicId}"}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      ),
                   trailing: _entering
                       ? const SizedBox.square(
                           dimension: 18,
@@ -220,7 +256,8 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                 ),
               ),
           ],
-          if (eligible && !hasOwnRoom && widget.showOpenPersonalFallback)
+          if (eligible && accountMatches && !_loading && !_failed &&
+              !hasOwnRoom && widget.showOpenPersonalFallback)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: OutlinedButton.icon(
@@ -232,7 +269,8 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                         widget.onOpenPersonalRoom();
                       },
                 icon: const Icon(Icons.add_home_rounded),
-                label: const Text('فتح غرفتي الشخصية'),
+                label: Text(widget.profileStyle
+                  ? 'فتح غرفتي الخاصة' : 'فتح غرفتي الشخصية'),
               ),
             ),
         ],
