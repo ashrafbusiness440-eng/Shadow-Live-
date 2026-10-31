@@ -127,6 +127,12 @@ test("partial editor progress is private, debounced and never stored as a publis
   assert.ok(server.includes('db.runTransaction(async (tx) =>'));
   assert.ok(server.includes('editorDraftRevision: nextRevision'));
   assert.ok(editor.includes('SharedPreferences.getInstance()'));
+  assert.ok(editor.includes('editorDraftConflict'));
+  assert.ok(editor.includes("'pending': true"));
+  assert.ok(editor.includes("confirmed != true || !mounted"));
+  assert.ok(editor.includes("'حذف نسخة الجهاز'"));
+  assert.ok(editor.includes('editorDraftConflict = false'));
+  assert.ok(editor.includes('savedSerial == changeSerial'));
   assert.ok(editor.includes("'expectedEditorRevision': draftRevision"));
   assert.ok(editor.includes("Duration(milliseconds: 1400)"));
   assert.ok(editor.includes("تم حفظ المسودة تلقائياً"));
