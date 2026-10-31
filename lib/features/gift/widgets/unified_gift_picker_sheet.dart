@@ -508,6 +508,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
         'invalid_affinity_base_points' => 'إعداد نقاط هذه الهدية يحتاج مراجعة من الإدارة.',
         'gift_inactive' => 'هذه الهدية متوقفة حالياً.',
         'vip_gift_requires_level' => 'هذه الهدية تتطلب مستوى VIP أعلى.',
+        'wealth_gift_requires_level' => 'هذه الهدية تتطلب مستوى ثروة أعلى. حدّث الهدايا للتحقق من مستواك.',
         'emergency_locked' => 'عمليات الهدايا متوقفة مؤقتاً.',
         'blocked' => 'لا يمكن إرسال الهدية بسبب إعدادات الحظر.',
         'gift_bag_insufficient' => 'الكمية الموجودة في الحقيبة لا تكفي.',
