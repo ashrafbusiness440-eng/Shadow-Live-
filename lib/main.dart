@@ -348,6 +348,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
           'type': 'agency',
           'agencyId': '123456',
           'onlineCount': 18,
+          'presenceDegraded': Uri.base.queryParameters['room_stage_join_failed'] == '1',
           'chatEnabled': true,
           'level': 5,
         };
@@ -7123,7 +7124,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               _buildRoomInsightsBar(),
                               const SizedBox(height: 4),
                               _buildMicStatusBanner(),
-                              _buildVoiceAdmissionErrorBanner(),
                             ],
                           ),
                         ),
@@ -7244,6 +7244,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         // Lift only the composer over the IME, without moving seats.
                         bottom: MediaQuery.viewInsetsOf(context).bottom,
                         child: _buildRoomBottomBar(),
+                      ),
+                      // Failed audio admission is a temporary recovery
+                      // notice in unused lower-center space, not part of the
+                      // microphone/header stack. Never cover microphone taps.
+                      Positioned(
+                        left: 76,
+                        right: 60,
+                        bottom: 126,
+                        child: _buildVoiceAdmissionErrorBanner(),
                       ),
                       // A visual-only layer ABOVE the room UI, so transparent
                       // entrance vehicles can cross the whole stage. IgnorePointer
