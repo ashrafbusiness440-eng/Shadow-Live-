@@ -129,6 +129,8 @@ jobs:
         run: node --test server/__tests__/account-deletion-image-upload-ticket-review.test.js
       - name: Enforce server-issued room invite password-lock scope
         run: node --test cloudflare-worker/__tests__/room-invite-lock-policy.test.js
+      - name: Check room receiver rankings use verified atomic gifts and bounded reads
+        run: node --test cloudflare-worker/__tests__/room-receiver-ranking-source.test.js
       - name: Test replay-safe private text sends and cross-user operation isolation
         run: node --test cloudflare-worker/__tests__/private-chat-text-retry.test.js
       - name: Test private voice mutual-follow eligibility and limits
