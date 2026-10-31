@@ -20,6 +20,21 @@ void main() {
     expect(join, contains('identical(_joinInFlight, operation)'));
     expect(join, contains('generation != _generation || _desiredRoomId != id'));
     expect(join, contains('await _connect(id, generation, announceOnReady: true);'));
+    expect(join, contains('final previousSubscription = _socketSubscription;'));
+    expect(join, contains('await previousSubscription?.cancel();'));
+    expect(join, contains('generation != _generation || _desiredRoomId != id'));
+  });
+
+  test('leave invalidates old flight without closing a newer socket', () {
+    final leave = presence.substring(
+      presence.indexOf('Future<void> leave(String roomId)'),
+      presence.indexOf('Future<void> refreshIdentity('),
+    );
+    expect(leave, contains('_joinInFlight = null;'));
+    expect(leave, contains("_joinRoomId = '';"));
+    expect(leave, contains('final oldSubscription = _socketSubscription;'));
+    expect(leave, contains('final connection = _socket;'));
+    expect(leave.indexOf('_socket = null;'), lessThan(leave.indexOf('await oldSubscription?.cancel();')));
   });
 
   test('chat recovery first waits for admission and never revives departed room', () {
