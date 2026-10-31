@@ -82,6 +82,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void>? _leaveInFlight;
   bool _joining = false;
   bool _active = false;
+  int _roomSessionGeneration = 0;
   bool _privateCallMediaActive = false;
   bool _privateCallMediaJoining = false;
   String? _privateCallMediaId;
@@ -790,10 +791,12 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
   Future<bool> ensureRoomPresenceReady() async {
     final id = roomId.trim();
+    final generation = _roomSessionGeneration;
     if (!_active || id.isEmpty) return false;
     if (_presenceService.isReadyFor(id)) return true;
     final ready = await _presenceService.ensureReady(id);
-    if (!_active || roomId != id) return false;
+    if (!_active || roomId != id ||
+        _roomSessionGeneration != generation) return false;
     if (_roomArguments['presenceDegraded'] == ready) {
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
@@ -804,10 +807,13 @@ class VoiceRoomSessionController extends ChangeNotifier {
     return ready;
   }
 
-  Future<void> _startPresence(String targetRoomId) async {
+  Future<void> _startPresence(
+    String targetRoomId, int sessionGeneration,
+  ) async {
     try {
       await _presenceService.join(targetRoomId);
-      if (!_active || roomId != targetRoomId) return;
+      if (!_active || roomId != targetRoomId ||
+          _roomSessionGeneration != sessionGeneration) return;
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
         'presenceDegraded': false,
@@ -817,7 +823,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {
-      if (!_active || roomId != targetRoomId) return;
+      if (!_active || roomId != targetRoomId ||
+          _roomSessionGeneration != sessionGeneration) return;
       // Voice stays connected, but room mutations must know presence is degraded.
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
@@ -1098,6 +1105,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
 
     await _ensureService();
+    final sessionGeneration = ++_roomSessionGeneration;
     _starBattleScores.clear();
     _pkScores.clear();
     _refreshScoresAfterReconnect = false;
@@ -1132,7 +1140,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
       _watchAccountModeration(targetRoomId);
-      unawaited(_startPresence(targetRoomId));
+      unawaited(_startPresence(targetRoomId, sessionGeneration));
     } catch (error) {
       _active = false;
       _joining = false;
@@ -1275,6 +1283,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveRoomSession() async {
+    _roomSessionGeneration += 1;
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
     await _stopRoomMusicWatch();
