@@ -41,8 +41,14 @@ class RoomGiftService {
     bool useGiftBag = false,
   }) async {
     final user = _auth.currentUser;
-    final token = await user?.getIdToken();
-    if (user == null || token == null || token.isEmpty) {
+    if (user == null) throw StateError('not_signed_in');
+    final senderUid = user.uid;
+    final token = await user.getIdToken();
+    if (_auth.currentUser?.uid != senderUid) {
+      // The response could belong to a different account after an auth swap.
+      throw StateError('gift_account_changed');
+    }
+    if (token == null || token.isEmpty) {
       throw StateError('not_signed_in');
     }
 
@@ -104,6 +110,11 @@ class RoomGiftService {
       throw StateError('gift_network_unavailable');
     }
 
+    // A request may have committed before the user switched accounts.
+    // Never surface that account's receipt/balance in the new session.
+    if (_auth.currentUser?.uid != senderUid) {
+      throw StateError('gift_account_changed');
+    }
     Map<String, dynamic> body = <String, dynamic>{};
     try {
       final decoded = jsonDecode(response.body);
