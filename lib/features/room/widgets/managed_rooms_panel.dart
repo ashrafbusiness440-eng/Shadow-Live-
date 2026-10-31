@@ -169,9 +169,27 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 5,
                   ),
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFF322449),
-                    child: Icon(Icons.mic_rounded, color: Color(0xFFFFD54A)),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: item.room.coverImageUrl.isEmpty
+                          ? const ColoredBox(
+                              color: Color(0xFF322449),
+                              child: Icon(Icons.mic_rounded,
+                                color: Color(0xFFFFD54A)),
+                            )
+                          : Image.network(
+                              item.room.coverImageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const ColoredBox(
+                                color: Color(0xFF322449),
+                                child: Icon(Icons.mic_rounded,
+                                  color: Color(0xFFFFD54A)),
+                              ),
+                            ),
+                    ),
                   ),
                   title: Text(
                     item.room.name,
@@ -182,7 +200,8 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                     ),
                   ),
                   subtitle: Text(
-                    '${item.isOwner ? "غرفتي" : "مشرف"} • ${item.room.ownerName.isNotEmpty ? item.room.ownerName : "مالك الغرفة"}'
+                    '${item.isOwner ? "غرفتي" : "مشرف"} • ${item.room.ownerName.isNotEmpty ? item.room.ownerName : (item.room.roomType == "official" ? "غرفة رسمية" : "مالك الغرفة")}'
+                    ' • ${item.room.category} • LV${item.room.level}'
                     '${item.room.publicId.isEmpty ? "" : " • ID: ${item.room.publicId}"}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
