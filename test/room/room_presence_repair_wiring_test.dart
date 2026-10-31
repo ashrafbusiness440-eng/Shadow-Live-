@@ -289,12 +289,15 @@ void main() {
     expect(effects.contains('required this.coordinator,'), isTrue);
     expect(effects.contains("event.kind == 'entrance'"), isTrue);
     expect(effects.contains('top: entranceTop,'), isTrue);
-    expect(effects.contains('bottom: joinBottom,'), isTrue);
+    expect(effects.contains('top: joinTop,'), isTrue);
+    expect(effects.contains('bottom: joinTop == null ? joinBottom : null,'), isTrue);
     expect(effects.contains('maxWidth: 244'), isTrue);
-    expect(effects.contains('width: 18,'), isTrue);
-    expect(effects.contains('height: 18,'), isTrue);
+    expect(effects.contains('width: 24,'), isTrue);
+    expect(effects.contains('height: 24,'), isTrue);
     expect(effects.contains('compact: true'), isTrue);
     expect(screen.contains('entranceTop: (micTop - 20).clamp(0.0, 145.0).toDouble()'), isTrue);
+    expect(screen.contains('joinTop: (feedTop + 6)'), isTrue);
+    expect(effects.contains('class _AnimatedEntranceBanner'), isTrue);
     expect(effects.contains('Timer.periodic'), isFalse);
   });
 

@@ -7164,7 +7164,9 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         child: RoomEffectCoordinatorHost(
                           coordinator: _roomEffectCoordinator,
                           entranceTop: (micTop - 20).clamp(0.0, 145.0).toDouble(),
-                          joinBottom: 106,
+                          // The small join bar stays at the chat-feed top.
+                          // Neither chat scrolling nor microphones move.
+                          joinTop: (feedTop + 6).clamp(0.0, max(0.0, height - 88)).toDouble(),
                         ),
                       ),
                     ],

@@ -415,6 +415,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
     super.key,
     required this.coordinator,
     this.entranceTop = 100,
+    this.joinTop,
     this.joinBottom = 96,
   });
 
@@ -422,6 +423,7 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
   // Position the entrance above the microphone grid. A separate, very short
   // join notice appears above chat, using this SAME coordinator/queue.
   final double entranceTop;
+  final double? joinTop;
   final double joinBottom;
 
   @override
@@ -452,44 +454,11 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                   !event.isVehicleEntrance)
                 Positioned(
                   top: entranceTop,
-                  left: 12,
-                  right: 12,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 244),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xDD140E20),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: const Color(0xAAFFD54A),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: ClipRect(
-                                child: CosmeticAssetVisual(
-                                  assetKey: event.assetKey,
-                                  imageUrl: event.imageUrl,
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            ),
-                            Flexible(
-                              child: _EntranceWelcomeStrip(event: event, compact: true),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  left: 0,
+                  right: 0,
+                  child: _AnimatedEntranceBanner(
+                    key: ValueKey('entrance-banner-${event.eventId}'),
+                    event: event,
                   ),
                 ),
               if (event != null && event.kind == 'gift' &&
@@ -522,7 +491,8 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
                 Positioned(
                   left: 14,
                   right: 14,
-                  bottom: joinBottom,
+                  top: joinTop,
+                  bottom: joinTop == null ? joinBottom : null,
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 280),
@@ -541,6 +511,81 @@ class RoomEffectCoordinatorHost extends StatelessWidget {
 /// A single overlay for Wealth, VIP and store vehicles once the authorized
 /// room.entrance event supplies their existing asset key/URL. It reuses the
 /// coordinator's bounded queue and lifetime; there are no room subscriptions.
+/// The non-vehicle entrance is a compact, non-interactive bar that travels
+/// from left to right above the microphone stage. Honors reduced motion.
+class _AnimatedEntranceBanner extends StatelessWidget {
+  const _AnimatedEntranceBanner({
+    super.key,
+    required this.event,
+  });
+
+  final RoomVisualEffect event;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final visual = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 244),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xDD140E20),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xAAFFD54A)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CosmeticAssetVisual(
+                  assetKey: event.assetKey,
+                  imageUrl: event.imageUrl,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              Flexible(child: _EntranceWelcomeStrip(
+                event: event,
+                compact: true,
+              )),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (reduceMotion) return Center(child: visual);
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final travel = bounds.maxWidth + 244;
+        return TweenAnimationBuilder<double>(
+          key: ValueKey('room-entry-banner-motion-${event.eventId}'),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: Duration(milliseconds: event.durationMs),
+          curve: Curves.easeInOutCubic,
+          child: Center(child: visual),
+          builder: (context, progress, child) {
+            final opacity = progress < .12
+                ? (progress / .12).clamp(0.0, 1.0)
+                : progress > .88
+                    ? ((1 - progress) / .12).clamp(0.0, 1.0)
+                    : 1.0;
+            return Opacity(
+              opacity: opacity.toDouble(),
+              child: Transform.translate(
+                offset: Offset((progress - .5) * travel, 0),
+                child: child,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _AnimatedVehicleEntrance extends StatefulWidget {
   const _AnimatedVehicleEntrance({super.key, required this.event});
 
