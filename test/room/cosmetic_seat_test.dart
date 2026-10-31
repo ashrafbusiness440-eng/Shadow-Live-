@@ -29,7 +29,10 @@ void main() {
     expect(strip.contains('showQuickProfileSheet('), isTrue);
     expect(strip.contains("Key('room-audience-count')"), isTrue);
     expect(strip.contains("'presenceDegraded'"), isTrue);
-    expect(strip.contains('_voiceSession.ensureRoomPresenceReady()'), isTrue);
+    // The single-flight recovery lives outside the audience widget so the
+    // voice session is admitted before the presence socket is retried.
+    expect(strip.contains('_recoverRoomConnection()'), isTrue);
+    expect(source.contains('_voiceSession.ensureRoomPresenceReady()'), isTrue);
     expect(strip.contains("Icons.sync_problem_rounded"), isTrue);
     expect(strip.contains('showQuickProfileSheet('), isTrue);
     expect(strip.contains('showMysteriousIdentitySheet('), isTrue);
