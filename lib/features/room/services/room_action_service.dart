@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+import 'room_image_source.dart';
+
 class RoomGhostState {
   const RoomGhostState({
     required this.ghostMode,
@@ -113,8 +115,11 @@ class PersonalRoomInfo {
       ownerName: (json['ownerName'] ?? '').toString(),
       ownerLocation: (json['ownerLocation'] ?? '').toString(),
       chatEnabled: json['chatEnabled'] != false,
-      coverImageUrl:
-          (json['coverImageUrl'] ?? json['imageUrl'] ?? '').toString(),
+      // Respect the room's own live image (and the independent agency
+      // room image) before a historical cover. No profile-avatar fallback.
+      coverImageUrl: roomSurfaceImageUrl(json).isNotEmpty
+          ? roomSurfaceImageUrl(json)
+          : (json['coverImageUrl'] ?? json['imageUrl'] ?? '').toString(),
       coverImageObjectId: (json['coverImageObjectId'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       tags: json['tags'] is List
