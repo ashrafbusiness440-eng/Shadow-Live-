@@ -88,6 +88,17 @@ test("uncertain send forbids changed gift intent and preserves the same-key retr
   assert.ok(picker.includes("retryMatches"));
   assert.ok(room.includes("_retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty"));
   assert.ok(direct.includes("_retryFingerprint == fingerprint && _retryIdempotencyKey.isNotEmpty"));
+  // Insufficient funds, depleted bag and inactive gifts are known pre-charge
+  // rejections, even when their worker HTTP status is 409. All other 409s
+  // retain the idempotency reservation until confirmed.
+  for (const client of [room, direct]) {
+    assert.ok(client.includes('final definiteConflict = response.statusCode == 409'));
+    assert.ok(client.includes("'insufficient_balance'"));
+    assert.ok(client.includes("'gift_bag_insufficient'"));
+    assert.ok(client.includes("'gift_inactive'"));
+    assert.ok(client.includes('response.statusCode == 409 && !definiteConflict'));
+    assert.ok(client.includes('(response.statusCode != 409 || definiteConflict)'));
+  }
 });
 
 test("room combo locks recipient selection before asynchronous reconnection",()=> {
