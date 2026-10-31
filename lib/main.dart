@@ -4146,7 +4146,24 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       visibility = 'public';
     }
     var saving = false;
-    var chatEnabled = _roomArguments['chatEnabled'] != false;
+    final canChooseHidden =
+        (_roomModeratorState?.ownerAbsoluteRoomAccess ?? false) ||
+        visibility == 'hidden';
+    final selectedTags = tagsController.text
+        .split(RegExp(r'[,،]'))
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .take(3)
+        .toSet();
+    tagsController.text = selectedTags.join('، ');
+    final tagChoices = <String>{
+      ...selectedTags, 'دردشة', 'تعارف', 'ترفيه', 'موسيقى',
+      'ألعاب', 'مسابقات', 'ثقافة', 'مواهب', 'سوالف', 'شعر',
+    }.toList(growable: false);
+    final categoryChoices = <String>{
+      'دردشة', 'تعارف', 'موسيقى', 'ألعاب', 'ثقافة', 'ترفيه',
+      categoryController.text,
+    }.toList(growable: false);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -4197,6 +4214,36 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ],
                     ),
                     const SizedBox(height: 16),
+                    if (isAgencyRoom)
+                      const ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('تصنيف الغرفة',
+                            style: TextStyle(color: Colors.white70)),
+                        subtitle: Text('وكالة',
+                            style: TextStyle(color: Colors.white,
+                                fontWeight: FontWeight.w800)),
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        initialValue: categoryController.text,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF171D2B),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          labelText: 'تصنيف الغرفة',
+                          labelStyle: TextStyle(color: Colors.white60),
+                        ),
+                        items: [
+                          for (final option in categoryChoices)
+                            DropdownMenuItem<String>(
+                              value: option, child: Text(option),
+                            ),
+                        ],
+                        onChanged: saving ? null : (value) {
+                          if (value != null) categoryController.text = value;
+                        },
+                      ),
+                    const SizedBox(height: 10),
                     TextField(
                       controller: nameController,
                       maxLength: 60,
@@ -4209,7 +4256,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     TextField(
                       controller: descriptionController,
                       maxLength: 240,
-                      maxLines: 2,
+                      minLines: 3,
+                      maxLines: 5,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         labelText: 'وصف الغرفة',
@@ -4410,28 +4458,44 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               },
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: categoryController,
-                      enabled: !isAgencyRoom,
-                      maxLength: 30,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        labelText: 'التصنيف',
-                        labelStyle: const TextStyle(color: Colors.white60),
-                        helperText: isAgencyRoom
-                            ? 'تصنيف غرفة الوكالة ثابت: وكالة'
-                            : null,
-                        helperStyle: const TextStyle(color: Colors.white38),
-                      ),
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text('وسوم الغرفة (${selectedTags.length}/3)',
+                        style: const TextStyle(color: Colors.white70,
+                            fontWeight: FontWeight.w800)),
                     ),
-                    TextField(
-                      controller: tagsController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'الوسوم — افصل بينها بفاصلة',
-                        labelStyle: TextStyle(color: Colors.white60),
-                      ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8, runSpacing: 6,
+                      children: [
+                        for (final tag in tagChoices)
+                          FilterChip(
+                            label: Text(tag),
+                            selected: selectedTags.contains(tag),
+                            selectedColor: const Color(0xFF6D27D9),
+                            checkmarkColor: Colors.white,
+                            labelStyle: const TextStyle(color: Colors.white),
+                            onSelected: saving ? null : (active) {
+                              if (active && selectedTags.length >= 3) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  const SnackBar(content: Text(
+                                    'يمكن اختيار 3 وسوم فقط.',
+                                  )),
+                                );
+                                return;
+                              }
+                              setSheetState(() {
+                                if (active) {
+                                  selectedTags.add(tag);
+                                } else {
+                                  selectedTags.remove(tag);
+                                }
+                                tagsController.text = selectedTags.join('، ');
+                              });
+                            },
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
@@ -4442,16 +4506,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         labelText: 'خصوصية الغرفة',
                         labelStyle: TextStyle(color: Colors.white60),
                       ),
-                      items: const [
-                        DropdownMenuItem(
+                      items: [
+                        const DropdownMenuItem(
                           value: 'public',
                           child: Text('عامة'),
                         ),
-                        DropdownMenuItem(
+                        const DropdownMenuItem(
                           value: 'password',
                           child: Text('بكلمة مرور'),
                         ),
-                        DropdownMenuItem(
+                        if (canChooseHidden)
+                          const DropdownMenuItem(
                           value: 'hidden',
                           child: Text('مخفية'),
                         ),
@@ -4469,6 +4534,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         controller: passwordController,
                         obscureText: true,
                         maxLength: 32,
+                        onChanged: (_) => setSheetState(() {}),
                         style: const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
                           labelText:
@@ -4478,6 +4544,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   : 'كلمة مرور الغرفة',
                           labelStyle:
                               const TextStyle(color: Colors.white60),
+                          errorText: passwordController.text.isNotEmpty &&
+                                  passwordController.text.length < 4
+                              ? 'كلمة المرور يجب أن تكون 4 أحرف على الأقل'
+                              : null,
                           prefixIcon: const Icon(
                             Icons.lock_rounded,
                             color: Color(0xFFFFD54A),
@@ -4496,36 +4566,6 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                           ),
                         ),
                       ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: chatEnabled,
-                      onChanged: saving
-                          ? null
-                          : (value) {
-                              setSheetState(
-                                () => chatEnabled = value,
-                              );
-                            },
-                      activeThumbColor: Colors.white,
-                      activeTrackColor: const Color(0xFF6D27D9),
-                      title: const Text(
-                        'دردشة الغرفة',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      subtitle: Text(
-                        chatEnabled
-                            ? 'الأعضاء يستطيعون إرسال الرسائل'
-                            : 'الشات متوقف للأعضاء — صاحب الغرفة فقط',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -4542,7 +4582,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                     .split(RegExp(r'[,،]'))
                                     .map((value) => value.trim())
                                     .where((value) => value.isNotEmpty)
-                                    .take(8)
+                                    .take(3)
                                     .toList();
 
                                 if (name.length < 2) {
@@ -4557,10 +4597,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                   return;
                                 }
                                 if (visibility == 'password' &&
-                                    (_roomArguments['visibility'] ?? '')
-                                            .toString() !=
-                                        'password' &&
-                                    passwordController.text.length < 4) {
+                                    ((passwordController.text.isNotEmpty &&
+                                      passwordController.text.length < 4) ||
+                                     ((_roomArguments['visibility'] ?? '')
+                                           .toString() != 'password' &&
+                                      passwordController.text.length < 4))) {
                                   ScaffoldMessenger.of(sheetContext)
                                       .showSnackBar(
                                     const SnackBar(
@@ -4650,7 +4691,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                             : category),
                                     tags: tags,
                                     visibility: visibility,
-                                    chatEnabled: chatEnabled,
+                                    chatEnabled: _roomArguments['chatEnabled'] != false,
                                     coverImageUrl:
                                         isAgencyRoom ? '' : nextCoverImageUrl,
                                     coverImageObjectId:
