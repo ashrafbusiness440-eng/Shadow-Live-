@@ -78,6 +78,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
   int _comboRecipientCount = 1;
   int _comboTotal = 0;
   bool _comboBag = false;
+  // Unknown network confirmation may already have committed a gift. Only
+  // the exact same idempotent operation may be retried in this sheet.
+  String? _uncertainSendFingerprint;
+  String _sendFingerprint(GiftCatalogItem gift, int quantity, bool bag) =>
+      [gift.id, quantity.toString(), bag.toString(),
+       widget.giftContext, widget.comboContextKey].join('|');
+
 
 
   @override
@@ -136,7 +143,10 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
         _lockedGiftLabel(gift) != null ||
         _comboQuantity != _quantity ||
         gift.id != _selected?.id ||
-        _comboBag != (_category == 'bag')) return false;
+        _comboBag != (_category == 'bag') ||
+        (_uncertainSendFingerprint != null &&
+         _uncertainSendFingerprint !=
+           _sendFingerprint(gift, _comboQuantity, _comboBag))) return false;
     final requiredQuantity = _comboQuantity * _comboRecipientCount;
     if (_comboBag) {
       return (_bagQuantities[gift.id] ?? 0) >= requiredQuantity;
@@ -469,6 +479,15 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     final gift = _selected;
     if (gift == null || !widget.canSend || _sending ||
         _lockedGiftLabel(gift) != null) return;
+    final operationFingerprint =
+        _sendFingerprint(gift, _quantity, _category == 'bag');
+    if (_uncertainSendFingerprint != null &&
+        _uncertainSendFingerprint != operationFingerprint) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+        content: Text('هناك هدية لم تتأكد نتيجتها. أعد محاولة نفس الهدية والكمية والمستلم فقط.'),
+      ));
+      return;
+    }
     if (!gift.isAvailableIn(widget.giftContext)) {
       setState(() {
         _selected = null;
@@ -490,6 +509,15 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     } on StateError catch (error) {
       if (!mounted) return;
       final failureCode = error.message.toString().trim();
+      if (const <String>{
+        'gift_confirmation_pending',
+        'gift_connection_timeout',
+        'gift_network_unavailable',
+        'server_failed',
+        'transaction_failed',
+      }.contains(failureCode)) {
+        setState(() => _uncertainSendFingerprint = operationFingerprint);
+      }
       final safeCode = RegExp(r'^[A-Za-z0-9_-]{1,40}$').hasMatch(failureCode)
           ? failureCode
           : '';
@@ -564,6 +592,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     // explicit post-network success guard used by the gift safety tests.
     if (confirmed == null && mounted) setState(() => _clearCombo());
     if (confirmed == null || !mounted) return;
+    _uncertainSendFingerprint = null;
     try {
       final result = confirmed;
       if (result.balanceCoins != null) {
@@ -1052,9 +1081,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
     final gift = _selected;
     final bagCount = gift == null ? 0 : (_bagQuantities[gift.id] ?? 0);
     final bagAllowed = _category != 'bag' || bagCount >= _quantity;
+    final retryMatches = gift != null &&
+        (_uncertainSendFingerprint == null ||
+         _uncertainSendFingerprint ==
+             _sendFingerprint(gift, _quantity, _category == 'bag'));
     final sendEnabled =
         gift != null && widget.canSend && !_sending && bagAllowed &&
-        _lockedGiftLabel(gift) == null;
+        _lockedGiftLabel(gift) == null && retryMatches;
 
     return Container(
       padding: const EdgeInsets.only(top: 6),
@@ -1125,6 +1158,15 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
             ),
             const SizedBox(height: 6),
           ],
+          if (_uncertainSendFingerprint != null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: Text(
+                'نتيجة الإرسال غير مؤكدة. يُسمح فقط بإعادة نفس العملية دون خصم جديد.',
+                style: TextStyle(color: Colors.amberAccent, fontSize: 10),
+                textAlign: TextAlign.center,
+              ),
+            ),
           if (_comboGift != null && (_comboCountdown.isAnimating || _sending))
             Row(
               textDirection: TextDirection.ltr,
