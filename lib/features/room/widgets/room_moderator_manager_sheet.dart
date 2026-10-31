@@ -3,15 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/room_moderator_service.dart';
+import '../services/room_presence_service.dart';
+import '../services/room_invite_service.dart';
 import '../../profile/widgets/profile_avatar_with_frame.dart';
 
 class RoomModeratorManagerSheet extends StatefulWidget {
   const RoomModeratorManagerSheet({
     super.key,
     required this.roomId,
+    this.participants = const <RoomPresenceUser>[],
   });
 
   final String roomId;
+  final List<RoomPresenceUser> participants;
 
   @override
   State<RoomModeratorManagerSheet> createState() =>
@@ -21,6 +25,7 @@ class RoomModeratorManagerSheet extends StatefulWidget {
 class _RoomModeratorManagerSheetState
     extends State<RoomModeratorManagerSheet> {
   final RoomModeratorService _service = RoomModeratorService();
+  final RoomInviteService _friendsService = RoomInviteService();
   StreamSubscription<RoomModeratorState>? _subscription;
   RoomModeratorState? _state;
   bool _busy = false;
@@ -32,7 +37,6 @@ class _RoomModeratorManagerSheetState
     'manageMusic': 'الموسيقى',
     'manageMusicPolicy': 'سياسة الموسيقى',
     'managePk': 'PK',
-    'manageIds': 'تغيير ID الغرفة',
   };
 
   @override
@@ -47,6 +51,7 @@ class _RoomModeratorManagerSheetState
   void dispose() {
     unawaited(_subscription?.cancel());
     _service.close();
+    _friendsService.close();
     super.dispose();
   }
 
@@ -58,7 +63,7 @@ class _RoomModeratorManagerSheetState
       case 'target_not_found':
         return 'لم يتم العثور على المستخدم.';
       case 'invalid_public_id':
-        return 'أدخل ID مستخدم صحيح من 6 أرقام.';
+        return 'أدخل معرّف مستخدم (ID) صالحًا.';
       case 'capabilities_required':
         return 'اختر صلاحية واحدة على الأقل.';
       case 'forbidden':
@@ -71,6 +76,106 @@ class _RoomModeratorManagerSheetState
   Future<void> _editModerator([RoomModerator? existing]) async {
     if (_busy) return;
     final publicIdController = TextEditingController();
+    String? pickedUid;
+    String? pickedName;
+    Future<void> chooseModerator({
+      required bool fromFriends,
+      required void Function(VoidCallback) setEditorState,
+    }) async {
+      try {
+        if (fromFriends) {
+          // Read friends only on explicit tap, never a room-wide listener.
+          final friends = await _friendsService.loadFriends();
+          if (!mounted) return;
+          final selected = await showModalBottomSheet<RoomInviteFriend>(
+            context: context,
+            backgroundColor: const Color(0xFF111522),
+            builder: (pickerContext) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: SafeArea(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    const ListTile(title: Text('اختر من الأصدقاء',
+                      style: TextStyle(color: Colors.white))),
+                    if (friends.isEmpty)
+                      const ListTile(title: Text('لا يوجد أصدقاء حاليًا',
+                        style: TextStyle(color: Colors.white54))),
+                    for (final friend in friends)
+                      ListTile(
+                        leading: ProfileAvatarWithFrame(
+                          diameter: 36, userId: friend.uid,
+                          fallbackProfile: <String, dynamic>{
+                            'profileImageUrl': friend.photoUrl,
+                          },
+                        ),
+                        title: Text(friend.name,
+                          style: const TextStyle(color: Colors.white)),
+                        onTap: () => Navigator.pop(pickerContext, friend),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          if (selected != null && mounted) {
+            setEditorState(() {
+              pickedUid = selected.uid;
+              pickedName = selected.name;
+              publicIdController.clear();
+            });
+          }
+        } else {
+          final audience = widget.participants
+              .where((person) => person.uid.isNotEmpty)
+              .toList(growable: false);
+          final selected = await showModalBottomSheet<RoomPresenceUser>(
+            context: context,
+            backgroundColor: const Color(0xFF111522),
+            builder: (pickerContext) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: SafeArea(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    const ListTile(title: Text('اختر من الحضور',
+                      style: TextStyle(color: Colors.white))),
+                    if (audience.isEmpty)
+                      const ListTile(title: Text('لا يوجد حضور مؤكد حاليًا',
+                        style: TextStyle(color: Colors.white54))),
+                    for (final person in audience)
+                      ListTile(
+                        leading: ProfileAvatarWithFrame(
+                          diameter: 36, userId: person.uid,
+                          fallbackProfile: <String, dynamic>{
+                            'profileImageUrl': person.profileImageUrl,
+                          },
+                        ),
+                        title: Text(person.displayName,
+                          style: const TextStyle(color: Colors.white)),
+                        onTap: () => Navigator.pop(pickerContext, person),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          if (selected != null && mounted) {
+            setEditorState(() {
+              pickedUid = selected.uid;
+              pickedName = selected.displayName;
+              publicIdController.clear();
+            });
+          }
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تعذر تحميل القائمة حاليًا.')),
+          );
+        }
+      }
+    }
     final caps = existing?.capabilities.toSet() ??
         <String>{'manageMic', 'moderateChat'};
 
@@ -117,20 +222,56 @@ class _RoomModeratorManagerSheetState
                     ),
                     if (existing == null) ...[
                       const SizedBox(height: 14),
-                      TextField(
-                        controller: publicIdController,
-                        keyboardType: TextInputType.number,
-                        maxLength: 6,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: const InputDecoration(
-                          labelText: 'ID المستخدم — 6 أرقام',
-                          labelStyle: TextStyle(color: Colors.white60),
-                          prefixIcon: Icon(
-                            Icons.badge_rounded,
-                            color: Color(0xFFFFD54A),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: publicIdController,
+                              keyboardType: TextInputType.number,
+                              onChanged: (_) {
+                                if (pickedUid != null) {
+                                  setSheetState(() {
+                                    pickedUid = null;
+                                    pickedName = null;
+                                  });
+                                }
+                              },
+                              style: const TextStyle(color: Colors.white),
+                              decoration: const InputDecoration(
+                                labelText: 'معرّف المستخدم (ID)',
+                                labelStyle: TextStyle(color: Colors.white60),
+                                prefixIcon: Icon(Icons.badge_rounded,
+                                  color: Color(0xFFFFD54A)),
+                              ),
+                            ),
                           ),
-                        ),
+                          IconButton(
+                            tooltip: 'من الأصدقاء',
+                            icon: const Icon(Icons.people_rounded,
+                                color: Color(0xFFFFD54A)),
+                            onPressed: _busy ? null : () => chooseModerator(
+                              fromFriends: true,
+                              setEditorState: setSheetState,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'من الحضور',
+                            icon: const Icon(Icons.groups_rounded,
+                                color: Color(0xFFBFA5FF)),
+                            onPressed: _busy ? null : () => chooseModerator(
+                              fromFriends: false,
+                              setEditorState: setSheetState,
+                            ),
+                          ),
+                        ],
                       ),
+                      if (pickedName != null)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text('المحدد: $pickedName',
+                            style: const TextStyle(
+                              color: Color(0xFFBFA5FF), fontSize: 11)),
+                        ),
                     ],
                     const SizedBox(height: 8),
                     ..._labels.entries.map(
@@ -169,12 +310,12 @@ class _RoomModeratorManagerSheetState
                                 final publicId =
                                     publicIdController.text.trim();
                                 if (existing == null &&
-                                    !RegExp(r'^\d{6}$').hasMatch(publicId)) {
+                                    pickedUid == null && publicId.isEmpty) {
                                   ScaffoldMessenger.of(sheetContext)
                                       .showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'أدخل ID مستخدم صحيح من 6 أرقام.',
+                                        'أدخل معرّف المستخدم (ID).',
                                       ),
                                     ),
                                   );
@@ -197,9 +338,10 @@ class _RoomModeratorManagerSheetState
                                 try {
                                   await _service.setModerator(
                                     roomId: widget.roomId,
-                                    targetUid: existing?.uid,
-                                    targetPublicId:
-                                        existing == null ? publicId : null,
+                                    targetUid: existing?.uid ?? pickedUid,
+                                    targetPublicId: existing == null &&
+                                            pickedUid == null
+                                        ? publicId : null,
                                     enabled: true,
                                     capabilities: caps,
                                   );
