@@ -56,7 +56,9 @@ void main() {
     expect(panel, contains('FirebaseAuth.instance.currentUser?.uid != user.uid'));
     expect(panel, contains('if (widget.sheetMode) Navigator.of(context).pop();'));
     expect(panel, isNot(contains('Timer.periodic')));
-    expect(rooms, contains('void _showManagedRooms()'));
+    expect(rooms, contains('Future<void> _showManagedRooms() async'));
+    expect(rooms, contains('if (_openingPersonalRoom || _managedRoomsSheetOpen) return;'));
+    expect(rooms, contains('await showModalBottomSheet<void>('));
     expect(rooms, contains('_openingPersonalRoom ? null : _showManagedRooms'));
     expect(profile, contains('ManagedRoomsPanel('));
     expect(profile, contains('غرفي والإشراف'));
