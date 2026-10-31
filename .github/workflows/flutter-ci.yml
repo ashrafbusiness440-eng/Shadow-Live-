@@ -132,7 +132,7 @@ jobs:
       - name: Check room receiver rankings use verified atomic gifts and bounded reads
         run: node --test cloudflare-worker/__tests__/room-receiver-ranking-source.test.js
       - name: Verify managed-room shortcuts authorization and bounded membership
-        run: node --test cloudflare-worker/__tests__/managed-room-shortcuts-source.test.js
+        run: node --test cloudflare-worker/__tests__/managed-room-shortcuts-source.test.js cloudflare-worker/__tests__/room-moderator-index-backfill.test.js
       - name: Test replay-safe private text sends and cross-user operation isolation
         run: node --test cloudflare-worker/__tests__/private-chat-text-retry.test.js
       - name: Test private voice mutual-follow eligibility and limits
