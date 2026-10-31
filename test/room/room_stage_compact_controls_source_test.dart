@@ -22,7 +22,7 @@ void main() {
     final a = app.indexOf('Widget _buildVoiceSeats()');
     final b = app.indexOf('Future<void> _showSupportersSheet()', a);
     final seats = app.substring(a, b);
-    expect(seats, contains('seat.starBattleActive'));
+    expect(seats, contains('state?.starBattleActive == true'));
     expect(seats, contains('_formatStarBattleCoins(seat.starBattleCoins)'));
     expect(seats, isNot(contains("+ ' ⭐'")));
     expect(seats, contains('maxLines: 1,'));
