@@ -857,7 +857,9 @@ test("diary gift rejects a receiver who does not own the diary",async()=>{
 
 test("room gift allows sending to self without bypassing ledger or economy",async()=>{
   await seedSharedConfig();
-  const periods=riyadhPeriodKeys();
+  // giftRevenueMonth is a distinct UTC revenue field; unlike agency settlements,
+  // it must not use the Asia/Riyadh month-key test helper.
+  const revenueMonthUtc=new Date().toISOString().slice(0,7);
   const suffix=Date.now().toString()+"_self";
   const userId="self_"+suffix;
   const roomId="room_"+suffix;
@@ -933,7 +935,7 @@ test("room gift allows sending to self without bypassing ledger or economy",asyn
   assert.equal(userAfter.data().coins,900000);
   assert.equal(userAfter.data().totalGiftsSent,1);
   assert.equal(userAfter.data().totalGiftsReceived,1);
-  assert.equal(userAfter.data().giftRevenueMonth,periods.month);
+  assert.equal(userAfter.data().giftRevenueMonth,revenueMonthUtc);
 });
 
 test("room gift is rejected when either user has blocked the other",async()=>{
