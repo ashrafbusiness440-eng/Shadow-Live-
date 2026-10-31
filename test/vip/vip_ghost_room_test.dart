@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('VIP5 Ghost UI is hide-presence only and keeps hidden entry separate', () {
+  test('VIP5 Ghost backend stays separate despite retired room menu toggle', () {
     final mainSource = File('lib/main.dart').readAsStringSync();
     final roomService = File(
       'lib/features/room/services/room_action_service.dart',
@@ -12,8 +12,8 @@ void main() {
       'cloudflare-worker/src/room-realtime.js',
     ).readAsStringSync();
 
-    expect(mainSource.contains('إخفاء الوجود في الغرفة'), isTrue);
-    expect(mainSource.contains('تفتح من VIP\$_roomGhostRequiredVipLevel.'), isTrue);
+    expect(mainSource.contains('إخفاء الوجود في الغرفة'), isFalse);
+    expect(mainSource.contains('تفتح من VIP\$_roomGhostRequiredVipLevel.'), isFalse);
     expect(mainSource.contains('الدخول الخفي'), isFalse);
     expect(mainSource.contains('_canUseRoomGhostMode'), isTrue);
 
