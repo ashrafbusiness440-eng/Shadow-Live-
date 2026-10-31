@@ -120,6 +120,27 @@ class PersonalRoomInfo {
   }
 }
 
+class ManagedRoomEntry {
+  const ManagedRoomEntry({required this.room, required this.relation});
+
+  final PersonalRoomInfo room;
+  final String relation;
+
+  bool get isOwner => relation == 'owner';
+  bool get isModerator => relation == 'moderator';
+
+  factory ManagedRoomEntry.fromJson(Map<String, dynamic> json) {
+    final relation = (json['relation'] ?? '').toString();
+    if (relation != 'owner' && relation != 'moderator') {
+      throw const FormatException('invalid_room_relation');
+    }
+    return ManagedRoomEntry(
+      room: PersonalRoomInfo.fromJson(json),
+      relation: relation,
+    );
+  }
+}
+
 class RoomActionService {
   RoomActionService({
     http.Client? client,
@@ -161,6 +182,17 @@ class RoomActionService {
       throw StateError((decoded['code'] ?? 'room_action_failed').toString());
     }
     return decoded;
+  }
+
+  /// One authenticated call when the owned/moderated rooms surface opens.
+  /// The server verifies the current moderator grant for every room.
+  Future<List<ManagedRoomEntry>> loadManagedRooms() async {
+    final body = await _post({'action': 'roomManagedList'});
+    final raw = body['rooms'];
+    if (raw is! List) throw const FormatException('invalid_managed_rooms');
+    return raw.whereType<Map>().map((entry) =>
+      ManagedRoomEntry.fromJson(Map<String, dynamic>.from(entry))
+    ).take(30).toList(growable: false);
   }
 
   Future<PersonalRoomInfo> openPersonalRoom() async {
