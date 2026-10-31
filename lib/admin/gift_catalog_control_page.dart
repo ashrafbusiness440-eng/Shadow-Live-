@@ -48,6 +48,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   GiftCatalogItem? pendingDraft;
   Map<String, dynamic>? editorDraft;
   int editorDraftRevision = 0;
+  bool editorDraftConflict = false;
 
   String get _editorBackupKey =>
       'shadow_gift_editor_${controlAuth.currentUser?.uid ?? 'signed_out'}';
@@ -218,15 +219,23 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       final remoteEditorRevision =
           (body['editorDraftRevision'] as num?)?.toInt() ?? 0;
       Map<String, dynamic>? localEditor;
+      bool localRevisionConflict = false;
       try {
         final preferences = await SharedPreferences.getInstance();
         final backup = preferences.getString(_editorBackupKey);
         if (backup != null) {
           final decoded = jsonDecode(backup);
-          if (decoded is Map &&
-              decoded['editorRevision'] == remoteEditorRevision &&
-              decoded['payload'] is Map) {
-            localEditor = Map<String, dynamic>.from(decoded['payload'] as Map);
+          if (decoded is Map && decoded['payload'] is Map &&
+              decoded['editorRevision'] is int) {
+            final version = decoded['editorRevision'] as int;
+            if (version == remoteEditorRevision) {
+              localEditor = Map<String, dynamic>.from(decoded['payload'] as Map);
+            } else if (decoded['pending'] == true) {
+              // An unacknowledged local edit must survive even if another
+              // admin tab has advanced the remote draft revision.
+              localEditor = Map<String, dynamic>.from(decoded['payload'] as Map);
+              localRevisionConflict = true;
+            }
           }
         }
       } catch (_) {
@@ -259,6 +268,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         editorDraft = isStatsOnly ? null : savedEditor is Map
             ? Map<String, dynamic>.from(savedEditor) : null;
         editorDraftRevision = remoteEditorRevision;
+        editorDraftConflict = !isStatsOnly && localRevisionConflict;
         gifts = isStatsOnly ? <GiftCatalogItem>[] :
             loaded.isEmpty
                 ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
@@ -762,6 +772,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       message('احفظ التغييرات الحالية قبل تعديل المسودة.');
       return;
     }
+    if (editorDraftConflict) {
+      message('هناك تعديلات محفوظة على هذا الجهاز ومسودة أحدث على الخادم. راجع التعارض قبل استكمال العمل.');
+      return;
+    }
     editing = true;
     final current = index == null ? template : gifts[index];
     final savedProgress = editorDraft;
@@ -873,6 +887,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     Timer? autoSaveTimer;
     Future<void> lastAutoSave = Future<void>.value();
     int draftRevision = editorDraftRevision;
+    int changeSerial = 0;
     bool progressChanged = false;
     final autoSaveStatus = ValueNotifier<String>(
         resume == null ? 'مسودة تلقائية غير محفوظة بعد' : 'تم استرجاع المسودة التلقائية');
@@ -907,12 +922,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       if (editSavedDraft || !progressChanged) return;
       autoSaveTimer?.cancel();
       final snapshot = editorSnapshot();
+      final savedSerial = changeSerial;
       lastAutoSave = lastAutoSave.then((_) async {
         // Retain pending changes locally before attempting a network write.
         try {
           final preferences = await SharedPreferences.getInstance();
           await preferences.setString(_editorBackupKey, jsonEncode({
-            'editorRevision': draftRevision, 'payload': snapshot,
+            'editorRevision': draftRevision,
+            'payload': snapshot,
+            'pending': true,
           }));
         } catch (_) {}
         try {
@@ -929,6 +947,14 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               editorDraft = snapshot;
             });
           }
+          if (savedSerial == changeSerial) {
+            // Only clear the backup if no later input is waiting for save.
+            // The remote draft now contains this exact latest snapshot.
+            try {
+              final preferences = await SharedPreferences.getInstance();
+              await preferences.remove(_editorBackupKey);
+            } catch (_) {}
+          }
           autoSaveStatus.value = 'تم حفظ المسودة تلقائياً';
         } catch (failure) {
           // Keep the in-memory progress visible without another page reload.
@@ -943,6 +969,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     void markProgressDirty() {
       if (editSavedDraft) return;
       progressChanged = true;
+      changeSerial++;
       autoSaveStatus.value = 'جارٍ تجهيز الحفظ التلقائي...';
       autoSaveTimer?.cancel();
       autoSaveTimer = Timer(
