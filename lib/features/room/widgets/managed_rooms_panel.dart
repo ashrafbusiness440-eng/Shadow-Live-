@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../services/navigation_service.dart';
 import '../services/room_action_service.dart';
 import 'discovery_room_password_dialog.dart';
+import 'managed_room_country_flag.dart';
 
 /// One explicit, bounded server read per surface open. The server verifies
 /// each current room role; the client still uses ordinary room admission.
@@ -218,7 +219,7 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '${item.room.ownerLocation.isEmpty ? "الدولة: —" : item.room.ownerLocation}'
+                            '${item.room.ownerLocation.isEmpty ? "الدولة: —" : "${managedRoomCountryFlag(item.room.ownerLocation)} ${item.room.ownerLocation}".trim()}'
                             '  •  ID: ${item.room.publicId.isEmpty ? "—" : item.room.publicId}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
