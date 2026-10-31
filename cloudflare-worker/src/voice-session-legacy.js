@@ -23,6 +23,10 @@ import {
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
 import {roomChatRestricted,roomEntryRestricted,roomMicRestricted} from "./room-chat-restriction.js";
+import {
+  nextRoomPasswordLockVersion,
+  roomInviteAllowsPasswordAccess,
+} from "./room-invite-lock-policy.js";
 import {activeMysteriousIdentity,applyMysteriousIdentityPresentation,mysteriousRoomAuthoritySuppressed} from "./mysterious-identity.js";
 import {
   loadPublicProfilePresentations,
@@ -1110,6 +1114,7 @@ async function updateRoomSettings(db,uid,body){
       tags,
       visibility,
       isHidden:visibility==="hidden",
+      passwordLockVersion:nextRoomPasswordLockVersion(room,visibility,password),
       chatEnabled,
       roomImageUrl,
       coverImageUrl:roomImageUrl,
@@ -5064,8 +5069,13 @@ export default async function handler(req,res){
         .collection("users")
         .doc(decoded.uid)
         .get();
-      const inviteExpiry=inviteSnap.data()?.expiresAt?.toMillis?.()||0;
-      const inviteValid=inviteSnap.exists&&inviteExpiry>Date.now();
+      const inviteValid=inviteSnap.exists&&roomInviteAllowsPasswordAccess({
+        room:roomData,
+        invite:inviteSnap.data(),
+        roomId,
+        recipientUid:decoded.uid,
+        nowMs:Date.now(),
+      });
       if(!inviteValid){
         const suppliedPassword=String(req.body?.roomPassword??"");
         if(!suppliedPassword)throw new ApiError("room_password_required",403);
