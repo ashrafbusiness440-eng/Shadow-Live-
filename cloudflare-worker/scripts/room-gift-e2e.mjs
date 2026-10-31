@@ -271,6 +271,63 @@ async function openRoomRealtime(roomId,idToken){
   await ready;
   return socket;
 }
+// Production browser-origin smoke complements the existing Node WebSocket
+// test. It uses the same disposable test account and a one-use ticket;
+// never opens or mutates real user rooms.
+async function verifyBrowserRoomRealtime(roomId,idToken){
+  const ticket=await realtimePost("/api/room-realtime",idToken,{
+    action:"ticket",roomId,
+  });
+  if(!ticket.res.ok||ticket.body?.ok!==true||!ticket.body.socketPath){
+    throw new Error("browser websocket ticket failed:"+ticket.res.status+":"+
+      String(ticket.body?.code||"unknown"));
+  }
+  const {chromium}=await import("playwright");
+  const browser=await chromium.launch({
+    channel:"chrome",headless:true,args:["--no-sandbox"],
+  });
+  try{
+    const page=await browser.newPage();
+    // Keep the actual GitHub Pages origin so Chromium uses the same browser
+    // origin and Cloudflare WebSocket upgrade route as an installed PWA.
+    await page.goto("https://ashrafbusiness440-eng.github.io/Shadow-Live-/",{
+      waitUntil:"domcontentloaded",timeout:20000,
+    });
+    const outcome=await page.evaluate(({socketPath,workerBase,roomId})=>
+      new Promise(resolve=>{
+        const target=new URL(socketPath,workerBase);
+        target.protocol=target.protocol==="https:"?"wss:":"ws:";
+        let socket;
+        let settled=false;
+        let timer;
+        const done=(value)=>{
+          if(settled)return;
+          settled=true;
+          clearTimeout(timer);
+          try{socket?.close();}catch(_){ }
+          resolve(value);
+        };
+        try{socket=new WebSocket(target.toString());}
+        catch(_){done("browser_socket_constructor_failed");return;}
+        timer=setTimeout(()=>done("browser_ready_timeout"),10000);
+        socket.onmessage=event=>{
+          try{
+            const parsed=JSON.parse(event.data);
+            if(parsed.type==="server.ready"&&parsed.payload?.roomId===roomId){
+              done("ready");
+            }
+          }catch(_){ }
+        };
+        socket.onerror=()=>done("browser_socket_error");
+        socket.onclose=event=>done("browser_socket_closed_"+event.code);
+      }),{socketPath:ticket.body.socketPath,workerBase,roomId});
+    if(outcome!=="ready")throw new Error("real browser websocket:"+outcome);
+    console.log("PASS Chrome-origin realtime ticket/WebSocket/server.ready");
+  }finally{
+    await browser.close();
+  }
+}
+
 async function deleteAuthUser(idToken){
   await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(apiKey)}`,
@@ -415,6 +472,8 @@ try{
     openRoomRealtime(roomId,senderToken),
     openRoomRealtime(roomId,receiverToken),
   ]);
+  // Verify the real browser handshake as well as Node's transport.
+  await verifyBrowserRoomRealtime(roomId,senderToken);
   // Assert the real live websocket admitted BOTH independent test users,
   // and that chat reaches the existing room protocol (not just voice UI).
   const presence = await realtimePost("/api/room-realtime", senderToken, {
