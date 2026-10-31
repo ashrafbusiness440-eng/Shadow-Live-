@@ -14,14 +14,14 @@ void main() {
     expect(zegoSdkLoginName('SHADOW 👑', authorized), authorized);
     expect(zegoSdkLoginName('✦Shadow✦', authorized), authorized);
     expect(zegoSdkLoginName('', authorized), authorized);
-    expect(zegoSdkLoginName('X' * 256, authorized), authorized);
+    expect(zegoSdkLoginName(List<String>.filled(256, 'X').join(), authorized), authorized);
   });
 
   test('a forged or malformed transport identity cannot be passed to ZEGO', () {
     expect(() => zegoSdkLoginName('SHADOW', 'not safe uid'), throwsFormatException);
     expect(() => zegoSdkLoginName('SHADOW', ''), throwsFormatException);
     expect(
-      () => zegoSdkLoginName('SHADOW', 'u_' + 'x' * 64),
+      () => zegoSdkLoginName('SHADOW', 'u_' + List<String>.filled(64, 'x').join()),
       throwsFormatException,
     );
   });
