@@ -6,6 +6,7 @@ import {getFirestore} from "firebase-admin/firestore";
 import {sendGift as sendChatGift} from "../../cloudflare-worker/src/chat-safety-actions.js";
 import {sendRoomGift} from "../../cloudflare-worker/src/room-gift.js";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
+import {riyadhPeriodKeys} from "./helpers/agency-riyadh-periods.js";
 
 const app=initializeApp(
   {projectId:"shadow-live-economy-test"},
@@ -16,9 +17,7 @@ const cloudflareDb=cloudflareFirestoreAdapter(db);
 
 after(async()=>{await deleteApp(app);});
 
-function monthKey(date=new Date()){
-  return date.toISOString().slice(0,7);
-}
+
 
 function realtimeNamespaceWithPresentUids(uids=[]){
   const present=new Set(uids);
@@ -126,7 +125,7 @@ test("06-B incomplete Target pays zero Agency Share and leaves no payout ledger"
   const agencyId="stage06b_incomplete_agency_"+suffix;
   const roomId="stage06b_incomplete_room_"+suffix;
   const key="stage06b_incomplete_key_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
 
   await Promise.all([
     db.collection("users").doc(senderId).set({
@@ -174,7 +173,7 @@ test("06-B Agency Owner who is also the Host receives salary and Share in one Di
   const agencyId="stage06b_owner_host_agency_"+suffix;
   const roomId="stage06b_owner_host_room_"+suffix;
   const key="stage06b_owner_host_key_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
 
   await Promise.all([
     db.collection("users").doc(senderId).set({
@@ -231,7 +230,7 @@ test("06-B one room gift can jump multiple targets and pays only the reached sal
   const roomId="stage06b_room_"+suffix;
   const key1="stage06b_jump_one_"+suffix;
   const key2="stage06b_jump_two_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
 
   await Promise.all([
     db.collection("users").doc(senderId).set({
@@ -351,7 +350,7 @@ test("06-B concurrent room gifts serialize salary progress and never double-pay 
   const roomId="stage06b_race_room_"+suffix;
   const keyA="stage06b_race_a_"+suffix;
   const keyB="stage06b_race_b_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
 
   await Promise.all([
     db.collection("users").doc(senderA).set({coins:1000000,diamonds:0,role:"user"}),
@@ -431,7 +430,7 @@ test("06-B gift idempotency rejects a changed request using an existing operatio
   const agencyId="stage06b_idem_agency_"+suffix;
   const roomId="stage06b_idem_room_"+suffix;
   const key="stage06b_idem_key_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
 
   await Promise.all([
     db.collection("users").doc(senderId).set({coins:2000000,diamonds:0,role:"user"}),
@@ -477,7 +476,7 @@ test("06-B chat gifts use the same immediate target salary ledger audit and fing
   const agencyId="stage06b_chat_agency_"+suffix;
   const conversationId="stage06b_chat_conversation_"+suffix;
   const key="stage06b_chat_key_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
 
   await Promise.all([
     db.collection("users").doc(senderId).set({coins:1000000,diamonds:0,role:"user"}),
