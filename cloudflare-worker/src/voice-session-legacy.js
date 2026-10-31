@@ -739,6 +739,18 @@ async function setRoomModerator(db,uid,body){
       moderators,
       updatedAt:FieldValue.serverTimestamp(),
     });
+    // Per-user membership index: query the authenticated person's rooms,
+    // never enumerate all active rooms or trust this index for authorization.
+    const membershipRef=db.collection("room_moderator_memberships")
+      .doc(targetUid).collection("rooms").doc(roomId);
+    if(enabled){
+      tx.set(membershipRef,{
+        roomId,
+        updatedAt:FieldValue.serverTimestamp(),
+      },{merge:true});
+    }else{
+      tx.delete(membershipRef);
+    }
     tx.create(auditRef,{
       action:enabled?(previous?"updateModerator":"addModerator"):"removeModerator",
       actorUid:uid,
@@ -2877,6 +2889,55 @@ async function roomLibrary(db,uid){
   return {ok:true,favorites,history};
 }
 
+// Authorized shortcuts for the current user's own and moderated rooms.
+// A room-owner lookup uses the deterministic personal room ID. Moderated rooms
+// use a per-user membership index maintained in the moderator transaction.
+// A small recent-room fallback detects legacy moderator grants predating the
+// index; every candidate is checked against the actual room moderator list.
+async function roomManagedList(db,uid){
+  const personalId="personal_"+uid;
+  const [ownerSnap,assignedSnap,recentSnap,favoriteSnap]=await Promise.all([
+    db.collection("rooms").doc(personalId).get(),
+    db.collection("room_moderator_memberships").doc(uid).collection("rooms")
+      .orderBy("updatedAt","desc").limit(30).get(),
+    db.collection("room_visits").doc(uid).collection("items")
+      .orderBy("lastVisitedAt","desc").limit(12).get(),
+    db.collection("room_favorites").doc(uid).collection("items")
+      .orderBy("updatedAt","desc").limit(12).get(),
+  ]);
+  const results=[];
+  const seen=new Set();
+  const ownerData=ownerSnap.exists?ownerSnap.data()||{}:{};
+  if(ownerSnap.exists&&roomOwnerUid(ownerData)===uid&&ownerData.isActive!==false){
+    seen.add(personalId);
+    results.push({...roomResponse(personalId,ownerData),relation:"owner"});
+  }
+  const indexed=assignedSnap.docs.map(doc=>clean(doc.data()?.roomId||doc.id));
+  const candidates=[
+    ...indexed,
+    ...recentSnap.docs.map(doc=>clean(doc.data()?.roomId||doc.id)),
+    ...favoriteSnap.docs.map(doc=>clean(doc.data()?.roomId||doc.id)),
+  ].filter(id=>/^[A-Za-z0-9_-]{1,180}$/.test(id));
+  // Deduplicate before reads; cap the number of room lookups per button tap.
+  const unique=[...new Set(candidates)].filter(id=>!seen.has(id)).slice(0,54);
+  const snapshots=await Promise.all(
+    unique.map(id=>db.collection("rooms").doc(id).get()),
+  );
+  for(let index=0;index<unique.length&&results.length<30;index++){
+    const snap=snapshots[index];
+    if(!snap.exists)continue;
+    const room=snap.data()||{};
+    if(room.isActive===false||room.isHidden===true||clean(room.visibility)==="hidden")continue;
+    const myRole=roomOwnerUid(room)===uid?"owner"
+      :roomModeratorEntry(room,uid)?"moderator":"";
+    if(!myRole)continue; // Never authorize from a stale membership index.
+    const roomId=unique[index];
+    seen.add(roomId);
+    results.push({...roomResponse(roomId,room),relation:myRole});
+  }
+  return {ok:true,rooms:results};
+}
+
 function normalizeRoomMusicPolicy(room){
   const raw=room.musicPolicy&&typeof room.musicPolicy==="object"?room.musicPolicy:{};
   return {allowMembers:raw.allowMembers===true};
@@ -4920,6 +4981,9 @@ export default async function handler(req,res){
     }
     if(action==="roomLibrary"){
       return out(res,200,await roomLibrary(getFirestore(),decoded.uid));
+    }
+    if(action==="roomManagedList"){
+      return out(res,200,await roomManagedList(getFirestore(),decoded.uid));
     }
     if(action==="sendRoomChat"){
       return out(res,200,await sendRoomChat(getFirestore(),decoded.uid,req.body||{}));
