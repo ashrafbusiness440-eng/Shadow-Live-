@@ -127,6 +127,8 @@ jobs:
         run: node --test server/__tests__/account-deletion-personal-image-r2-orphan-pages.test.js
       - name: Read-only pending image upload-ticket inventory safety
         run: node --test server/__tests__/account-deletion-image-upload-ticket-review.test.js
+      - name: Enforce server-issued room invite password-lock scope
+        run: node --test cloudflare-worker/__tests__/room-invite-lock-policy.test.js
       - name: Test replay-safe private text sends and cross-user operation isolation
         run: node --test cloudflare-worker/__tests__/private-chat-text-retry.test.js
       - name: Test private voice mutual-follow eligibility and limits
