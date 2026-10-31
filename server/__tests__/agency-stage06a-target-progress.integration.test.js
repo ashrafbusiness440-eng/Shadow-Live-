@@ -5,6 +5,7 @@ import {getFirestore} from "firebase-admin/firestore";
 
 import {sendRoomGift} from "../../cloudflare-worker/src/room-gift.js";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
+import {riyadhPeriodKeys} from "./helpers/agency-riyadh-periods.js";
 
 const app=initializeApp(
   {projectId:"shadow-live-economy-test"},
@@ -15,9 +16,20 @@ const cloudflareDb=cloudflareFirestoreAdapter(db);
 
 after(async()=>{await deleteApp(app);});
 
-function monthKey(date=new Date()){
-  return date.toISOString().slice(0,7);
-}
+test("agency test months follow Riyadh at UTC month/year rollover",()=>{
+  assert.deepEqual(riyadhPeriodKeys(new Date("2026-10-31T20:59:59Z")),{
+    day:"2026-10-31",month:"2026-10",
+  });
+  assert.deepEqual(riyadhPeriodKeys(new Date("2026-10-31T21:00:00Z")),{
+    day:"2026-11-01",month:"2026-11",
+  });
+  assert.deepEqual(riyadhPeriodKeys(new Date("2026-12-31T21:00:00Z")),{
+    day:"2027-01-01",month:"2027-01",
+  });
+});
+
+
+
 
 function agencyAccrualShard(value){
   const text=String(value??"").trim();
@@ -95,7 +107,7 @@ test("06-A Agency Owner as Host uses Host Share target progress with sharded ide
   const agencyId="stage06a_agency_"+suffix;
   const roomId="stage06a_room_"+suffix;
   const key="stage06a_roomgift_"+suffix;
-  const month=monthKey();
+  const month=riyadhPeriodKeys().month;
   const shard=agencyAccrualShard(key);
   const shardId=
     agencyId+"__"+month+"__"+String(shard).padStart(2,"0");
