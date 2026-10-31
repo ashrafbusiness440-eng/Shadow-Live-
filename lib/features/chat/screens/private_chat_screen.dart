@@ -224,9 +224,11 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     String eventId, String assetKey, int duration, int replayId, {
     required bool manual,
   }) async {
+    late final Uri effectUrl;
     try {
       final url = await ShadowAssetRegistry.remoteUrl(assetKey);
       if (url == null) throw StateError('missing_gift_effect_asset');
+      effectUrl = url;
       if (!_isActiveChatAccount(_openedByUid) ||
           replayId != _giftEffectPlayCounter) return;
       await precacheImage(NetworkImage(url.toString()), context);
@@ -248,7 +250,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         'id': '$eventId-$replayId',
         'key': assetKey,
         // Use the already resolved/preloaded URL, not a second registry fetch.
-        'imageUrl': url.toString(),
+        'imageUrl': effectUrl.toString(),
       };
     });
     _giftSheetEffectOverlay?.markNeedsBuild();
