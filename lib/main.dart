@@ -3881,6 +3881,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .toList()
         : const <String>[];
     final online = _roomAudienceCountLabel;
+    final ownerUid = (_roomArguments['ownerUid'] ??
+            _roomArguments['ownerId'] ??
+            _roomArguments['hostUid'] ??
+            _roomArguments['hostId'] ??
+            '').toString().trim();
+    final roomType = (_roomArguments['roomType'] ??
+            _roomArguments['type'] ??
+            'personal').toString();
+    final typeLabel = roomType == 'agency'
+        ? 'وكالة'
+        : _isOfficialRoom ? 'إدارية' : 'عادية';
+    final sessionMinutes = (_roomArguments['sessionDurationMinutes'] as num?)
+        ?.toInt();
+    final durationLabel = sessionMinutes == null
+        ? '—'
+        : '${sessionMinutes ~/ 60} س ${sessionMinutes % 60} د';
     final level = _roomInsights?.level ??
         ((_roomArguments['level'] as num?)?.toInt() ?? 1);
 
@@ -3897,30 +3913,27 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
 
     Widget infoRow(IconData icon, String label, String value) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7),
-        child: Row(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: const Color(0xFFBFA5FF)),
-            const SizedBox(width: 9),
-            Text(
-              label,
+            Row(
+              children: [
+                Icon(icon, size: 15, color: const Color(0xFFBFA5FF)),
+                const SizedBox(width: 5),
+                Expanded(child: Text(label,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 10))),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 11,
-              ),
-            ),
-            const Spacer(),
-            Flexible(
-              child: Text(
-                value,
-                textAlign: TextAlign.end,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
+                color: Colors.white, fontSize: 12,
+                fontWeight: FontWeight.w800)),
           ],
         ),
       );
@@ -3977,16 +3990,40 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _ownerDisplayName +
-                        (_ownerLocation.trim().isEmpty
-                            ? ''
-                            : ' • ' + _ownerLocation),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 11,
+                  const SizedBox(height: 10),
+                  Material(
+                    color: const Color(0xFF141A28),
+                    borderRadius: BorderRadius.circular(16),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      leading: ProfileAvatarWithFrame(
+                        diameter: 50,
+                        userId: ownerUid,
+                        backgroundColor: const Color(0xFF25183F),
+                        placeholderColor: const Color(0xFFFFD54A),
+                        fallbackProfile: <String, dynamic>{
+                          'profileImageUrl': _ownerPhotoUrl,
+                        },
+                      ),
+                      title: const Text('مالك الغرفة',
+                          style: TextStyle(color: Colors.white54,
+                              fontSize: 11)),
+                      subtitle: Text(_ownerDisplayName,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white,
+                              fontWeight: FontWeight.w800)),
+                      trailing: ownerUid.isEmpty ? null
+                          : const Icon(Icons.chevron_left_rounded,
+                              color: Colors.white54),
+                      onTap: ownerUid.isEmpty ? null : () {
+                        Navigator.pop(sheetContext);
+                        Future<void>.microtask(() async {
+                          if (!mounted) return;
+                          await showQuickProfileSheet(context,
+                              userId: ownerUid);
+                        });
+                      },
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -3997,36 +4034,40 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: Colors.white10),
                     ),
-                    child: Column(
+                    child: GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 4,
+                      childAspectRatio: 2.45,
                       children: [
                         infoRow(Icons.tag_rounded, 'ID', publicId),
-                        infoRow(
-                          Icons.category_rounded,
-                          'التصنيف',
-                          category,
-                        ),
-                        infoRow(
-                          Icons.shield_outlined,
-                          'الخصوصية',
-                          visibilityLabel(),
-                        ),
-                        if (_showRoomLevel)
-                          infoRow(
-                            Icons.workspace_premium_rounded,
-                            'المستوى',
-                            'LV.' + level.toString(),
-                          ),
-                        infoRow(
-                          Icons.group_rounded,
-                          'المتصلون',
-                          online,
-                        ),
-                        infoRow(
-                          Icons.mic_external_on_rounded,
-                          _isCustomerServiceRoom ? 'المداخل' : 'المقاعد',
-                          (_roomSeatState?.seats.length ?? 0).toString(),
-                        ),
+                        infoRow(Icons.meeting_room_rounded, 'النوع', typeLabel),
+                        infoRow(Icons.flag_outlined, 'الدولة',
+                            _ownerLocation.trim().isEmpty
+                                ? '—' : _ownerLocation),
+                        infoRow(Icons.category_rounded, 'التصنيف', category),
+                        infoRow(Icons.access_time_rounded, 'الوقت',
+                            durationLabel),
+                        infoRow(Icons.workspace_premium_rounded, 'المستوى',
+                            _showRoomLevel ? 'LV.$level' : '—'),
+                        infoRow(Icons.group_rounded, 'الحضور', online),
+                        infoRow(Icons.lock_outline_rounded, 'كلمة المرور',
+                            visibility == 'password' ? 'محمية' : 'لا توجد'),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.admin_panel_settings_rounded),
+                      label: const Text('مشرفو الغرفة'),
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        _showRoomModeratorsSheet();
+                      },
                     ),
                   ),
                   if (description.isNotEmpty) ...[
