@@ -32,7 +32,6 @@ class _RoomModeratorManagerSheetState
     'manageMusic': 'الموسيقى',
     'manageMusicPolicy': 'سياسة الموسيقى',
     'managePk': 'PK',
-    'manageIds': 'تغيير ID الغرفة',
   };
 
   @override
@@ -58,7 +57,7 @@ class _RoomModeratorManagerSheetState
       case 'target_not_found':
         return 'لم يتم العثور على المستخدم.';
       case 'invalid_public_id':
-        return 'أدخل ID مستخدم صحيح من 6 أرقام.';
+        return 'أدخل معرّف مستخدم (ID) صالحًا.';
       case 'capabilities_required':
         return 'اختر صلاحية واحدة على الأقل.';
       case 'forbidden':
@@ -120,10 +119,9 @@ class _RoomModeratorManagerSheetState
                       TextField(
                         controller: publicIdController,
                         keyboardType: TextInputType.number,
-                        maxLength: 6,
                         style: const TextStyle(color: Colors.white),
                         decoration: const InputDecoration(
-                          labelText: 'ID المستخدم — 6 أرقام',
+                          labelText: 'معرّف المستخدم (ID)',
                           labelStyle: TextStyle(color: Colors.white60),
                           prefixIcon: Icon(
                             Icons.badge_rounded,
@@ -169,12 +167,12 @@ class _RoomModeratorManagerSheetState
                                 final publicId =
                                     publicIdController.text.trim();
                                 if (existing == null &&
-                                    !RegExp(r'^\d{6}$').hasMatch(publicId)) {
+                                    publicId.isEmpty) {
                                   ScaffoldMessenger.of(sheetContext)
                                       .showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'أدخل ID مستخدم صحيح من 6 أرقام.',
+                                        'أدخل معرّف المستخدم (ID).',
                                       ),
                                     ),
                                   );
