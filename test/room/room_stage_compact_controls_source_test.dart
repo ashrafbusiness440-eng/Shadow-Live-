@@ -28,6 +28,15 @@ void main() {
     expect(seats, contains('maxLines: 1,'));
   });
 
+  test('ranking and supporters sheets reject rapid duplicate taps', () {
+    expect(app, contains('bool _supportersSheetInFlight = false;'));
+    expect(app, contains('bool _rankingSheetInFlight = false;'));
+    expect(app, contains('if (_supportersSheetInFlight) return;'));
+    expect(app, contains('if (_rankingSheetInFlight) return;'));
+    expect(app, contains('_supportersSheetInFlight = false;'));
+    expect(app, contains('_rankingSheetInFlight = false;'));
+  });
+
   test('room sound and effects use small round controls below icons', () {
     final a = app.indexOf('class _RoomToolToggle extends StatelessWidget');
     final toggle = app.substring(a);
