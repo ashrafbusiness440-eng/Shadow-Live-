@@ -95,6 +95,15 @@ test("private effects observe existing message stream and do not replay history"
   assert.ok(chat.includes("CosmeticAssetVisual("));
   assert.ok(server.includes("giftEffectEventId: chatEffect"));
   assert.ok(server.includes("effectContexts"));
+  // Put effect metadata on the message read by both private chat streams,
+  // NOT inside the diary gift branch.
+  const chatGift = server.indexOf('db.writeCreate(messagePath, {');
+  const diaryGift = server.indexOf('const diaryMirrorPath', chatGift);
+  const eventField = server.indexOf('giftEffectEventId: chatEffect', chatGift);
+  assert.ok(chatGift >= 0 && diaryGift > chatGift && eventField > chatGift);
+  assert.ok(eventField < diaryGift,
+    'private gift effect metadata must be on the chat message itself');
+  assert.equal(server.slice(diaryGift).includes('giftEffectEventId: chatEffect'), false);
 });
 
 test("partial editor progress is private, debounced and never stored as a published gift",()=>{
