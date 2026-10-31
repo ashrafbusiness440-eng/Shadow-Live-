@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'control_api_endpoints.dart';
 import 'control_asset_manager_page.dart';
@@ -44,6 +46,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
   List<GiftCatalogItem> gifts = <GiftCatalogItem>[];
   List<GiftCatalogItem> drafts = <GiftCatalogItem>[];
   GiftCatalogItem? pendingDraft;
+  Map<String, dynamic>? editorDraft;
+  int editorDraftRevision = 0;
+  bool editorDraftConflict = false;
+
+  String get _editorBackupKey =>
+      'shadow_gift_editor_${controlAuth.currentUser?.uid ?? 'signed_out'}';
   bool statsOnly = false;
   bool canGrantBag = false;
   bool statsTotalsLoading = false;
@@ -207,6 +215,33 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
               .toList()
           : <GiftCatalogItem>[];
       loaded.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final remoteEditor = body['editorDraft'];
+      final remoteEditorRevision =
+          (body['editorDraftRevision'] as num?)?.toInt() ?? 0;
+      Map<String, dynamic>? localEditor;
+      bool localRevisionConflict = false;
+      try {
+        final preferences = await SharedPreferences.getInstance();
+        final backup = preferences.getString(_editorBackupKey);
+        if (backup != null) {
+          final decoded = jsonDecode(backup);
+          if (decoded is Map && decoded['payload'] is Map &&
+              decoded['editorRevision'] is int) {
+            final version = decoded['editorRevision'] as int;
+            if (version == remoteEditorRevision) {
+              localEditor = Map<String, dynamic>.from(decoded['payload'] as Map);
+            } else if (decoded['pending'] == true) {
+              // An unacknowledged local edit must survive even if another
+              // admin tab has advanced the remote draft revision.
+              localEditor = Map<String, dynamic>.from(decoded['payload'] as Map);
+              localRevisionConflict = true;
+            }
+          }
+        }
+      } catch (_) {
+        // Keep the server copy when browser persistence is unavailable.
+      }
+      final savedEditor = localEditor ?? remoteEditor;
       final rawDrafts = config is Map ? config['drafts'] : null;
       final loadedDrafts = rawDrafts is List
           ? rawDrafts.whereType<Map>().map((item) =>
@@ -230,6 +265,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         if (isStatsOnly) selectedSection = 3;
         drafts = isStatsOnly ? <GiftCatalogItem>[] : loadedDrafts;
         pendingDraft = null;
+        editorDraft = isStatsOnly ? null : savedEditor is Map
+            ? Map<String, dynamic>.from(savedEditor) : null;
+        editorDraftRevision = remoteEditorRevision;
+        editorDraftConflict = !isStatsOnly && localRevisionConflict;
         gifts = isStatsOnly ? <GiftCatalogItem>[] :
             loaded.isEmpty
                 ? List<GiftCatalogItem>.from(GiftCatalogService.fallbackGifts)
@@ -733,68 +772,218 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       message('احفظ التغييرات الحالية قبل تعديل المسودة.');
       return;
     }
+    if (editorDraftConflict) {
+      message('هناك تعديلات محفوظة على هذا الجهاز ومسودة أحدث على الخادم. راجع التعارض قبل استكمال العمل.');
+      return;
+    }
     editing = true;
     final current = index == null ? template : gifts[index];
+    final savedProgress = editorDraft;
+    final resume = savedProgress != null &&
+        ((index == null && template == null && savedProgress['kind'] == 'new') ||
+         (index != null && savedProgress['kind'] == 'edit' &&
+          savedProgress['id'] == current?.id))
+        ? savedProgress : null;
+    if (savedProgress != null && resume == null && !editSavedDraft) {
+      editing = false;
+      message('عندك مسودة تلقائية محفوظة. أكملها أو احذفها قبل فتح هدية أخرى.');
+      return;
+    }
     // Never reuse an ID already in the catalog, saved drafts or an unsaved
     // draft. Existing gift IDs remain immutable for historical ledgers.
     final generatedId = index == null && !editSavedDraft
-        ? nextGiftNumericId([
+        ? ((resume?['id'] is String &&
+              !gifts.any((g) => g.id == resume!['id']) &&
+              !drafts.any((g) => g.id == resume!['id']))
+            ? resume!['id'] as String : nextGiftNumericId([
             ...gifts.map((gift) => gift.id),
             ...drafts.map((gift) => gift.id),
             if (pendingDraft != null) pendingDraft!.id,
-          ])
+          ]))
         : null;
     final id = TextEditingController(
       text: generatedId ?? (current?.id ?? ''),
     );
     final nameAr = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}',
+      text: resume?['nameAr']?.toString() ??
+          (template == null || editSavedDraft ? (current?.nameAr ?? '') : 'نسخة من ${template.nameAr}'),
     );
     final price = TextEditingController(
-      text: current?.priceCoins.toString() ?? '',
+      text: resume?['priceText']?.toString() ??
+          current?.priceCoins.toString() ?? '',
     );
     final assetKey = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
+      text: resume?['assetKey']?.toString() ??
+          (template == null || editSavedDraft ? (current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default'),
     );
     final placeholder = TextEditingController(
-      text: current?.localPlaceholder ??
+      text: resume?['localPlaceholder']?.toString() ??
+          current?.localPlaceholder ??
           'assets/images/gifts/gift_placeholder.webp',
     );
-    var enabled = template == null || editSavedDraft ? (current?.enabled ?? true) : false;
-    var featured = current?.featured ?? false;
-    final allowedContexts = (current?.allowedContexts ?? const ['room', 'chat', 'diary']).toSet();
-    DateTime? visibleFrom = (current?.visibleFromMs ?? 0) > 0
-        ? DateTime.fromMillisecondsSinceEpoch(current!.visibleFromMs) : null;
-    DateTime? visibleUntil = (current?.visibleUntilMs ?? 0) > 0
-        ? DateTime.fromMillisecondsSinceEpoch(current!.visibleUntilMs) : null;
-    var category = current?.category ?? 'general';
-    var minVipLevel = current?.effectiveMinVipLevel ?? 0;
-    var isAnimated = template == null || editSavedDraft ? (current?.isAnimated ?? false) : false;
-    var effectMode = template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none';
+    var enabled = resume?['enabled'] is bool
+        ? resume!['enabled'] as bool
+        : (template == null || editSavedDraft ? (current?.enabled ?? true) : false);
+    var featured = resume?['featured'] is bool
+        ? resume!['featured'] as bool : current?.featured ?? false;
+    final allowedContexts = (resume?['allowedContexts'] is List
+        ? (resume!['allowedContexts'] as List).whereType<String>().toList()
+        : current?.allowedContexts ?? const ['room', 'chat', 'diary']).toSet();
+    final startMs = (resume?['visibleFromMs'] as num?)?.toInt() ??
+        current?.visibleFromMs ?? 0;
+    final endMs = (resume?['visibleUntilMs'] as num?)?.toInt() ??
+        current?.visibleUntilMs ?? 0;
+    DateTime? visibleFrom = startMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(startMs) : null;
+    DateTime? visibleUntil = endMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(endMs) : null;
+    var category = resume?['category']?.toString() ?? current?.category ?? 'general';
+    var minVipLevel = (resume?['minVipLevel'] as num?)?.toInt() ??
+        current?.effectiveMinVipLevel ?? 0;
+    var minWealthLevel = (resume?['minWealthLevel'] as num?)?.toInt() ??
+        current?.minWealthLevel ?? 0;
+    final effectContexts = (resume?['effectContexts'] is List
+        ? (resume!['effectContexts'] as List).whereType<String>().toList()
+        : current?.effectContexts ?? const ['room']).toSet();
+    var isAnimated = resume?['isAnimated'] is bool
+        ? resume!['isAnimated'] as bool
+        : (template == null || editSavedDraft ? (current?.isAnimated ?? false) : false);
+    var effectMode = resume?['effectMode']?.toString() ??
+        (template == null || editSavedDraft ? (current?.effectMode ?? 'none') : 'none');
     final effectAssetKey = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default',
+      text: resume?['effectAssetKey']?.toString() ??
+        (template == null || editSavedDraft ? (current?.effectiveEffectAssetKey ?? current?.assetKey ?? 'gifts.placeholder.default') : 'gifts.placeholder.default'),
     );
     final effectSoundAssetKey = TextEditingController(
-      text: template == null || editSavedDraft ? (current?.effectSoundAssetKey ?? '') : '',
+      text: resume?['effectSoundAssetKey']?.toString() ??
+          (template == null || editSavedDraft ? (current?.effectSoundAssetKey ?? '') : ''),
     );
     final effectMinQuantity = TextEditingController(
-      text: (template == null || editSavedDraft ? (current?.effectMinQuantity ?? 0) : 0).toString(),
+      text: resume?['effectMinQuantity']?.toString() ??
+          (template == null || editSavedDraft ? (current?.effectMinQuantity ?? 0) : 0).toString(),
     );
     final effectDurationMs = TextEditingController(
-      text: (current?.effectDurationMs ?? 2200).toString(),
+      text: resume?['effectDurationMs']?.toString() ??
+          (current?.effectDurationMs ?? 2200).toString(),
     );
     final effectSize = TextEditingController(
-      text: (current?.effectSize ?? 0).toString(),
+      text: resume?['effectSize']?.toString() ??
+          (current?.effectSize ?? 0).toString(),
     );
     final premiumBannerMinQuantity = TextEditingController(
-      text: (current?.premiumBannerMinQuantity ?? 0).toString(),
+      text: resume?['premiumBannerMinQuantity']?.toString() ??
+          (current?.premiumBannerMinQuantity ?? 0).toString(),
     );
     final affinityBasePoints = TextEditingController(
-      text: (current?.affinityBasePoints ?? 0).toString(),
+      text: resume?['affinityBasePoints']?.toString() ??
+          (current?.affinityBasePoints ?? 0).toString(),
     );
 
+    var saveAsDraft = resume?['saveAsDraft'] == true || editSavedDraft;
+
+    // Autosave partial input to a private editor draft. It does not publish
+    // or change catalog revision, and sends at most one update after typing
+    // settles rather than one request per keystroke.
+    Timer? autoSaveTimer;
+    Future<void> lastAutoSave = Future<void>.value();
+    int draftRevision = editorDraftRevision;
+    int changeSerial = 0;
+    bool progressChanged = false;
+    final autoSaveStatus = ValueNotifier<String>(
+        resume == null ? 'مسودة تلقائية غير محفوظة بعد' : 'تم استرجاع المسودة التلقائية');
+    Map<String, dynamic> editorSnapshot() => <String, dynamic>{
+      'kind': index == null ? 'new' : 'edit',
+      'id': id.text.trim(),
+      'nameAr': nameAr.text,
+      'priceText': price.text,
+      'assetKey': assetKey.text,
+      'localPlaceholder': placeholder.text,
+      'category': category,
+      'minVipLevel': minVipLevel,
+      'minWealthLevel': minWealthLevel,
+      'effectContexts': effectContexts.toList(),
+      'effectMode': effectMode,
+      'effectAssetKey': effectAssetKey.text,
+      'effectSoundAssetKey': effectSoundAssetKey.text,
+      'effectMinQuantity': effectMinQuantity.text,
+      'effectDurationMs': effectDurationMs.text,
+      'effectSize': effectSize.text,
+      'premiumBannerMinQuantity': premiumBannerMinQuantity.text,
+      'affinityBasePoints': affinityBasePoints.text,
+      'enabled': enabled,
+      'featured': featured,
+      'isAnimated': isAnimated,
+      'saveAsDraft': saveAsDraft,
+      'allowedContexts': allowedContexts.toList(),
+      'visibleFromMs': visibleFrom?.millisecondsSinceEpoch ?? 0,
+      'visibleUntilMs': visibleUntil?.millisecondsSinceEpoch ?? 0,
+    };
+    void saveProgressNow() {
+      if (editSavedDraft || !progressChanged) return;
+      autoSaveTimer?.cancel();
+      final snapshot = editorSnapshot();
+      final savedSerial = changeSerial;
+      lastAutoSave = lastAutoSave.then((_) async {
+        // Retain pending changes locally before attempting a network write.
+        try {
+          final preferences = await SharedPreferences.getInstance();
+          await preferences.setString(_editorBackupKey, jsonEncode({
+            'editorRevision': draftRevision,
+            'payload': snapshot,
+            'pending': true,
+          }));
+        } catch (_) {}
+        try {
+          final response = await post({
+            'action': 'autosaveEditor',
+            'expectedEditorRevision': draftRevision,
+            'payload': snapshot,
+          });
+          draftRevision =
+              (response['editorDraftRevision'] as num).toInt();
+          if (mounted) {
+            setState(() {
+              editorDraftRevision = draftRevision;
+              editorDraft = snapshot;
+            });
+          }
+          if (savedSerial == changeSerial) {
+            // Only clear the backup if no later input is waiting for save.
+            // The remote draft now contains this exact latest snapshot.
+            try {
+              final preferences = await SharedPreferences.getInstance();
+              await preferences.remove(_editorBackupKey);
+            } catch (_) {}
+          }
+          autoSaveStatus.value = 'تم حفظ المسودة تلقائياً';
+        } catch (failure) {
+          // Keep the in-memory progress visible without another page reload.
+          if (mounted) setState(() => editorDraft = snapshot);
+          autoSaveStatus.value =
+              failure.toString().contains('gift_editor_conflict')
+                  ? 'تم تعديل المسودة من نافذة أخرى، ولم نكتب فوق التعديلات الأحدث.'
+                  : 'تعذّر الحفظ على الخادم؛ احتفظنا بنسخة على هذا الجهاز.';
+        }
+      });
+    }
+    void markProgressDirty() {
+      if (editSavedDraft) return;
+      progressChanged = true;
+      changeSerial++;
+      autoSaveStatus.value = 'جارٍ تجهيز الحفظ التلقائي...';
+      autoSaveTimer?.cancel();
+      autoSaveTimer = Timer(
+        const Duration(milliseconds: 1400), saveProgressNow);
+    }
+    for (final controller in <TextEditingController>[
+      nameAr, price, assetKey, placeholder, effectAssetKey,
+      effectSoundAssetKey, effectMinQuantity, effectDurationMs,
+      effectSize, premiumBannerMinQuantity, affinityBasePoints,
+    ]) {
+      controller.addListener(markProgressDirty);
+    }
+
     bool previewOpen = false;
-    var saveAsDraft = editSavedDraft;
     final result = await showDialog<GiftCatalogItem>(
       context: context,
       barrierDismissible: false,
@@ -806,6 +995,15 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
+                  ValueListenableBuilder<String>(
+                    valueListenable: autoSaveStatus,
+                    builder: (_, status, __) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(status,
+                        style: const TextStyle(
+                          color: Colors.amberAccent, fontSize: 11)),
+                    ),
+                  ),
                   TextFormField(
                     initialValue: id.text,
                     readOnly: true,
@@ -843,15 +1041,18 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       if (value != null) {
                         setLocal(() {
                           category = value;
-                          if (category == 'vip' && minVipLevel == 0) {
-                            minVipLevel = 4;
+                          if (category == 'vip') {
+                            minVipLevel = minVipLevel < 4 ? 4 : minVipLevel;
+                            minWealthLevel = 0;
                           }
                         });
+                        markProgressDirty();
                       }
                     },
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
+                    key: ValueKey('gift-vip-$minVipLevel-$minWealthLevel'),
                     value: minVipLevel,
                     decoration: const InputDecoration(
                       labelText: 'الحد الأدنى VIP',
@@ -867,8 +1068,34 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       DropdownMenuItem(value: 9, child: Text('VIP9+')),
                       DropdownMenuItem(value: 10, child: Text('VIP10')),
                     ],
-                    onChanged: (value) {
-                      if (value != null) setLocal(() => minVipLevel = value);
+                    onChanged: minWealthLevel > 0 ? null : (value) {
+                      if (value != null) {
+                        setLocal(() => minVipLevel = value);
+                        markProgressDirty();
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    key: ValueKey('gift-wealth-$minVipLevel-$minWealthLevel'),
+                    value: minWealthLevel,
+                    decoration: const InputDecoration(
+                      labelText: 'شرط مستوى الثروة',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 0, child: Text('بدون شرط')),
+                      DropdownMenuItem(value: 11, child: Text('LV 11–15')),
+                      DropdownMenuItem(value: 16, child: Text('LV 16–20')),
+                      DropdownMenuItem(value: 21, child: Text('LV 21–25')),
+                      DropdownMenuItem(value: 26, child: Text('LV 26–30')),
+                      DropdownMenuItem(value: 31, child: Text('LV 31–35')),
+                    ],
+                    onChanged: minVipLevel > 0 || category == 'vip' ? null : (value) {
+                      if (value != null) {
+                        setLocal(() => minWealthLevel = value);
+                        markProgressDirty();
+                      }
                     },
                   ),
                   const SizedBox(height: 10),
@@ -921,8 +1148,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   const SizedBox(height: 10),
                   SwitchListTile(
                     value: isAnimated,
-                    onChanged: (value) =>
-                        setLocal(() => isAnimated = value),
+                    onChanged: (value) {
+                      setLocal(() => isAnimated = value);
+                      markProgressDirty();
+                    },
                     title: const Text('علامة الحركة القديمة في الكتالوج'),
                     subtitle: const Text(
                       'الصور الجديدة لقائمة الهدايا ثابتة؛ ملف الحركة مستقل '
@@ -935,7 +1164,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   DropdownButtonFormField<String>(
                     value: effectMode,
                     decoration: const InputDecoration(
-                      labelText: 'نوع مؤثر الغرفة',
+                      labelText: 'نوع مؤثر الهدية',
                       border: OutlineInputBorder(),
                     ),
                     items: const [
@@ -966,9 +1195,35 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                             effectMinQuantity.text = '1';
                           }
                         });
+                        markProgressDirty();
                       }
                     },
                   ),
+                  const SizedBox(height: 8),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('أين يظهر مؤثر الهدية؟'),
+                    subtitle: Text('يمكن اختيار الغرفة والرسائل الخاصة معاً. هذا مستقل عن أماكن إرسال الهدية.'),
+                  ),
+                  for (final place in const [
+                    ('room', 'الغرف الصوتية'),
+                    ('chat', 'الرسائل الخاصة'),
+                  ])
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(place.$2),
+                      value: effectContexts.contains(place.$1),
+                      onChanged: (selected) {
+                        setLocal(() {
+                          if (selected == true) {
+                            effectContexts.add(place.$1);
+                          } else {
+                            effectContexts.remove(place.$1);
+                          }
+                        });
+                        markProgressDirty();
+                      },
+                    ),
                   const SizedBox(height: 10),
                   field(
                     effectAssetKey,
@@ -1058,7 +1313,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       value: saveAsDraft,
                       onChanged: editSavedDraft || hasUnsavedChanges || categoryUnsaved
                           ? null
-                          : (value) => setLocal(() => saveAsDraft = value),
+                          : (value) {
+                              setLocal(() => saveAsDraft = value);
+                              markProgressDirty();
+                            },
                       title: const Text('حفظ الهدية كمسودة'),
                       subtitle: const Text('لا تظهر الهدية للمستخدمين إلا بعد نشرها من قسم المسودات.'),
                       contentPadding: EdgeInsets.zero,
@@ -1078,13 +1336,16 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       contentPadding: EdgeInsets.zero,
                       title: Text(place.$2),
                       value: allowedContexts.contains(place.$1),
-                      onChanged: (selected) => setLocal(() {
-                        if (selected == true) {
-                          allowedContexts.add(place.$1);
-                        } else {
-                          allowedContexts.remove(place.$1);
-                        }
-                      }),
+                      onChanged: (selected) {
+                        setLocal(() {
+                          if (selected == true) {
+                            allowedContexts.add(place.$1);
+                          } else {
+                            allowedContexts.remove(place.$1);
+                          }
+                        });
+                        markProgressDirty();
+                      },
                     ),
                   const SizedBox(height: 10),
                   const ListTile(
@@ -1100,7 +1361,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       if (visibleFrom != null)
                         IconButton(
                           tooltip: 'إلغاء موعد البداية',
-                          onPressed: () => setLocal(() => visibleFrom = null),
+                          onPressed: () {
+                            setLocal(() => visibleFrom = null);
+                            markProgressDirty();
+                          },
                           icon: const Icon(Icons.close_rounded),
                         ),
                       IconButton(
@@ -1109,6 +1373,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                           final selected = await chooseGiftMoment(dialogContext, visibleFrom);
                           if (selected != null && dialogContext.mounted) {
                             setLocal(() => visibleFrom = selected);
+                            markProgressDirty();
                           }
                         },
                         icon: const Icon(Icons.calendar_month_outlined),
@@ -1123,7 +1388,10 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                       if (visibleUntil != null)
                         IconButton(
                           tooltip: 'إلغاء موعد النهاية',
-                          onPressed: () => setLocal(() => visibleUntil = null),
+                          onPressed: () {
+                            setLocal(() => visibleUntil = null);
+                            markProgressDirty();
+                          },
                           icon: const Icon(Icons.close_rounded),
                         ),
                       IconButton(
@@ -1132,6 +1400,7 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                           final selected = await chooseGiftMoment(dialogContext, visibleUntil);
                           if (selected != null && dialogContext.mounted) {
                             setLocal(() => visibleUntil = selected);
+                            markProgressDirty();
                           }
                         },
                         icon: const Icon(Icons.calendar_month_outlined),
@@ -1141,13 +1410,19 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                   const SizedBox(height: 8),
                   SwitchListTile(
                     value: enabled,
-                    onChanged: (value) => setLocal(() => enabled = value),
+                    onChanged: (value) {
+                      setLocal(() => enabled = value);
+                      markProgressDirty();
+                    },
                     title: const Text('الهدية مفعلة'),
                     contentPadding: EdgeInsets.zero,
                   ),
                   SwitchListTile(
                     value: featured,
-                    onChanged: (value) => setLocal(() => featured = value),
+                    onChanged: (value) {
+                      setLocal(() => featured = value);
+                      markProgressDirty();
+                    },
                     title: const Text('هدية مميزة في الكتالوج'),
                     contentPadding: EdgeInsets.zero,
                   ),
@@ -1313,6 +1588,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                         (parsedAffinity < 2 || parsedAffinity.isOdd)) ||
                     (!relationshipGift && parsedAffinity != 0) ||
                     allowedContexts.isEmpty ||
+                    (minVipLevel > 0 && minWealthLevel > 0) ||
+                    !const [0, 11, 16, 21, 26, 31].contains(minWealthLevel) ||
                     (visibleFrom != null && visibleUntil != null &&
                         !visibleUntil!.isAfter(visibleFrom!))) {
                   message('راجع بيانات الهدية والمؤثر ونقاط العلاقة.');
@@ -1331,6 +1608,11 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     assetKey: cleanAsset,
                     localPlaceholder: cleanPlaceholder,
                     minVipLevel: minVipLevel,
+                    minWealthLevel: minWealthLevel,
+                    effectContexts: [
+                      for (final value in const ['room', 'chat'])
+                        if (effectContexts.contains(value)) value,
+                    ],
                     isAnimated: isAnimated,
                     effectMode: effectMode,
                     effectAssetKey: cleanEffectAssetKey,
@@ -1356,6 +1638,12 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
       ),
     );
 
+    autoSaveTimer?.cancel();
+    // Include the last keystroke even when approval is pressed before debounce.
+    if (progressChanged) saveProgressNow();
+    await lastAutoSave;
+    autoSaveStatus.dispose();
+
     id.dispose();
     nameAr.dispose();
     price.dispose();
@@ -1373,6 +1661,20 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     if (result == null || !mounted) return;
     if (saveAsDraft) {
       await storeDraft(result);
+      if (pendingDraft == null) {
+        try {
+          final cleared = await post({
+            'action': 'clearEditor',
+            'expectedEditorRevision': editorDraftRevision,
+          });
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.remove(_editorBackupKey);
+          } catch (_) {}
+          editorDraftRevision = (cleared['editorDraftRevision'] as num).toInt();
+          if (mounted) setState(() => editorDraft = null);
+        } catch (_) {}
+      }
       return;
     }
     setState(() {
@@ -1386,6 +1688,20 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
     // Persist the approved gift immediately with the existing transactional
     // catalog revision guard. Failed writes preserve unsaved edits for retry.
     await save();
+    if (!hasUnsavedChanges) {
+      try {
+        final cleared = await post({
+            'action': 'clearEditor',
+            'expectedEditorRevision': editorDraftRevision,
+          });
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.remove(_editorBackupKey);
+          } catch (_) {}
+          editorDraftRevision = (cleared['editorDraftRevision'] as num).toInt();
+        if (mounted) setState(() => editorDraft = null);
+      } catch (_) {}
+    }
   }
 
   Widget field(
@@ -2032,6 +2348,87 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (editorDraft != null)
+              ListTile(
+                leading: const Icon(Icons.autorenew_rounded,
+                  color: Colors.amberAccent),
+                title: Text('مسودة تلقائية: ${editorDraft?['nameAr'] ?? 'هدية جديدة'}'),
+                subtitle: Text(editorDraftConflict
+                    ? 'توجد مسودة أحدث على الخادم. بقيت نسختك المحلية محفوظة؛ اختر استكمالها صراحةً أو حذفها من هذا الجهاز فقط.'
+                    : 'محفوظة بشكل خاص ولم تُنشر. يمكنك استكمالها.'),
+                trailing: Wrap(
+                  spacing: 2,
+                  children: [
+                    TextButton(
+                      onPressed: editing || saving ? null : () async {
+                        if (editorDraftConflict) {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('تعارض بين المسودات'),
+                              content: const Text(
+                                'هناك مسودة أحدث على الخادم، ونسخة مختلفة محفوظة على هذا الجهاز. '
+                                'استكمال النسخة المحلية قد يستبدل المسودة الأحدث عند الحفظ التلقائي. '
+                                'لن تتغير هدية منشورة قبل الضغط على «اعتماد وحفظ».'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('إلغاء'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('استكمال النسخة المحلية'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed != true || !mounted) return;
+                          setState(() => editorDraftConflict = false);
+                        }
+                        final value = editorDraft;
+                        if (value?['kind'] == 'edit') {
+                          final existing = gifts.indexWhere(
+                            (g) => g.id == value?['id']);
+                          if (existing >= 0) editGift(existing);
+                        } else {
+                          editGift();
+                        }
+                      },
+                      child: const Text('استكمال'),
+                    ),
+                    TextButton(
+                      onPressed: editing || saving ? null : () async {
+                        try {
+                          if (editorDraftConflict) {
+                            // Discard only this device's unacknowledged copy.
+                            // Do not destroy the newer server draft.
+                            final preferences = await SharedPreferences.getInstance();
+                            await preferences.remove(_editorBackupKey);
+                            if (mounted) await load();
+                            return;
+                          }
+                          final cleared = await post({
+                            'action': 'clearEditor',
+                            'expectedEditorRevision': editorDraftRevision,
+                          });
+                          try {
+                            final preferences = await SharedPreferences.getInstance();
+                            await preferences.remove(_editorBackupKey);
+                          } catch (_) {}
+                          if (mounted) setState(() {
+                            editorDraft = null;
+                            editorDraftRevision =
+                                (cleared['editorDraftRevision'] as num).toInt();
+                          });
+                        } catch (_) {
+                          message('تعذر حذف المسودة التلقائية.');
+                        }
+                      },
+                      child: Text(editorDraftConflict ? 'حذف نسخة الجهاز' : 'حذف'),
+                    ),
+                  ],
+                ),
+              ),
             ListTile(
               leading: const Icon(Icons.edit_note_outlined),
               title: const Text('مسودات الهدايا'),
@@ -2250,6 +2647,8 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                                       assetKey: item.assetKey,
                                       localPlaceholder: item.localPlaceholder,
                                       minVipLevel: item.minVipLevel,
+                                      minWealthLevel: item.minWealthLevel,
+                                      effectContexts: item.effectContexts,
                                       isAnimated: item.isAnimated,
                                       effectMode: item.effectMode,
                                       effectAssetKey: item.effectAssetKey,

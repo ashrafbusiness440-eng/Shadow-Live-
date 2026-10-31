@@ -81,6 +81,12 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   String _recipientMode = 'users';
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  late final String _senderUidAtOpen = _uid;
+  void _requireOriginalAccount() {
+    if (_senderUidAtOpen.isEmpty || _uid != _senderUidAtOpen) {
+      throw StateError('gift_account_changed');
+    }
+  }
 
   List<RoomPresenceUser> get _liveParticipants =>
       widget.currentParticipants?.call() ?? widget.participants;
@@ -181,11 +187,25 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   Set<String> get _currentSelectedIds =>
       _selectedIds.intersection(_availableReceiverIds);
 
-  bool get _canSend => switch (_recipientMode) {
+  // The combo must use the same actual room recipients, not merely the
+  // same 'all room' or 'all mics' toggle after the roster has changed.
+  // Uses the existing room snapshot with no new stream or backend read.
+  Set<String> get _comboRecipientIds => switch (_recipientMode) {
+        'all_mics' => _micIds,
+        'all_room' => <String>{
+            for (final user in _participants) user.uid,
+            if (_uid.isNotEmpty) _uid,
+          },
+        _ => _currentSelectedIds,
+      };
+
+  bool get _canSend => _senderUidAtOpen.isNotEmpty &&
+      _uid == _senderUidAtOpen &&
+      (switch (_recipientMode) {
         'all_mics' => _micIds.isNotEmpty,
         'all_room' => _participants.isNotEmpty || _uid.isNotEmpty,
         _ => _currentSelectedIds.isNotEmpty,
-      };
+      });
 
   RoomPresenceUser? _participant(String uid) {
     for (final user in _participants) {
@@ -272,6 +292,13 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
+    _requireOriginalAccount();
+    // Freeze the intended recipients before any asynchronous reconnect.
+    // A change during reconnection must never redirect a paid send.
+    final modeAtTap = _recipientMode;
+    final idsAtTap = _currentSelectedIds.toList(growable: false)..sort();
+    final recipientsAtTap =
+        (_comboRecipientIds.toList()..sort()).join('|');
     // Recover the EXISTING room connection on demand (no new listener).
     // Even if reconnect is unavailable, send the request and let the
     // server independently verify sender/recipient live-room presence.
@@ -284,24 +311,31 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         // non-authoritative local connectivity error.
       }
     }
+    _requireOriginalAccount();
+    if (modeAtTap != _recipientMode ||
+        recipientsAtTap != (_comboRecipientIds.toList()..sort()).join('|')) {
+      throw StateError('gift_recipients_changed');
+    }
     final result = await _gifts.send(
       roomId: widget.roomId,
       giftId: gift.id,
       quantity: quantity,
-      recipientMode: _recipientMode,
-      recipientIds: _currentSelectedIds.toList(growable: false),
+      recipientMode: modeAtTap,
+      recipientIds: idsAtTap,
       useGiftBag: useGiftBag,
     );
+    _requireOriginalAccount();
     final balance = (result['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
     final recipientCount =
         (result['recipientCount'] as num?)?.toInt() ??
-        (_recipientMode == 'users' ? _selectedIds.length : 0);
+        (modeAtTap == 'users' ? idsAtTap.length : 0);
     final totalCost = (result['totalCost'] as num?)?.toInt() ?? 0;
     final paidCost =
         (result['paidCost'] as num?)?.toInt() ?? (useGiftBag ? 0 : totalCost);
     return GiftPickerSendResult(
       balanceCoins: balance,
+      recipientCount: recipientCount,
       wealthDeltaCoins: paidCost,
       bagQuantityRemaining:
           (result['bagQuantityRemaining'] as num?)?.toInt(),
@@ -488,6 +522,11 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       UnifiedGiftPickerSheet(
         title: 'الهدايا',
         recipientArea: _recipientArea(),
+        comboContextKey: [
+          widget.roomId,
+          _recipientMode,
+          ...(_comboRecipientIds.toList()..sort()),
+        ].join('|'),
         canSend: _canSend,
         onSend: _send,
       );

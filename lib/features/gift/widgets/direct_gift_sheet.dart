@@ -208,17 +208,22 @@ class _DirectGiftContextState extends State<_DirectGiftContext> {
     } catch (_) {}
 
     if (response.statusCode < 200 || response.statusCode >= 300 || body['ok'] != true) {
-      // A definite client-side rejection cannot have charged the account.
-      // Keep the key for timeouts and server failures, where commit is unclear.
+      final serverCode = (body['code'] ?? '').toString();
+      // Known pre-charge 409 validation failures have a definitive receipt.
+      // Do not mislabel insufficient coins as an unknown financial outcome.
+      final definiteConflict = response.statusCode == 409 &&
+          const <String>{
+            'insufficient_balance', 'gift_bag_insufficient', 'gift_inactive',
+          }.contains(serverCode);
       if (response.statusCode >= 400 &&
           response.statusCode < 500 &&
           response.statusCode != 408 &&
-          response.statusCode != 409) {
+          (response.statusCode != 409 || definiteConflict)) {
         _clearRetryReservation();
       }
       if (response.statusCode >= 500 ||
           response.statusCode == 408 ||
-          response.statusCode == 409 ||
+          (response.statusCode == 409 && !definiteConflict) ||
           (response.statusCode >= 200 && response.statusCode < 300 && body['code'] == null)) {
         throw StateError('gift_confirmation_pending');
       }

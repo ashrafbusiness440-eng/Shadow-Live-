@@ -3,6 +3,7 @@
 // economy endpoints. Privileges are checked on the authenticated server.
 const EDIT_ACTIONS = new Set([
   "save", "saveCategories", "saveDraft", "publishDraft", "discardDraft",
+  "autosaveEditor", "clearEditor",
 ]);
 
 export function giftAdminAccess(user = {}, action = "") {

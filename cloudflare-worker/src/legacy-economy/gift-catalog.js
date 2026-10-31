@@ -9,6 +9,9 @@ import { GIFT_STATS_PAGE_LIMIT, safeGiftTransactionRow, summarizeRecentGiftTrans
 import { giftAvailableFor, validateGiftAvailability } from "../gift-availability-policy.js";
 import { saveCatalogGiftDraft, chooseGiftDraftForPublication, removeCatalogGiftDraft } from "../gift-draft-policy.js";
 import { giftCategoryDefinitions, giftCategoryEnabled, giftCategoryIdSet, validateGiftCategoryDefinitions } from "../gift-category-policy.js";
+import { validateGiftEligibility } from "../gift-eligibility-policy.js";
+import { activeEffectiveVipLevelFromUser } from "../vip-runtime.js";
+import { loadUserLevelPolicy, levelFromPoints } from "../user-level-policy.js";
 
 const EFFECT_MODES = new Set(["none", "seat", "cinematic", "legendary"]);
 
@@ -130,6 +133,8 @@ function publicCatalog(config) {
       featured: item.featured === true,
       sortOrder: Number(item.sortOrder || 0),
       minVipLevel: giftMinVipLevel(item),
+      minWealthLevel: Number(item.minWealthLevel || 0),
+      effectContexts: Array.isArray(item.effectContexts) ? item.effectContexts : ["room"],
       assetKey: clean(item.assetKey || "gifts.placeholder.default"),
       localPlaceholder: clean(
         item.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
@@ -188,6 +193,14 @@ function validateGifts(raw, categoryIds) {
       Number.isSafeInteger(rawMinVipLevel) && rawMinVipLevel >= 0 && rawMinVipLevel <= 10
         ? rawMinVipLevel
         : -1;
+    const minWealthLevel = Number(item?.minWealthLevel ?? 0);
+    const effectContexts = item?.effectContexts ?? ["room"];
+    validateGiftEligibility({ category, minVipLevel, minWealthLevel });
+    if (!Array.isArray(effectContexts) || effectContexts.length > 2 ||
+        new Set(effectContexts).size !== effectContexts.length ||
+        effectContexts.some((value) => !["room", "chat"].includes(value))) {
+      throw Error("invalid_gift_effect_contexts");
+    }
     const assetKey = clean(item?.assetKey || "gifts.placeholder.default");
     const localPlaceholder = clean(
       item?.localPlaceholder || "assets/images/gifts/gift_placeholder.webp",
@@ -291,6 +304,8 @@ function validateGifts(raw, categoryIds) {
       enabled,
       featured,
       minVipLevel,
+      minWealthLevel,
+      effectContexts,
       sortOrder: index,
       assetKey,
       localPlaceholder,
@@ -330,12 +345,15 @@ export async function handler(req, res) {
       const user = userSnap.data() || {};
       assertUserDocumentSessionState(decoded, user);
       const balance = Math.max(0, Number(user.coins ?? user.balance ?? 0));
+      const levelPolicy = await loadUserLevelPolicy(db);
       return out(res, 200, {
         ok: true,
         gifts: publicCatalog(state.config),
         categories: giftCategoryDefinitions(state.config).filter((cat) => cat.enabled),
         bag,
         balance: Number.isSafeInteger(balance) ? balance : 0,
+        senderVipLevel: activeEffectiveVipLevelFromUser(user, Date.now()),
+        senderWealthLevel: levelFromPoints(levelPolicy.wealth, Number(user.wealthPoints || 0)),
       });
     }
 
@@ -462,13 +480,58 @@ export async function handler(req, res) {
         });
       }
       // Administrative editing must see the current revision, not a stale cache.
-      const snap = await ref.get();
+      const [snap, editorSnapshot] = await Promise.all([
+        ref.get(),
+        db.collection("gift_catalog_editor_drafts").doc(uid).get(),
+      ]);
       return out(res, 200, {
         ok: true,
         canGrantBag,
         exists: snap.exists,
         config: snap.exists ? snap.data() : null,
+        editorDraft: editorSnapshot.exists ? (editorSnapshot.data()?.payload || null) : null,
+        editorDraftRevision: editorSnapshot.exists ? Number(editorSnapshot.data()?.revision || 0) : 0,
       });
+    }
+
+    // Partial, private editor progress is never published in the Gift Catalog.
+    // It uses a separate per-admin document, so typing cannot change the
+    // catalog's optimistic revision or invalidate the public cache.
+    if (action === "autosaveEditor" || action === "clearEditor") {
+      const expectedRevision = req.body?.expectedEditorRevision;
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        throw Error("invalid_gift_editor_revision");
+      }
+      const isSave = action === "autosaveEditor";
+      const payload = isSave ? req.body?.payload : null;
+      if (isSave) {
+        if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+            JSON.stringify(payload).length > 12000 ||
+            Object.keys(payload).length > 42) {
+          throw Error("invalid_gift_editor_draft");
+        }
+        const key = clean(payload.id);
+        if (!/^[a-z0-9_]{2,64}$/.test(key)) throw Error("invalid_gift_id");
+        if (!["new", "edit"].includes(payload.kind)) {
+          throw Error("invalid_gift_editor_draft");
+        }
+      }
+      const editorRef = db.collection("gift_catalog_editor_drafts").doc(uid);
+      let nextRevision = 0;
+      await db.runTransaction(async (tx) => {
+        const current = await tx.get(editorRef);
+        const priorRevision = current.exists
+          ? Number(current.data()?.revision || 0) : 0;
+        if (priorRevision !== expectedRevision) {
+          throw Error("gift_editor_conflict");
+        }
+        nextRevision = priorRevision + 1;
+        tx.set(editorRef, {
+          payload, revision: nextRevision,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      });
+      return out(res, 200, { ok: true, editorDraftRevision: nextRevision });
     }
 
     if (action === "save") {
@@ -753,9 +816,14 @@ export async function handler(req, res) {
         ? 401
         : code === "forbidden"
           ? 403
-          : code === "gift_catalog_conflict"
+          : code === "gift_catalog_conflict" || code === "gift_editor_conflict"
             ? 409
             : [
+              "invalid_gift_editor_draft",
+              "invalid_gift_editor_revision",
+              "invalid_gift_wealth_level",
+              "invalid_gift_eligibility_combination",
+              "invalid_gift_effect_contexts",
               "invalid_gift_categories",
               "invalid_gift_category_id",
               "invalid_gift_category_name",

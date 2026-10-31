@@ -15,6 +15,8 @@ class GiftCatalogItem {
     required this.assetKey,
     required this.localPlaceholder,
     this.minVipLevel = 0,
+    this.minWealthLevel = 0,
+    this.effectContexts = const ['room'],
     this.isAnimated = false,
     this.effectMode = 'none',
     this.effectAssetKey = '',
@@ -39,6 +41,8 @@ class GiftCatalogItem {
   final String assetKey;
   final String localPlaceholder;
   final int minVipLevel;
+  final int minWealthLevel;
+  final List<String> effectContexts;
   final bool isAnimated;
   final String effectMode;
   final String effectAssetKey;
@@ -83,6 +87,10 @@ class GiftCatalogItem {
           .toString(),
       minVipLevel: (map['minVipLevel'] as num?)?.toInt() ??
           ((map['category'] ?? '').toString() == 'vip' ? 4 : 0),
+      minWealthLevel: (map['minWealthLevel'] as num?)?.toInt() ?? 0,
+      effectContexts: map['effectContexts'] is List
+          ? (map['effectContexts'] as List).whereType<String>().toList()
+          : const ['room'],
       isAnimated: map['isAnimated'] == true,
       effectMode: (map['effectMode'] ?? 'none').toString(),
       effectAssetKey: (map['effectAssetKey'] ?? '').toString(),
@@ -116,6 +124,8 @@ class GiftCatalogItem {
         'assetKey': assetKey,
         'localPlaceholder': localPlaceholder,
         'minVipLevel': effectiveMinVipLevel,
+        'minWealthLevel': minWealthLevel,
+        'effectContexts': effectContexts,
         'isAnimated': isAnimated,
         'effectMode': effectMode,
         'effectAssetKey': effectiveEffectAssetKey,
@@ -141,6 +151,7 @@ class GiftCatalogService {
   static const Duration _freshFor = Duration(seconds: 30);
   static const Duration _staleFor = Duration(minutes: 5);
   static List<GiftCatalogItem>? _cachedCatalog;
+  static String? _cachedOwnerUid;
   static Map<String, String> _categoryNames = <String, String>{};
   static Map<String, String> _categoryImageKeys = <String, String>{};
   static List<String> _categoryOrder = <String>[];
@@ -149,6 +160,10 @@ class GiftCatalogService {
   static DateTime? _loadedAt;
   static Future<List<GiftCatalogItem>>? _inflight;
   static int? _cachedBalanceCoins;
+  static int? _cachedSenderVipLevel;
+  static int? _cachedSenderWealthLevel;
+  static int? get cachedSenderVipLevel => _cachedSenderVipLevel;
+  static int? get cachedSenderWealthLevel => _cachedSenderWealthLevel;
   static Map<String, int> _cachedBagQuantities = <String, int>{};
 
   static int? get cachedBalanceCoins => _cachedBalanceCoins;
@@ -355,6 +370,13 @@ class GiftCatalogService {
     bool forceRefresh = false,
     http.Client? client,
   }) async {
+    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
+    if (_cachedOwnerUid != ownerUid) {
+      // Balances, eligibility and bag contents are account-scoped. An
+      // in-flight response from a previous login must not cross accounts.
+      clearCacheForTests();
+      _cachedOwnerUid = ownerUid;
+    }
     final now = DateTime.now();
     final cached = _cachedCatalog;
     final loadedAt = _loadedAt;
@@ -371,10 +393,18 @@ class GiftCatalogService {
     _inflight = request;
     try {
       final items = await request;
+      if (_cachedOwnerUid != ownerUid ||
+          FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+        throw StateError('gift_account_changed');
+      }
       _cachedCatalog = List<GiftCatalogItem>.unmodifiable(items);
       _loadedAt = DateTime.now();
       return _cachedCatalog!;
     } catch (_) {
+      if (_cachedOwnerUid != ownerUid ||
+          FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+        rethrow;
+      }
       if (cached != null &&
           loadedAt != null &&
           now.difference(loadedAt) < _staleFor) {
@@ -421,6 +451,12 @@ class GiftCatalogService {
       if (response.statusCode != 200 || body['ok'] != true) {
         throw StateError((body['code'] ?? 'gift_catalog_failed').toString());
       }
+      if (_cachedOwnerUid != user.uid ||
+          FirebaseAuth.instance.currentUser?.uid != user.uid) {
+        throw StateError('gift_account_changed');
+      }
+      _cachedSenderVipLevel = (body['senderVipLevel'] as num?)?.toInt();
+      _cachedSenderWealthLevel = (body['senderWealthLevel'] as num?)?.toInt();
       final balance = (body['balance'] as num?)?.toInt();
       if (balance != null && balance >= 0) {
         _cachedBalanceCoins = balance;
@@ -465,6 +501,7 @@ class GiftCatalogService {
   }
 
   static void clearCacheForTests() {
+    _cachedOwnerUid = null;
     _cachedCatalog = null;
     _categoryNames = <String, String>{};
     _categoryImageKeys = <String, String>{};
@@ -472,6 +509,8 @@ class GiftCatalogService {
     _loadedAt = null;
     _inflight = null;
     _cachedBalanceCoins = null;
+    _cachedSenderVipLevel = null;
+    _cachedSenderWealthLevel = null;
     _cachedBagQuantities = <String, int>{};
   }
 

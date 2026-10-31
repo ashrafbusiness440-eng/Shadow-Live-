@@ -16,12 +16,14 @@ class GiftPickerSendResult {
     this.wealthDeltaCoins = 0,
     this.bagQuantityRemaining,
     this.message = '',
+    this.recipientCount = 1,
   });
 
   final int? balanceCoins;
   final int wealthDeltaCoins;
   final int? bagQuantityRemaining;
   final String message;
+  final int recipientCount;
 }
 
 typedef GiftPickerSender = Future<GiftPickerSendResult> Function(
@@ -38,6 +40,7 @@ class UnifiedGiftPickerSheet extends StatefulWidget {
     required this.canSend,
     required this.onSend,
     this.giftContext = 'room',
+    this.comboContextKey = '',
   });
 
   final String title;
@@ -45,12 +48,14 @@ class UnifiedGiftPickerSheet extends StatefulWidget {
   final bool canSend;
   final GiftPickerSender onSend;
   final String giftContext;
+  final String comboContextKey;
 
   @override
   State<UnifiedGiftPickerSheet> createState() => _UnifiedGiftPickerSheetState();
 }
 
-class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
+class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
+    with SingleTickerProviderStateMixin {
   List<GiftCatalogItem> _catalog = const [];
   GiftCatalogItem? _selected;
   String _category = 'general';
@@ -67,18 +72,91 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   bool _loading = true;
   bool _sending = false;
   String? _error;
+  late final AnimationController _comboCountdown;
+  GiftCatalogItem? _comboGift;
+  int _comboQuantity = 1;
+  int _comboRecipientCount = 1;
+  int _comboTotal = 0;
+  bool _comboBag = false;
+  // Unknown network confirmation may already have committed a gift. Only
+  // the exact same idempotent operation may be retried in this sheet.
+  String? _uncertainSendFingerprint;
+  String _sendFingerprint(GiftCatalogItem gift, int quantity, bool bag) =>
+      [gift.id, quantity.toString(), bag.toString(),
+       widget.giftContext, widget.comboContextKey].join('|');
+
+
 
   @override
   void initState() {
     super.initState();
     _balanceCoins = GiftCatalogService.cachedBalanceCoins;
     _levelService = UserLevelService();
+    _comboCountdown = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _clearCombo());
+        }
+      });
     _load();
     unawaited(_loadWealth());
   }
 
   @override
+  void didUpdateWidget(covariant UnifiedGiftPickerSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.comboContextKey != widget.comboContextKey) {
+      _clearCombo();
+    }
+  }
+
+  void _clearCombo() {
+    _comboCountdown.stop();
+    _comboCountdown.reset();
+    _comboGift = null;
+    _comboTotal = 0;
+  }
+
+  void _restartCombo(GiftCatalogItem gift, bool bag, int recipientCount) {
+    if (_comboGift?.id != gift.id || _comboQuantity != _quantity ||
+        _comboBag != bag) {
+      _comboTotal = 0;
+    }
+    _comboGift = gift;
+    _comboQuantity = _quantity;
+    _comboRecipientCount = recipientCount < 1 ? 1 : recipientCount;
+    _comboBag = bag;
+    _comboTotal += _quantity * _comboRecipientCount;
+    _comboCountdown.forward(from: 0);
+    if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      HapticFeedback.lightImpact();
+    }
+    setState(() {});
+  }
+
+  bool get _canCombo {
+    final gift = _comboGift;
+    if (gift == null || _sending || !widget.canSend ||
+        !gift.isAvailableIn(widget.giftContext) ||
+        _lockedGiftLabel(gift) != null ||
+        _comboQuantity != _quantity ||
+        gift.id != _selected?.id ||
+        _comboBag != (_category == 'bag') ||
+        (_uncertainSendFingerprint != null &&
+         _uncertainSendFingerprint !=
+           _sendFingerprint(gift, _comboQuantity, _comboBag))) return false;
+    final requiredQuantity = _comboQuantity * _comboRecipientCount;
+    if (_comboBag) {
+      return (_bagQuantities[gift.id] ?? 0) >= requiredQuantity;
+    }
+    return (_balanceCoins ?? 0) >= gift.priceCoins * requiredQuantity;
+  }
+
+  @override
   void dispose() {
+    _comboCountdown.dispose();
     _customQuantityController.dispose();
     _customQuantityFocus.dispose();
     _levelService?.close();
@@ -210,6 +288,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       setState(() {
         _catalog = catalog;
         _selected = null;
+        _clearCombo();
         _category = initialCategory;
         _balanceCoins = GiftCatalogService.cachedBalanceCoins;
         _bagQuantities = GiftCatalogService.cachedBagQuantities;
@@ -346,6 +425,20 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         _ => null,
       };
 
+  String? _lockedGiftLabel(GiftCatalogItem gift) {
+    final vip = gift.effectiveMinVipLevel;
+    if (vip > 0 && (GiftCatalogService.cachedSenderVipLevel ?? -1) < vip) {
+      return 'VIP $vip';
+    }
+    final wealth = gift.minWealthLevel;
+    if (wealth > 0 && (_wealth?.level ??
+        GiftCatalogService.cachedSenderWealthLevel ?? -1) < wealth) {
+      final upper = wealth == 31 ? 35 : wealth + 4;
+      return 'LV $wealth–$upper';
+    }
+    return null;
+  }
+
   String _giftEmoji(String id) => switch (id) {
         'rose' => '🌹',
         'coffee' => '☕',
@@ -384,7 +477,17 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
 
   Future<void> _send() async {
     final gift = _selected;
-    if (gift == null || !widget.canSend || _sending) return;
+    if (gift == null || !widget.canSend || _sending ||
+        _lockedGiftLabel(gift) != null) return;
+    final operationFingerprint =
+        _sendFingerprint(gift, _quantity, _category == 'bag');
+    if (_uncertainSendFingerprint != null &&
+        _uncertainSendFingerprint != operationFingerprint) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+        content: Text('هناك هدية لم تتأكد نتيجتها. أعد محاولة نفس الهدية والكمية والمستلم فقط.'),
+      ));
+      return;
+    }
     if (!gift.isAvailableIn(widget.giftContext)) {
       setState(() {
         _selected = null;
@@ -393,7 +496,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       return;
     }
     setState(() => _sending = true);
+    _comboCountdown.stop();
     final useGiftBag = _category == 'bag';
+    final recipientsAtSend = widget.comboContextKey;
+    final quantityAtSend = _quantity;
+    final categoryAtSend = _category;
     GiftPickerSendResult? confirmed;
     // Only the network send belongs to this failure handler. A local UI
     // update must never turn a confirmed server gift into a "send failed".
@@ -402,6 +509,15 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     } on StateError catch (error) {
       if (!mounted) return;
       final failureCode = error.message.toString().trim();
+      if (const <String>{
+        'gift_confirmation_pending',
+        'gift_connection_timeout',
+        'gift_network_unavailable',
+        'server_failed',
+        'transaction_failed',
+      }.contains(failureCode)) {
+        setState(() => _uncertainSendFingerprint = operationFingerprint);
+      }
       final safeCode = RegExp(r'^[A-Za-z0-9_-]{1,40}$').hasMatch(failureCode)
           ? failureCode
           : '';
@@ -414,11 +530,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
         'room_gift_recipient_limit' => 'عدد المستلمين أكبر من الحد الآمن للإرسال الجماعي.',
         'room_gift_write_limit' => 'تعذر إتمام الإرسال الجماعي بهذه المجموعة دفعة واحدة.',
         'recipient_required' => 'اختر مستلماً واحداً على الأقل.',
+        'gift_recipients_changed' => 'تغيّر المستلمون أثناء تجهيز الإرسال. تأكد من الاختيار ثم حاول مجددًا.',
         'room_presence_unavailable' => 'تعذر تأكيد الموجودين في الغرفة حالياً.',
         'relationship_gift_not_eligible' => 'هذه الهدية مخصصة لعلاقة مؤهلة.',
         'invalid_affinity_base_points' => 'إعداد نقاط هذه الهدية يحتاج مراجعة من الإدارة.',
         'gift_inactive' => 'هذه الهدية متوقفة حالياً.',
         'vip_gift_requires_level' => 'هذه الهدية تتطلب مستوى VIP أعلى.',
+        'wealth_gift_requires_level' => 'هذه الهدية تتطلب مستوى ثروة أعلى. حدّث الهدايا للتحقق من مستواك.',
         'emergency_locked' => 'عمليات الهدايا متوقفة مؤقتاً.',
         'blocked' => 'لا يمكن إرسال الهدية بسبب إعدادات الحظر.',
         'gift_bag_insufficient' => 'الكمية الموجودة في الحقيبة لا تكفي.',
@@ -462,15 +580,22 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       );
     } catch (_) {
       if (mounted) {
+        // Unknown exceptions after invoking the sender do not prove rollback.
+        // Never allow a different operation to follow immediately.
+        setState(() => _uncertainSendFingerprint = operationFingerprint);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر إرسال الهدية حالياً.')),
+          const SnackBar(content: Text('لم نتأكد من نتيجة الإرسال. أعد نفس العملية فقط أو راجع رصيدك.')),
         );
       }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
 
+    // A failed/unknown send cannot continue a combo. Keep the original
+    // explicit post-network success guard used by the gift safety tests.
+    if (confirmed == null && mounted) setState(() => _clearCombo());
     if (confirmed == null || !mounted) return;
+    _uncertainSendFingerprint = null;
     try {
       final result = confirmed;
       if (result.balanceCoins != null) {
@@ -492,6 +617,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       // display issue is non-financial and must not be presented as a failed gift.
     }
     if (!mounted) return;
+    if (recipientsAtSend == widget.comboContextKey &&
+        _selected?.id == gift.id && _quantity == quantityAtSend &&
+        _category == categoryAtSend) {
+      _restartCombo(gift, useGiftBag, confirmed.recipientCount);
+    } else {
+      setState(() => _clearCombo());
+    }
     final message = confirmed.message.trim();
     if (message.isNotEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -625,6 +757,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
             onTap: _sending
                 ? null
                 : () => setState(() {
+                      _clearCombo();
                       _category = value;
                       _customQuantityOpen = false;
                       if (_selected != null &&
@@ -684,12 +817,20 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
   }
 
   Widget _giftCard(GiftCatalogItem gift) {
-    final selected = _selected?.id == gift.id;
+    final locked = _lockedGiftLabel(gift);
+    final selected = _selected?.id == gift.id && locked == null;
     final bagCount = _bagQuantities[gift.id] ?? 0;
     return InkWell(
-      onTap: _sending ? null : () => setState(() => _selected = gift),
+      onTap: _sending || locked != null ? null : () => setState(() {
+        _clearCombo();
+        _selected = gift;
+      }),
       borderRadius: BorderRadius.circular(13),
-      child: AnimatedContainer(
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: locked == null ? 1 : .42,
+            child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.fromLTRB(5, 5, 5, 6),
         decoration: BoxDecoration(
@@ -793,6 +934,26 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           ],
         ),
       ),
+          ),
+            if (locked != null)
+              Positioned(
+                top: 2,
+                right: 2,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF292132),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+                    child: Text(locked,
+                      style: const TextStyle(color: Colors.amberAccent,
+                          fontSize: 9, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ),
+        ],
+      ),
     );
   }
 
@@ -825,6 +986,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
       return;
     }
     setState(() {
+      _clearCombo();
       _quantity = value;
       _customQuantityOpen = false;
     });
@@ -839,6 +1001,7 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
           : value == null
               ? _openCustomQuantity
               : () => setState(() {
+                    _clearCombo();
                     _quantity = value;
                     _customQuantityOpen = false;
                   }),
@@ -921,8 +1084,13 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
     final gift = _selected;
     final bagCount = gift == null ? 0 : (_bagQuantities[gift.id] ?? 0);
     final bagAllowed = _category != 'bag' || bagCount >= _quantity;
+    final retryMatches = gift != null &&
+        (_uncertainSendFingerprint == null ||
+         _uncertainSendFingerprint ==
+             _sendFingerprint(gift, _quantity, _category == 'bag'));
     final sendEnabled =
-        gift != null && widget.canSend && !_sending && bagAllowed;
+        gift != null && widget.canSend && !_sending && bagAllowed &&
+        _lockedGiftLabel(gift) == null && retryMatches;
 
     return Container(
       padding: const EdgeInsets.only(top: 6),
@@ -993,6 +1161,66 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet> {
             ),
             const SizedBox(height: 6),
           ],
+          if (_uncertainSendFingerprint != null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: Text(
+                'نتيجة الإرسال غير مؤكدة. يُسمح فقط بإعادة نفس العملية دون خصم جديد.',
+                style: TextStyle(color: Colors.amberAccent, fontSize: 10),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          if (_comboGift != null && (_comboCountdown.isAnimating || _sending))
+            Row(
+              textDirection: TextDirection.ltr,
+              children: [
+                SizedBox(
+                  width: 72,
+                  height: 57,
+                  child: Center(
+                    child: SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox.expand(
+                            child: AnimatedBuilder(
+                              animation: _comboCountdown,
+                              builder: (_, __) => CircularProgressIndicator(
+                                value: 1 - _comboCountdown.value,
+                                strokeWidth: 3.5,
+                                color: const Color(0xFFBB87FF),
+                                backgroundColor: Colors.white12,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'إعادة إرسال نفس الهدية',
+                            padding: const EdgeInsets.all(3),
+                            onPressed: _canCombo ? _send : null,
+                            icon: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 25,
+                                  height: 25,
+                                  child: _giftImage(_comboGift!, fallbackSize: 19),
+                                ),
+                                Text('×$_comboTotal',
+                                  style: const TextStyle(fontSize: 9,
+                                    color: Colors.amberAccent,
+                                    fontWeight: FontWeight.w900)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           Row(
             textDirection: TextDirection.ltr,
             children: [

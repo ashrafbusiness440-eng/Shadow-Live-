@@ -1,6 +1,8 @@
 import { json, readJson } from "./http.js";
 import { giftCategoryEnabled } from "./gift-category-policy.js";
 import { giftAvailableFor } from "./gift-availability-policy.js";
+import { validateGiftEligibility } from "./gift-eligibility-policy.js";
+import { loadUserLevelPolicy, levelFromPoints } from "./user-level-policy.js";
 import { verifyFirebaseIdToken } from "./firebase-auth.js";
 import { firestoreClient } from "./firestore.js";
 import {
@@ -562,7 +564,11 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
     if (!giftAvailableFor(gift, "room", nowMs)) {
       throw new ApiError("gift_inactive", 409);
     }
-    const visualPolicy = giftVisualPolicy(gift, quantity);
+    const visualPolicy = giftVisualPolicy(
+      {...gift, effectMode: (gift.effectContexts ?? ["room"]).includes("room")
+          ? gift.effectMode : "none"},
+      quantity,
+    );
 
     let relationshipGiftContext = null;
     try {
@@ -584,9 +590,19 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
 
     const sender = senderSnap.data || {};
     const senderVip = vipCosmeticsFromUser(sender, nowMs).level;
-    const requiredVipLevel = giftMinVipLevel(gift);
+    const eligibility = validateGiftEligibility(gift);
+    const requiredVipLevel = eligibility.minVipLevel;
     if (requiredVipLevel > 0 && senderVip < requiredVipLevel) {
       throw new ApiError("vip_gift_requires_level", 403);
+    }
+    if (eligibility.minWealthLevel > 0) {
+      const levelPolicy = await loadUserLevelPolicy(db, { transaction });
+      const senderWealthLevel = levelFromPoints(
+        levelPolicy.wealth, Number(sender.wealthPoints || 0),
+      );
+      if (senderWealthLevel < eligibility.minWealthLevel) {
+        throw new ApiError("wealth_gift_requires_level", 403);
+      }
     }
 
     const unitCoins = Number(gift.priceCoins || 0);

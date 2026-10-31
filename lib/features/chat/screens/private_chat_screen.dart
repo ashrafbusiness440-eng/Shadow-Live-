@@ -14,6 +14,7 @@ import '../../../shared/widgets/confirmation_dialog.dart';
 import '../../../shared/services/user_storage_service.dart';
 import '../../../shared/services/report_screenshot_service.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
+import '../../room/widgets/cosmetic_effect_widgets.dart';
 import '../../room/services/room_realtime_query_service.dart';
 import '../../room/services/room_follow_navigation.dart';
 import '../../../services/navigation_service.dart';
@@ -75,6 +76,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   bool _voiceNotesEnabled = false;
   bool _privateCallsEnabled = false;
   bool _messageActionBusy = false;
+  bool _giftEffectStreamReady = false;
+  final Set<String> _giftEffectSeenIds = <String>{};
+  Map<String, dynamic>? _activeGiftEffect;
+  Timer? _giftEffectTimer;
   // Verified only by the existing public_profiles header stream.
   // No extra listener or polling. Do not enable composer on network errors.
   bool _peerProfileLoaded = false;
@@ -148,6 +153,43 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       // A revoked session or denied read receipt must not expose chat data.
     } finally {
       _markingRead = false;
+    }
+  }
+
+  // Observe the existing bounded chat message stream. The initial history is
+  // a baseline, never a trigger to replay previously sent gift effects.
+  void _observeGiftEffectMessages(
+      QuerySnapshot<Map<String, dynamic>> snapshot) {
+    if (!_giftEffectStreamReady) {
+      _giftEffectStreamReady = true;
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final change in snapshot.docChanges) {
+      if (change.type != DocumentChangeType.added) continue;
+      final message = change.doc.data();
+      if (message == null || message['type'] != 'gift') continue;
+      final eventId = (message['giftEffectEventId'] ?? '').toString().trim();
+      final assetKey = (message['giftEffectAssetKey'] ?? '').toString().trim();
+      final createdAtMs = (message['createdAtMs'] as num?)?.toInt() ?? 0;
+      if (eventId.isEmpty || assetKey.isEmpty ||
+          !_giftEffectSeenIds.add(eventId)) continue;
+      if (now - createdAtMs < 0 || now - createdAtMs > 12000) continue;
+      if (_giftEffectSeenIds.length > 80) {
+        _giftEffectSeenIds.remove(_giftEffectSeenIds.first);
+      }
+      final duration = ((message['giftEffectDurationMs'] as num?)?.toInt()
+          ?? 2200).clamp(300, 12000).toInt();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isActiveChatAccount(_openedByUid)) return;
+        _giftEffectTimer?.cancel();
+        setState(() => _activeGiftEffect = {
+          'id': eventId, 'key': assetKey,
+        });
+        _giftEffectTimer = Timer(Duration(milliseconds: duration), () {
+          if (mounted) setState(() => _activeGiftEffect = null);
+        });
+      });
     }
   }
 
@@ -1436,6 +1478,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
   @override
   void dispose() {
+    _giftEffectTimer?.cancel();
     _followBadgeExpiry?.cancel();
     _followQuery.close();
     _storage.close();
@@ -1863,7 +1906,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                     assetKey: ShadowAssetKeys.chatWallpaper,
                     bundledAsset: ShadowAssetKeys.chatWallpaperBundledPath,
                     scrimColor: const Color(0x4405060D),
-                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _messageChanges,
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
@@ -1877,6 +1923,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         );
                       }
                       WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+                      _observeGiftEffectMessages(snapshot.data!);
                       final liveDocs = snapshot.data!.docs;
                       final docs = _combinedMessages(liveDocs);
                       if (docs.isEmpty) {
@@ -1933,6 +1980,23 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         },
                       );
                     },
+                    ),
+                    if (_activeGiftEffect != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Center(
+                            child: SizedBox(
+                              width: 260,
+                              height: 260,
+                              child: CosmeticAssetVisual(
+                                key: ValueKey(_activeGiftEffect!['id']),
+                                assetKey: _activeGiftEffect!['key'].toString(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      ],
                     ),
                   ),
                   ),

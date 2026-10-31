@@ -41,8 +41,14 @@ class RoomGiftService {
     bool useGiftBag = false,
   }) async {
     final user = _auth.currentUser;
-    final token = await user?.getIdToken();
-    if (user == null || token == null || token.isEmpty) {
+    if (user == null) throw StateError('not_signed_in');
+    final senderUid = user.uid;
+    final token = await user.getIdToken();
+    if (_auth.currentUser?.uid != senderUid) {
+      // The response could belong to a different account after an auth swap.
+      throw StateError('gift_account_changed');
+    }
+    if (token == null || token.isEmpty) {
       throw StateError('not_signed_in');
     }
 
@@ -104,6 +110,11 @@ class RoomGiftService {
       throw StateError('gift_network_unavailable');
     }
 
+    // A request may have committed before the user switched accounts.
+    // Never surface that account's receipt/balance in the new session.
+    if (_auth.currentUser?.uid != senderUid) {
+      throw StateError('gift_account_changed');
+    }
     Map<String, dynamic> body = <String, dynamic>{};
     try {
       final decoded = jsonDecode(response.body);
@@ -111,17 +122,22 @@ class RoomGiftService {
     } catch (_) {}
 
     if (response.statusCode < 200 || response.statusCode >= 300 || body['ok'] != true) {
-      // A definitive client rejection cannot have charged the sender.
-      // Retain the operation key for ambiguous timeouts and 5xx errors.
+      final serverCode = (body['code'] ?? '').toString();
+      // These 409 responses are authoritative *pre-charge* rejections in the
+      // worker. Others (e.g. idempotency contention) remain uncertain.
+      final definiteConflict = response.statusCode == 409 &&
+          const <String>{
+            'insufficient_balance', 'gift_bag_insufficient', 'gift_inactive',
+          }.contains(serverCode);
       if (response.statusCode >= 400 &&
           response.statusCode < 500 &&
           response.statusCode != 408 &&
-          response.statusCode != 409) {
+          (response.statusCode != 409 || definiteConflict)) {
         _clearRetryReservation();
       }
       if (response.statusCode >= 500 ||
           response.statusCode == 408 ||
-          response.statusCode == 409 ||
+          (response.statusCode == 409 && !definiteConflict) ||
           (response.statusCode >= 200 && response.statusCode < 300 && body['code'] == null)) {
         throw StateError('gift_confirmation_pending');
       }
