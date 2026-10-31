@@ -21,6 +21,8 @@ Future<void> showDirectGiftSheet(
   void Function(BuildContext sheetContext)? onSheetLayout,
   VoidCallback? onSheetClosed,
 }) async {
+  Animation<double>? modalAnimation;
+  AnimationStatusListener? onAnimationStatus;
   try {
     await showModalBottomSheet<void>(
       context: context,
@@ -31,6 +33,22 @@ Future<void> showDirectGiftSheet(
       ),
       builder: (_) => Builder(
         builder: (sheetContext) {
+          // Re-measure after entrance finishes: during the opening slide,
+          // the sheet's global top is still moving toward its final position.
+          final animation = ModalRoute.of(sheetContext)?.animation;
+          if (onSheetLayout != null && animation != null &&
+              modalAnimation == null) {
+            modalAnimation = animation;
+            onAnimationStatus = (status) {
+              if (status == AnimationStatus.completed &&
+                  sheetContext.mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (sheetContext.mounted) onSheetLayout(sheetContext);
+                });
+              }
+            };
+            animation.addStatusListener(onAnimationStatus!);
+          }
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (sheetContext.mounted) onSheetLayout?.call(sheetContext);
           });
@@ -45,6 +63,9 @@ Future<void> showDirectGiftSheet(
       ),
     );
   } finally {
+    if (modalAnimation != null && onAnimationStatus != null) {
+      modalAnimation!.removeStatusListener(onAnimationStatus!);
+    }
     onSheetClosed?.call();
   }
 }
