@@ -69,11 +69,17 @@ for (const preview of previews) {
       });
       await stage.reload({ waitUntil: 'domcontentloaded' });
       await readyAgain;
-      await stage.screenshot({
+      // Flutter's READY marker precedes the async wallpaper image paint.
+      // Validate the *rendered* stage, not an incomplete black background.
+      await stage.waitForTimeout(1400);
+      const capture = await stage.screenshot({
         path: 'room-e2e-screenshots/stage-admission-failed-repeat-' +
           repeat + '.png',
         fullPage: true,
       });
+      if (capture.length < 120000) {
+        throw new Error('ROOM_STAGE_WALLPAPER_NOT_PAINTED_REPEAT_' + repeat);
+      }
       console.log('ROOM_ADMISSION_FAILURE_VISUAL_REPEATED:' + repeat);
     }
   }
