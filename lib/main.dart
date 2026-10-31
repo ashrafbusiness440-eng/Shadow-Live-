@@ -1188,7 +1188,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
-      builder: (_) => RoomModeratorManagerSheet(roomId: roomId),
+      builder: (_) => RoomModeratorManagerSheet(
+        roomId: roomId,
+        participants: _voiceSession.roomParticipants,
+      ),
     );
   }
 
