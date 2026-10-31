@@ -62,6 +62,20 @@ void main() {
     expect(calls, 0);
   });
 
+  test('production profile shows a single managed-room source, no duplicate placeholder', () {
+    final profile = File(
+      'lib/features/profile/widgets/profile_personal_room_tab.dart',
+    ).readAsStringSync();
+    expect(profile, contains('if (!showManagedRooms) Container('));
+    expect(profile, contains('ManagedRoomsPanel('));
+    expect(profile, contains('profileStyle: true,'));
+    expect(profile, contains('showOpenPersonalFallback: true,'));
+    expect(profile, contains('غرفي والإشراف'));
+    // Old static card is available only to isolated layout tests.
+    expect(profile.indexOf('if (!showManagedRooms) Container('),
+        lessThan(profile.indexOf("'غرفتي الصوتية'")));
+  });
+
   test('profile uses authoritative existing room command once per tap', () {
     final src = File(
       'lib/features/user/screens/profile_screen.dart',
