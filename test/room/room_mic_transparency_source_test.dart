@@ -27,6 +27,8 @@ void main() {
     expect(seats, contains('const Color(0x18FFFFFF)'));
     expect(seats, contains('seat.locked'));
     expect(seats, contains('seat.muteLocked'));
+    expect(seats, contains('const Color(0xB32A2F3A)'));
+    expect(seats, contains('const Color(0xB339D98A)'));
     expect(seats, contains('seat.occupied'));
   });
 
