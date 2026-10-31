@@ -1,6 +1,7 @@
 import {createCipheriv,randomBytes,randomInt,createHash,scryptSync,timingSafeEqual} from "node:crypto";
 import {getApps,initializeApp,cert,getAuth,getFirestore,FieldValue,legacyEnv,configureLegacyEnv} from "./legacy-firebase-admin-shim.js";
 import {activeMicSegments} from "./mic-activity.js";
+import {backfillRoomModeratorIndexPage} from "./room-moderator-index-backfill.js";
 import {resolveStoreVisuals} from "./store-presentation.js";
 import {assertUserDocumentSessionState} from "./firebase-auth.js";
 import {gameCatalog} from "./legacy-games/game-runtime.js";
@@ -2889,6 +2890,41 @@ async function roomLibrary(db,uid){
   return {ok:true,favorites,history};
 }
 
+// An explicit platform-owner-only one-page index repair. Browsing and normal
+// room joins NEVER call this action; the operator previews then confirms each
+// limited page. No room role is added, removed, or authorized by this index.
+async function roomModeratorIndexBackfill(db,uid,body){
+  const actorSnap=await db.collection("users").doc(uid).get();
+  const actor=actorSnap.exists?actorSnap.data()||{}:{};
+  const permissions=roomPermissions(actor);
+  if(!permissions.appOwner||!permissions.ownerAbsoluteRoomAccess||
+      mysteriousRoomAuthoritySuppressed(actor)){
+    throw new ApiError("forbidden",403);
+  }
+  const limit=body.limit===undefined?10:Number(body.limit);
+  const cursor=clean(body.cursor);
+  if(!Number.isInteger(limit)||limit<1||limit>10||
+      (cursor&&!/^[A-Za-z0-9_-]{1,180}$/.test(cursor))){
+    throw new ApiError("invalid_moderator_backfill_page",400);
+  }
+  try{
+    return {
+      ok:true,
+      ...(await backfillRoomModeratorIndexPage({
+        db,actorUid:uid,cursor,limit,
+        confirm:body.confirm===true,
+        normalizeModerators:normalizeRoomModerators,
+        serverTimestamp:()=>FieldValue.serverTimestamp(),
+      })),
+    };
+  }catch(error){
+    if(error?.message==="room_backfill_cursor_not_found"){
+      throw new ApiError("moderator_backfill_cursor_expired",409);
+    }
+    throw error;
+  }
+}
+
 // Authorized shortcuts for the current user's own and moderated rooms.
 // A room-owner lookup uses the deterministic personal room ID. Moderated rooms
 // use a per-user membership index maintained in the moderator transaction.
@@ -4984,6 +5020,11 @@ export default async function handler(req,res){
     }
     if(action==="roomManagedList"){
       return out(res,200,await roomManagedList(getFirestore(),decoded.uid));
+    }
+    if(action==="roomModeratorIndexBackfillPage"){
+      return out(res,200,await roomModeratorIndexBackfill(
+        getFirestore(),decoded.uid,req.body||{},
+      ));
     }
     if(action==="sendRoomChat"){
       return out(res,200,await sendRoomChat(getFirestore(),decoded.uid,req.body||{}));
