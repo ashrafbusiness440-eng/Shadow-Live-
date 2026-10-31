@@ -122,17 +122,22 @@ class RoomGiftService {
     } catch (_) {}
 
     if (response.statusCode < 200 || response.statusCode >= 300 || body['ok'] != true) {
-      // A definitive client rejection cannot have charged the sender.
-      // Retain the operation key for ambiguous timeouts and 5xx errors.
+      final serverCode = (body['code'] ?? '').toString();
+      // These 409 responses are authoritative *pre-charge* rejections in the
+      // worker. Others (e.g. idempotency contention) remain uncertain.
+      final definiteConflict = response.statusCode == 409 &&
+          const <String>{
+            'insufficient_balance', 'gift_bag_insufficient', 'gift_inactive',
+          }.contains(serverCode);
       if (response.statusCode >= 400 &&
           response.statusCode < 500 &&
           response.statusCode != 408 &&
-          response.statusCode != 409) {
+          (response.statusCode != 409 || definiteConflict)) {
         _clearRetryReservation();
       }
       if (response.statusCode >= 500 ||
           response.statusCode == 408 ||
-          response.statusCode == 409 ||
+          (response.statusCode == 409 && !definiteConflict) ||
           (response.statusCode >= 200 && response.statusCode < 300 && body['code'] == null)) {
         throw StateError('gift_confirmation_pending');
       }
