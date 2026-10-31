@@ -516,10 +516,13 @@ class RoomPresenceService {
     _reconnectAttempt = 0;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    await _socketSubscription?.cancel();
-    _socketSubscription = null;
+    // Release OUR old socket before awaiting. A newer join must not have
+    // its subscription cleared or its transport closed by this operation.
+    final previousSubscription = _socketSubscription;
     final previous = _socket;
+    _socketSubscription = null;
     _socket = null;
+    await previousSubscription?.cancel();
     if (previous != null) await previous.close();
 
     // A later join or leave may have superseded this admission while awaiting
@@ -575,16 +578,25 @@ class RoomPresenceService {
     _generation += 1;
     _desiredRoomId = '';
     _readyRoomId = '';
-    // An in-flight join is invalidated by the generation change above.
-    // Do not await it here: it can be stuck on a network handshake.
+    // Clear the flight so a rapid leave/rejoin of the SAME room doesn't
+    // accidentally reuse a cancelled admission.
+    _joinInFlight = null;
+    _joinRoomId = '';
+    // Never await a cancelled admission (it may be a stuck handshake).
+    final previousReady = _readyCompleter;
+    _readyCompleter = null;
+    if (previousReady != null && !previousReady.isCompleted) {
+      previousReady.completeError(StateError('room_left'));
+    }
     _reconnectAttempt = 0;
     _failPendingChat('room_left');
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    await _socketSubscription?.cancel();
-    _socketSubscription = null;
+    final oldSubscription = _socketSubscription;
     final connection = _socket;
+    _socketSubscription = null;
     _socket = null;
+    await oldSubscription?.cancel();
     if (connection != null) {
       try {
         await connection.close();
@@ -631,6 +643,8 @@ class RoomPresenceService {
     _generation += 1;
     _desiredRoomId = '';
     _readyRoomId = '';
+    _joinInFlight = null;
+    _joinRoomId = '';
     _readyCompleter = null;
     _failPendingChat('room_realtime_closed');
     _reconnectTimer?.cancel();
