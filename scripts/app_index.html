@@ -25,6 +25,9 @@
        bootstrap and main.dart.js URLs already control production updates. -->
   <!-- The tiny bridge loads no Firebase SDK or worker until explicit opt-in.
        The live scope is independent of Shadow Control. -->
+  <!-- ZEGO Flutter Web SDK requires its bundled JS bridge before the
+       asynchronous Flutter bootstrap. Keep paths relative to /live/. -->
+  <script src="assets/packages/zego_express_engine/assets/ZegoExpressWebFlutterWrapper.js"></script>
   <script src="private_call_web_push.js"></script>
   <script src="flutter_bootstrap.js?v=20261002-main-shell-fix" async></script>
 </body>
