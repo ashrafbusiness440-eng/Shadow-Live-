@@ -23,7 +23,7 @@ void main() {
     expect(source, contains('final List<RoomSupporter> attraction;'));
     expect(source, contains("final rawAttraction = json['attraction'];"));
     expect(source, contains("'includeAttraction': includeAttraction,"));
-    expect(source, contains('attraction=$includeAttraction'));
+    expect(source, contains(r'attraction=$includeAttraction'));
     expect(source, contains('rawAttraction is List'));
     expect(source, isNot(contains('Timer.periodic')));
   });
