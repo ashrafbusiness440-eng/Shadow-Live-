@@ -20,7 +20,7 @@ void main() {
     final manualReplay = chat.substring(start, end);
     expect(manualReplay, contains("message['giftEffectEventId']"));
     expect(manualReplay, contains("message['giftEffectAssetKey']"));
-    expect(manualReplay, contains('_giftEffectPlayCounter++'));
+    expect(manualReplay, contains('++_giftEffectPlayCounter'));
     expect(manualReplay, contains('_giftEffectTimer?.cancel()'));
     expect(manualReplay, isNot(contains('widget.onSend(')));
     expect(manualReplay, isNot(contains('RoomGiftService')));
