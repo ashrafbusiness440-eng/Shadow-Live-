@@ -36,6 +36,7 @@ import { activeEffectiveVipLevelFromUser } from "./vip-runtime.js";
 import { validateAnimatedEmojiForVip } from "./animated-emoji-catalog.js";
 import { vipCosmeticAssetKey } from "./vip-entitlements.js";
 import { publishGlobalAppEvents } from "./room-realtime.js";
+import { roomPasswordLockVersion } from "./room-invite-lock-policy.js";
 import { premiumGiftCelebrationEvent } from "./gift-visual-policy.js";
 import {
   prepareRelationshipGiftContext,
@@ -1811,6 +1812,8 @@ async function sendRoomInvite(db, uid, body, options = {}) {
 
     const roomName = clean(roomData.name || roomData.title || "غرفة صوتية");
     const roomPublicId = clean(roomData.publicId);
+    const passwordProtectedAtIssue = clean(roomData.visibility) === "password";
+    const passwordLockVersion = roomPasswordLockVersion(roomData);
     const now = new Date();
     const counts = { ...(conversationData.unreadCounts || {}) };
     counts[uid] = 0;
@@ -1851,15 +1854,23 @@ async function sendRoomInvite(db, uid, body, options = {}) {
         roomName,
         roomPublicId,
         roomOwnerUid,
+        inviteId: messageId,
         createdAt: now,
       }),
       db.writeUpdate(roomInviteAccessPath, {
         roomId,
         userId: receiverId,
         invitedBy: uid,
+        inviteId: messageId,
+        passwordProtectedAtIssue,
+        passwordLockVersion,
         createdAt: now,
         expiresAt: new Date(nowMs + 12 * 60 * 60 * 1000),
-      }, ["roomId", "userId", "invitedBy", "createdAt", "expiresAt"]),
+      }, [
+        "roomId", "userId", "invitedBy", "inviteId",
+        "passwordProtectedAtIssue", "passwordLockVersion",
+        "createdAt", "expiresAt",
+      ]),
       db.writeUpdate(inviteRatePath, {
         roomId,
         senderUid: uid,
