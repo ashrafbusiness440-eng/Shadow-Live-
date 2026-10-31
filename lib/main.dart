@@ -3257,6 +3257,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       ),
       builder: (sheetContext) {
         final sending = <String>{};
+        // Only one friends read per share sheet, not per button state change.
+        final friendsFuture = _roomInvites.loadFriends();
         return Directionality(
           textDirection: TextDirection.rtl,
           child: StatefulBuilder(
@@ -3296,7 +3298,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       const SizedBox(height: 14),
                       Expanded(
                         child: FutureBuilder<List<RoomInviteFriend>>(
-                          future: _roomInvites.loadFriends(),
+                          future: friendsFuture,
                           builder: (context, snapshot) {
                             if (snapshot.connectionState !=
                                 ConnectionState.done) {
