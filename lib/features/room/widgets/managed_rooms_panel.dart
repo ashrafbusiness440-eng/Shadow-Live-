@@ -110,7 +110,7 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
     final user = FirebaseAuth.instance.currentUser;
     final eligible = user != null && !user.isAnonymous;
     final accountMatches = user?.uid == _requestedUid;
-    if (eligible && !accountMatches && !_loading && _requestedUid != null) {
+    if (eligible && !accountMatches && !_loading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_loading &&
             FirebaseAuth.instance.currentUser?.uid != _requestedUid) _load();
