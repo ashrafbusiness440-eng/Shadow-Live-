@@ -427,6 +427,14 @@ class RoomPresenceService {
       if (oldSocket != null && !identical(oldSocket, connection)) {
         await oldSocket.close();
       }
+      // Transport cleanup yields control. Leave/switch may have superseded
+      // this socket while it was suspended; don't install stale callbacks.
+      if (_desiredRoomId != roomId ||
+          generation != _generation ||
+          !identical(_socket, connection)) {
+        await connection.close();
+        return;
+      }
 
       final ready = Completer<void>();
       _readyCompleter = ready;
@@ -458,12 +466,16 @@ class RoomPresenceService {
         unawaited(_announceJoin(roomId));
       }
     } catch (error) {
-      _lastConnectionError = switch (error) {
-        TimeoutException() => 'room_realtime_ready_timeout',
-        http.ClientException() => 'room_network_unavailable',
-        StateError() => error.message.toString(),
-        _ => 'room_realtime_connection_failed',
-      };
+      // Failure of a superseded request must not overwrite the error/status
+      // of a different room's successful admission.
+      if (_desiredRoomId == roomId && generation == _generation) {
+        _lastConnectionError = switch (error) {
+          TimeoutException() => 'room_realtime_ready_timeout',
+          http.ClientException() => 'room_network_unavailable',
+          StateError() => error.message.toString(),
+          _ => 'room_realtime_connection_failed',
+        };
+      }
       // A socket without server.ready is unusable. Close it before retrying
       // so no stale transport can appear connected to the next room session.
       if (_desiredRoomId == roomId &&
