@@ -81,6 +81,12 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   String _recipientMode = 'users';
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  late final String _senderUidAtOpen = _uid;
+  void _requireOriginalAccount() {
+    if (_senderUidAtOpen.isEmpty || _uid != _senderUidAtOpen) {
+      throw StateError('gift_account_changed');
+    }
+  }
 
   List<RoomPresenceUser> get _liveParticipants =>
       widget.currentParticipants?.call() ?? widget.participants;
@@ -181,11 +187,13 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   Set<String> get _currentSelectedIds =>
       _selectedIds.intersection(_availableReceiverIds);
 
-  bool get _canSend => switch (_recipientMode) {
+  bool get _canSend => _senderUidAtOpen.isNotEmpty &&
+      _uid == _senderUidAtOpen &&
+      (switch (_recipientMode) {
         'all_mics' => _micIds.isNotEmpty,
         'all_room' => _participants.isNotEmpty || _uid.isNotEmpty,
         _ => _currentSelectedIds.isNotEmpty,
-      };
+      });
 
   RoomPresenceUser? _participant(String uid) {
     for (final user in _participants) {
@@ -272,6 +280,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     int quantity,
     bool useGiftBag,
   ) async {
+    _requireOriginalAccount();
     // Freeze the intended recipients before any asynchronous reconnect.
     // A change during reconnection must never redirect a paid send.
     final modeAtTap = _recipientMode;
@@ -289,6 +298,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         // non-authoritative local connectivity error.
       }
     }
+    _requireOriginalAccount();
     if (modeAtTap != _recipientMode ||
         recipientsAtTap != (_currentSelectedIds.toList()..sort()).join('|')) {
       throw StateError('gift_recipients_changed');
@@ -301,6 +311,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
       recipientIds: idsAtTap,
       useGiftBag: useGiftBag,
     );
+    _requireOriginalAccount();
     final balance = (result['balance'] as num?)?.toInt();
     if (balance != null) GiftCatalogService.updateCachedBalance(balance);
     final recipientCount =
