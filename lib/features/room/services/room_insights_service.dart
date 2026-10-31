@@ -121,6 +121,7 @@ class RoomInsights {
     required this.activityScore,
     required this.dailyRank,
     required this.supporters,
+    required this.attraction,
     required this.ranking,
   });
 
@@ -137,6 +138,7 @@ class RoomInsights {
   final int activityScore;
   final int? dailyRank;
   final List<RoomSupporter> supporters;
+  final List<RoomSupporter> attraction;
   final List<RoomRankEntry> ranking;
 
   double get levelProgress {
@@ -146,6 +148,7 @@ class RoomInsights {
 
   factory RoomInsights.fromJson(Map<String, dynamic> json) {
     final rawSupporters = json['supporters'];
+    final rawAttraction = json['attraction'];
     final rawRanking = json['ranking'];
     return RoomInsights(
       roomId: (json['roomId'] ?? '').toString(),
@@ -169,6 +172,13 @@ class RoomInsights {
                 ),
               )
               .toList()
+          : const [],
+      attraction: rawAttraction is List
+          ? rawAttraction
+              .whereType<Map>()
+              .map((item) => RoomSupporter.fromJson(
+                  Map<String, dynamic>.from(item)))
+              .toList(growable: false)
           : const [],
       ranking: rawRanking is List
           ? rawRanking
@@ -233,11 +243,12 @@ class RoomInsightsService {
   Future<RoomInsights> load(
     String roomId, {
     bool includeSupporters = false,
+    bool includeAttraction = false,
     bool includeRanking = false,
     bool bypassCache = false,
   }) {
     final key =
-        '$roomId|supporters=$includeSupporters|ranking=$includeRanking';
+        '$roomId|supporters=$includeSupporters|attraction=$includeAttraction|ranking=$includeRanking';
     final now = DateTime.now();
     final cached = _cache[key];
     final expiresAt = _cacheExpiresAt[key];
@@ -256,12 +267,13 @@ class RoomInsightsService {
         'action': 'roomInsights',
         'roomId': roomId,
         'includeSupporters': includeSupporters,
+        'includeAttraction': includeAttraction,
         'includeRanking': includeRanking,
       });
       final value = RoomInsights.fromJson(body);
       _cache[key] = value;
       _cacheExpiresAt[key] = DateTime.now().add(
-        Duration(seconds: includeSupporters || includeRanking ? 15 : 10),
+        Duration(seconds: includeSupporters || includeAttraction || includeRanking ? 15 : 10),
       );
       return value;
     }();
