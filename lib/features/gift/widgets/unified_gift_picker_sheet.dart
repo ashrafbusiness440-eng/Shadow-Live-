@@ -580,8 +580,11 @@ class _UnifiedGiftPickerSheetState extends State<UnifiedGiftPickerSheet>
       );
     } catch (_) {
       if (mounted) {
+        // Unknown exceptions after invoking the sender do not prove rollback.
+        // Never allow a different operation to follow immediately.
+        setState(() => _uncertainSendFingerprint = operationFingerprint);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر إرسال الهدية حالياً.')),
+          const SnackBar(content: Text('لم نتأكد من نتيجة الإرسال. أعد نفس العملية فقط أو راجع رصيدك.')),
         );
       }
     } finally {
