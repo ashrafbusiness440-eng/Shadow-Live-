@@ -2353,12 +2353,38 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                 leading: const Icon(Icons.autorenew_rounded,
                   color: Colors.amberAccent),
                 title: Text('مسودة تلقائية: ${editorDraft?['nameAr'] ?? 'هدية جديدة'}'),
-                subtitle: const Text('محفوظة بشكل خاص ولم تُنشر. يمكنك استكمالها.'),
+                subtitle: Text(editorDraftConflict
+                    ? 'توجد مسودة أحدث على الخادم. بقيت نسختك المحلية محفوظة؛ اختر استكمالها صراحةً أو حذفها من هذا الجهاز فقط.'
+                    : 'محفوظة بشكل خاص ولم تُنشر. يمكنك استكمالها.'),
                 trailing: Wrap(
                   spacing: 2,
                   children: [
                     TextButton(
-                      onPressed: editing || saving ? null : () {
+                      onPressed: editing || saving ? null : () async {
+                        if (editorDraftConflict) {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('تعارض بين المسودات'),
+                              content: const Text(
+                                'هناك مسودة أحدث على الخادم، ونسخة مختلفة محفوظة على هذا الجهاز. '
+                                'استكمال النسخة المحلية قد يستبدل المسودة الأحدث عند الحفظ التلقائي. '
+                                'لن تتغير هدية منشورة قبل الضغط على «اعتماد وحفظ».'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('إلغاء'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('استكمال النسخة المحلية'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed != true || !mounted) return;
+                          setState(() => editorDraftConflict = false);
+                        }
                         final value = editorDraft;
                         if (value?['kind'] == 'edit') {
                           final existing = gifts.indexWhere(
@@ -2373,21 +2399,32 @@ class _GiftCatalogControlPageState extends State<GiftCatalogControlPage> {
                     TextButton(
                       onPressed: editing || saving ? null : () async {
                         try {
+                          if (editorDraftConflict) {
+                            // Discard only this device's unacknowledged copy.
+                            // Do not destroy the newer server draft.
+                            final preferences = await SharedPreferences.getInstance();
+                            await preferences.remove(_editorBackupKey);
+                            if (mounted) await load();
+                            return;
+                          }
                           final cleared = await post({
-            'action': 'clearEditor',
-            'expectedEditorRevision': editorDraftRevision,
-          });
-          try {
-            final preferences = await SharedPreferences.getInstance();
-            await preferences.remove(_editorBackupKey);
-          } catch (_) {}
-          editorDraftRevision = (cleared['editorDraftRevision'] as num).toInt();
-                          if (mounted) setState(() => editorDraft = null);
+                            'action': 'clearEditor',
+                            'expectedEditorRevision': editorDraftRevision,
+                          });
+                          try {
+                            final preferences = await SharedPreferences.getInstance();
+                            await preferences.remove(_editorBackupKey);
+                          } catch (_) {}
+                          if (mounted) setState(() {
+                            editorDraft = null;
+                            editorDraftRevision =
+                                (cleared['editorDraftRevision'] as num).toInt();
+                          });
                         } catch (_) {
                           message('تعذر حذف المسودة التلقائية.');
                         }
                       },
-                      child: const Text('حذف'),
+                      child: Text(editorDraftConflict ? 'حذف نسخة الجهاز' : 'حذف'),
                     ),
                   ],
                 ),
