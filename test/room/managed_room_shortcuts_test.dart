@@ -60,6 +60,7 @@ void main() {
     expect(panel, contains('item.room.ownerLocation'));
     expect(panel, contains('item.room.publicId'));
     expect(panel, contains('widget.profileStyle'));
+    expect(panel, contains('if (eligible && accountMatches && !_loading && !_failed &&'));
   });
 
   test('shared room cards reuse server read and existing password admission', () {
