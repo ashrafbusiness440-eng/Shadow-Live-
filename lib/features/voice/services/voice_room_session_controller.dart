@@ -93,6 +93,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool _mysteriousModeEnabled = false;
   String _mysteriousVoiceId = 'original';
   String? _error;
+  String _lastVoiceAdmissionCode = 'not_attempted';
   VoiceConnectionState _connectionState = VoiceConnectionState.idle;
   Map<String, dynamic> _roomArguments = <String, dynamic>{};
   String? _sessionUserUid;
@@ -110,6 +111,18 @@ class VoiceRoomSessionController extends ChangeNotifier {
   bool get mysteriousModeEnabled => _mysteriousModeEnabled;
   String get mysteriousVoiceId => _mysteriousVoiceId;
   String? get error => _error;
+
+  // When ZEGO admission fails there is no room-presence attempt. Never
+  // report the presence service's default ticket error as the root cause.
+  String get roomVoiceAdmissionDiagnostic => _lastVoiceAdmissionCode;
+  static String _safeVoiceAdmissionCode(Object error) {
+    final raw = error is VoiceException
+        ? error.code
+        : error is StateError ? error.message.toString() : 'voice_join_failed';
+    return RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(raw)
+        ? raw : 'voice_join_failed';
+  }
+
   VoiceConnectionState get connectionState => _connectionState;
   Map<String, dynamic> get roomArguments =>
       Map<String, dynamic>.unmodifiable(_roomArguments);
@@ -1106,7 +1119,13 @@ class VoiceRoomSessionController extends ChangeNotifier {
       await leave();
     }
 
+    final pendingLeave = _leaveInFlight;
+    if (pendingLeave != null) await pendingLeave;
+    if (FirebaseAuth.instance.currentUser?.uid != currentUid) {
+      throw StateError('account_changed');
+    }
     await _ensureService();
+    _lastVoiceAdmissionCode = 'connecting';
     final sessionGeneration = ++_roomSessionGeneration;
     _starBattleScores.clear();
     _pkScores.clear();
@@ -1136,6 +1155,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       );
       _active = true;
       _joining = false;
+      _lastVoiceAdmissionCode = '';
       _sessionUserUid = currentUid;
       _micMuted = true;
       _connectionState = VoiceConnectionState.connected;
@@ -1144,6 +1164,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _watchAccountModeration(targetRoomId);
       unawaited(_startPresence(targetRoomId, sessionGeneration));
     } catch (error) {
+      _lastVoiceAdmissionCode = _safeVoiceAdmissionCode(error);
       _active = false;
       _joining = false;
       _sessionUserUid = null;
