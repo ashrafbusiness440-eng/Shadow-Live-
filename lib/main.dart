@@ -2825,7 +2825,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               ),
               if (seat.occupied && state?.starBattleActive == true)
                 Text(
-                  _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
+                  _formatStarBattleCoins(seat.starBattleCoins),
                   maxLines: 1,
                   style: TextStyle(
                     color: const Color(0xFFFFD54A),
@@ -6454,13 +6454,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       // Empty Top 3 slots must not vanish while insights are loading.
       return Row(
         children: [
-          if (_showRoomSupport) _buildSupporterCluster(),
-          if (_loadingRoomInsights) const Spacer(),
+          // Always pin the Top 3 to the left in RTL, including
+          // before the first insights response (without inventing users).
           if (_loadingRoomInsights)
             const SizedBox(
               width: 56,
               child: LinearProgressIndicator(minHeight: 2),
             ),
+          const Spacer(),
+          if (_showRoomSupport) _buildSupporterCluster(),
         ],
       );
     }
@@ -7105,38 +7107,61 @@ class _RoomToolToggle extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
-          width: 58,
-          height: 58,
-          decoration: const BoxDecoration(
-            color: Color(0xFF262626),
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .09),
             shape: BoxShape.circle,
           ),
-          child: Stack(
-            children: [
-              Center(
-                child: Icon(
-                  icon,
-                  color: const Color(0xFFBBD4FF),
-                  size: 30,
-                ),
-              ),
-              Positioned(
-                right: -3,
-                bottom: -5,
-                child: Transform.scale(
-                  scale: .65,
-                  child: Switch(
-                    value: value,
-                    onChanged: onChanged,
-                    activeThumbColor: Colors.white,
-                    activeTrackColor: const Color(0xFF5A20FF),
+          child: Center(
+            child: Icon(
+              icon,
+              color: const Color(0xFFBBD4FF),
+              size: 25,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Tooltip(
+          message: '$label: ${value ? "مفعّل" : "متوقف"}',
+          child: Semantics(
+            button: true,
+            toggled: value,
+            label: label,
+            child: InkWell(
+              onTap: () => onChanged(!value),
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: 40,
+                height: 28,
+                child: Center(
+                  child: Container(
+                    width: 23,
+                    height: 23,
+                    decoration: BoxDecoration(
+                      color: (value
+                              ? const Color(0xFF6D27D9)
+                              : Colors.white)
+                          .withValues(alpha: value ? .88 : .11),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: value
+                            ? const Color(0xFFBFA5FF)
+                            : Colors.white38,
+                      ),
+                    ),
+                    child: Icon(
+                      value ? Icons.check_rounded : Icons.close_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: 7),
+        const SizedBox(height: 4),
         Text(
           label,
           textAlign: TextAlign.center,
