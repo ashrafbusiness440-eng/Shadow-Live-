@@ -47,6 +47,7 @@ class PersonalRoomInfo {
     required this.visibility,
     required this.passwordProtected,
     required this.isActive,
+    this.level = 1,
   });
 
   final String roomId;
@@ -67,6 +68,7 @@ class PersonalRoomInfo {
   final String visibility;
   final bool passwordProtected;
   final bool isActive;
+  final int level;
 
   Map<String, dynamic> toNavigationArguments() => {
         'roomId': roomId,
@@ -88,6 +90,7 @@ class PersonalRoomInfo {
         'visibility': visibility,
         'passwordProtected': passwordProtected,
         'isActive': isActive,
+        'level': level,
       };
 
   factory PersonalRoomInfo.fromJson(
@@ -121,6 +124,7 @@ class PersonalRoomInfo {
       passwordProtected: json['passwordProtected'] == true ||
           (json['visibility'] ?? '').toString() == 'password',
       isActive: json['isActive'] != false,
+      level: ((json['level'] as num?)?.toInt() ?? 1).clamp(1, 100),
     );
   }
 }
