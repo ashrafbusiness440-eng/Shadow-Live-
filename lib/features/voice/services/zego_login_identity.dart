@@ -2,7 +2,7 @@
 /// presence, gifts and messages; do not forward decorative Unicode to ZEGO.
 /// ZEGO room login rejects unsupported username characters (1002009).
 String zegoSdkLoginName(String displayName, String authorizedUserId) {
-  final allowed = RegExp(r'^[A-Za-z0-9_.-]+\$');
+  final allowed = RegExp(r'^[A-Za-z0-9_.-]+$');
   if (authorizedUserId.isEmpty ||
       authorizedUserId.length >= 64 ||
       !allowed.hasMatch(authorizedUserId)) {
