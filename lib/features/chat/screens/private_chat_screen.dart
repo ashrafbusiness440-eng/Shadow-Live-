@@ -247,6 +247,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         // Unique visual key restarts even the same animation on repeated taps.
         'id': '$eventId-$replayId',
         'key': assetKey,
+        // Use the already resolved/preloaded URL, not a second registry fetch.
+        'imageUrl': url.toString(),
       };
     });
     _giftSheetEffectOverlay?.markNeedsBuild();
@@ -266,6 +268,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
       child: CosmeticAssetVisual(
         key: ValueKey(effect['id']),
         assetKey: effect['key'].toString(),
+        imageUrl: (effect['imageUrl'] ?? '').toString(),
       ),
     );
   }
