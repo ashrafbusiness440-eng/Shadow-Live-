@@ -51,6 +51,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   List<DiscoveryRoom> _rooms = const [];
   bool _loading = true;
   bool _openingPersonalRoom = false;
+  bool _managedRoomsSheetOpen = false;
   String? _error;
   String _category = 'الكل';
   String _viewMode = 'all';
@@ -313,9 +314,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  void _showManagedRooms() {
-    if (_openingPersonalRoom) return;
-    showModalBottomSheet<void>(
+  Future<void> _showManagedRooms() async {
+    if (_openingPersonalRoom || _managedRoomsSheetOpen) return;
+    _managedRoomsSheetOpen = true;
+    try {
+      await showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF0D1020),
       isScrollControlled: true,
@@ -349,6 +352,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
         ),
       ),
     );
+    } finally {
+      _managedRoomsSheetOpen = false;
+    }
   }
 
   void _search() {
