@@ -36,7 +36,7 @@ void main() {
 
   test('room reconnect UI does not misdiagnose a server failure as bad internet', () {
     final main = File('lib/main.dart').readAsStringSync();
-    expect(main, contains('تعذّر اتصال الغرفة (رمز: $code)'));
+    expect(main, contains(r'تعذّر اتصال الغرفة (رمز: $code)'));
     expect(main, isNot(contains('تعذر إعادة الاتصال. تحقق من الإنترنت.')));
   });
 }
