@@ -1447,6 +1447,11 @@ class _RoomsPageState extends State<RoomsPage> {
   bool ownerAbsoluteLoading=true;
   bool ownerAbsoluteAvailable=false;
   bool ownerAbsoluteBusy=false;
+  bool moderatorBackfillBusy=false;
+  bool moderatorBackfillComplete=false;
+  String? moderatorBackfillCursor;
+  Map<String,dynamic>? moderatorBackfillPreview;
+  String? moderatorBackfillNotice;
   String officialType='official';
   Map<String,dynamic>? room;
   String? error;
@@ -1480,6 +1485,120 @@ class _RoomsPageState extends State<RoomsPage> {
       throw Exception((data['code']??'request_failed').toString());
     }
     return data;
+  }
+
+
+  // Owner-only maintenance; a two-step preview/confirm per bounded page.
+  // Never runs when simply opening a room or this Control tab.
+  Future<Map<String,dynamic>> postModeratorBackfill({required bool confirm}) async {
+    final user=controlAuth.currentUser;
+    if(user==null)throw Exception('forbidden');
+    final token=await user.getIdToken().timeout(const Duration(seconds:12));
+    if(token==null||token.isEmpty)throw Exception('forbidden');
+    final response=await http.post(
+      apiUri,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:jsonEncode({
+        'action':'roomModeratorIndexBackfillPage',
+        'confirm':confirm,
+        'limit':10,
+        if(moderatorBackfillCursor!=null) 'cursor':moderatorBackfillCursor,
+      }),
+    ).timeout(const Duration(seconds:30));
+    final body=response.body.isEmpty
+        ?<String,dynamic>{}:jsonDecode(response.body) as Map<String,dynamic>;
+    if(response.statusCode<200||response.statusCode>=300||body['ok']!=true){
+      throw Exception((body['code']??'moderator_backfill_failed').toString());
+    }
+    return body;
+  }
+
+  Future<void> processModeratorBackfill({required bool confirm}) async {
+    if(moderatorBackfillBusy||moderatorBackfillComplete)return;
+    if(confirm&&moderatorBackfillPreview==null)return;
+    setState(()=>moderatorBackfillBusy=true);
+    try{
+      final result=await postModeratorBackfill(confirm:confirm);
+      if(!mounted)return;
+      setState((){
+        if(confirm){
+          moderatorBackfillCursor=result['nextCursor']?.toString();
+          moderatorBackfillComplete=result['complete']==true;
+          moderatorBackfillPreview=null;
+          moderatorBackfillNotice=
+            'تمت مزامنة ${result['upsertedMemberships']??0} تعيين إشراف في هذه الدفعة.'
+            '${moderatorBackfillComplete?' اكتمل فحص الغرف.':' افحص الدفعة التالية.'}';
+        }else{
+          moderatorBackfillPreview=result;
+          moderatorBackfillNotice=null;
+        }
+      });
+    }catch(error){
+      if(!mounted)return;
+      setState(()=>moderatorBackfillNotice=
+        'تعذر فحص الفهرس: ${error.toString().replaceFirst('Exception: ','')}');
+    }finally{
+      if(mounted)setState(()=>moderatorBackfillBusy=false);
+    }
+  }
+
+  Widget buildModeratorBackfillCard() {
+    final preview=moderatorBackfillPreview;
+    return Card(
+      child:Padding(
+        padding:const EdgeInsets.all(14),
+        child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('إصلاح قوائم المشرفين القدامى',
+            style:TextStyle(fontWeight:FontWeight.w900)),
+          const SizedBox(height:6),
+          const Text('للـOwner فقط. فحص 10 غرف بكل مرة، ثم تأكيد منفصل. '
+            'لا يتم تغيير الصلاحيات ولا فحص الغرف تلقائيًا، '
+            'ومشرف الغرفة يتحقق منه الخادم عند العرض.',
+            style:TextStyle(color:Color(0xFFAAA3B8),fontSize:12)),
+          const SizedBox(height:10),
+          if(preview!=null) Text(
+            'هذه الدفعة: ${preview['scannedRooms']??0} غرف، '
+            '${preview['candidateMemberships']??0} تعيين إشراف يحتاج مزامنة.',
+            style:const TextStyle(color:Color(0xFFFFD37A))),
+          if(moderatorBackfillNotice!=null)
+            Padding(padding:const EdgeInsets.only(top:6),
+              child:Text(moderatorBackfillNotice!)),
+          if(moderatorBackfillBusy)
+            const Padding(padding:EdgeInsets.symmetric(vertical:8),
+              child:LinearProgressIndicator()),
+          const SizedBox(height:8),
+          Wrap(spacing:8,runSpacing:8,children:[
+            OutlinedButton.icon(
+              key:const Key('room-moderator-index-preview'),
+              onPressed:moderatorBackfillBusy||moderatorBackfillComplete||preview!=null
+                ?null:()=>processModeratorBackfill(confirm:false),
+              icon:const Icon(Icons.fact_check_outlined),
+              label:Text(moderatorBackfillCursor==null
+                ?'فحص أول 10 غرف':'فحص الدفعة التالية'),
+            ),
+            FilledButton.icon(
+              key:const Key('room-moderator-index-confirm'),
+              onPressed:moderatorBackfillBusy||preview==null
+                ?null:()=>processModeratorBackfill(confirm:true),
+              icon:const Icon(Icons.verified_user_outlined),
+              label:const Text('تأكيد مزامنة هذه الدفعة'),
+            ),
+            if(moderatorBackfillComplete)
+              TextButton(
+                onPressed:moderatorBackfillBusy?null:(){
+                  setState((){
+                    moderatorBackfillComplete=false;
+                    moderatorBackfillCursor=null;
+                    moderatorBackfillPreview=null;
+                    moderatorBackfillNotice=null;
+                  });
+                },
+                child:const Text('إعادة الفحص من البداية'),
+              ),
+          ]),
+        ]),
+      ),
+    );
   }
 
   Future<void> loadOwnerAbsoluteRoomAccess() async {
@@ -1907,6 +2026,10 @@ class _RoomsPageState extends State<RoomsPage> {
           onChanged:ownerAbsoluteBusy?null:setOwnerAbsoluteRoomAccess,
         )),
       if(ownerAbsoluteLoading||ownerAbsoluteAvailable) const SizedBox(height:12),
+      if(ownerAbsoluteAvailable&&ownerAbsoluteRoomAccess)
+        buildModeratorBackfillCard(),
+      if(ownerAbsoluteAvailable&&ownerAbsoluteRoomAccess)
+        const SizedBox(height:12),
       SizedBox(width:double.infinity,child:FilledButton.icon(
         onPressed:busy?null:showCreateOfficialRoom,
         icon:const Icon(Icons.add_business_rounded),
