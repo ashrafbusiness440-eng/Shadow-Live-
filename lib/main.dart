@@ -1914,7 +1914,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     SnackBar(
                       content: Text(restored
                           ? 'عاد اتصال الغرفة بالموجودين.'
-                          : 'تعذر إعادة الاتصال. تحقق من الإنترنت.'),
+                          : 'تعذّر استعادة اتصال الغرفة. تحقّق من حالة الغرفة ثم أعد المحاولة.'),
                     ),
                   );
                 }());

@@ -35,7 +35,12 @@ class _WebRoomPresenceSocketConnection
     await _messageSubscription.cancel();
     await _closeSubscription.cancel();
     await _errorSubscription.cancel();
-    if (!_controller.isClosed) await _controller.close();
+    // The caller cancels the Dart stream subscription before closing this
+    // transport. For a single-subscription StreamController, awaiting close()
+    // after cancellation can wait indefinitely, freezing room re-admission.
+    // Closing the underlying socket and browser subscriptions above is enough
+    // to release this transport; do not await an unlistened stream's done event.
+    if (!_controller.isClosed) unawaited(_controller.close());
   }
 }
 
