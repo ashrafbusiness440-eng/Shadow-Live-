@@ -13,11 +13,13 @@ class ManagedRoomsPanel extends StatefulWidget {
     required this.onOpenPersonalRoom,
     this.sheetMode = false,
     this.openingPersonalRoom = false,
+    this.showOpenPersonalFallback = true,
   });
 
   final VoidCallback onOpenPersonalRoom;
   final bool sheetMode;
   final bool openingPersonalRoom;
+  final bool showOpenPersonalFallback;
 
   @override
   State<ManagedRoomsPanel> createState() => _ManagedRoomsPanelState();
@@ -107,6 +109,13 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final eligible = user != null && !user.isAnonymous;
+    final accountMatches = user?.uid == _requestedUid;
+    if (eligible && !accountMatches && !_loading && _requestedUid != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_loading &&
+            FirebaseAuth.instance.currentUser?.uid != _requestedUid) _load();
+      });
+    }
     final hasOwnRoom = _rooms.any((item) => item.isOwner &&
         item.room.roomId == 'personal_${user?.uid}');
     return Directionality(
@@ -123,7 +132,7 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                 style: TextStyle(color: Colors.white70),
               ),
             )
-          else if (_loading)
+          else if (_loading || !accountMatches)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(child: CircularProgressIndicator(
@@ -192,7 +201,7 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                 ),
               ),
           ],
-          if (eligible && !hasOwnRoom)
+          if (eligible && !hasOwnRoom && widget.showOpenPersonalFallback)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: OutlinedButton.icon(
