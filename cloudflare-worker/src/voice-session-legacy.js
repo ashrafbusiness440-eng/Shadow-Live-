@@ -983,7 +983,8 @@ async function changeRoomPublicId(db,uid,body){
     const user=userSnap.data()||{};
     const ownerUid=clean(room.ownerUid||room.ownerId||room.hostId);
     const permissions=roomPermissions(user);
-    const canManageId=canManageRoomAction(room,user,uid,"manageIds")||permissions.manageIds;
+    // Room IDs require an administrative capability, never room ownership.
+    const canManageId=permissions.manageIds;
     if(!canManageId)throw new ApiError("forbidden",403);
     const oldPublicId=clean(room.publicId);
     if(oldPublicId===newPublicId){
@@ -1044,13 +1045,15 @@ async function updateRoomSettings(db,uid,body){
     Object.prototype.hasOwnProperty.call(body,"coverImageObjectId");
   const roomImageObjectId=clean(body.roomImageObjectId||body.coverImageObjectId);
   const tags=Array.isArray(body.tags)
-    ? [...new Set(body.tags.map(clean).filter(Boolean))].slice(0,8)
+    ? [...new Set(body.tags.map(clean).filter(Boolean))]
     : [];
 
   if(name.length<2||name.length>60)throw new ApiError("invalid_room_name",400);
   if(description.length>240)throw new ApiError("invalid_room_description",400);
   if(category.length>30)throw new ApiError("invalid_room_category",400);
-  if(tags.some(tag=>tag.length>24))throw new ApiError("invalid_room_tags",400);
+  if(tags.length>3||tags.some(tag=>tag.length>24)){
+    throw new ApiError("invalid_room_tags",400);
+  }
   if(!["public","password","hidden"].includes(visibility))throw new ApiError("invalid_visibility",400);
   if(visibility==="password"&&password&&password.length<4)throw new ApiError("room_password_too_short",400);
   if(password.length>32)throw new ApiError("room_password_too_long",400);
