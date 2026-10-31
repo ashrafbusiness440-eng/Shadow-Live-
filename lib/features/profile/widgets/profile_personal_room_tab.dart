@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../room/widgets/managed_rooms_panel.dart';
+
 /// Present the owner's personal room without fetching room documents.
 ///
 /// Opening the room is deliberately a user action: the caller delegates to
@@ -11,11 +13,14 @@ class ProfilePersonalRoomTab extends StatelessWidget {
     required this.onOpenPersonalRoom,
     required this.onBrowseRooms,
     this.opening = false,
+    this.showManagedRooms = true,
   });
 
   final VoidCallback onOpenPersonalRoom;
   final VoidCallback onBrowseRooms;
   final bool opening;
+  /// Allows isolated widget tests to render the static profile card.
+  final bool showManagedRooms;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +92,23 @@ class ProfilePersonalRoomTab extends StatelessWidget {
             ],
           ),
         ),
+        if (showManagedRooms) ...[
+        const SizedBox(height: 18),
+        const Text(
+          'غرفي والإشراف',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ManagedRoomsPanel(
+          onOpenPersonalRoom: onOpenPersonalRoom,
+          openingPersonalRoom: opening,
+          showOpenPersonalFallback: false,
+        ),
+        ],
         const SizedBox(height: 12),
         OutlinedButton.icon(
           key: const Key('own-profile-browse-rooms'),

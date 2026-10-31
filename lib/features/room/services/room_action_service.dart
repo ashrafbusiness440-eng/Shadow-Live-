@@ -33,6 +33,7 @@ class PersonalRoomInfo {
     required this.name,
     required this.publicId,
     required this.ownerUid,
+    this.hostUid = '',
     required this.roomType,
     required this.agencyId,
     required this.category,
@@ -46,12 +47,14 @@ class PersonalRoomInfo {
     required this.visibility,
     required this.passwordProtected,
     required this.isActive,
+    this.level = 1,
   });
 
   final String roomId;
   final String name;
   final String publicId;
   final String ownerUid;
+  final String hostUid;
   final String roomType;
   final String agencyId;
   final String category;
@@ -65,13 +68,14 @@ class PersonalRoomInfo {
   final String visibility;
   final bool passwordProtected;
   final bool isActive;
+  final int level;
 
   Map<String, dynamic> toNavigationArguments() => {
         'roomId': roomId,
         'name': name,
         'publicId': publicId,
         'ownerUid': ownerUid,
-        'hostId': ownerUid,
+        'hostId': hostUid.isNotEmpty ? hostUid : ownerUid,
         'roomType': roomType,
         'type': roomType,
         if (agencyId.isNotEmpty) 'agencyId': agencyId,
@@ -86,12 +90,15 @@ class PersonalRoomInfo {
         'visibility': visibility,
         'passwordProtected': passwordProtected,
         'isActive': isActive,
+        'level': level,
       };
 
-  factory PersonalRoomInfo.fromJson(Map<String, dynamic> json) {
+  factory PersonalRoomInfo.fromJson(
+    Map<String, dynamic> json, {bool allowNoOwner = false}
+  ) {
     final roomId = (json['roomId'] ?? '').toString().trim();
     final ownerUid = (json['ownerUid'] ?? '').toString().trim();
-    if (roomId.isEmpty || ownerUid.isEmpty) {
+    if (roomId.isEmpty || (!allowNoOwner && ownerUid.isEmpty)) {
       throw const FormatException('invalid_personal_room');
     }
     return PersonalRoomInfo(
@@ -99,6 +106,7 @@ class PersonalRoomInfo {
       name: (json['name'] ?? 'غرفتي').toString(),
       publicId: (json['publicId'] ?? '').toString(),
       ownerUid: ownerUid,
+      hostUid: (json['hostUid'] ?? json['hostId'] ?? '').toString(),
       roomType: (json['roomType'] ?? json['type'] ?? 'personal').toString(),
       agencyId: (json['agencyId'] ?? '').toString(),
       category: (json['category'] ?? 'دردشة').toString(),
@@ -116,6 +124,28 @@ class PersonalRoomInfo {
       passwordProtected: json['passwordProtected'] == true ||
           (json['visibility'] ?? '').toString() == 'password',
       isActive: json['isActive'] != false,
+      level: ((json['level'] as num?)?.toInt() ?? 1).clamp(1, 100).toInt(),
+    );
+  }
+}
+
+class ManagedRoomEntry {
+  const ManagedRoomEntry({required this.room, required this.relation});
+
+  final PersonalRoomInfo room;
+  final String relation;
+
+  bool get isOwner => relation == 'owner';
+  bool get isModerator => relation == 'moderator';
+
+  factory ManagedRoomEntry.fromJson(Map<String, dynamic> json) {
+    final relation = (json['relation'] ?? '').toString();
+    if (relation != 'owner' && relation != 'moderator') {
+      throw const FormatException('invalid_room_relation');
+    }
+    return ManagedRoomEntry(
+      room: PersonalRoomInfo.fromJson(json, allowNoOwner: true),
+      relation: relation,
     );
   }
 }
@@ -161,6 +191,17 @@ class RoomActionService {
       throw StateError((decoded['code'] ?? 'room_action_failed').toString());
     }
     return decoded;
+  }
+
+  /// One authenticated call when the owned/moderated rooms surface opens.
+  /// The server verifies the current moderator grant for every room.
+  Future<List<ManagedRoomEntry>> loadManagedRooms() async {
+    final body = await _post({'action': 'roomManagedList'});
+    final raw = body['rooms'];
+    if (raw is! List) throw const FormatException('invalid_managed_rooms');
+    return raw.whereType<Map>().map((entry) =>
+      ManagedRoomEntry.fromJson(Map<String, dynamic>.from(entry))
+    ).take(30).toList(growable: false);
   }
 
   Future<PersonalRoomInfo> openPersonalRoom() async {

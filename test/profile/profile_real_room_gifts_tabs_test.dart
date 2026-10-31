@@ -18,6 +18,7 @@ void main() {
             body: Directionality(
               textDirection: TextDirection.rtl,
               child: ProfilePersonalRoomTab(
+                showManagedRooms: false,
                 onOpenPersonalRoom: () => opens++,
                 onBrowseRooms: () => browses++,
               ),
@@ -45,6 +46,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: ProfilePersonalRoomTab(
+          showManagedRooms: false,
           opening: true,
           onOpenPersonalRoom: () => calls++,
           onBrowseRooms: () {},
