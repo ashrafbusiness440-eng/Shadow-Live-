@@ -1563,6 +1563,28 @@ export async function sendRoomGift(db, senderUid, body = {}, options = {}) {
       const roomReceiverPublicId = receiverMysteriousMode
         ? receiverMysteriousId
         : receiverPublicId;
+      // Daily receiver ranking is scoped to this one room. It shares the
+      // same idempotent gift transaction as the wallet and gift ledger;
+      // no room-root write or cross-room scan is introduced.
+      if (paidRecipientCost > 0) {
+        writes.push(
+          db.writeUpdate(
+            roomDailyPath + "/recipients/" + receiverId,
+            {
+              uid: receiverId,
+              displayName: roomReceiverName,
+              profileImageUrl: roomReceiverProfileImageUrl,
+              publicId: roomReceiverPublicId,
+              updatedAt: now,
+            },
+            ["uid", "displayName", "profileImageUrl", "publicId", "updatedAt"],
+            [
+              db.increment("receivedCoins", paidRecipientCost),
+              db.increment("giftCount", quantity),
+            ],
+          ),
+        );
+      }
       writes.push(
         ...userLevelSupportAggregateWrites(db, {
           senderUid,
