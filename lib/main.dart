@@ -1915,7 +1915,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                     SnackBar(
                       content: Text(restored
                           ? 'عاد اتصال الغرفة بالموجودين.'
-                          : 'تعذّر اتصال الغرفة (رمز: $code).'),
+                          : 'تعذّر استعادة اتصال الغرفة. (رمز: $code)'),
                       action: restored ? null : SnackBarAction(
                         label: 'نسخ الرمز',
                         onPressed: () => Clipboard.setData(
