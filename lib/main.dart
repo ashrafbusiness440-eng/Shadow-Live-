@@ -2882,12 +2882,13 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                         height: badgeSize,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
+                          // Keep mic state readable without another opaque disc.
                           color: seat.muted
-                              ? const Color(0xFF2A2F3A)
-                              : const Color(0xFF39D98A),
+                              ? const Color(0xB32A2F3A)
+                              : const Color(0xB339D98A),
                           border: Border.all(
-                            color: const Color(0xFF05060D),
-                            width: 2,
+                            color: const Color(0x9905060D),
+                            width: 1.5,
                           ),
                         ),
                         child: Icon(
