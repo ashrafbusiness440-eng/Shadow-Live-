@@ -314,6 +314,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   List<GameCatalogEntry>? _bootstrapGames;
   bool _roomClosedHandled = false;
   bool _initialGameOpened = false;
+  bool _roomRecoveryInFlight = false;
+  bool _roomStageRecovered = false;
 
   @override
   void didChangeDependencies() {
@@ -354,7 +356,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         _ownerLocation = 'AE';
         _voiceJoining = false;
         _voiceMicMuted = true;
-        _voiceError = null;
+        _voiceError = Uri.base.queryParameters['room_stage_join_failed'] == '1'
+            ? 'voice_join_failed' : null;
         _roomModeratorState = const RoomModeratorState(
           roomId: 'e2e_room',
           isOwner: true,
@@ -1821,6 +1824,102 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     );
   }
 
+  // Recover the actual admission layer first. If ZEGO never joined,
+  // ensureRoomPresenceReady() correctly refuses to open a socket, but the
+  // caller must retry ZEGO instead of showing an old ticket diagnostic.
+  Future<void> _recoverRoomConnection() async {
+    if (!mounted || _roomRecoveryInFlight) return;
+    if (const bool.fromEnvironment('E2E_ROOM_TEST')) {
+      // Synthetic, browser-only visual recovery: no authentication, Worker,
+      // microphone, or user data. Real admission is exercised elsewhere.
+      setState(() {
+        _roomStageRecovered = true;
+        _voiceError = null;
+        _roomArguments['presenceDegraded'] = false;
+        _roomArguments['onlineCount'] = 1;
+      });
+      return;
+    }
+    if (_voiceJoining || _voiceSession.joining) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الدخول إلى الغرفة قيد التنفيذ.')),
+      );
+      return;
+    }
+    setState(() => _roomRecoveryInFlight = true);
+    try {
+      if (!_voiceSession.active) {
+        // Re-run the SAME secured voice-session admission/password path.
+        // _connectVoice already catches denied room access and leaves the
+        // UI in a failed state. Never bypass the ZEGO security gate.
+        setState(() {
+          _voiceJoining = true;
+          _voiceError = null;
+        });
+        await _connectVoice();
+      }
+      if (!mounted) return;
+      final voiceActive = _voiceSession.active;
+      final restored = voiceActive &&
+          await _voiceSession.ensureRoomPresenceReady();
+      if (!mounted) return;
+      final voiceCode = _voiceSession.roomVoiceAdmissionDiagnostic;
+      final code = !voiceActive
+          ? 'voice_${voiceCode.isEmpty ? "session_inactive" : voiceCode}'
+          : _voiceSession.roomPresenceDiagnostic;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(restored
+            ? 'عاد اتصال الغرفة بالموجودين.'
+            : 'تعذّر اتصال الغرفة (رمز: $code)'),
+        action: restored ? null : SnackBarAction(
+          label: 'نسخ الرمز',
+          onPressed: () => Clipboard.setData(ClipboardData(text: code)),
+        ),
+      ));
+    } finally {
+      if (mounted) setState(() => _roomRecoveryInFlight = false);
+    }
+  }
+
+  Widget _buildVoiceAdmissionErrorBanner() {
+    final failed = const bool.fromEnvironment('E2E_ROOM_TEST')
+        ? Uri.base.queryParameters['room_stage_join_failed'] == '1' &&
+            !_roomStageRecovered
+        : !_voiceJoining && !_voiceSession.joining &&
+            !_voiceSession.active;
+    if (!failed) return const SizedBox.shrink();
+    return Container(
+      key: const Key('room-voice-admission-error'),
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xE021172A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xAAFFBC55)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              color: Color(0xFFFFBC55), size: 18),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text('لم يكتمل دخول الصوت إلى الغرفة',
+                maxLines: 2,
+                style: TextStyle(color: Colors.white, fontSize: 11)),
+          ),
+          TextButton(
+            key: const Key('room-voice-admission-retry'),
+            onPressed: _roomRecoveryInFlight ? null :
+                () => unawaited(_recoverRoomConnection()),
+            child: const Text('إعادة الدخول',
+                style: TextStyle(color: Color(0xFFFFD54A), fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
   int get _roomAudienceTotalCount {
     // The Durable Object's verified websocket count is authoritative.
     // Occupied Firestore seats may outlive a disconnected participant.
@@ -1905,27 +2004,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             IconButton(
               tooltip: 'إعادة اتصال الموجودين',
               visualDensity: VisualDensity.compact,
-              onPressed: () {
-                unawaited(() async {
-                  final restored =
-                      await _voiceSession.ensureRoomPresenceReady();
-                  if (!mounted) return;
-                  final code = _voiceSession.roomPresenceDiagnostic;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(restored
-                          ? 'عاد اتصال الغرفة بالموجودين.'
-                          : 'تعذّر استعادة اتصال الغرفة. (رمز: $code)'),
-                      action: restored ? null : SnackBarAction(
-                        label: 'نسخ الرمز',
-                        onPressed: () => Clipboard.setData(
-                          ClipboardData(text: code),
-                        ),
-                      ),
-                    ),
-                  );
-                }());
-              },
+              onPressed: _roomRecoveryInFlight ? null
+                  : () => unawaited(_recoverRoomConnection()),
               icon: const Icon(
                 Icons.sync_problem_rounded,
                 size: 19,
@@ -7043,6 +7123,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                               _buildRoomInsightsBar(),
                               const SizedBox(height: 4),
                               _buildMicStatusBanner(),
+                              _buildVoiceAdmissionErrorBanner(),
                             ],
                           ),
                         ),
