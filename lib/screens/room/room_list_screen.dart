@@ -319,39 +319,39 @@ class _RoomListScreenState extends State<RoomListScreen> {
     _managedRoomsSheetOpen = true;
     try {
       await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF0D1020),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * .73,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            children: [
-              const Center(
-                child: Text(
-                  'غرفي والإشراف',
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
+        context: context,
+        backgroundColor: const Color(0xFF0D1020),
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (sheetContext) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(sheetContext).height * .73,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              children: [
+                const Center(
+                  child: Text(
+                    'غرفي والإشراف',
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              ManagedRoomsPanel(
-                sheetMode: true,
-                onOpenPersonalRoom: _openPersonalRoom,
-              ),
-            ],
+                const SizedBox(height: 12),
+                ManagedRoomsPanel(
+                  sheetMode: true,
+                  onOpenPersonalRoom: _openPersonalRoom,
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
     } finally {
       _managedRoomsSheetOpen = false;
     }
