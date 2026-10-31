@@ -302,6 +302,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   bool _loadingRoomInsights = false;
   bool _changingRoomFollow = false;
   bool _changingRoomFavorite = false;
+  bool _supportersSheetInFlight = false;
+  bool _rankingSheetInFlight = false;
   RoomSeatState? _roomSeatState;
   int _roomLiveRevision = 0;
   bool _changingSeat = false;
@@ -2828,7 +2830,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               ),
               if (seat.occupied && state?.starBattleActive == true)
                 Text(
-                  _formatStarBattleCoins(seat.starBattleCoins) + ' ⭐',
+                  _formatStarBattleCoins(seat.starBattleCoins),
                   maxLines: 1,
                   style: TextStyle(
                     color: const Color(0xFFFFD54A),
@@ -2845,398 +2847,410 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   Future<void> _showSupportersSheet() async {
-    final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
-    var supporters = _roomInsights?.supporters ?? const <RoomSupporter>[];
-    if (roomId.isNotEmpty) {
-      try {
-        final detailed = await _roomInsightsService.load(
-          roomId,
-          includeSupporters: true,
-        );
-        supporters = detailed.supporters;
-        if (mounted) setState(() => _roomInsights = detailed);
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF0C101A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (sheetContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(sheetContext).size.height * .68,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-              child: Column(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.workspace_premium_rounded,
-                        color: Color(0xFFFFD54A),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'داعمو الغرفة',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Expanded(
-                    child: supporters.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'لا يوجد دعم مسجل لهذه الغرفة بعد',
-                              style: TextStyle(color: Colors.white54),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: supporters.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(color: Colors.white10),
-                            itemBuilder: (_, index) {
-                              final supporter = supporters[index];
-                              final hasLevelBadges =
-                                  supporter.wealthLevel > 0 ||
-                                  supporter.attractionLevel > 0 ||
-                                  supporter.gameLevel > 0;
-                              final hasPublicBadges =
-                                  supporter.vipLevel > 0 ||
-                                  supporter.badges.isNotEmpty;
-                              return ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                onTap: supporter.mysteriousMode
-                                    ? () {
-                                        Navigator.of(sheetContext).pop();
-                                        Future<void>.microtask(() async {
-                                          if (!mounted) return;
-                                          await showMysteriousIdentitySheet(
-                                            context,
-                                            mysteriousId:
-                                                supporter.mysteriousId,
-                                            rank: supporter.rank,
-                                            support: supporter.totalSupport,
-                                          );
-                                        });
-                                      }
-                                    : supporter.uid.isEmpty
-                                        ? null
-                                        : () {
-                                            Navigator.of(sheetContext).pop();
-                                            Future<void>.microtask(() async {
-                                              if (!mounted) return;
-                                              await showQuickProfileSheet(
-                                                context,
-                                                userId: supporter.uid,
-                                              );
-                                            });
-                                          },
-                                leading: supporter.mysteriousMode
-                                    ? const MysteriousIdentityAvatar(
-                                        diameter: 40,
-                                      )
-                                    : ProfileAvatarWithFrame(
-                                        diameter: 40,
-                                        userId: supporter.uid,
-                                        backgroundColor:
-                                            const Color(0xFF25183F),
-                                        placeholderColor:
-                                            const Color(0xFFFFD54A),
-                                        fallbackProfile: <String, dynamic>{
-                                          'profileImageUrl':
-                                              supporter.profileImageUrl,
-                                          'profileAvatarAsset':
-                                              supporter.profileAvatarAsset,
-                                          'activeProfileFrameAssetKey':
-                                              supporter.activeProfileFrameAssetKey,
-                                          'activeProfileFrameImageUrl':
-                                              supporter.activeProfileFrameImageUrl,
-                                          'activeProfileFrameExpiresAtMs':
-                                              supporter.activeProfileFrameExpiresAtMs,
-                                          'activeProfileFramePermanent':
-                                              supporter.activeProfileFramePermanent,
-                                        },
-                                        fallbackIsVisualSnapshot: true,
-                                        vipLevel: supporter.vipLevel,
-                                        useVipFallback: true,
-                                      ),
-                                title: Text(
-                                  supporter.displayName,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'ID: ' +
-                                            (supporter.publicId.isEmpty
-                                                ? '—'
-                                                : supporter.publicId),
-                                        textDirection: TextDirection.ltr,
-                                        style: const TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                      Text(
-                                        'المركز ' +
-                                            supporter.rank.toString(),
-                                        style: const TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                      if (hasPublicBadges) ...[
-                                        const SizedBox(height: 6),
-                                        Wrap(
-                                          spacing: 5,
-                                          runSpacing: 5,
-                                          children: [
-                                            if (supporter.vipLevel > 0)
-                                              RegistryBadge(
-                                                assetKey:
-                                                    ShadowAssetKeys.vipBadge(
-                                                  supporter.vipLevel,
-                                                ),
-                                                label:
-                                                    'VIP ${supporter.vipLevel}',
-                                              ),
-                                            ...supporter.badges.take(4).map(
-                                                  (badge) => RegistryBadge(
-                                                    assetKey:
-                                                        normalizePublicBadgeKey(
-                                                      badge,
-                                                    ),
-                                                    label: publicBadgeLabel(
-                                                      badge,
-                                                    ),
-                                                  ),
-                                                ),
-                                          ],
-                                        ),
-                                      ],
-                                      if (hasLevelBadges) ...[
-                                        const SizedBox(height: 6),
-                                        UserLevelBadges.fromLevels(
-                                          wealthLevel:
-                                              supporter.wealthLevel,
-                                          attractionLevel:
-                                              supporter.attractionLevel,
-                                          gameLevel: supporter.gameLevel,
-                                          compact: true,
-                                          onTap: (tabIndex) {
-                                            Navigator.of(sheetContext).pop();
-                                            Future<void>.microtask(() {
-                                              if (!mounted) return;
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute<void>(
-                                                  builder: (_) =>
-                                                      UserLevelScreen(
-                                                    userId: supporter.uid,
-                                                    initialTabIndex:
-                                                        tabIndex,
-                                                  ),
-                                                ),
-                                              );
-                                            });
-                                          },
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                trailing: Text(
-                                  supporter.totalSupport.toString(),
-                                  style: const TextStyle(
-                                    color: Color(0xFFFFD54A),
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    if (_supportersSheetInFlight) return;
+    _supportersSheetInFlight = true;
+    try {
+      final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
+      var supporters = _roomInsights?.supporters ?? const <RoomSupporter>[];
+      if (roomId.isNotEmpty) {
+        try {
+          final detailed = await _roomInsightsService.load(
+            roomId,
+            includeSupporters: true,
+          );
+          supporters = detailed.supporters;
+          if (mounted) setState(() => _roomInsights = detailed);
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0C101A),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
-      ),
-    );
-  }
-
-  Future<void> _showRoomRankingSheet() async {
-    final currentRoomId = (_roomArguments['roomId'] ?? '').toString();
-    var ranking = _roomInsights?.ranking ?? const <RoomRankEntry>[];
-    if (currentRoomId.trim().isNotEmpty) {
-      try {
-        final detailed = await _roomInsightsService.load(
-          currentRoomId,
-          includeRanking: true,
-        );
-        ranking = detailed.ranking;
-        if (mounted) setState(() => _roomInsights = detailed);
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF0C101A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (sheetContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(sheetContext).size.height * .72,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-              child: Column(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(99),
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .68,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.emoji_events_rounded,
-                        color: Color(0xFFFFD54A),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'ترتيب الغرف اليومي',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w900,
+                    const SizedBox(height: 14),
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.workspace_premium_rounded,
+                          color: Color(0xFFFFD54A),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Expanded(
-                    child: ranking.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'لا توجد بيانات ترتيب حالياً',
-                              style: TextStyle(color: Colors.white54),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: ranking.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(color: Colors.white10),
-                            itemBuilder: (_, index) {
-                              final entry = ranking[index];
-                              final current = entry.roomId == currentRoomId;
-                              return Container(
-                                decoration: BoxDecoration(
-                                  color: current
-                                      ? const Color(0xFF8A3DFF)
-                                          .withValues(alpha: .13)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: entry.rank <= 3
-                                        ? const Color(0xFFFFD54A)
-                                        : const Color(0xFF202534),
-                                    child: Text(
-                                      entry.rank.toString(),
-                                      style: TextStyle(
-                                        color: entry.rank <= 3
-                                            ? Colors.black
-                                            : Colors.white,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
+                        SizedBox(width: 8),
+                        Text(
+                          'داعمو الغرفة',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: supporters.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'لا يوجد دعم مسجل لهذه الغرفة بعد',
+                                style: TextStyle(color: Colors.white54),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: supporters.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(color: Colors.white10),
+                              itemBuilder: (_, index) {
+                                final supporter = supporters[index];
+                                final hasLevelBadges =
+                                    supporter.wealthLevel > 0 ||
+                                    supporter.attractionLevel > 0 ||
+                                    supporter.gameLevel > 0;
+                                final hasPublicBadges =
+                                    supporter.vipLevel > 0 ||
+                                    supporter.badges.isNotEmpty;
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  onTap: supporter.mysteriousMode
+                                      ? () {
+                                          Navigator.of(sheetContext).pop();
+                                          Future<void>.microtask(() async {
+                                            if (!mounted) return;
+                                            await showMysteriousIdentitySheet(
+                                              context,
+                                              mysteriousId:
+                                                  supporter.mysteriousId,
+                                              rank: supporter.rank,
+                                              support: supporter.totalSupport,
+                                            );
+                                          });
+                                        }
+                                      : supporter.uid.isEmpty
+                                          ? null
+                                          : () {
+                                              Navigator.of(sheetContext).pop();
+                                              Future<void>.microtask(() async {
+                                                if (!mounted) return;
+                                                await showQuickProfileSheet(
+                                                  context,
+                                                  userId: supporter.uid,
+                                                );
+                                              });
+                                            },
+                                  leading: supporter.mysteriousMode
+                                      ? const MysteriousIdentityAvatar(
+                                          diameter: 40,
+                                        )
+                                      : ProfileAvatarWithFrame(
+                                          diameter: 40,
+                                          userId: supporter.uid,
+                                          backgroundColor:
+                                              const Color(0xFF25183F),
+                                          placeholderColor:
+                                              const Color(0xFFFFD54A),
+                                          fallbackProfile: <String, dynamic>{
+                                            'profileImageUrl':
+                                                supporter.profileImageUrl,
+                                            'profileAvatarAsset':
+                                                supporter.profileAvatarAsset,
+                                            'activeProfileFrameAssetKey':
+                                                supporter.activeProfileFrameAssetKey,
+                                            'activeProfileFrameImageUrl':
+                                                supporter.activeProfileFrameImageUrl,
+                                            'activeProfileFrameExpiresAtMs':
+                                                supporter.activeProfileFrameExpiresAtMs,
+                                            'activeProfileFramePermanent':
+                                                supporter.activeProfileFramePermanent,
+                                          },
+                                          fallbackIsVisualSnapshot: true,
+                                          vipLevel: supporter.vipLevel,
+                                          useVipFallback: true,
+                                        ),
                                   title: Text(
-                                    entry.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    supporter.displayName,
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
-                                  subtitle: entry.publicId.isEmpty
-                                      ? null
-                                      : Text(
-                                          'ID: ' + entry.publicId,
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'ID: ' +
+                                              (supporter.publicId.isEmpty
+                                                  ? '—'
+                                                  : supporter.publicId),
+                                          textDirection: TextDirection.ltr,
                                           style: const TextStyle(
-                                            color: Colors.white38,
+                                            color: Colors.white54,
                                             fontSize: 10,
                                           ),
                                         ),
-                                  trailing: Column(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        entry.activityScore.toString(),
-                                        style: const TextStyle(
-                                          color: Color(0xFFFFD54A),
-                                          fontWeight: FontWeight.w900,
+                                        Text(
+                                          'المركز ' +
+                                              supporter.rank.toString(),
+                                          style: const TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 10,
+                                          ),
                                         ),
-                                      ),
-                                      const Text(
-                                        'Activity',
-                                        style: TextStyle(
-                                          color: Colors.white38,
-                                          fontSize: 9,
-                                        ),
-                                      ),
-                                    ],
+                                        if (hasPublicBadges) ...[
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: 5,
+                                            runSpacing: 5,
+                                            children: [
+                                              if (supporter.vipLevel > 0)
+                                                RegistryBadge(
+                                                  assetKey:
+                                                      ShadowAssetKeys.vipBadge(
+                                                    supporter.vipLevel,
+                                                  ),
+                                                  label:
+                                                      'VIP ${supporter.vipLevel}',
+                                                ),
+                                              ...supporter.badges.take(4).map(
+                                                    (badge) => RegistryBadge(
+                                                      assetKey:
+                                                          normalizePublicBadgeKey(
+                                                        badge,
+                                                      ),
+                                                      label: publicBadgeLabel(
+                                                        badge,
+                                                      ),
+                                                    ),
+                                                  ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (hasLevelBadges) ...[
+                                          const SizedBox(height: 6),
+                                          UserLevelBadges.fromLevels(
+                                            wealthLevel:
+                                                supporter.wealthLevel,
+                                            attractionLevel:
+                                                supporter.attractionLevel,
+                                            gameLevel: supporter.gameLevel,
+                                            compact: true,
+                                            onTap: (tabIndex) {
+                                              Navigator.of(sheetContext).pop();
+                                              Future<void>.microtask(() {
+                                                if (!mounted) return;
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute<void>(
+                                                    builder: (_) =>
+                                                        UserLevelScreen(
+                                                      userId: supporter.uid,
+                                                      initialTabIndex:
+                                                          tabIndex,
+                                                    ),
+                                                  ),
+                                                );
+                                              });
+                                            },
+                                          ),
+                                        ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
+                                  trailing: Text(
+                                    supporter.totalSupport.toString(),
+                                    style: const TextStyle(
+                                      color: Color(0xFFFFD54A),
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _supportersSheetInFlight = false;
+    }
+  }
+
+  Future<void> _showRoomRankingSheet() async {
+    if (_rankingSheetInFlight) return;
+    _rankingSheetInFlight = true;
+    try {
+      final currentRoomId = (_roomArguments['roomId'] ?? '').toString();
+      var ranking = _roomInsights?.ranking ?? const <RoomRankEntry>[];
+      if (currentRoomId.trim().isNotEmpty) {
+        try {
+          final detailed = await _roomInsightsService.load(
+            currentRoomId,
+            includeRanking: true,
+          );
+          ranking = detailed.ranking;
+          if (mounted) setState(() => _roomInsights = detailed);
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF0C101A),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        builder: (sheetContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .72,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.emoji_events_rounded,
+                          color: Color(0xFFFFD54A),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'ترتيب الغرف اليومي',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: ranking.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'لا توجد بيانات ترتيب حالياً',
+                                style: TextStyle(color: Colors.white54),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: ranking.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(color: Colors.white10),
+                              itemBuilder: (_, index) {
+                                final entry = ranking[index];
+                                final current = entry.roomId == currentRoomId;
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: current
+                                        ? const Color(0xFF8A3DFF)
+                                            .withValues(alpha: .13)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: entry.rank <= 3
+                                          ? const Color(0xFFFFD54A)
+                                          : const Color(0xFF202534),
+                                      child: Text(
+                                        entry.rank.toString(),
+                                        style: TextStyle(
+                                          color: entry.rank <= 3
+                                              ? Colors.black
+                                              : Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    title: Text(
+                                      entry.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    subtitle: entry.publicId.isEmpty
+                                        ? null
+                                        : Text(
+                                            'ID: ' + entry.publicId,
+                                            style: const TextStyle(
+                                              color: Colors.white38,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                    trailing: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          entry.activityScore.toString(),
+                                          style: const TextStyle(
+                                            color: Color(0xFFFFD54A),
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        const Text(
+                                          'Activity',
+                                          style: TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 9,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _rankingSheetInFlight = false;
+    }
   }
 
   Future<void> _showShareRoomSheet() async {
@@ -6496,13 +6510,15 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       // Empty Top 3 slots must not vanish while insights are loading.
       return Row(
         children: [
-          if (_showRoomSupport) _buildSupporterCluster(),
-          if (_loadingRoomInsights) const Spacer(),
+          // Always pin the Top 3 to the left in RTL, including
+          // before the first insights response (without inventing users).
           if (_loadingRoomInsights)
             const SizedBox(
               width: 56,
               child: LinearProgressIndicator(minHeight: 2),
             ),
+          const Spacer(),
+          if (_showRoomSupport) _buildSupporterCluster(),
         ],
       );
     }
@@ -7147,38 +7163,61 @@ class _RoomToolToggle extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
-          width: 58,
-          height: 58,
-          decoration: const BoxDecoration(
-            color: Color(0xFF262626),
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .09),
             shape: BoxShape.circle,
           ),
-          child: Stack(
-            children: [
-              Center(
-                child: Icon(
-                  icon,
-                  color: const Color(0xFFBBD4FF),
-                  size: 30,
-                ),
-              ),
-              Positioned(
-                right: -3,
-                bottom: -5,
-                child: Transform.scale(
-                  scale: .65,
-                  child: Switch(
-                    value: value,
-                    onChanged: onChanged,
-                    activeThumbColor: Colors.white,
-                    activeTrackColor: const Color(0xFF5A20FF),
+          child: Center(
+            child: Icon(
+              icon,
+              color: const Color(0xFFBBD4FF),
+              size: 25,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Tooltip(
+          message: '$label: ${value ? "مفعّل" : "متوقف"}',
+          child: Semantics(
+            button: true,
+            toggled: value,
+            label: label,
+            child: InkWell(
+              onTap: () => onChanged(!value),
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: 40,
+                height: 28,
+                child: Center(
+                  child: Container(
+                    width: 23,
+                    height: 23,
+                    decoration: BoxDecoration(
+                      color: (value
+                              ? const Color(0xFF6D27D9)
+                              : Colors.white)
+                          .withValues(alpha: value ? .88 : .11),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: value
+                            ? const Color(0xFFBFA5FF)
+                            : Colors.white38,
+                      ),
+                    ),
+                    child: Icon(
+                      value ? Icons.check_rounded : Icons.close_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: 7),
+        const SizedBox(height: 4),
         Text(
           label,
           textAlign: TextAlign.center,
