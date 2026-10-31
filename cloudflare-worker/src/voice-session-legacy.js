@@ -4348,6 +4348,7 @@ async function roomInsights(db,uid,body={}){
   const roomId=clean(body.roomId);
   const includeRanking=body.includeRanking===true;
   const includeSupporters=body.includeSupporters===true;
+  const includeAttraction=body.includeAttraction===true;
   if(!/^[A-Za-z0-9_-]{1,180}$/.test(roomId))throw new ApiError("invalid_room_id",400);
 
   const roomRef=db.collection("rooms").doc(roomId);
@@ -4404,6 +4405,29 @@ async function roomInsights(db,uid,body={}){
     supporters=await enrichSupporterPublicMetadata(db,supporters,uid);
   }else{
     supporters=await filterSupporterRankingVisibility(db,supporters,uid);
+  }
+
+  // Do not query other rooms or scan gift history. The daily receiver docs
+  // are written transactionally by the established room-gift endpoint.
+  let attraction=[];
+  if(includeAttraction){
+    const topRecipientsSnap=await dailySupportRef.collection("recipients")
+      .orderBy("receivedCoins","desc").limit(50).get();
+    const ranked=topRecipientsSnap.docs
+      .map(doc=>{
+        const data=doc.data()||{};
+        return {
+          uid:doc.id,
+          displayName:clean(data.displayName||"مستخدم Shadow Live"),
+          profileImageUrl:clean(data.profileImageUrl),
+          publicId:clean(data.publicId),
+          dailySupport:Math.max(0,Number(data.receivedCoins||0)),
+          giftCount:Math.max(0,Number(data.giftCount||0)),
+        };
+      })
+      .filter(item=>item.dailySupport>0)
+      .map((item,index)=>({...item,rank:index+1,totalSupport:item.dailySupport}));
+    attraction=await enrichSupporterPublicMetadata(db,ranked,uid);
   }
 
   let ranking=[];
@@ -4499,6 +4523,7 @@ async function roomInsights(db,uid,body={}){
     ),
     dailyRank,
     supporters,
+    attraction,
     ranking,
   };
 }

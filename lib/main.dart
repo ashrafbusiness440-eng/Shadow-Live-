@@ -424,6 +424,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             RoomSupporter(uid: 's2', rank: 2, displayName: 'B', profileImageUrl: '', totalSupport: 6000, dailySupport: 6000),
             RoomSupporter(uid: 's3', rank: 3, displayName: 'C', profileImageUrl: '', totalSupport: 2500, dailySupport: 2500),
           ],
+          attraction: const <RoomSupporter>[],
           ranking: [],
         );
       });
@@ -2852,15 +2853,22 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     try {
       final roomId = (_roomArguments['roomId'] ?? '').toString().trim();
       var supporters = _roomInsights?.supporters ?? const <RoomSupporter>[];
+      var attraction = _roomInsights?.attraction ?? const <RoomSupporter>[];
+      var attractionTab = false;
+      var rankingsLoadFailed = false;
       if (roomId.isNotEmpty) {
         try {
           final detailed = await _roomInsightsService.load(
             roomId,
             includeSupporters: true,
+            includeAttraction: true,
           );
           supporters = detailed.supporters;
+          attraction = detailed.attraction;
           if (mounted) setState(() => _roomInsights = detailed);
-        } catch (_) {}
+        } catch (_) {
+          rankingsLoadFailed = true;
+        }
       }
       if (!mounted) return;
       await showModalBottomSheet<void>(
@@ -2870,7 +2878,8 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
-        builder: (sheetContext) => Directionality(
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setTabState) => Directionality(
           textDirection: TextDirection.rtl,
           child: SafeArea(
             child: SizedBox(
@@ -2906,20 +2915,46 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ],
                     ),
                     const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ChoiceChip(
+                            label: const Text('داعمو الغرفة'),
+                            selected: !attractionTab,
+                            onSelected: (_) =>
+                                setTabState(() => attractionTab = false),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ChoiceChip(
+                            label: const Text('الجاذبية'),
+                            selected: attractionTab,
+                            onSelected: (_) =>
+                                setTabState(() => attractionTab = true),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Expanded(
-                      child: supporters.isEmpty
-                          ? const Center(
+                      child: (attractionTab ? attraction : supporters).isEmpty
+                          ? Center(
                               child: Text(
-                                'لا يوجد دعم مسجل لهذه الغرفة بعد',
+                                rankingsLoadFailed
+                                    ? 'تعذر تحميل الترتيب حالياً'
+                                    : attractionTab
+                                        ? 'لا توجد هدايا مستقبلة اليوم'
+                                        : 'لا يوجد دعم مسجل لهذه الغرفة بعد',
                                 style: TextStyle(color: Colors.white54),
                               ),
                             )
                           : ListView.separated(
-                              itemCount: supporters.length,
+                              itemCount: (attractionTab ? attraction : supporters).length,
                               separatorBuilder: (_, __) =>
                                   const Divider(color: Colors.white10),
                               itemBuilder: (_, index) {
-                                final supporter = supporters[index];
+                                final supporter = (attractionTab ? attraction : supporters)[index];
                                 final hasLevelBadges =
                                     supporter.wealthLevel > 0 ||
                                     supporter.attractionLevel > 0 ||
@@ -3091,6 +3126,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
               ),
             ),
           ),
+        ),
         ),
       );
     } finally {
