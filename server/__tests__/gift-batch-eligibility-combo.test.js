@@ -86,6 +86,17 @@ test("room combo locks recipient selection before asynchronous reconnection",()=
   assert.ok(picker.includes("'gift_recipients_changed'"));
 });
 
+test("room gift transactions remain pinned to the original signed-in account", () => {
+  const service = read("../../lib/features/gift/services/room_gift_service.dart");
+  const room = read("../../lib/features/gift/widgets/room_gift_sheet.dart");
+  assert.ok(service.includes("final senderUid = user.uid;"));
+  assert.ok(service.match(/_auth.currentUser\?\.uid != senderUid/g)?.length >= 2);
+  assert.ok(service.includes("throw StateError('gift_account_changed')"));
+  assert.ok(room.includes('late final String _senderUidAtOpen = _uid'));
+  assert.ok(room.includes('_requireOriginalAccount();'));
+  assert.ok(room.includes('_uid == _senderUidAtOpen'));
+});
+
 test("private effects observe existing message stream and do not replay history",()=>{
   const chat=read("../../lib/features/chat/screens/private_chat_screen.dart");
   const server=read("../../cloudflare-worker/src/chat-safety-actions.js");
