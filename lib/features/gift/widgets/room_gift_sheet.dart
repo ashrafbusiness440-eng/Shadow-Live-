@@ -187,6 +187,18 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
   Set<String> get _currentSelectedIds =>
       _selectedIds.intersection(_availableReceiverIds);
 
+  // The combo must use the same actual room recipients, not merely the
+  // same 'all room' or 'all mics' toggle after the roster has changed.
+  // Uses the existing room snapshot with no new stream or backend read.
+  Set<String> get _comboRecipientIds => switch (_recipientMode) {
+        'all_mics' => _micIds,
+        'all_room' => <String>{
+            for (final user in _participants) user.uid,
+            if (_uid.isNotEmpty) _uid,
+          },
+        _ => _currentSelectedIds,
+      };
+
   bool get _canSend => _senderUidAtOpen.isNotEmpty &&
       _uid == _senderUidAtOpen &&
       (switch (_recipientMode) {
@@ -285,7 +297,8 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     // A change during reconnection must never redirect a paid send.
     final modeAtTap = _recipientMode;
     final idsAtTap = _currentSelectedIds.toList(growable: false)..sort();
-    final recipientsAtTap = idsAtTap.join('|');
+    final recipientsAtTap =
+        (_comboRecipientIds.toList()..sort()).join('|');
     // Recover the EXISTING room connection on demand (no new listener).
     // Even if reconnect is unavailable, send the request and let the
     // server independently verify sender/recipient live-room presence.
@@ -300,7 +313,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
     }
     _requireOriginalAccount();
     if (modeAtTap != _recipientMode ||
-        recipientsAtTap != (_currentSelectedIds.toList()..sort()).join('|')) {
+        recipientsAtTap != (_comboRecipientIds.toList()..sort()).join('|')) {
       throw StateError('gift_recipients_changed');
     }
     final result = await _gifts.send(
@@ -512,7 +525,7 @@ class _RoomGiftContextState extends State<_RoomGiftContext> {
         comboContextKey: [
           widget.roomId,
           _recipientMode,
-          ...(_currentSelectedIds.toList()..sort()),
+          ...(_comboRecipientIds.toList()..sort()),
         ].join('|'),
         canSend: _canSend,
         onSend: _send,
