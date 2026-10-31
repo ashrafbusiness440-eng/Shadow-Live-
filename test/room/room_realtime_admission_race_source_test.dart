@@ -87,7 +87,8 @@ void main() {
       controller.indexOf('Future<void> _stopPresence('),
     );
     expect(join, contains("..['presenceDegraded'] = true;"));
-    expect(start, contains('if (!_active || roomId != targetRoomId) return;'));
+    expect(start, contains('if (!_active || roomId != targetRoomId ||'));
+    expect(start, contains('_roomSessionGeneration != sessionGeneration) return;'));
     expect(start, contains('await _presenceService.join(targetRoomId);'));
     expect(start, contains('_roomSessionGeneration != sessionGeneration'));
     expect(join, contains('final sessionGeneration = ++_roomSessionGeneration;'));
