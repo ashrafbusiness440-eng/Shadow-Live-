@@ -107,6 +107,10 @@ class RoomPresenceService {
   int _reconnectAttempt = 0;
   static const int _maxReconnectAttempts = 6;
   Completer<void>? _readyCompleter;
+  // Share admission with explicit chat/gift recovery. A second caller must not
+  // invalidate the socket being opened by the first room join.
+  Future<void>? _joinInFlight;
+  String _joinRoomId = '';
   String _readyRoomId = '';
   String _lastConnectionError = 'room_realtime_not_connected';
 
@@ -428,7 +432,14 @@ class RoomPresenceService {
       _readyCompleter = ready;
       _readyRoomId = '';
       _socketSubscription = connection.messages.listen(
-        _handleSocketMessage,
+        (message) {
+          // Ignore late events from an obsolete room or replaced transport.
+          if (generation == _generation &&
+              _desiredRoomId == roomId &&
+              identical(_socket, connection)) {
+            _handleSocketMessage(message);
+          }
+        },
         onError: (_) => _handleSocketEnded(roomId, generation, connection),
         onDone: () => _handleSocketEnded(roomId, generation, connection),
         cancelOnError: false,
@@ -477,11 +488,27 @@ class RoomPresenceService {
     }
   }
 
-  Future<void> join(String roomId) async {
+  Future<void> join(String roomId) {
     final id = roomId.trim();
-    if (id.isEmpty) throw StateError('room_id_missing');
-    if (isReadyFor(id)) return;
+    if (id.isEmpty) return Future<void>.error(StateError('room_id_missing'));
+    if (isReadyFor(id)) return Future<void>.value();
 
+    final pending = _joinInFlight;
+    if (pending != null && _joinRoomId == id) return pending;
+
+    late final Future<void> operation;
+    operation = _joinOnce(id).whenComplete(() {
+      if (identical(_joinInFlight, operation)) {
+        _joinInFlight = null;
+        _joinRoomId = '';
+      }
+    });
+    _joinRoomId = id;
+    _joinInFlight = operation;
+    return operation;
+  }
+
+  Future<void> _joinOnce(String id) async {
     _generation += 1;
     final generation = _generation;
     _desiredRoomId = id;
@@ -495,6 +522,9 @@ class RoomPresenceService {
     _socket = null;
     if (previous != null) await previous.close();
 
+    // A later join or leave may have superseded this admission while awaiting
+    // socket disposal. Never open an obsolete room's realtime connection.
+    if (generation != _generation || _desiredRoomId != id) return;
     await _connect(id, generation, announceOnReady: true);
   }
 
@@ -504,31 +534,35 @@ class RoomPresenceService {
     if (isReadyFor(id)) return true;
 
     try {
+      // A user can press Send while initial ZEGO admission has completed but
+      // the existing realtime join is still negotiating. Wait for that SAME
+      // join; do not start a new ticket or cancel its socket.
+      final joining = _joinInFlight;
+      if (joining != null && _joinRoomId == id) {
+        try {
+          await joining.timeout(const Duration(seconds: 7));
+        } catch (_) {
+          // Failed admission may be repaired once on explicit user action.
+        }
+        if (isReadyFor(id)) return true;
+      }
+
+      // Also reuse an automatic reconnect already awaiting server.ready.
       final pending = _readyCompleter;
       if (_desiredRoomId == id &&
           _socket != null &&
           pending != null &&
           !pending.isCompleted) {
-        await pending.future.timeout(const Duration(seconds: 3));
+        try {
+          await pending.future.timeout(const Duration(seconds: 6));
+        } catch (_) {
+          // Retry below only if the same room is still the desired session.
+        }
         if (isReadyFor(id)) return true;
       }
 
-      if (_desiredRoomId == id && _socket != null) {
-        _generation += 1;
-        _readyRoomId = '';
-        _reconnectTimer?.cancel();
-        _reconnectTimer = null;
-        await _socketSubscription?.cancel();
-        _socketSubscription = null;
-        final old = _socket;
-        _socket = null;
-        if (old != null) {
-          try {
-            await old.close();
-          } catch (_) {}
-        }
-      }
-
+      // Do not resurrect a room after leave or switch to another room.
+      if (_desiredRoomId.isNotEmpty && _desiredRoomId != id) return false;
       await join(id);
       return isReadyFor(id);
     } catch (_) {
@@ -541,6 +575,8 @@ class RoomPresenceService {
     _generation += 1;
     _desiredRoomId = '';
     _readyRoomId = '';
+    // An in-flight join is invalidated by the generation change above.
+    // Do not await it here: it can be stuck on a network handshake.
     _reconnectAttempt = 0;
     _failPendingChat('room_left');
     _reconnectTimer?.cancel();
