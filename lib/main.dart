@@ -3349,14 +3349,10 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
-                                  subtitle: Text(
-                                    friend.online
-                                        ? 'متصل الآن'
-                                        : 'غير متصل',
+                                  subtitle: const Text(
+                                    'صديق',
                                     style: TextStyle(
-                                      color: friend.online
-                                          ? const Color(0xFF39D98A)
-                                          : Colors.white38,
+                                      color: Colors.white54,
                                       fontSize: 11,
                                     ),
                                   ),
