@@ -75,4 +75,20 @@ void main() {
     expect(start, contains('if (!_active || roomId != targetRoomId) return;'));
     expect(start, contains('await _presenceService.join(targetRoomId);'));
   });
+  test('audience never shows stale count or phantom owner as live', () {
+    final room = File('lib/main.dart').readAsStringSync();
+    final audience = room.substring(
+      room.indexOf('int get _roomAudienceTotalCount'),
+      room.indexOf('Future<void> _showRoomParticipantsSheet()'),
+    );
+    expect(audience, contains("if (_roomArguments['presenceDegraded'] == true ||"));
+    expect(audience, contains("return '—';"));
+    expect(audience, contains('return max(0, reported);'));
+    expect(audience, contains('profileByUid.containsKey(ownerUid)'));
+    expect(audience, contains('profileByUid.containsKey(uid)'));
+    expect(audience, contains('final totalLabel = _roomAudienceCountLabel;'));
+    expect(audience, isNot(contains('return max(reported, activeUids.length);')));
+  });
+
+
 }
