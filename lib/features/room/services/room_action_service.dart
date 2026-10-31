@@ -33,6 +33,7 @@ class PersonalRoomInfo {
     required this.name,
     required this.publicId,
     required this.ownerUid,
+    this.hostUid = '',
     required this.roomType,
     required this.agencyId,
     required this.category,
@@ -52,6 +53,7 @@ class PersonalRoomInfo {
   final String name;
   final String publicId;
   final String ownerUid;
+  final String hostUid;
   final String roomType;
   final String agencyId;
   final String category;
@@ -71,7 +73,7 @@ class PersonalRoomInfo {
         'name': name,
         'publicId': publicId,
         'ownerUid': ownerUid,
-        'hostId': ownerUid,
+        'hostId': hostUid.isNotEmpty ? hostUid : ownerUid,
         'roomType': roomType,
         'type': roomType,
         if (agencyId.isNotEmpty) 'agencyId': agencyId,
@@ -88,10 +90,12 @@ class PersonalRoomInfo {
         'isActive': isActive,
       };
 
-  factory PersonalRoomInfo.fromJson(Map<String, dynamic> json) {
+  factory PersonalRoomInfo.fromJson(
+    Map<String, dynamic> json, {bool allowNoOwner = false}
+  ) {
     final roomId = (json['roomId'] ?? '').toString().trim();
     final ownerUid = (json['ownerUid'] ?? '').toString().trim();
-    if (roomId.isEmpty || ownerUid.isEmpty) {
+    if (roomId.isEmpty || (!allowNoOwner && ownerUid.isEmpty)) {
       throw const FormatException('invalid_personal_room');
     }
     return PersonalRoomInfo(
@@ -99,6 +103,7 @@ class PersonalRoomInfo {
       name: (json['name'] ?? 'غرفتي').toString(),
       publicId: (json['publicId'] ?? '').toString(),
       ownerUid: ownerUid,
+      hostUid: (json['hostUid'] ?? json['hostId'] ?? '').toString(),
       roomType: (json['roomType'] ?? json['type'] ?? 'personal').toString(),
       agencyId: (json['agencyId'] ?? '').toString(),
       category: (json['category'] ?? 'دردشة').toString(),
@@ -135,7 +140,7 @@ class ManagedRoomEntry {
       throw const FormatException('invalid_room_relation');
     }
     return ManagedRoomEntry(
-      room: PersonalRoomInfo.fromJson(json),
+      room: PersonalRoomInfo.fromJson(json, allowNoOwner: true),
       relation: relation,
     );
   }
