@@ -61,7 +61,7 @@ void main() {
     expect(connect.contains('await failedSocket.close();'), isTrue);
     expect(connect.contains('await failedSubscription?.cancel();'), isTrue);
     expect(connect.contains('_scheduleReconnect(roomId, generation);'), isTrue);
-    expect(presence.contains('if (isReadyFor(id)) return;'), isTrue);
+    expect(presence.contains('if (isReadyFor(id)) return Future<void>.value();'), isTrue);
     expect(presence.contains('if (_reconnectAttempt >= _maxReconnectAttempts) return;'), isTrue);
     expect(presence.contains('static const int _maxReconnectAttempts = 6;'), isTrue);
     expect(presence.contains("type: 'room.connection_lost'"), isTrue);

@@ -469,7 +469,11 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
     }
     final raw = ModalRoute.of(context)?.settings.arguments;
     final args = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-    _roomArguments = args;
+    // Navigation metadata is not proof of a live presence socket.
+    _roomArguments = <String, dynamic>{
+      ...args,
+      'presenceDegraded': true,
+    };
     final fallbackOwnerName =
         (args['hostName'] ?? args['ownerName'] ?? '').toString().trim();
     if (fallbackOwnerName.isNotEmpty) {
@@ -1817,16 +1821,20 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
   }
 
   int get _roomAudienceTotalCount {
-    // One unique set from the EXISTING live presence + current mic snapshot.
-    // This also handles the short delay before socket presence becomes ready.
-    final activeUids = <String>{
-      for (final user in _voiceSession.roomParticipants)
-        if (user.uid.isNotEmpty) user.uid,
-      for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])
-        if (seat.occupied) seat.uid,
-    };
+    // The Durable Object's verified websocket count is authoritative.
+    // Occupied Firestore seats may outlive a disconnected participant.
     final reported = (_roomArguments['onlineCount'] as num?)?.toInt() ?? 0;
-    return max(reported, activeUids.length);
+    return max(0, reported);
+  }
+
+  String get _roomAudienceCountLabel {
+    // Unknown/disconnected is NOT a verified zero, even when discovery
+    // supplied a stale onlineCount before server.ready.
+    if (_roomArguments['presenceDegraded'] == true ||
+        _roomArguments['onlineCount'] is! num) {
+      return '—';
+    }
+    return _roomAudienceTotalCount.toString();
   }
 
   Widget _buildRoomAudienceStrip() {
@@ -1846,15 +1854,17 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
       for (final seat in _roomSeatState?.seats ?? const <VoiceSeat>[])
         if (seat.occupied) seat.uid: seat,
     };
-    // Show BOTH people on microphones and listeners. A seat snapshot may
-    // arrive before the websocket roster, so never hide its occupied UIDs.
+    // Only a verified realtime participant is displayed as present.
+    // The owner and recently occupied seats are not implicit attendees.
     final visibleUids = <String>[
-      if (ownerUid.isNotEmpty) ownerUid,
-      ...seatByUid.keys.where((uid) => uid != ownerUid),
+      if (ownerUid.isNotEmpty && profileByUid.containsKey(ownerUid))
+        ownerUid,
+      ...seatByUid.keys.where((uid) =>
+          uid != ownerUid && profileByUid.containsKey(uid)),
       ...profileByUid.keys.where((uid) =>
           uid != ownerUid && !seatByUid.containsKey(uid)),
     ].take(20).toList(growable: false);
-    final total = _roomAudienceTotalCount;
+    final totalLabel = _roomAudienceCountLabel;
 
     return SizedBox(
       height: 57,
@@ -1877,7 +1887,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                   const Icon(Icons.people_alt_rounded,
                       color: Color(0xFFFFD54A), size: 18),
                   Text(
-                    '$total',
+                    totalLabel,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -3874,7 +3884,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
             .where((value) => value.trim().isNotEmpty)
             .toList()
         : const <String>[];
-    final online = _roomAudienceTotalCount.toString();
+    final online = _roomAudienceCountLabel;
     final level = _roomInsights?.level ??
         ((_roomArguments['level'] as num?)?.toInt() ?? 1);
 
@@ -6056,7 +6066,7 @@ class _VoiceChatRoomState extends State<VoiceChatRoom> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _roomAudienceTotalCount.toString(),
+                        _roomAudienceCountLabel,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,

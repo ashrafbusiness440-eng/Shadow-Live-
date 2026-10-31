@@ -82,6 +82,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   Future<void>? _leaveInFlight;
   bool _joining = false;
   bool _active = false;
+  int _roomSessionGeneration = 0;
   bool _privateCallMediaActive = false;
   bool _privateCallMediaJoining = false;
   String? _privateCallMediaId;
@@ -545,22 +546,29 @@ class VoiceRoomSessionController extends ChangeNotifier {
     List<String> mentionUids = const [],
     String? animatedEmojiId,
   }) async {
-    if (!_active || roomId.isEmpty) {
+    // Pin the authorized room/account before awaiting socket recovery.
+    // Otherwise a delayed Send can accidentally target the next room.
+    final targetRoomId = roomId.trim();
+    final targetUid = _sessionUserUid;
+    if (!_active || targetRoomId.isEmpty || targetUid == null) {
       throw StateError('room_realtime_not_connected');
     }
-    // A room can be visible while its separate presence socket failed.
-    // On an explicit send only, recover the EXISTING socket before chatting.
-    // Never send or acknowledge a message until the server confirms admission.
-    if (!_presenceService.isReadyFor(roomId)) {
-      final ready = await _presenceService.ensureReady(roomId);
+    if (!_presenceService.isReadyFor(targetRoomId)) {
+      final ready = await _presenceService.ensureReady(targetRoomId);
       if (!ready) {
         throw StateError(_presenceService.lastConnectionError.isEmpty
             ? 'room_realtime_not_connected'
             : _presenceService.lastConnectionError);
       }
     }
+    if (!_active ||
+        roomId != targetRoomId ||
+        _sessionUserUid != targetUid ||
+        FirebaseAuth.instance.currentUser?.uid != targetUid) {
+      throw StateError('room_session_changed');
+    }
     return _presenceService.sendChat(
-      roomId: roomId,
+      roomId: targetRoomId,
       text: text,
       replyTo: replyTo,
       replyPreview: replyPreview,
@@ -783,9 +791,12 @@ class VoiceRoomSessionController extends ChangeNotifier {
 
   Future<bool> ensureRoomPresenceReady() async {
     final id = roomId.trim();
+    final generation = _roomSessionGeneration;
     if (!_active || id.isEmpty) return false;
     if (_presenceService.isReadyFor(id)) return true;
     final ready = await _presenceService.ensureReady(id);
+    if (!_active || roomId != id ||
+        _roomSessionGeneration != generation) return false;
     if (_roomArguments['presenceDegraded'] == ready) {
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
@@ -796,9 +807,13 @@ class VoiceRoomSessionController extends ChangeNotifier {
     return ready;
   }
 
-  Future<void> _startPresence(String targetRoomId) async {
+  Future<void> _startPresence(
+    String targetRoomId, int sessionGeneration,
+  ) async {
     try {
       await _presenceService.join(targetRoomId);
+      if (!_active || roomId != targetRoomId ||
+          _roomSessionGeneration != sessionGeneration) return;
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
         'presenceDegraded': false,
@@ -808,6 +823,8 @@ class VoiceRoomSessionController extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {
+      if (!_active || roomId != targetRoomId ||
+          _roomSessionGeneration != sessionGeneration) return;
       // Voice stays connected, but room mutations must know presence is degraded.
       _roomArguments = <String, dynamic>{
         ..._roomArguments,
@@ -1088,6 +1105,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
     }
 
     await _ensureService();
+    final sessionGeneration = ++_roomSessionGeneration;
     _starBattleScores.clear();
     _pkScores.clear();
     _refreshScoresAfterReconnect = false;
@@ -1098,7 +1116,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     _roomChatReplyTarget = null;
     _roomChatMentionTarget = null;
     _roomArguments = Map<String, dynamic>.from(arguments)
-      ..remove('recentEntrance');
+      ..remove('recentEntrance')
+      // Until server.ready, a ZEGO-only join is not verified room presence.
+      ..['presenceDegraded'] = true;
     _joining = true;
     _minimized = false;
     _error = null;
@@ -1120,7 +1140,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
       _watchRoomLifecycle(targetRoomId);
       _watchRoomBan(targetRoomId);
       _watchAccountModeration(targetRoomId);
-      unawaited(_startPresence(targetRoomId));
+      unawaited(_startPresence(targetRoomId, sessionGeneration));
     } catch (error) {
       _active = false;
       _joining = false;
@@ -1263,6 +1283,7 @@ class VoiceRoomSessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveRoomSession() async {
+    _roomSessionGeneration += 1;
     final activeRoomId = roomId;
     await _stopPresence(activeRoomId);
     await _stopRoomMusicWatch();
