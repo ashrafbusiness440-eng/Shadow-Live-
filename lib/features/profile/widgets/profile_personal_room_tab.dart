@@ -13,11 +13,14 @@ class ProfilePersonalRoomTab extends StatelessWidget {
     required this.onOpenPersonalRoom,
     required this.onBrowseRooms,
     this.opening = false,
+    this.showManagedRooms = true,
   });
 
   final VoidCallback onOpenPersonalRoom;
   final VoidCallback onBrowseRooms;
   final bool opening;
+  /// Allows isolated widget tests to render the static profile card.
+  final bool showManagedRooms;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +92,7 @@ class ProfilePersonalRoomTab extends StatelessWidget {
             ],
           ),
         ),
+        if (showManagedRooms) ...[
         const SizedBox(height: 18),
         const Text(
           'غرفي والإشراف',
@@ -104,6 +108,7 @@ class ProfilePersonalRoomTab extends StatelessWidget {
           openingPersonalRoom: opening,
           showOpenPersonalFallback: false,
         ),
+        ],
         const SizedBox(height: 12),
         OutlinedButton.icon(
           key: const Key('own-profile-browse-rooms'),
