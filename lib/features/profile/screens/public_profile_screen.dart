@@ -16,6 +16,7 @@ import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
 import 'user_level_screen.dart';
+import 'public_user_support_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../relationships/services/relationship_service.dart';
 import '../../vip/utils/vip_public_state.dart';
@@ -402,10 +403,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   void _openLevel(int tabIndex) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => UserLevelScreen(
-          userId: widget.userId,
-          initialTabIndex: tabIndex,
-        ),
+        builder: (_) => _isSelf
+            ? UserLevelScreen(initialTabIndex: tabIndex)
+            : PublicUserSupportScreen(
+                userId: widget.userId,
+                initialTabIndex: tabIndex,
+              ),
       ),
     );
   }
