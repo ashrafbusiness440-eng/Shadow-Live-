@@ -8,10 +8,10 @@ void main() {
     final quick = File('lib/features/profile/widgets/quick_profile_sheet.dart')
         .readAsStringSync();
     expect(quick, contains("import '../services/profile_membership_days.dart';"));
-    expect(quick, contains('verifiedMembershipDays(data)'));
-    expect(quick, contains('if (membershipDays != null)'));
-    expect(quick, contains("Key('quick-profile-membership-days')"));
-    expect(quick, contains(r'في التطبيق منذ $membershipDays يوم'));
+    expect(quick, contains('verifiedMembershipDays(profile)'));
+    expect(quick, contains('ProfileIdentityStatusStrip('));
+    expect(quick, contains("_identityStatusStrip(data, vip)"));
+    expect(quick, isNot(contains('في التطبيق منذ')));
     expect(quick, contains("_profileFuture = FirebaseFirestore.instance"));
     expect(quick, isNot(contains('Timer.periodic')));
   });
