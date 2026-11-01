@@ -80,8 +80,8 @@ void main() {
     expect(own, contains("_walletAmount(profile, const ['diamonds'])"));
     expect(own, contains('onCoinsTap: () => _recharge(0)'));
     expect(own, contains('onDiamondsTap: () => _recharge(1)'));
-    expect(own, contains('expandedHeight: 365'));
-    expect(pub, contains('expandedHeight: 365'));
+    expect(own, contains('expandedHeight: 380'));
+    expect(pub, contains('expandedHeight: 390'));
     expect(quick, contains('const SizedBox(height: 10)'));
     expect(shared, contains("ShadowAssetKeys.vipLevelBadge(vipLevel)"));
     expect(shared, contains('membershipDays يوم'));
