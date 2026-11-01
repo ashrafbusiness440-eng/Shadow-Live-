@@ -17,7 +17,7 @@ void main() {
   test('realtime diagnostic distinguishes ticket, socket and ready without sensitive data', () {
     final connect = presence.substring(
       presence.indexOf('Future<void> _connect('),
-      presence.indexOf('Future<void> join(String roomId)'),
+      presence.indexOf('Future<void> join(String roomId, {String? roomPassword})'),
     );
     expect(connect, contains("var failureStage = 'ticket';"));
     expect(connect, contains("failureStage = 'socket';"));
