@@ -13,6 +13,7 @@ import '../../../shared/widgets/loading_indicator.dart';
 import '../../../utils/compact_number.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../wallet/screens/recharge_screen.dart';
+import '../../profile/widgets/profile_wallet_overlay.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/profile_identity_status_strip.dart';
@@ -454,7 +455,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           backgroundColor: const Color(0xFF07111F),
                           foregroundColor: Colors.white,
                           automaticallyImplyLeading: false,
-                          expandedHeight: 390,
+                          expandedHeight: 365,
                           pinned: true,
                           title: const Text(
                             'Shadow Live',
@@ -553,7 +554,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return VipProfileIdentitySurface(
       vipLevel: _num(profile, ['effectiveVipLevel']),
-      child: Container(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
       decoration: BoxDecoration(
         gradient: cover.isEmpty
             ? const RadialGradient(
@@ -577,7 +581,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               )
             : null,
       ),
-      padding: const EdgeInsets.fromLTRB(18, 96, 18, 18),
+      padding: const EdgeInsets.fromLTRB(18, 72, 18, 12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -645,66 +649,37 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _balanceChip(
-                Icons.monetization_on_rounded,
-                '${formatCompactAmount(_num(profile, ['coins', 'balance']))} عملة',
-                0,
-              ),
-              const SizedBox(width: 10),
-              _balanceChip(
-                Icons.diamond_rounded,
-                '${formatCompactAmount(_num(profile, ['diamonds']))} ألماس',
-                1,
-              ),
-            ],
+
+        ],
+      ),
+          ),
+          Positioned(
+            left: MediaQuery.sizeOf(context).width <= 340 ? 8 : 12,
+            top: MediaQuery.paddingOf(context).top + kToolbarHeight + 10,
+            child: ProfileWalletOverlay(
+              width: MediaQuery.sizeOf(context).width <= 340 ? 88 : 104,
+              coins: _walletAmount(profile, const ['coins', 'balance']),
+              diamonds: _walletAmount(profile, const ['diamonds']),
+              onCoinsTap: () => _recharge(0),
+              onDiamondsTap: () => _recharge(1),
+            ),
           ),
         ],
       ),
-    ));
+    );
   }
 
-  Widget _balanceChip(IconData icon, String text, int tab) {
-    return InkWell(
-      onTap: () => _recharge(tab),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: .38),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white24),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: tab == 0
-                  ? const Color(0xFFFFD54A)
-                  : const Color(0xFF66E1FF),
-              size: 18,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              text,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 5),
-            const Icon(
-              Icons.add_circle_rounded,
-              color: Color(0xFF9A5CFF),
-              size: 18,
-            ),
-          ],
-        ),
-      ),
-    );
+  int? _walletAmount(Map<String, dynamic> profile, List<String> keys) {
+    for (final key in keys) {
+      final raw = profile[key];
+      if (raw is num) return raw.toInt();
+      if (raw != null) {
+        final parsed = int.tryParse(raw.toString());
+        if (parsed != null) return parsed;
+      }
+    }
+    // Missing wallet fields are not a real zero balance.
+    return null;
   }
 
   Widget _about(Map<String, dynamic> profile) {
