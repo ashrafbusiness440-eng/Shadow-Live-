@@ -180,11 +180,21 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     );
   }
 
+  // Header portraits must sit INSIDE their ornate frame, never cover the
+  // inner rim. The outer frame remains the last (top) Stack paint layer.
+  Widget _framedAvatar(Map<String, dynamic> profile) =>
+      widget.protectAvatarCenter
+          ? Padding(
+              padding: EdgeInsets.all(widget.diameter * 0.055),
+              child: ClipOval(child: _baseAvatar(profile)),
+            )
+          : _baseAvatar(profile);
+
   Widget _render(Map<String, dynamic> profile,
       {bool verifiedStoreFrame = false}) {
     final avatar = SizedBox.square(
       dimension: widget.diameter,
-      child: _baseAvatar(profile),
+      child: _framedAvatar(profile),
     );
 
     if (_frameActive(profile, verifiedStoreFrame: verifiedStoreFrame)) {
@@ -226,7 +236,7 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
         frameLevel: widget.vipFrameLevel,
         avatarDiameter: widget.diameter,
         protectAvatarCenter: widget.protectAvatarCenter,
-        child: _baseAvatar(profile),
+        child: _framedAvatar(profile),
       );
     }
 

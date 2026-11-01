@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../shared/widgets/country_selector.dart';
-import 'registry_badge.dart';
 import 'user_level_badges.dart';
 
 /// Approved physical order, LEFT -> RIGHT:
@@ -47,16 +45,18 @@ class ProfileIdentityStatusStrip extends StatelessWidget {
       if (publicGender.isNotEmpty) publicGender == 'ذكر' ? '♂' : '♀',
     ].join(' ');
 
-    return SizedBox(
-      width: double.infinity,
-      child: Directionality(
+    return LayoutBuilder(
+      builder: (context, constraints) => Directionality(
         textDirection: TextDirection.ltr,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: Row(
-            key: const Key('profile-identity-status-row'),
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Center(
+              child: Row(
+                key: const Key('profile-identity-status-row'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
               if (membershipDays != null)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 6),
@@ -80,13 +80,29 @@ class ProfileIdentityStatusStrip extends StatelessWidget {
               ),
               if (vipLevel > 0)
                 Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: InkWell(
-                    onTap: onVipTap,
-                    borderRadius: BorderRadius.circular(8),
-                    child: RegistryBadge(
-                      assetKey: ShadowAssetKeys.vipLevelBadge(vipLevel),
-                      label: 'VIP $vipLevel',
+                  padding: const EdgeInsetsDirectional.only(start: 5),
+                  child: Material(
+                    color: const Color(0xFF1E2434),
+                    borderRadius: BorderRadius.circular(18),
+                    child: InkWell(
+                      key: const Key('profile-vip-label'),
+                      onTap: onVipTap,
+                      borderRadius: BorderRadius.circular(18),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        child: Text(
+                          'VIP $vipLevel',
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -103,7 +119,9 @@ class ProfileIdentityStatusStrip extends StatelessWidget {
                 fontSize: 19,
                 padding: const EdgeInsetsDirectional.only(start: 6),
               ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

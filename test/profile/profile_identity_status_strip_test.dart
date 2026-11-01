@@ -48,6 +48,44 @@ void main() {
     }
   });
 
+  testWidgets('status group centers as a unit and VIP has no inner emblem',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(430, 700));
+    var vipTaps = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ProfileIdentityStatusStrip(
+          membershipDays: 31,
+          wealthLevel: 0,
+          attractionLevel: 0,
+          vipLevel: 10,
+          location: 'سوريا',
+          onLevelTap: (_) {},
+          onVipTap: () => vipTaps++,
+        ),
+      ),
+    ));
+
+    final group = tester.getRect(find.byKey(
+      const Key('profile-identity-status-row'),
+    ));
+    expect((group.center.dx - 215).abs(), lessThan(1));
+    expect(find.text('31 يوم'), findsOneWidget);
+    expect(find.text('VIP 10'), findsOneWidget);
+    expect(find.text('🇸🇾'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('profile-vip-label')),
+        matching: find.byType(Icon),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const Key('profile-vip-label')));
+    expect(vipTaps, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   test('all three profile surfaces use the same strip without a verbose age line',
       () {
     for (final file in [

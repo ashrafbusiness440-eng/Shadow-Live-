@@ -51,6 +51,12 @@ void main() {
         isTrue,
       );
       expect(find.byType(CircleAvatar), findsOneWidget);
+      // The portrait is inset below the ring; the outer artwork is painted
+      // after the avatar in the shared frame Stack.
+      expect(
+        tester.getSize(find.byType(CircleAvatar)).width,
+        lessThan(102),
+      );
       expect(tester.takeException(), isNull);
     }
   });
@@ -79,15 +85,25 @@ void main() {
     );
   });
 
-  test('only public and own large headers opt into the new face cutout', () {
+  test('all profile headers opt into the face cutout without extra IO', () {
     final own = File('lib/features/user/screens/profile_screen.dart')
         .readAsStringSync();
     final pub = File('lib/features/profile/screens/public_profile_screen.dart')
+        .readAsStringSync();
+    final quick = File('lib/features/profile/widgets/quick_profile_sheet.dart')
         .readAsStringSync();
     final shared = File('lib/features/profile/widgets/profile_avatar_with_frame.dart')
         .readAsStringSync();
     expect(own.contains('diameter: 102,\n                    frameScale: 1.12,\n                    protectAvatarCenter: true,'), isTrue);
     expect(pub.contains('diameter: 110,\n            protectAvatarCenter: true,'), isTrue);
+    expect(quick.contains('diameter: 96,\n                      protectAvatarCenter: true,'), isTrue);
+    expect(shared.contains('widget.diameter * 0.055'), isTrue);
+    expect(shared.contains('child: _framedAvatar(profile)'), isTrue);
+    final overlay = shared.substring(shared.indexOf('if (_frameActive('),
+        shared.indexOf('if (widget.useVipFallback'));
+    expect(overlay.indexOf('            avatar,'),
+        lessThan(overlay.indexOf('Positioned.fill(')));
+
     expect(shared.contains('AnimatedProfileFrameVisual('), isTrue);
     expect(shared.contains('VipAvatarFrame('), isTrue);
     expect(shared.contains('protectAvatarCenter: widget.protectAvatarCenter'), isTrue);
