@@ -19,7 +19,6 @@ void main() {
     for (final feature in [
       'AppRoutes.editProfile',
       'AppRoutes.myAgency',
-      'DiamondPasswordResetScreen()',
       'DevicePermissionsScreen()',
       'PrivateCallPrivacySettingsScreen()',
       'VipPrivacySettingsScreen()',
@@ -30,6 +29,11 @@ void main() {
       expect(source.contains(feature), isTrue, reason: feature);
     }
     expect(source.contains('إرسال طلب للمراجعة، وليس حذفاً فورياً'), isTrue);
+    // The approved reset is an admin request with a one-time server grant.
+    // The retired OTP screen must not be reachable until that flow exists.
+    expect(source.contains('DiamondPasswordResetScreen'), isFalse);
+    expect(source.contains('تغيير كلمة سر الألماس'), isFalse);
+
     expect(source.contains('_soon('), isFalse);
   });
 }

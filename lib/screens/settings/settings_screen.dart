@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
-import '../../features/wallet/screens/diamond_password_reset_screen.dart';
 import '../../features/vip/screens/vip_screen.dart';
 import 'vip_privacy_settings_screen.dart';
 import 'private_call_privacy_settings_screen.dart';
@@ -26,7 +25,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
    setState(() => _loggingOut = true);
    context.read<AuthBloc>().add(SignOutRequested());
  }
- void _diamond()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DiamondPasswordResetScreen()));
  @override Widget build(BuildContext context)=>BlocListener<AuthBloc,AuthState>(listener:(context,state){if(state is Unauthenticated&&_loggingOut){NavigationService.navigateToAndRemoveUntil(AppRoutes.authChoice);}else if(state is AuthError&&_loggingOut){setState(()=>_loggingOut=false);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(state.message)));}},child:Directionality(textDirection:TextDirection.rtl,child:Scaffold(backgroundColor:Colors.transparent,body:Container(decoration:const BoxDecoration(gradient:RadialGradient(center:Alignment(.6,-.7),radius:1.25,colors:[Color(0x9924103F),Color(0x6607111E),Color(0x3305060D)])),child:SafeArea(child:Column(children:[_header(),Expanded(child:SingleChildScrollView(padding:const EdgeInsets.fromLTRB(16,8,16,28),child:Column(children:[_profile(),const SizedBox(height:18),_sections(),const SizedBox(height:18),_vip(),const SizedBox(height:18),SizedBox(width:double.infinity,child:OutlinedButton.icon(onPressed:_loggingOut?null:_confirmLogout,icon:_loggingOut?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.logout_rounded),label:Text(_loggingOut?'جارٍ تسجيل الخروج...':'تسجيل الخروج'),style:OutlinedButton.styleFrom(foregroundColor:Colors.redAccent,side:const BorderSide(color:Color(0x66FF5252)),padding:const EdgeInsets.symmetric(vertical:15),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)))))]))) ]))))));
  Widget _header()=>Padding(
    padding:const EdgeInsets.fromLTRB(12,8,12,12),
@@ -44,7 +42,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
      _SettingItem(Icons.apartment_rounded,'وكالتي',()=>NavigationService.navigateTo(AppRoutes.myAgency),subtitle:'معلومات الوكالة والنشاط'),
    ]),
    _section('الحساب والأمان',Icons.shield_rounded,[
-     _SettingItem(Icons.diamond_rounded,'تغيير كلمة سر الألماس',_diamond),
      _SettingItem(Icons.person_remove_rounded,'طلب حذف الحساب',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const AccountDeletionRequestScreen())),subtitle:'إرسال طلب للمراجعة، وليس حذفاً فورياً'),
      _SettingItem(Icons.security_rounded,'أذونات التطبيق',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DevicePermissionsScreen()))),
    ]),
