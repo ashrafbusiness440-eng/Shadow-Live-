@@ -481,7 +481,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               headerSliverBuilder: (_, __) => [
                 SliverAppBar(
                   pinned: true,
-                  expandedHeight: 390,
+                  expandedHeight: 365,
                   backgroundColor: const Color(0xFF0B0D16),
                   foregroundColor: Colors.white,
                   title: Text(isSelf ? 'بروفايلي' : 'الملف الشخصي'),
@@ -727,7 +727,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               )
             : null,
       ),
-      padding: const EdgeInsets.fromLTRB(18, 92, 18, 18),
+      padding: const EdgeInsets.fromLTRB(18, 72, 18, 12),
       child: StoreVerifiedProfileCardBackdrop(
         userId: widget.userId,
         child: Column(
