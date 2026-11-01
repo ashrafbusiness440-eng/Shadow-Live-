@@ -25,10 +25,10 @@ class ProfileCompactHeaderIdentity extends StatelessWidget {
     // scale each visual baseline is ~30px apart, not 44px apart.
     final scale =
         (MediaQuery.textScalerOf(context).scale(16) / 16).clamp(1.0, 1.6).toDouble();
-    final nameTop = portraitHeight - 1;
-    final idTop = portraitHeight + 26 * scale;
-    final statusTop = portraitHeight + 57 * scale;
-    final totalHeight = portraitHeight + 101 * scale;
+    final nameTop = portraitHeight + 9 * scale;
+    final idTop = portraitHeight + 34 * scale;
+    final statusTop = portraitHeight + 63 * scale;
+    final totalHeight = portraitHeight + 107 * scale;
     return SizedBox(
       key: const Key('profile-compact-header-identity'),
       height: totalHeight,

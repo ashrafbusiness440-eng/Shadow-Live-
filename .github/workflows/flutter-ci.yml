@@ -205,6 +205,14 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test
       - name: Test
         run: flutter test
+      - name: Upload profile visual screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-header-visual-qa
+          path: profile-visual-qa/
+          if-no-files-found: warn
+          retention-days: 5
 
   main-tab-browser:
     runs-on: ubuntu-latest
