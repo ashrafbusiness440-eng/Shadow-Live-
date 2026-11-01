@@ -826,7 +826,9 @@ class VoiceRoomSessionController extends ChangeNotifier {
     String targetRoomId, int sessionGeneration,
   ) async {
     try {
-      await _presenceService.join(targetRoomId);
+      await _presenceService.join(targetRoomId,
+        roomPassword: (_roomArguments['roomPassword'] ?? '').toString(),
+      );
       if (!_active || roomId != targetRoomId ||
           _roomSessionGeneration != sessionGeneration) return;
       _roomArguments = <String, dynamic>{
