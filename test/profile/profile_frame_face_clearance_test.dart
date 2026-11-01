@@ -55,8 +55,11 @@ void main() {
       // after the avatar in the shared frame Stack.
       expect(
         tester.getSize(find.byType(CircleAvatar)).width,
-        lessThan(102),
+        lessThan(102 * 0.84),
       );
+      final imageCenter = tester.getCenter(find.byType(CircleAvatar));
+      final frameCenter = tester.getCenter(find.byType(ProfileAvatarWithFrame));
+      expect(imageCenter.dy, greaterThan(frameCenter.dy));
       expect(tester.takeException(), isNull);
     }
   });
@@ -97,7 +100,8 @@ void main() {
     expect(own.contains('diameter: 102,\n                    frameScale: 1.12,\n                    protectAvatarCenter: true,'), isTrue);
     expect(pub.contains('diameter: 110,\n            protectAvatarCenter: true,'), isTrue);
     expect(quick.contains('diameter: 96,\n                      protectAvatarCenter: true,'), isTrue);
-    expect(shared.contains('widget.diameter * 0.055'), isTrue);
+    expect(shared.contains('widget.diameter * 0.11'), isTrue);
+    expect(shared.contains('widget.diameter * 0.025'), isTrue);
     expect(shared.contains('child: _framedAvatar(profile)'), isTrue);
     final overlay = shared.substring(shared.indexOf('if (_frameActive('),
         shared.indexOf('if (widget.useVipFallback'));

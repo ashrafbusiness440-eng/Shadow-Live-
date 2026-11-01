@@ -180,15 +180,20 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     );
   }
 
-  // Header portraits must sit INSIDE their ornate frame, never cover the
-  // inner rim. The outer frame remains the last (top) Stack paint layer.
-  Widget _framedAvatar(Map<String, dynamic> profile) =>
-      widget.protectAvatarCenter
-          ? Padding(
-              padding: EdgeInsets.all(widget.diameter * 0.055),
-              child: ClipOval(child: _baseAvatar(profile)),
-            )
-          : _baseAvatar(profile);
+  // Center-safe profile artwork: the clipper leaves a circular cutout of
+  // 84% of the avatar diameter. Keep the portrait within that cutout even
+  // after nudging it down, so it cannot paint over the inner frame rim.
+  // Room/seat avatars do not opt in and retain their original geometry.
+  Widget _framedAvatar(Map<String, dynamic> profile) {
+    if (!widget.protectAvatarCenter) return _baseAvatar(profile);
+    return Padding(
+      padding: EdgeInsets.all(widget.diameter * 0.11),
+      child: Transform.translate(
+        offset: Offset(0, widget.diameter * 0.025),
+        child: ClipOval(child: _baseAvatar(profile)),
+      ),
+    );
+  }
 
   Widget _render(Map<String, dynamic> profile,
       {bool verifiedStoreFrame = false}) {

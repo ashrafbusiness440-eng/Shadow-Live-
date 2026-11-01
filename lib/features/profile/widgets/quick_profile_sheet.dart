@@ -266,7 +266,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       useVipFallback: true,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 2),
                   InkWell(
                     onTap: _openFull,
                     child: Column(
@@ -277,7 +277,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                           style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 0),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -320,7 +320,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 0),
                   _identityStatusStrip(data, vip),
                   if (badges.isNotEmpty) ...[
                     const SizedBox(height: 8),

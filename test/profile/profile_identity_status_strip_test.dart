@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_chat_room/core/assets/shadow_asset_registry.dart';
+import 'package:voice_chat_room/features/profile/widgets/level_asset_image.dart';
 import 'package:voice_chat_room/features/profile/widgets/profile_identity_status_strip.dart';
 
 void main() {
@@ -48,7 +50,7 @@ void main() {
     }
   });
 
-  testWidgets('status group centers as a unit and VIP has no inner emblem',
+  testWidgets('status group centers and VIP medal sits beside level without pill',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(430, 700));
@@ -74,13 +76,22 @@ void main() {
     expect(find.text('31 يوم'), findsOneWidget);
     expect(find.text('VIP 10'), findsOneWidget);
     expect(find.text('🇸🇾'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-vip-label')),
-        matching: find.byType(Icon),
-      ),
-      findsNothing,
+    final vipAsset = find.descendant(
+      of: find.byKey(const Key('profile-vip-label')),
+      matching: find.byType(LevelAssetImage),
     );
+    expect(vipAsset, findsOneWidget);
+    expect(
+      tester.widget<LevelAssetImage>(vipAsset).assetKey,
+      ShadowAssetKeys.vipLevelBadge(10),
+    );
+    final vipMaterial = tester.widget<Material>(
+      find.ancestor(
+        of: find.byKey(const Key('profile-vip-label')),
+        matching: find.byType(Material),
+      ).first,
+    );
+    expect(vipMaterial.color, Colors.transparent);
     await tester.tap(find.byKey(const Key('profile-vip-label')));
     expect(vipTaps, 1);
     expect(tester.takeException(), isNull);

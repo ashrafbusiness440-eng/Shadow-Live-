@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/assets/shadow_asset_registry.dart';
 import '../../../shared/widgets/country_selector.dart';
+import 'level_asset_image.dart';
 import 'user_level_badges.dart';
 
 /// Approved physical order, LEFT -> RIGHT:
@@ -82,24 +84,42 @@ class ProfileIdentityStatusStrip extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 5),
                   child: Material(
-                    color: const Color(0xFF1E2434),
-                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.transparent,
                     child: InkWell(
                       key: const Key('profile-vip-label'),
                       onTap: onVipTap,
-                      borderRadius: BorderRadius.circular(18),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 7,
+                      borderRadius: BorderRadius.circular(8),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: 44,
+                          minWidth: 48,
                         ),
-                        child: Text(
-                          'VIP $vipLevel',
-                          textDirection: TextDirection.ltr,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              LevelAssetImage(
+                                assetKey: ShadowAssetKeys.vipLevelBadge(vipLevel),
+                                width: 25,
+                                height: 21,
+                                fallback: const Icon(
+                                  Icons.workspace_premium_rounded,
+                                  size: 19,
+                                  color: Color(0xFFFFD54A),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'VIP $vipLevel',
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

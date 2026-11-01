@@ -103,6 +103,8 @@ void main() {
     final strip = File('lib/features/profile/widgets/profile_identity_status_strip.dart').readAsStringSync();
     expect(publicProfile.contains('ProfileIdentityStatusStrip('), isTrue);
     expect(strip.contains(r"'VIP $vipLevel'"), isTrue);
+    expect(strip.contains('ShadowAssetKeys.vipLevelBadge(vipLevel)'), isTrue);
+    expect(strip.contains('LevelAssetImage('), isTrue);
     expect(publicProfile.contains('ProfileAvatarWithFrame('), isTrue);
     expect(publicProfile.contains('useVipFallback: true'), isTrue);
 
