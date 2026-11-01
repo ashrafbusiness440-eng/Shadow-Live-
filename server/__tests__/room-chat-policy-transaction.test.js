@@ -28,9 +28,9 @@ function fixture({ allowed = true, present = true } = {}) {
       return {
         doc(id) {
           return {
-            collection, id,
+            collectionName: collection, id,
             collection(subcollection) {
-              return { doc() { return { collection: subcollection, id: "audit-1" }; } };
+              return { doc() { return { collectionName: subcollection, id: "audit-1" }; } };
             },
           };
         },
@@ -39,11 +39,11 @@ function fixture({ allowed = true, present = true } = {}) {
     async runTransaction(action) {
       const tx = {
         get(ref) {
-          calls.reads.push(ref.collection + "/" + ref.id);
-          if (ref.collection === "rooms") {
+          calls.reads.push(ref.collectionName + "/" + ref.id);
+          if (ref.collectionName === "rooms") {
             return Promise.resolve({ exists: present, data: () => room });
           }
-          if (ref.collection === "users") {
+          if (ref.collectionName === "users") {
             return Promise.resolve({ exists: true, data: () => actor });
           }
           throw Error("unexpected target or unbounded Firestore read");
