@@ -12,7 +12,7 @@ void main(){
   test('pagination remains bounded with cursor and no polling',(){
     final source=File('lib/features/home/services/discovery_service.dart').readAsStringSync();
     final screen=File('lib/features/home/screens/home_more_rooms_screen.dart').readAsStringSync();
-    expect(source.contains('limit.clamp(1,24)'),isTrue);
+    expect(source.contains('limit<1?1:(limit>24?24:limit)'),isTrue);
     expect(source.contains('startAfterDocument(after)'),isTrue);
     expect(source.contains('recheckRoomForEntry'),isTrue);
     expect(screen.contains('showDiscoveryRoomPasswordPrompt'),isTrue);
