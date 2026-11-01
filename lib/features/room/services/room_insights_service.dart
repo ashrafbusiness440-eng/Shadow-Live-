@@ -214,10 +214,34 @@ class RoomInsightsService {
   final Map<String, DateTime> _cacheExpiresAt = <String, DateTime>{};
   final Map<String, Future<RoomInsights>> _inFlight =
       <String, Future<RoomInsights>>{};
+  String? _cacheAccountUid;
+  int _cacheGeneration = 0;
 
-  Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
-    final token = await _auth.currentUser?.getIdToken();
+  // Room follow/favorite state is viewer-specific. Do not serve cached data
+  // to a different signed-in account, or let an old in-flight request refill it.
+  void _bindCacheAccount(String? uid) {
+    if (_cacheAccountUid == uid) return;
+    _cacheAccountUid = uid;
+    _cacheGeneration++;
+    _cache.clear();
+    _cacheExpiresAt.clear();
+    _inFlight.clear();
+  }
+
+  Future<Map<String, dynamic>> _post(
+    Map<String, dynamic> body, {
+    String? expectedUid,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('not_signed_in');
+    if (expectedUid != null && user.uid != expectedUid) {
+      throw StateError('account_changed');
+    }
+    final token = await user.getIdToken();
     if (token == null || token.isEmpty) throw StateError('not_signed_in');
+    if (_auth.currentUser?.uid != user.uid) {
+      throw StateError('account_changed');
+    }
 
     final response = await _client.post(
       Uri.parse('$_baseUrl/voice-session'),
@@ -234,6 +258,9 @@ class RoomInsightsService {
       if (value is Map<String, dynamic>) decoded = value;
     } catch (_) {}
 
+    if (_auth.currentUser?.uid != user.uid) {
+      throw StateError('account_changed');
+    }
     if (response.statusCode != 200 || decoded['ok'] != true) {
       throw StateError((decoded['code'] ?? 'room_insights_failed').toString());
     }
@@ -247,6 +274,12 @@ class RoomInsightsService {
     bool includeRanking = false,
     bool bypassCache = false,
   }) {
+    final uid = _auth.currentUser?.uid;
+    _bindCacheAccount(uid);
+    if (uid == null || uid.isEmpty) {
+      return Future<RoomInsights>.error(StateError('not_signed_in'));
+    }
+    final generation = _cacheGeneration;
     final key =
         '$roomId|supporters=$includeSupporters|attraction=$includeAttraction|ranking=$includeRanking';
     final now = DateTime.now();
@@ -269,7 +302,11 @@ class RoomInsightsService {
         'includeSupporters': includeSupporters,
         'includeAttraction': includeAttraction,
         'includeRanking': includeRanking,
-      });
+      }, expectedUid: uid);
+      if (_cacheGeneration != generation || _cacheAccountUid != uid ||
+          _auth.currentUser?.uid != uid) {
+        throw StateError('account_changed');
+      }
       final value = RoomInsights.fromJson(body);
       _cache[key] = value;
       _cacheExpiresAt[key] = DateTime.now().add(
@@ -279,7 +316,9 @@ class RoomInsightsService {
     }();
 
     _inFlight[key] = future;
-    return future.whenComplete(() => _inFlight.remove(key));
+    return future.whenComplete(() {
+      if (identical(_inFlight[key], future)) _inFlight.remove(key);
+    });
   }
 
   void _invalidateRoom(String roomId) {
@@ -294,11 +333,17 @@ class RoomInsightsService {
     required String roomId,
     required bool favorite,
   }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) throw StateError('not_signed_in');
+    _bindCacheAccount(uid);
     await _post({
       'action': 'setRoomFavorite',
       'roomId': roomId,
       'favorite': favorite,
-    });
+    }, expectedUid: uid);
+    if (_auth.currentUser?.uid != uid || _cacheAccountUid != uid) {
+      throw StateError('account_changed');
+    }
     _invalidateRoom(roomId);
     return load(roomId, bypassCache: true);
   }
@@ -307,11 +352,17 @@ class RoomInsightsService {
     required String roomId,
     required bool following,
   }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) throw StateError('not_signed_in');
+    _bindCacheAccount(uid);
     await _post({
       'action': 'setRoomFollow',
       'roomId': roomId,
       'following': following,
-    });
+    }, expectedUid: uid);
+    if (_auth.currentUser?.uid != uid || _cacheAccountUid != uid) {
+      throw StateError('account_changed');
+    }
     _invalidateRoom(roomId);
     return load(roomId, bypassCache: true);
   }
