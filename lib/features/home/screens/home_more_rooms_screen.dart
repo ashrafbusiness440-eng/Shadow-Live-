@@ -31,9 +31,9 @@ class _HomeMoreRoomsScreenState extends State<HomeMoreRoomsScreen> {
       if(scroll.hasClients&&scroll.position.extentAfter<350) unawaited(loadNext());
     });
     authSubscription=FirebaseAuth.instance.userChanges().listen((user){
-      if(user.uid==uid||!mounted)return;
+      if(user?.uid==uid||!mounted)return;
       setState((){
-        uid=user.uid;generation++;cursor=null;hasMore=true;loading=false;error=null;rooms.clear();opening.clear();
+        uid=user?.uid;generation++;cursor=null;hasMore=true;loading=false;error=null;rooms.clear();opening.clear();
       });
       unawaited(loadNext());
     });
