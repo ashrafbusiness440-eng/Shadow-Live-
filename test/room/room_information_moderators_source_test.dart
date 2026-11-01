@@ -51,6 +51,17 @@ void main() {
     expect(app, contains('participants: _voiceSession.roomParticipants,'));
   });
 
+  test('rapid taps cannot stack moderator editor and people pickers', () {
+    expect(manager, contains('if (_busy || _editorOpen) return;'));
+    expect(manager, contains('_editorOpen = true;'));
+    expect(manager, contains('_editorOpen = false;'));
+    expect(manager, contains('if (pickerOpen || _busy) return;'));
+    expect(manager, contains('pickerOpen = true;'));
+    expect(manager, contains('pickerOpen = false;'));
+    expect(manager, contains('publicIdController.dispose();'));
+    expect(manager, isNot(contains('Timer.periodic')));
+  });
+
   test('sharing does not claim unverified friends are online', () {
     expect(app, isNot(contains("friend.online\n                                        ? 'متصل الآن'")));
     expect(app, contains("subtitle: const Text(\n                                    'صديق'"));

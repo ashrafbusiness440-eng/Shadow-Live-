@@ -29,6 +29,9 @@ class _RoomModeratorManagerSheetState
   StreamSubscription<RoomModeratorState>? _subscription;
   RoomModeratorState? _state;
   bool _busy = false;
+  // Separate from a mutation in flight: block rapid taps opening duplicate
+  // moderator editors while the sheet is already being presented.
+  bool _editorOpen = false;
 
   static const _labels = <String, String>{
     'manageMic': 'إدارة المايك',
@@ -74,14 +77,18 @@ class _RoomModeratorManagerSheetState
   }
 
   Future<void> _editModerator([RoomModerator? existing]) async {
-    if (_busy) return;
+    if (_busy || _editorOpen) return;
+    _editorOpen = true;
     final publicIdController = TextEditingController();
+    var pickerOpen = false;
     String? pickedUid;
     String? pickedName;
     Future<void> chooseModerator({
       required bool fromFriends,
       required void Function(VoidCallback) setEditorState,
     }) async {
+      if (pickerOpen || _busy) return;
+      pickerOpen = true;
       try {
         if (fromFriends) {
           // Read friends only on explicit tap, never a room-wide listener.
@@ -174,12 +181,15 @@ class _RoomModeratorManagerSheetState
             const SnackBar(content: Text('تعذر تحميل القائمة حاليًا.')),
           );
         }
+      } finally {
+        pickerOpen = false;
       }
     }
     final caps = existing?.capabilities.toSet() ??
         <String>{'manageMic', 'moderateChat'};
 
-    await showModalBottomSheet<void>(
+    try {
+      await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF111522),
@@ -391,9 +401,11 @@ class _RoomModeratorManagerSheetState
           ),
         ),
       ),
-    );
-
-    publicIdController.dispose();
+      );
+    } finally {
+      publicIdController.dispose();
+      _editorOpen = false;
+    }
   }
 
   Future<void> _remove(RoomModerator moderator) async {
