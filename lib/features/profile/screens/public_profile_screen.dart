@@ -482,7 +482,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               headerSliverBuilder: (_, __) => [
                 SliverAppBar(
                   pinned: true,
-                  expandedHeight: 390,
+                  expandedHeight: 396,
                   backgroundColor: const Color(0xFF0B0D16),
                   foregroundColor: Colors.white,
                   title: Text(isSelf ? 'بروفايلي' : 'الملف الشخصي'),
