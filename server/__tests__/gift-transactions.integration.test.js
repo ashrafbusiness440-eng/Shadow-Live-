@@ -11,6 +11,7 @@ import {calculateAgencyCycleSettlement} from "../economy/economy-policy.js";
 import {sendRoomGift} from "../../cloudflare-worker/src/room-gift.js";
 import {recordMicActivity} from "../economy/mic-activity-admin.js";
 import {cloudflareFirestoreAdapter} from "./helpers/cloudflare-firestore-adapter.js";
+import {riyadhPeriodKeys,previousRiyadhMonthKey} from "./helpers/agency-riyadh-periods.js";
 
 const app=getApps()[0]||initializeApp({projectId:"shadow-live-economy-test"});
 const db=getFirestore(app);
@@ -18,19 +19,6 @@ const cloudflareDb=cloudflareFirestoreAdapter(db);
 
 after(async()=>{await deleteApp(app);});
 
-function periodKeys(date=new Date()){
-  const day=date.toISOString().slice(0,10);
-  const month=day.slice(0,7);
-  return {day,month};
-}
-
-function previousMonthKey(date=new Date()){
-  return new Date(Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth()-1,
-    1,
-  )).toISOString().slice(0,7);
-}
 
 function relationshipPathSafe(value){
   return Array.from(
@@ -136,7 +124,7 @@ async function seedSharedConfig(){
 
 test("room gift pays agency target salary immediately and records sharded monthly accrual",async()=>{
   await seedSharedConfig();
-  const periods=periodKeys();
+  const periods=riyadhPeriodKeys();
   const suffix=Date.now().toString()+"_room";
   const senderId="sender_"+suffix;
   const receiverId="receiver_"+suffix;
@@ -560,7 +548,7 @@ test("relationship gift is rejected before any financial write when pair is not 
 
 test("chat gift uses the same monthly target salary and sharded accrual as room gifts",async()=>{
   await seedSharedConfig();
-  const periods=periodKeys();
+  const periods=riyadhPeriodKeys();
   const suffix=Date.now().toString()+"_chat";
   const senderId="sender_"+suffix;
   const receiverId="receiver_"+suffix;
@@ -705,7 +693,7 @@ test("gift sent to a real newly-created diary is recorded once", async () => {
 
 test("diary gift reuses chat gift economy without creating chat side effects",async()=>{
   await seedSharedConfig();
-  const periods=periodKeys();
+  const periods=riyadhPeriodKeys();
   const suffix=Date.now().toString()+"_diary";
   const senderId="sender_"+suffix;
   const receiverId="receiver_"+suffix;
@@ -869,7 +857,9 @@ test("diary gift rejects a receiver who does not own the diary",async()=>{
 
 test("room gift allows sending to self without bypassing ledger or economy",async()=>{
   await seedSharedConfig();
-  const periods=periodKeys();
+  // giftRevenueMonth is a distinct UTC revenue field; unlike agency settlements,
+  // it must not use the Asia/Riyadh month-key test helper.
+  const revenueMonthUtc=new Date().toISOString().slice(0,7);
   const suffix=Date.now().toString()+"_self";
   const userId="self_"+suffix;
   const roomId="room_"+suffix;
@@ -945,7 +935,7 @@ test("room gift allows sending to self without bypassing ledger or economy",asyn
   assert.equal(userAfter.data().coins,900000);
   assert.equal(userAfter.data().totalGiftsSent,1);
   assert.equal(userAfter.data().totalGiftsReceived,1);
-  assert.equal(userAfter.data().giftRevenueMonth,periods.month);
+  assert.equal(userAfter.data().giftRevenueMonth,revenueMonthUtc);
 });
 
 test("room gift is rejected when either user has blocked the other",async()=>{
@@ -1000,7 +990,7 @@ test("room gift is rejected when either user has blocked the other",async()=>{
 
 test("real unmuted mic time qualifies 120-minute days and accumulates 9 cycle days",async()=>{
   await seedSharedConfig();
-  const periods=periodKeys();
+  const periods=riyadhPeriodKeys();
   const suffix=Date.now().toString()+"_activity";
   const hostUid="host_"+suffix;
   const agencyId="agency_"+suffix;
@@ -1115,7 +1105,7 @@ test("Shadow Control policy save keeps activity fixed while custom economics rem
 
 test("closed-month agency settlement aggregates bounded shards and stays idempotent",async()=>{
   await seedSharedConfig();
-  const month=previousMonthKey();
+  const month=previousRiyadhMonthKey();
   const suffix=Date.now().toString()+"_settlement";
   const agencyId="agency_"+suffix;
   const actorUid="owner_"+suffix;
@@ -1189,7 +1179,7 @@ test("closed-month agency settlement aggregates bounded shards and stays idempot
 
 test("agency settlement rejects the current month before any payout",async()=>{
   await seedSharedConfig();
-  const month=periodKeys().month;
+  const month=riyadhPeriodKeys().month;
   const suffix=Date.now().toString()+"_open_month";
   const agencyId="agency_"+suffix;
   const actorUid="owner_"+suffix;
@@ -1221,7 +1211,7 @@ test("agency settlement rejects the current month before any payout",async()=>{
 
 test("agency month close leaves Target-close carryover untouched",async()=>{
   await seedSharedConfig();
-  const month=previousMonthKey();
+  const month=previousRiyadhMonthKey();
   const suffix=Date.now().toString()+"_carryover";
   const agencyId="agency_"+suffix;
   const actorUid="owner_"+suffix;
@@ -1264,7 +1254,7 @@ test("agency month close leaves Target-close carryover untouched",async()=>{
 
 test("agency settlement rejects corrupted financial shard totals",async()=>{
   await seedSharedConfig();
-  const month=previousMonthKey();
+  const month=previousRiyadhMonthKey();
   const suffix=Date.now().toString()+"_corrupt";
   const agencyId="agency_"+suffix;
   const actorUid="owner_"+suffix;
