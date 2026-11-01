@@ -25,7 +25,18 @@ void main() {
       ));
       expect(find.text('123 يوم'), findsOneWidget);
       expect(find.textContaining('في التطبيق منذ'), findsNothing);
+      final viewport = tester.widget<Scrollable>(
+        find.ancestor(
+          of: find.byKey(const Key('profile-identity-status-row')),
+          matching: find.byType(Scrollable),
+        ).first,
+      );
+      // In an RTL app, the horizontal viewport must still scroll from
+      // physical left to right, keeping the day badge visible on first open.
+      expect(viewport.axisDirection, AxisDirection.right);
       final day = tester.getTopLeft(find.text('123 يوم'));
+      expect(day.dx, greaterThanOrEqualTo(0));
+      expect(day.dx, lessThan(width));
       final wealth = tester.getTopLeft(find.byKey(const Key('level-badge-0')));
       final attraction =
           tester.getTopLeft(find.byKey(const Key('level-badge-1')));
