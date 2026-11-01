@@ -757,14 +757,32 @@ export class RoomRealtimeObject extends DurableObject {
     }
 
     if (mode === "room") {
-      const currentVisibility = await this.ctx.storage.get("room_visibility_v1");
+      const supplied = String(body.roomVisibility || "");
+      const visibility = ["public", "password", "hidden"].includes(supplied)
+        ? supplied : "hidden";
+      const rawVersion = Number(body.roomPasswordLockVersion);
+      const version = Number.isSafeInteger(rawVersion) && rawVersion >= 0
+        ? rawVersion : -1;
+      if (version < 0) {
+        return Response.json({ ok: false, code: "room_lock_version_invalid" },
+          { status: 400 });
+      }
+      const [currentVisibility, currentVersion] = await Promise.all([
+        this.ctx.storage.get("room_visibility_v1"),
+        this.ctx.storage.get("room_lock_version_v1"),
+      ]);
+      // Cross-isolate admission caches must never override the durable policy
+      // after a room is hidden or a room password changes.
+      if ((currentVisibility !== undefined && currentVisibility !== visibility) ||
+          (currentVersion !== undefined && currentVersion !== version)) {
+        return Response.json({ ok: false, code: "room_policy_stale" },
+          { status: 409 });
+      }
       if (currentVisibility === undefined) {
-        // Initialize once on a server-authorized ticket; subsequent settings
-        // updates own this policy. Never let a cached ticket overwrite them.
-        const supplied = String(body.roomVisibility || "");
-        const visibility = ["public", "password", "hidden"].includes(supplied)
-          ? supplied : "hidden";
         await this.ctx.storage.put("room_visibility_v1", visibility);
+      }
+      if (currentVersion === undefined) {
+        await this.ctx.storage.put("room_lock_version_v1", version);
       }
     }
 
@@ -1362,6 +1380,14 @@ export class RoomRealtimeObject extends DurableObject {
       // Durable Object is authoritative for discovery counts across Workers
       // isolates; no extra database reads or visibility polling are needed.
       await this.ctx.storage.put("room_visibility_v1", visibility);
+    }
+    if (Object.hasOwn(body, "passwordLockVersion")) {
+      const version = Number(body.passwordLockVersion);
+      if (!Number.isSafeInteger(version) || version < 0) {
+        return Response.json({ ok: false, code: "invalid_password_lock_version" },
+          { status: 400 });
+      }
+      await this.ctx.storage.put("room_lock_version_v1", version);
     }
     let updated = 0;
     for (const socket of this.ctx.getWebSockets()) {
