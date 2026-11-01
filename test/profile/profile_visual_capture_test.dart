@@ -111,12 +111,17 @@ void main() {
       expect(tester.takeException(), isNull);
       final boundary = tester.renderObject<RenderRepaintBoundary>(
           find.byKey(const Key('profile-screenshot-boundary')));
-      final image = await boundary.toImage(pixelRatio: 1.4);
-      final png = await image.toByteData(format: ui.ImageByteFormat.png);
-      expect(png, isNotNull);
+      // Engine image encoding is real async work. Fake async can stall here
+      // indefinitely; run only raster readback outside tester's fake clock.
+      final pngBytes = await tester.runAsync(() async {
+        final image = await boundary.toImage(pixelRatio: 1.4);
+        final png = await image.toByteData(format: ui.ImageByteFormat.png);
+        return png?.buffer.asUint8List();
+      });
+      expect(pngBytes, isNotNull);
       final label = width.toInt().toString();
       File(folder.path + '/profile-' + label + 'px.png')
-          .writeAsBytesSync(png!.buffer.asUint8List());
+          .writeAsBytesSync(pngBytes!);
       File(folder.path + '/profile-' + label + 'px-geometry.txt').writeAsStringSync(
         'portrait=' + portrait.toString() + '\nname=' + name.toString()
         + '\nid=' + id.toString() + '\nstatus=' + status.toString()
