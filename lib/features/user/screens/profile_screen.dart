@@ -17,6 +17,7 @@ import '../../profile/widgets/profile_wallet_overlay.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
 import '../../profile/widgets/profile_identity_status_strip.dart';
+import '../../profile/widgets/profile_compact_header_identity.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/profile_action_grid.dart';
 import '../../profile/widgets/profile_personal_room_tab.dart';
@@ -585,55 +586,45 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          SizedBox(
-            width: 116,
-            height: 116,
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                ProfileAvatarWithFrame(
-                    diameter: 102,
-                    frameScale: 1.12,
-                    protectAvatarCenter: true,
-                    userId: uid,
-                    verifyStoreFrame: true,
-                    backgroundColor: const Color(0xFF171D31),
-                    placeholderColor: Colors.white54,
-                    fallbackProfile: profile,
-                  ),
-              ],
+          ProfileCompactHeaderIdentity(
+            portraitHeight: 116,
+            portrait: ProfileAvatarWithFrame(
+              diameter: 102,
+              frameScale: 1.12,
+              protectAvatarCenter: true,
+              userId: uid,
+              verifyStoreFrame: true,
+              backgroundColor: const Color(0xFF171D31),
+              placeholderColor: Colors.white54,
+              fallbackProfile: profile,
             ),
-          ),
-          const SizedBox(height: 2),
-          VipStyledName(
-            vipLevel: _num(profile, ['effectiveVipLevel']),
-            name: name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
+            name: VipStyledName(
+              vipLevel: _num(profile, ['effectiveVipLevel']),
+              name: name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 0),
-          ProfileIdentityInfoLine(
-            id: id,
-            location: '',
-            copyKey: const Key('own-profile-copy-id'),
-            onCopy: () => _copyId(profile),
-          ),
-          const SizedBox(height: 0),
-          ProfileIdentityStatusStrip(
-            membershipDays: membershipDays,
-            wealthLevel: _num(profile, ['wealthLevel']),
-            attractionLevel: _num(profile, ['attractionLevel']),
-            vipLevel: _num(profile, ['effectiveVipLevel']),
-            age: profile['age'],
-            gender: gender,
-            location: location,
-            onLevelTap: _openLevel,
-            onVipTap: _openVip,
+            identityId: ProfileIdentityInfoLine(
+              id: id,
+              location: '',
+              copyKey: const Key('own-profile-copy-id'),
+              onCopy: () => _copyId(profile),
+            ),
+            identityStatus: ProfileIdentityStatusStrip(
+              membershipDays: membershipDays,
+              wealthLevel: _num(profile, ['wealthLevel']),
+              attractionLevel: _num(profile, ['attractionLevel']),
+              vipLevel: _num(profile, ['effectiveVipLevel']),
+              age: profile['age'],
+              gender: gender,
+              location: location,
+              onLevelTap: _openLevel,
+              onVipTap: _openVip,
+            ),
           ),
           if (bio.isNotEmpty) ...[
             const SizedBox(height: 7),
