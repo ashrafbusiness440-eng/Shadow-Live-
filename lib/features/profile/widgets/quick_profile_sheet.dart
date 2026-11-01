@@ -13,6 +13,7 @@ import '../../vip/utils/vip_public_state.dart';
 import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
+import '../services/profile_membership_days.dart';
 import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
@@ -248,6 +249,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                 : <String>[];
             final provider = _avatar(data);
             final isSelf = _isSelf;
+            final membershipDays = verifiedMembershipDays(data);
 
             return VipProfileIdentitySurface(
               vipLevel: vip,
@@ -349,6 +351,18 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                         if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipLevelBadge(vip), label: 'VIP $vip'),
                         ...badges.take(3).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
                       ],
+                    ),
+                  ],
+                  if (membershipDays != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'في التطبيق منذ $membershipDays يوم',
+                      key: const Key('quick-profile-membership-days'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                   _publicLevelBadges(),
