@@ -56,7 +56,7 @@ void main() {
     ).readAsStringSync();
     expect(panel, contains("key: const Key('managed-room-presence-authoritative')"));
     expect(panel, contains("'الحضور: —'"));
-    expect(panel, contains("'الحضور: ${_verifiedCounts[item.room.roomId]}'"));
+    expect(panel, contains(r"'الحضور: ${_verifiedCounts[item.room.roomId]}'"));
     expect(panel, contains('_realtime.loadCounts('));
     expect(panel, contains('if (widget.profileStyle && rooms.isNotEmpty)'));
     expect(panel, contains('FirebaseAuth.instance.currentUser?.uid != uid'));
