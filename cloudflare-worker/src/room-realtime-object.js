@@ -1359,7 +1359,7 @@ export class RoomRealtimeObject extends DurableObject {
         return Response.json({ ok: false, code: "invalid_visibility" }, { status: 400 });
       }
       // Durable Object is authoritative for discovery counts across Workers
-      // isolates; no Firestore fan-out or visibility polling is needed.
+      // isolates; no extra database reads or visibility polling are needed.
       await this.ctx.storage.put("room_visibility_v1", visibility);
     }
     let updated = 0;
