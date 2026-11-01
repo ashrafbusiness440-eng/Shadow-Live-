@@ -555,10 +555,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return VipProfileIdentitySurface(
       vipLevel: _num(profile, ['effectiveVipLevel']),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Container(
+      child: Container(
       decoration: BoxDecoration(
         gradient: cover.isEmpty
             ? const RadialGradient(
@@ -582,6 +579,11 @@ class _ProfileScreenState extends State<ProfileScreen>
               )
             : null,
       ),
+      ),
+      foreground: Stack(
+        fit: StackFit.expand,
+        children: [
+          Padding(
       padding: const EdgeInsets.fromLTRB(18, 72, 18, 12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,

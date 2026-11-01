@@ -180,17 +180,22 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
     );
   }
 
-  // Center-safe profile artwork: the clipper leaves a circular cutout of
-  // 84% of the avatar diameter. Keep the portrait within that cutout even
-  // after nudging it down, so it cannot paint over the inner frame rim.
-  // Room/seat avatars do not opt in and retain their original geometry.
+  // The frame hole is 84% of the diameter. Keep the circular viewport
+  // stationary, then move only the PHOTO inside it. Previously we translated
+  // the entire ClipOval, leaving an empty crescent and making the face smaller.
+  // No effect on unframed user avatars or room/seat avatars.
   Widget _framedAvatar(Map<String, dynamic> profile) {
     if (!widget.protectAvatarCenter) return _baseAvatar(profile);
     return Padding(
-      padding: EdgeInsets.all(widget.diameter * 0.125),
-      child: Transform.translate(
-        offset: Offset(0, widget.diameter * 0.04),
-        child: ClipOval(child: _baseAvatar(profile)),
+      padding: EdgeInsets.all(widget.diameter * 0.085),
+      child: ClipOval(
+        child: Transform.translate(
+          offset: Offset(0, widget.diameter * 0.035),
+          child: Transform.scale(
+            scale: 1.14,
+            child: _baseAvatar(profile),
+          ),
+        ),
       ),
     );
   }
@@ -245,7 +250,9 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
       );
     }
 
-    return avatar;
+    // Without an equipped frame, the full avatar must remain full-sized.
+    // The protective inset is only for artwork with a center cutout.
+    return widget.protectAvatarCenter ? _baseAvatar(profile) : avatar;
   }
 
   Widget _renderWithVerifiedStoreFrame(Map<String, dynamic> profile) {

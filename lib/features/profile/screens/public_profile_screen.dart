@@ -728,6 +728,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               )
             : null,
       ),
+      ),
+      foreground: Padding(
       padding: const EdgeInsets.fromLTRB(18, 72, 18, 12),
       child: StoreVerifiedProfileCardBackdrop(
         userId: widget.userId,
