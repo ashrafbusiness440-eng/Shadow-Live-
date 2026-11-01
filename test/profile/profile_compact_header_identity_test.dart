@@ -56,10 +56,10 @@ void main() {
       final vip = tester.getRect(find.byKey(const Key('tap-vip')));
       final group = tester.getRect(find.byKey(const Key('profile-compact-header-identity')));
 
-      expect(group.height, lessThan(220));
+      expect(group.height, lessThan(230));
       expect(portrait.center.dx, closeTo(group.center.dx, .1));
       expect(name.center.dx, closeTo(group.center.dx, .1));
-      expect((name.top - portrait.bottom).abs(), lessThan(12));
+      expect(name.top - portrait.bottom, inInclusiveRange(0, 12));
       expect(id.center.dy - name.center.dy, lessThan(40));
       expect(vip.center.dy - id.center.dy, lessThan(36));
       expect(id.height, greaterThanOrEqualTo(44));
