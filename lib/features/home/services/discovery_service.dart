@@ -348,7 +348,7 @@ class DiscoveryService {
     int limit=16,
   }) async {
     final uid=_auth.currentUser?.uid;
-    final count=limit.clamp(1,24);
+    final count=limit<1?1:(limit>24?24:limit);
     Query<Map<String,dynamic>> query=_firestore.collection('rooms')
         .orderBy(FieldPath.documentId).limit(count);
     if(after!=null) query=query.startAfterDocument(after);
