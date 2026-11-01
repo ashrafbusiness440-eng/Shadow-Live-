@@ -50,10 +50,13 @@ void main() {
       'lib/features/user/screens/profile_screen.dart',
     ).readAsStringSync();
 
-    expect(ownProfile.contains('UserLevelBadges.fromLevels('), isTrue);
+    expect(ownProfile.contains('ProfileIdentityStatusStrip('), isTrue);
     expect(ownProfile.contains("wealthLevel: _num(profile, ['wealthLevel'])"), isTrue);
     expect(ownProfile.contains("attractionLevel: _num(profile, ['attractionLevel'])"), isTrue);
-    expect(ownProfile.contains("gameLevel: _num(profile, ['gameLevel'])"), isTrue);
+    final strip = File('lib/features/profile/widgets/profile_identity_status_strip.dart')
+        .readAsStringSync();
+    expect(strip.contains('gameLevel: 0,'), isTrue);
+    expect(strip.contains('UserLevelBadges.fromLevels('), isTrue);
     expect(ownProfile.contains("final moodEmoji = _text(profile, 'moodEmoji', '').trim();"), isTrue);
     expect(ownProfile.contains("final interests = profile['interests'] is List"), isTrue);
     expect(ownProfile.contains('UserLevelService()'), isFalse);
