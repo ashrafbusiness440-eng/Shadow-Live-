@@ -24,7 +24,7 @@ class ProfileCompactHeaderIdentity extends StatelessWidget {
     // Reserve extra breathing room for accessibility text scaling. At default
     // scale each visual baseline is ~30px apart, not 44px apart.
     final scale =
-        (MediaQuery.textScalerOf(context).scale(16) / 16).clamp(1.0, 1.6);
+        (MediaQuery.textScalerOf(context).scale(16) / 16).clamp(1.0, 1.6).toDouble();
     final nameTop = portraitHeight - 1;
     final idTop = portraitHeight + 26 * scale;
     final statusTop = portraitHeight + 57 * scale;
