@@ -1,0 +1,36 @@
+name: Profile Header Visual QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'test/profile/profile_visual_capture_test.dart'
+      - 'lib/features/profile/widgets/profile_compact_header_identity.dart'
+      - 'lib/features/profile/widgets/profile_avatar_with_frame.dart'
+      - '.github/workflows/profile-header-visual-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Capture real Flutter profile widgets
+        run: flutter test test/profile/profile_visual_capture_test.dart
+      - name: Upload profile phone screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-header-fast-captures
+          path: profile-visual-qa/
+          if-no-files-found: warn
+          retention-days: 5
