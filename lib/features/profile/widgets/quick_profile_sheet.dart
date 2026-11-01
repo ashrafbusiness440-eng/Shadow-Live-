@@ -254,7 +254,7 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(width: 44, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4))),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 10),
                   InkWell(
                     borderRadius: BorderRadius.circular(70),
                     onTap: _openFull,
