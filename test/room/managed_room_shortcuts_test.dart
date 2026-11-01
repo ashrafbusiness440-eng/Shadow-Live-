@@ -54,8 +54,17 @@ void main() {
     final panel = File(
       'lib/features/room/widgets/managed_rooms_panel.dart',
     ).readAsStringSync();
-    expect(panel, contains("key: Key('managed-room-presence-unverified')"));
+    expect(panel, contains("key: const Key('managed-room-presence-authoritative')"));
     expect(panel, contains("'الحضور: —'"));
+    expect(panel, contains("'الحضور: ${_verifiedCounts[item.room.roomId]}'"));
+    expect(panel, contains('_realtime.loadCounts('));
+    expect(panel, contains('if (widget.profileStyle && rooms.isNotEmpty)'));
+    expect(panel, contains('FirebaseAuth.instance.currentUser?.uid != uid'));
+    expect(panel, contains('_loadGeneration != generation'));
+    expect(panel, contains('entry.value >= 0'));
+    expect(panel, contains('_verifiedCounts = const {}'));
+    expect(panel, isNot(contains('Timer.periodic')));
+    expect(panel, isNot(contains('FirebaseFirestore.instance')));
     expect(panel, isNot(contains('item.room.onlineCount')));
     expect(panel, contains('item.room.ownerLocation'));
     expect(panel, contains('item.room.publicId'));
