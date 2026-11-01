@@ -1088,7 +1088,7 @@ async function updateRoomSettings(db,uid,body){
     ? db.collection("storage_objects").doc(roomImageObjectId)
     : null;
 
-  return db.runTransaction(async tx=>{
+  const result=await db.runTransaction(async tx=>{
     const reads=[tx.get(roomRef),tx.get(userRef)];
     if(roomImageObjectRef)reads.push(tx.get(roomImageObjectRef));
     const [roomSnap,userSnap,roomImageObjectSnap]=await Promise.all(reads);
@@ -1197,6 +1197,16 @@ async function updateRoomSettings(db,uid,body){
       room:roomResponse(roomId,{...room,...update}),
     };
   });
+
+  // A settings change may rotate a password, hide a room, or change its chat
+  // policy. Do not retain stale admission metadata after the committed write.
+  invalidateRoomRealtimeAdmissionCache(roomId);
+  // Mirror the independent chat-toggle path: active DO connections must obey
+  // the new policy now, not only after their next reconnect.
+  try{
+    await setRoomRealtimeChatPolicy(legacyEnv,roomId,chatEnabled);
+  }catch(_){}
+  return result;
 }
 
 async function setRoomChatEnabled(db,uid,body){
