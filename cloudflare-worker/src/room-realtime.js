@@ -1,5 +1,6 @@
 import { firestoreClient } from "./firestore.js";
 import { authorizeRoomRealtimeTicket } from "./room-realtime-admission.js";
+import { roomPasswordLockVersion } from "./room-invite-lock-policy.js";
 import {resolveStoreVisuals} from "./store-presentation.js";
 import { resolveRoomFollowTargets } from "./room-follow-lookup.js";
 import { roomEntryRestricted } from "./room-chat-restriction.js";
@@ -281,7 +282,7 @@ export function invalidateRoomRealtimeAdmissionCache(roomId) {
   if (normalized) roomAdmissionCache.clear(normalized);
 }
 
-export async function setRoomRealtimeChatPolicy(env, roomId, enabled, visibility = null) {
+export async function setRoomRealtimeChatPolicy(env, roomId, enabled, visibility = null, passwordLockVersion = null) {
   const normalized = normalizeRoomId(roomId);
   if (!normalized) return { ok: false, updated: 0 };
   const response = await roomObject(env, normalized).fetch(
@@ -293,6 +294,7 @@ export async function setRoomRealtimeChatPolicy(env, roomId, enabled, visibility
         roomId: normalized,
         chatEnabled: enabled !== false,
         ...(visibility === null ? {} : { visibility }),
+        ...(passwordLockVersion === null ? {} : { passwordLockVersion }),
       }),
     },
   );
@@ -697,6 +699,7 @@ export async function roomRealtime(request, env) {
             Number(identityPresentation.gameLevel || 0),
           ),
           chatEnabled: roomData.chatEnabled !== false,
+          roomPasswordLockVersion: roomPasswordLockVersion(roomData),
           roomVisibility: roomData.isHidden === true ? "hidden" :
             (["public", "password", "hidden"].includes(roomData.visibility)
               ? roomData.visibility : "public"),
