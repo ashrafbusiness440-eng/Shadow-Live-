@@ -1,3 +1,4 @@
+import '../services/profile_membership_days.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -712,6 +713,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     required int vipFrameLevel,
     required List<String> badges,
   }) {
+    final membershipDays = verifiedMembershipDays(profile);
     return VipProfileIdentitySurface(
       vipLevel: vip,
       child: Container(
@@ -764,6 +766,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               fancyId: fancyId,
             ),
           ),
+          if (membershipDays != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              'في التطبيق منذ $membershipDays يوم',
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
           if (vip > 0 || badges.isNotEmpty) ...[
             const SizedBox(height: 10),
             Wrap(
