@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_chat_room/features/home/services/discovery_service.dart';
 
@@ -157,6 +159,29 @@ void main() {
 
     expect(hidden.isHidden, isTrue);
     expect(inactive.isActive, isFalse);
+  });
+
+  test('home discovery excludes private, hidden and restricted rooms', () {
+    const publicRoom = DiscoveryRoom(id: 'public', data: {'visibility': 'public'});
+    const password = DiscoveryRoom(id: 'password', data: {'visibility': 'password'});
+    const privateRoom = DiscoveryRoom(id: 'private', data: {'isPrivate': true});
+    const hidden = DiscoveryRoom(id: 'hidden', data: {'visibility': 'hidden'});
+    const friends = DiscoveryRoom(id: 'friends', data: {'visibility': 'friends'});
+    const inactive = DiscoveryRoom(id: 'inactive', data: {'isActive': false});
+    const unknown = DiscoveryRoom(id: 'unknown', data: {'visibility': 'restricted'});
+
+    expect(publicRoom.isPubliclyDiscoverable, isTrue);
+    expect(password.isPubliclyDiscoverable, isTrue);
+    for (final room in [privateRoom, hidden, friends, inactive, unknown]) {
+      expect(room.isPubliclyDiscoverable, isFalse, reason: room.id);
+    }
+  });
+
+  test('the bounded home room query applies public discovery policy', () {
+    final source = File('lib/features/home/services/discovery_service.dart')
+        .readAsStringSync();
+    expect(source.contains('.limit(60).get()'), isTrue);
+    expect(source.contains('.where((room) => room.isPubliclyDiscoverable)'), isTrue);
   });
 
   test('navigation payload always carries room id', () {

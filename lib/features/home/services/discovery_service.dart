@@ -42,6 +42,14 @@ class DiscoveryRoom {
 
   bool get isPasswordProtected => visibility == 'password';
 
+  /// Only public or password-entry rooms may appear in public discovery.
+  /// Hidden, private, restricted and inactive rooms fail closed.
+  bool get isPubliclyDiscoverable =>
+      isActive &&
+      !isHidden &&
+      data['isPrivate'] != true &&
+      const {'public', 'password'}.contains(visibility);
+
   Map<String, dynamic> toNavigationArguments() => {
         ...data,
         'roomId': id,
@@ -357,7 +365,7 @@ class DiscoveryService {
       final roomSnapshot = await _firestore.collection('rooms').limit(60).get();
       final persistentRooms = roomSnapshot.docs
           .map((doc) => DiscoveryRoom(id: doc.id, data: doc.data()))
-          .where((room) => room.isActive && !room.isHidden)
+          .where((room) => room.isPubliclyDiscoverable)
           .toList(growable: false);
       final rooms = await hydrateRealtimeCounts(persistentRooms);
       _roomsCache = rooms;
