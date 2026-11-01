@@ -281,7 +281,7 @@ export function invalidateRoomRealtimeAdmissionCache(roomId) {
   if (normalized) roomAdmissionCache.clear(normalized);
 }
 
-export async function setRoomRealtimeChatPolicy(env, roomId, enabled) {
+export async function setRoomRealtimeChatPolicy(env, roomId, enabled, visibility = null) {
   const normalized = normalizeRoomId(roomId);
   if (!normalized) return { ok: false, updated: 0 };
   const response = await roomObject(env, normalized).fetch(
@@ -292,6 +292,7 @@ export async function setRoomRealtimeChatPolicy(env, roomId, enabled) {
       body: JSON.stringify({
         roomId: normalized,
         chatEnabled: enabled !== false,
+        ...(visibility === null ? {} : { visibility }),
       }),
     },
   );
@@ -397,7 +398,7 @@ export async function readPresence(stub, requesterUid) {
 
 async function readPresenceCount(stub) {
   const response = await stub.fetch(
-    "https://room-realtime.internal/presence/count",
+    "https://room-realtime.internal/presence/public-count",
   );
   if (!response.ok) throw new Error("realtime_presence_failed");
   const body = await response.json().catch(() => ({}));
@@ -680,6 +681,9 @@ export async function roomRealtime(request, env) {
             Number(identityPresentation.gameLevel || 0),
           ),
           chatEnabled: roomData.chatEnabled !== false,
+          roomVisibility: roomData.isHidden === true ? "hidden" :
+            (["public", "password", "hidden"].includes(roomData.visibility)
+              ? roomData.visibility : "public"),
           canModerateChat: canModerateRoomChat(
             roomData,
             profileData,
