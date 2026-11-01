@@ -377,8 +377,15 @@ function isAnonymous(payload) {
   return String(payload?.firebase?.sign_in_provider || "") === "anonymous";
 }
 
-async function readPresence(stub) {
-  const response = await stub.fetch("https://room-realtime.internal/presence");
+// Only a verified live room participant may fetch the roster. The DO checks
+// membership in the same request that builds the snapshot (no extra reads).
+export async function readPresence(stub, requesterUid) {
+  const uid = clean(requesterUid);
+  if (!uid) return null;
+  const target = new URL("https://room-realtime.internal/presence");
+  target.searchParams.set("requiredUid", uid);
+  const response = await stub.fetch(target.toString());
+  if (response.status === 403) return null;
   if (!response.ok) throw new Error("realtime_presence_failed");
   const body = await response.json().catch(() => ({}));
   return {
@@ -527,7 +534,11 @@ export async function roomRealtime(request, env) {
         });
       }
       if (action === "presenceState") {
-        const state = await readPresence(stub);
+        const state = await readPresence(stub, String(payload.sub || ""));
+        if (!state) {
+          return json(request, env,
+            { ok: false, code: "room_presence_required" }, 403);
+        }
         return json(request, env, {
           ok: true,
           roomId,
