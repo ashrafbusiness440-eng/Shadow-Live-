@@ -3,6 +3,25 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
+/// Return only counts explicitly verified by the live server for requested rooms.
+/// A malformed value or missing key is unknown, never an invented zero.
+Map<String, int> verifiedRoomPresenceCounts(
+  Object? raw,
+  Iterable<String> requestedRoomIds,
+) {
+  if (raw is! Map) return const {};
+  final requested = requestedRoomIds.toSet();
+  return {
+    for (final entry in raw.entries)
+      if (entry.key is String &&
+          requested.contains(entry.key) &&
+          entry.value is num &&
+          (entry.value as num).isFinite &&
+          (entry.value as num) >= 0)
+        entry.key as String: (entry.value as num).toInt(),
+  };
+}
+
 class RoomFollowLocation {
   const RoomFollowLocation({
     required this.targetUid,
@@ -75,14 +94,7 @@ class RoomRealtimeQueryService {
     if (decoded is! Map || decoded['ok'] != true) {
       throw StateError('room_realtime_counts_failed');
     }
-    final raw = decoded['counts'];
-    if (raw is! Map) return const <String, int>{};
-
-    return {
-      for (final entry in raw.entries)
-        entry.key.toString():
-            entry.value is num ? (entry.value as num).toInt() : 0,
-    };
+    return verifiedRoomPresenceCounts(decoded['counts'], ids);
   }
 
   /// Shared by chat headers, suggested people and profile visitors.

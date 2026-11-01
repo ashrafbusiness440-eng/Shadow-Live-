@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../services/navigation_service.dart';
 import '../services/room_action_service.dart';
+import '../services/room_realtime_query_service.dart';
 import 'discovery_room_password_dialog.dart';
 import 'managed_room_country_flag.dart';
 
@@ -31,7 +32,12 @@ class ManagedRoomsPanel extends StatefulWidget {
 
 class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
   final RoomActionService _service = RoomActionService();
+  final RoomRealtimeQueryService _realtime = RoomRealtimeQueryService();
   List<ManagedRoomEntry> _rooms = const [];
+  // Counts are only taken from the authoritative room Durable Objects.
+  // Missing or failed counts must never fall back to saved room metadata.
+  Map<String, int> _verifiedCounts = const {};
+  int _loadGeneration = 0;
   bool _loading = false;
   bool _failed = false;
   bool _entering = false;
@@ -46,6 +52,7 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
   @override
   void dispose() {
     _service.close();
+    _realtime.close();
     super.dispose();
   }
 
@@ -53,28 +60,62 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
     final user = FirebaseAuth.instance.currentUser;
     if (_loading) return;
     if (user == null || user.isAnonymous) {
+      ++_loadGeneration;
       if (mounted) setState(() {
+        _requestedUid = null;
         _rooms = const [];
+        _verifiedCounts = const {};
         _failed = false;
       });
       return;
     }
     _requestedUid = user.uid;
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _failed = false;
+      _rooms = const [];
+      _verifiedCounts = const {};
     });
     try {
       final rooms = await _service.loadManagedRooms();
       if (!mounted || FirebaseAuth.instance.currentUser?.uid != user.uid ||
           _requestedUid != user.uid) return;
       setState(() => _rooms = rooms);
+      // Only the full profile needs counts: one bounded batch per opening,
+      // no per-card requests, repeating listeners, or Firestore snapshots.
+      if (widget.profileStyle && rooms.isNotEmpty) {
+        _loadVerifiedCounts(rooms, user.uid, generation);
+      }
     } catch (_) {
       if (mounted && FirebaseAuth.instance.currentUser?.uid == user.uid) {
         setState(() => _failed = true);
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadVerifiedCounts(
+    List<ManagedRoomEntry> rooms,
+    String uid,
+    int generation,
+  ) async {
+    try {
+      final counts = await _realtime.loadCounts(
+        rooms.map((entry) => entry.room.roomId),
+      );
+      if (!mounted || _loadGeneration != generation ||
+          FirebaseAuth.instance.currentUser?.uid != uid ||
+          _requestedUid != uid) return;
+      setState(() => _verifiedCounts = {
+        for (final entry in counts.entries)
+          if (entry.value >= 0 &&
+              rooms.any((room) => room.room.roomId == entry.key))
+            entry.key: entry.value,
+      });
+    } catch (_) {
+      // Network/server failures leave a visible unknown count, not a fake zero.
     }
   }
 
@@ -227,9 +268,11 @@ class _ManagedRoomsPanelState extends State<ManagedRoomsPanel> {
                               fontSize: 11),
                           ),
                           const SizedBox(height: 3),
-                          const Text(
-                            'الحضور: —',
-                            key: Key('managed-room-presence-unverified'),
+                          Text(
+                            _verifiedCounts.containsKey(item.room.roomId)
+                                ? 'الحضور: ${_verifiedCounts[item.room.roomId]}'
+                                : 'الحضور: —',
+                            key: const Key('managed-room-presence-authoritative'),
                             style: TextStyle(color: Colors.white54,
                               fontSize: 11),
                           ),
