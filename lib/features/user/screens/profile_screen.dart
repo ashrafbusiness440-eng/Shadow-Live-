@@ -601,7 +601,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           VipStyledName(
             vipLevel: _num(profile, ['effectiveVipLevel']),
             name: name,
@@ -612,14 +612,14 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 2),
           ProfileIdentityInfoLine(
             id: id,
             location: '',
             copyKey: const Key('own-profile-copy-id'),
             onCopy: () => _copyId(profile),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           ProfileIdentityStatusStrip(
             membershipDays: membershipDays,
             wealthLevel: _num(profile, ['wealthLevel']),
