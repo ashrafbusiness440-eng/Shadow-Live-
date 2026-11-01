@@ -58,3 +58,26 @@ test("DO policy is synchronized by room settings and initialized only on first a
   assert.match(realtime, /roomVisibility: roomData\.isHidden === true/);
   assert.match(realtime, /\.\.\.\(visibility === null \? \{\} : \{ visibility \}\)/);
 });
+
+test("admin room visibility changes also synchronize without changing chat", () => {
+  const object = readFileSync(
+    new URL("../../cloudflare-worker/src/room-realtime-object.js", import.meta.url), "utf8");
+  const legacy = readFileSync(
+    new URL("../../cloudflare-worker/src/voice-session-legacy.js", import.meta.url), "utf8");
+  const realtime = readFileSync(
+    new URL("../../cloudflare-worker/src/room-realtime.js", import.meta.url), "utf8");
+  const policy = legacy.slice(legacy.indexOf("async function controlRoomPolicy("),
+    legacy.indexOf("export async function announceRoomEntrance("));
+  assert.match(policy, /isHidden:visibility==="hidden"/);
+  assert.match(policy, /setRoomRealtimeVisibilityPolicy\(legacyEnv,result\.roomId,result\.visibility\)/);
+  assert.match(policy, /includes\(result\.visibility\)/);
+  assert.match(policy, /const result=await db\.runTransaction/);
+  const synchronized = realtime.slice(
+    realtime.indexOf("export async function setRoomRealtimeVisibilityPolicy("),
+    realtime.indexOf("export async function publishGlobalRocketEvents("));
+  assert.match(synchronized, /JSON\.stringify\(\{ roomId: normalized, visibility \}\)/);
+  assert.doesNotMatch(synchronized, /chatEnabled/);
+  const doChat = object.slice(object.indexOf("async #updateChatPolicy("),
+    object.indexOf("async #contentFilterPolicy("));
+  assert.match(doChat, /if \(!changeChat\) continue/);
+});
