@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../../shared/widgets/country_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -25,7 +24,7 @@ import '../../vip/widgets/vip_avatar_frame.dart';
 import '../../vip/widgets/vip_profile_avatar.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
 import '../widgets/registry_badge.dart';
-import '../widgets/user_level_badges.dart';
+import '../widgets/profile_identity_status_strip.dart';
 import '../widgets/profile_avatar_with_frame.dart';
 import '../widgets/profile_identity_info_line.dart';
 import '../widgets/store_verified_profile_card_backdrop.dart';
@@ -411,23 +410,20 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     );
   }
 
-  Widget _publicLevelBadges() {
+  Widget _identityStatusStrip(Map<String, dynamic> profile, int vip) {
     return FutureBuilder<UserLevelSummary>(
       future: _levelFuture,
       builder: (context, snapshot) {
         final summary = snapshot.data;
-        if (summary == null) return const SizedBox.shrink();
-        final hasAny = summary.wealth.level > 0 ||
-            summary.attraction.level > 0 ||
-            summary.games.level > 0;
-        if (!hasAny) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: UserLevelBadges(
-            summary: summary,
-            iconOnly: true,
-            onTap: _openLevel,
-          ),
+        return ProfileIdentityStatusStrip(
+          membershipDays: verifiedMembershipDays(profile),
+          wealthLevel: summary?.wealth.level ?? 0,
+          attractionLevel: summary?.attraction.level ?? 0,
+          vipLevel: vip,
+          age: profile['age'],
+          gender: (profile['gender'] ?? '').toString(),
+          location: (profile['location'] ?? profile['country'] ?? '').toString(),
+          onLevelTap: _openLevel,
         );
       },
     );
@@ -713,7 +709,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     required int vipFrameLevel,
     required List<String> badges,
   }) {
-    final membershipDays = verifiedMembershipDays(profile);
     return VipProfileIdentitySurface(
       vipLevel: vip,
       child: Container(
@@ -759,33 +754,29 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           const SizedBox(height: 4),
           ProfileIdentityInfoLine(
             id: fancyId.isNotEmpty ? fancyId : publicId,
-            location: (profile['location'] ?? profile['country'] ?? '').toString(),
+            location: '',
             copyKey: const Key('public-profile-copy-id'),
             onCopy: () => _copyUserIds(
               publicId: publicId,
               fancyId: fancyId,
             ),
           ),
-          if (membershipDays != null) ...[
-            const SizedBox(height: 5),
-            Text(
-              'في التطبيق منذ $membershipDays يوم',
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-          ],
-          if (vip > 0 || badges.isNotEmpty) ...[
-            const SizedBox(height: 10),
+          const SizedBox(height: 6),
+          _identityStatusStrip(profile, vip),
+          if (badges.isNotEmpty) ...[
+            const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 7,
               runSpacing: 7,
-              children: [
-                if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipLevelBadge(vip), label: 'VIP $vip'),
-                ...badges.take(4).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
-              ],
+              children: badges.take(4)
+                  .map((b) => RegistryBadge(
+                    assetKey: normalizePublicBadgeKey(b),
+                    label: publicBadgeLabel(b),
+                  ))
+                  .toList(growable: false),
             ),
           ],
-          _publicLevelBadges(),
         ],
         ),
       ),

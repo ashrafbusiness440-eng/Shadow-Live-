@@ -24,7 +24,7 @@ void main() {
 
     for (final source in [publicProfile, quickProfile]) {
       expect(source.contains('late Future<UserLevelSummary> _levelFuture'), isTrue);
-      expect(source.contains('UserLevelBadges('), isTrue);
+      expect(source.contains('ProfileIdentityStatusStrip('), isTrue);
       expect(source.contains('initialTabIndex: tabIndex'), isTrue);
       expect(occurrences(source, 'loadForUser(widget.userId)'), 1);
       expect(

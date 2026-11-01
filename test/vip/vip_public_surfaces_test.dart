@@ -100,12 +100,15 @@ void main() {
     ).readAsStringSync();
 
     expect(publicProfile.contains('effectivePublicVipLevel(data)'), isTrue);
-    expect(publicProfile.contains('ShadowAssetKeys.vipLevelBadge(vip)'), isTrue);
+    final strip = File('lib/features/profile/widgets/profile_identity_status_strip.dart').readAsStringSync();
+    expect(publicProfile.contains('ProfileIdentityStatusStrip('), isTrue);
+    expect(strip.contains('ShadowAssetKeys.vipLevelBadge(vipLevel)'), isTrue);
     expect(publicProfile.contains('ProfileAvatarWithFrame('), isTrue);
     expect(publicProfile.contains('useVipFallback: true'), isTrue);
 
     expect(quickProfile.contains('effectivePublicVipLevel(data)'), isTrue);
-    expect(quickProfile.contains('ShadowAssetKeys.vipLevelBadge(vip)'), isTrue);
+    expect(quickProfile.contains('ProfileIdentityStatusStrip('), isTrue);
+    expect(strip.contains('RegistryBadge('), isTrue);
     expect(quickProfile.contains('ProfileAvatarWithFrame('), isTrue);
     expect(quickProfile.contains('useVipFallback: true'), isTrue);
 

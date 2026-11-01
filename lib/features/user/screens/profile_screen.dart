@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../services/navigation_service.dart';
-import '../../../shared/widgets/country_selector.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../utils/compact_number.dart';
@@ -16,7 +15,7 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../wallet/screens/recharge_screen.dart';
 import '../../profile/screens/my_items_screen.dart';
 import '../../profile/screens/user_level_screen.dart';
-import '../../profile/widgets/user_level_badges.dart';
+import '../../profile/widgets/profile_identity_status_strip.dart';
 import '../../profile/services/follow_service.dart';
 import '../../profile/widgets/profile_action_grid.dart';
 import '../../profile/widgets/profile_personal_room_tab.dart';
@@ -616,18 +615,22 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 7),
           ProfileIdentityInfoLine(
             id: id,
-            location: location,
-            gender: gender,
+            location: '',
             copyKey: const Key('own-profile-copy-id'),
             onCopy: () => _copyId(profile),
           ),
-          if (membershipDays != null) ...[
-            const SizedBox(height: 5),
-            Text(
-              'في التطبيق منذ $membershipDays يوم',
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-          ],
+          const SizedBox(height: 6),
+          ProfileIdentityStatusStrip(
+            membershipDays: membershipDays,
+            wealthLevel: _num(profile, ['wealthLevel']),
+            attractionLevel: _num(profile, ['attractionLevel']),
+            vipLevel: _num(profile, ['effectiveVipLevel']),
+            age: profile['age'],
+            gender: gender,
+            location: location,
+            onLevelTap: _openLevel,
+            onVipTap: _openVip,
+          ),
           if (bio.isNotEmpty) ...[
             const SizedBox(height: 7),
             Text(
@@ -639,43 +642,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 color: Colors.white70,
                 fontSize: 12,
                 height: 1.4,
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          if (_num(profile, ['wealthLevel']) > 0 ||
-              _num(profile, ['attractionLevel']) > 0 ||
-              _num(profile, ['gameLevel']) > 0)
-            UserLevelBadges.fromLevels(
-              wealthLevel: _num(profile, ['wealthLevel']),
-              attractionLevel: _num(profile, ['attractionLevel']),
-              gameLevel: _num(profile, ['gameLevel']),
-              compact: true,
-              iconOnly: true,
-              onTap: _openLevel,
-            ),
-          if (_num(profile, ['effectiveVipLevel']) > 0) ...[
-            const SizedBox(height: 8),
-            InkWell(
-              key: const Key('profile-vip-badge'),
-              onTap: _openVip,
-              borderRadius: BorderRadius.circular(99),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4B2A11),
-                  borderRadius: BorderRadius.circular(99),
-                  border: Border.all(color: const Color(0xFFFFD98A)),
-                ),
-                child: Text(
-                  'VIP${_num(profile, ['effectiveVipLevel'])}',
-                  textDirection: TextDirection.ltr,
-                  style: const TextStyle(
-                    color: Color(0xFFFFD98A),
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
               ),
             ),
           ],
