@@ -3,14 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../core/assets/shadow_asset_registry.dart';
 
 import '../screens/public_profile_screen.dart';
 import '../screens/user_level_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../vip/utils/vip_public_state.dart';
-import '../../vip/widgets/vip_avatar_frame.dart';
-import '../../vip/widgets/vip_profile_avatar.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
 import '../services/profile_membership_days.dart';
 import '../services/follow_service.dart';
@@ -163,9 +160,6 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
     super.dispose();
   }
 
-  ImageProvider? _avatar(Map<String, dynamic> data) =>
-      effectiveProfileAvatarProvider(data);
-
   Future<void> _gift(BuildContext context, String name) => showDirectGiftSheet(
         context,
         receiverId: widget.userId,
@@ -243,7 +237,6 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
             final badges = data['badges'] is List
                 ? (data['badges'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
                 : <String>[];
-            final provider = _avatar(data);
             final isSelf = _isSelf;
 
             return VipProfileIdentitySurface(
