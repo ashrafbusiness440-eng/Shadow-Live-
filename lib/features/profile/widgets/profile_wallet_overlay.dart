@@ -76,7 +76,7 @@ class ProfileWalletOverlay extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(7),
           child: SizedBox(
-            height: 34,
+            height: 44,
             child: Row(
               textDirection: TextDirection.ltr,
               children: [
