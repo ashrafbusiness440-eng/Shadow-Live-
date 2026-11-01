@@ -32,6 +32,8 @@ void main() {
       expect(diamonds, findsOneWidget);
       expect(tester.getTopLeft(coins).dy,
           lessThan(tester.getTopLeft(diamonds).dy));
+      expect(tester.getSize(coins).height, greaterThanOrEqualTo(44));
+      expect(tester.getSize(diamonds).height, greaterThanOrEqualTo(44));
       expect(tester.getSize(find.byKey(const Key('profile-cover-wallet'))).width,
           width <= 340 ? 88 : 104);
       expect(find.textContaining('M'), findsOneWidget);
