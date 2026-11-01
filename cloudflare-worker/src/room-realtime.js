@@ -396,7 +396,7 @@ export async function readPresence(stub, requesterUid) {
   };
 }
 
-async function readPresenceCount(stub) {
+export async function readPresenceCount(stub) {
   const response = await stub.fetch(
     "https://room-realtime.internal/presence/public-count",
   );
