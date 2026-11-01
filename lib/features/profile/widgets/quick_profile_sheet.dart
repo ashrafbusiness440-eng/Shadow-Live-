@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/assets/shadow_asset_registry.dart';
-import '../../../shared/widgets/country_selector.dart';
 
 import '../screens/public_profile_screen.dart';
 import '../screens/user_level_screen.dart';
@@ -18,7 +17,7 @@ import '../services/follow_service.dart';
 import '../services/profile_action_service.dart';
 import '../services/user_level_service.dart';
 import 'registry_badge.dart';
-import 'user_level_badges.dart';
+import 'profile_identity_status_strip.dart';
 import 'profile_avatar_with_frame.dart';
 import 'store_verified_profile_card_backdrop.dart';
 
@@ -192,23 +191,20 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
     );
   }
 
-  Widget _publicLevelBadges() {
+  Widget _identityStatusStrip(Map<String, dynamic> profile, int vip) {
     return FutureBuilder<UserLevelSummary>(
       future: _levelFuture,
       builder: (context, snapshot) {
         final summary = snapshot.data;
-        if (summary == null) return const SizedBox.shrink();
-        final hasAny = summary.wealth.level > 0 ||
-            summary.attraction.level > 0 ||
-            summary.games.level > 0;
-        if (!hasAny) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: UserLevelBadges(
-            summary: summary,
-            onTap: _openLevel,
-            compact: true,
-          ),
+        return ProfileIdentityStatusStrip(
+          membershipDays: verifiedMembershipDays(profile),
+          wealthLevel: summary?.wealth.level ?? 0,
+          attractionLevel: summary?.attraction.level ?? 0,
+          vipLevel: vip,
+          age: profile['age'],
+          gender: (profile['gender'] ?? '').toString(),
+          location: (profile['location'] ?? profile['country'] ?? '').toString(),
+          onLevelTap: _openLevel,
         );
       },
     );
@@ -249,7 +245,6 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                 : <String>[];
             final provider = _avatar(data);
             final isSelf = _isSelf;
-            final membershipDays = verifiedMembershipDays(data);
 
             return VipProfileIdentitySurface(
               vipLevel: vip,
@@ -297,16 +292,6 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                               textDirection: TextDirection.ltr,
                               style: const TextStyle(color: Colors.white54),
                             ),
-                            ShadowProfileCountryFlag(
-                              location: (data['location'] ??
-                                      data['country'] ??
-                                      '')
-                                  .toString(),
-                              fontSize: 19,
-                              padding: const EdgeInsetsDirectional.only(
-                                start: 6,
-                              ),
-                            ),
                             const SizedBox(width: 3),
                             IconButton(
                               key: const Key('quick-profile-copy-id'),
@@ -341,31 +326,22 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
                       ],
                     ),
                   ),
-                  if (vip > 0 || badges.isNotEmpty) ...[
-                    const SizedBox(height: 12),
+                  const SizedBox(height: 6),
+                  _identityStatusStrip(data, vip),
+                  if (badges.isNotEmpty) ...[
+                    const SizedBox(height: 8),
                     Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 7,
                       runSpacing: 7,
-                      children: [
-                        if (vip > 0) RegistryBadge(assetKey: ShadowAssetKeys.vipLevelBadge(vip), label: 'VIP $vip'),
-                        ...badges.take(3).map((b) => RegistryBadge(assetKey: normalizePublicBadgeKey(b), label: publicBadgeLabel(b))),
-                      ],
+                      children: badges.take(3)
+                          .map((b) => RegistryBadge(
+                            assetKey: normalizePublicBadgeKey(b),
+                            label: publicBadgeLabel(b),
+                          ))
+                          .toList(growable: false),
                     ),
                   ],
-                  if (membershipDays != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'في التطبيق منذ $membershipDays يوم',
-                      key: const Key('quick-profile-membership-days'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                  _publicLevelBadges(),
                   const SizedBox(height: 20),
                   Row(
                     children: [
