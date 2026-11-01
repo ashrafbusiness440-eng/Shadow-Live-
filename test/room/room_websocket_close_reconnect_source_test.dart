@@ -24,7 +24,7 @@ void main() {
       'lib/features/room/services/room_presence_service.dart',
     ).readAsStringSync();
     final start = source.indexOf('Future<void> _connect(');
-    final end = source.indexOf('Future<void> join(String roomId)', start);
+    final end = source.indexOf('Future<void> join(String roomId, {String? roomPassword})', start);
     final connect = source.substring(start, end);
     expect(connect.indexOf('await failedSubscription?.cancel();'),
         lessThan(connect.indexOf('await failedSocket.close();')));
