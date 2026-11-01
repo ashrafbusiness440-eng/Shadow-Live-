@@ -1352,6 +1352,7 @@ export class RoomRealtimeObject extends DurableObject {
         { status: 400 },
       );
     }
+    const changeChat = Object.hasOwn(body, "chatEnabled");
     const chatEnabled = body.chatEnabled !== false;
     if (Object.hasOwn(body, "visibility")) {
       const visibility = String(body.visibility || "");
@@ -1368,6 +1369,7 @@ export class RoomRealtimeObject extends DurableObject {
       try {
         attachment = socket.deserializeAttachment() || {};
       } catch {}
+      if (!changeChat) continue;
       if (String(attachment.mode || "room") !== "room") continue;
       if (normalizeRoomId(attachment.roomId) !== roomId) continue;
       try {
