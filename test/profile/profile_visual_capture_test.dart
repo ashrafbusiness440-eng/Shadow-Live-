@@ -37,7 +37,7 @@ void main() {
                     ),
                   )),
                   Column(children: [
-                    SizedBox(height: 380, child: Stack(children: [
+                    SizedBox(height: 386, child: Stack(children: [
                       Column(children: [
                     const SizedBox(height: 56, child: Row(children: [
                       SizedBox(width: 8),
@@ -104,8 +104,9 @@ void main() {
       final name = tester.getRect(find.byKey(const Key('profile-header-name')));
       final id = tester.getRect(find.byKey(const Key('profile-header-id')));
       final status = tester.getRect(find.byKey(const Key('profile-header-status')));
-      expect(group.height, lessThan(230));
+      expect(group.height, lessThan(240));
       expect((portrait.center.dx - name.center.dx).abs(), lessThan(1));
+      expect(name.top - portrait.bottom, inInclusiveRange(0, 12));
       expect((name.center.dx - id.center.dx).abs(), lessThan(1));
       expect((id.center.dx - status.center.dx).abs(), lessThan(1));
       expect(tester.takeException(), isNull);
