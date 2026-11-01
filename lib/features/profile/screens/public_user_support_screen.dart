@@ -182,13 +182,18 @@ class _PublicSupportTabState extends State<_PublicSupportTab>
     } catch (error) {
       if (!mounted) return;
       final code = error.toString();
+      final accessRevoked = code.contains('level_hidden') ||
+          code.contains('not_signed_in') ||
+          code.contains('unauthorized');
       setState(() {
         _error = code.contains('level_hidden')
             ? 'تفاصيل هذا المستوى مخفية.'
             : code.contains('not_signed_in') || code.contains('unauthorized')
                 ? 'يلزم تسجيل الدخول لعرض الدعم.'
                 : 'تعذر تحميل تفاصيل الدعم. أعد المحاولة.';
-        if (reset) {
+        // Never retain an earlier visitor's ranking after access is revoked,
+        // even if it happens during pagination rather than the first page.
+        if (reset || accessRevoked) {
           _items.clear();
           _nextCursor = null;
         }
