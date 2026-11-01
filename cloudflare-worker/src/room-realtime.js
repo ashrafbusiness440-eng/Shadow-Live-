@@ -1,4 +1,5 @@
 import { firestoreClient } from "./firestore.js";
+import { authorizeRoomRealtimeTicket } from "./room-realtime-admission.js";
 import {resolveStoreVisuals} from "./store-presentation.js";
 import { resolveRoomFollowTargets } from "./room-follow-lookup.js";
 import { roomEntryRestricted } from "./room-chat-restriction.js";
@@ -578,6 +579,19 @@ export async function roomRealtime(request, env) {
 
       const roomData = room.data || {};
       const profileData = user.data || {};
+      const admission = await authorizeRoomRealtimeTicket({
+        room: roomData,
+        roomId,
+        uid,
+        user: profileData,
+        roomPassword: body.roomPassword,
+        loadInvite: () => ticketFirestoreLimiter.run(
+          () => db.get(`room_invites/${roomId}/users/${uid}`),
+        ),
+      });
+      if (!admission.allowed) {
+        return json(request, env, { ok: false, code: admission.code }, 403);
+      }
       if (roomEntryRestricted(profileData)) {
         return json(request, env, { ok: false, code: "room_entry_restricted" }, 403);
       }
