@@ -37,6 +37,8 @@ void main() {
                     ),
                   )),
                   Column(children: [
+                    SizedBox(height: 380, child: Stack(children: [
+                      Column(children: [
                     const SizedBox(height: 56, child: Row(children: [
                       SizedBox(width: 8),
                       Text('Shadow Live', style: TextStyle(fontSize: 21, color: Color(0xFFFFD54A), fontWeight: FontWeight.w900)),
@@ -73,13 +75,22 @@ void main() {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 45,
-                      child: Center(child: Text('حول             الغرف             الهدايا'))),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text('🔥 👑 المالك', style: TextStyle(fontSize: 12)),
+                    ),
                   ]),
                   const Positioned(left: 12, top: 70, child: ProfileWalletOverlay(
                     coins: 650300000, diamonds: 956,
                     onCoinsTap: noop, onDiamondsTap: noop,
                   )),
+                  ])),
+                  const SizedBox(height: 45,
+                    child: Center(child: Text('حول             الغرف             الهدايا'))),
+                  const SizedBox(height: 120, child: Center(
+                    child: Text('المتابعون       أتابع       غرف       هدايا'),
+                  )),
+                  ]),
                 ],
               ),
             ),
