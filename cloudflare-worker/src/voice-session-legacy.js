@@ -1208,15 +1208,15 @@ async function setRoomChatEnabled(db,uid,body){
   const auditRef=db.collection("room_audit_logs").doc(roomId).collection("items").doc();
 
   const result=await db.runTransaction(async tx=>{
-    const [roomSnap,actorSnap,targetSnap]=await Promise.all([
+    // This action updates room chat policy; it has no target user.
+    // Keep reads bounded to the room and the authorized actor only.
+    const [roomSnap,actorSnap]=await Promise.all([
       tx.get(roomRef),
       tx.get(actorRef),
-      tx.get(targetRef),
     ]);
     if(!roomSnap.exists)throw new ApiError("room_not_found",404);
     const room=roomSnap.data()||{};
     const actor=actorSnap.data()||{};
-    const target=targetSnap.data()||{};
     if(!canManageRoomAction(room,actor,uid,"moderateChat"))throw new ApiError("forbidden",403);
 
     const before=room.chatEnabled!==false;
