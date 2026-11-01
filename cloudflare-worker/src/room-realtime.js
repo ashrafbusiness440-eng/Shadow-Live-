@@ -300,6 +300,22 @@ export async function setRoomRealtimeChatPolicy(env, roomId, enabled, visibility
   return response.json().catch(() => ({ ok: true, updated: 0 }));
 }
 
+export async function setRoomRealtimeVisibilityPolicy(env, roomId, visibility) {
+  const normalized = normalizeRoomId(roomId);
+  if (!normalized || !["public", "password", "hidden"].includes(visibility)) {
+    return { ok: false };
+  }
+  const response = await roomObject(env, normalized).fetch(
+    "https://room-realtime.internal/chat/policy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomId: normalized, visibility }),
+    },
+  );
+  if (!response.ok) throw new Error("room_visibility_sync_failed");
+  return response.json();
+}
+
 export async function publishGlobalRocketEvents(env, rawEvents = []) {
   const events = Array.isArray(rawEvents)
     ? rawEvents
