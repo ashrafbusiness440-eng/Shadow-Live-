@@ -19,11 +19,15 @@ void main() {
       expect(
         source.contains(path.contains('public_profile_screen')
             ? 'ProfileIdentityInfoLine('
-            : 'ShadowProfileCountryFlag('),
+            : 'ProfileIdentityStatusStrip('),
         isTrue,
         reason: 'Keep the canonical country flag for $path',
       );
       expect(source.contains('Timer.periodic'), isFalse, reason: path);
+      final strip = File('lib/features/profile/widgets/profile_identity_status_strip.dart')
+          .readAsStringSync();
+      expect(strip.contains('ShadowProfileCountryFlag('), isTrue);
+      expect(strip.contains('Timer.periodic'), isFalse);
     }
   });
 
