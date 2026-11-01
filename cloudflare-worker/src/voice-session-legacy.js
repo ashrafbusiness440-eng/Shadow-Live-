@@ -24,6 +24,7 @@ import {
 } from "./vip-entitlements.js";
 import {timestampToEpochMs} from "./vip-runtime.js";
 import {roomChatRestricted,roomEntryRestricted,roomMicRestricted} from "./room-chat-restriction.js";
+import {authorizeRoomRealtimeTicket} from "./room-realtime-admission.js";
 import {
   nextRoomPasswordLockVersion,
   roomInviteAllowsPasswordAccess,
@@ -5201,6 +5202,17 @@ export default async function handler(req,res){
     }
     const roomData=roomSnap.data()||{};
     const roomOwnerUid=clean(roomData.ownerUid||roomData.ownerId||roomData.hostId);
+    // Hidden rooms require the same authoritative server-side access as their
+    // independent realtime socket. This check does not call ZEGO or load keys.
+    if(roomData.isHidden===true||clean(roomData.visibility)==="hidden"){
+      const admission=await authorizeRoomRealtimeTicket({
+        room:roomData,roomId,uid:decoded.uid,
+        user:entryUserSnap.data()||{},
+        // Hidden rooms never have a password-invite exemption.
+        loadInvite:async()=>{throw new Error("unexpected_hidden_room_invite");},
+      });
+      if(!admission.allowed)throw new ApiError(admission.code,403);
+    }
     if(roomOwnerUid!==decoded.uid){
       const banSnap=await db
         .collection("room_bans")
