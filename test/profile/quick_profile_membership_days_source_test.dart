@@ -11,7 +11,7 @@ void main() {
     expect(quick, contains('verifiedMembershipDays(data)'));
     expect(quick, contains('if (membershipDays != null)'));
     expect(quick, contains("Key('quick-profile-membership-days')"));
-    expect(quick, contains('في التطبيق منذ $membershipDays يوم'));
+    expect(quick, contains(r'في التطبيق منذ $membershipDays يوم'));
     expect(quick, contains("_profileFuture = FirebaseFirestore.instance"));
     expect(quick, isNot(contains('Timer.periodic')));
   });
