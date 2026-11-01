@@ -26,6 +26,7 @@ import '../../vip/widgets/vip_profile_avatar.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
 import '../widgets/registry_badge.dart';
 import '../widgets/profile_identity_status_strip.dart';
+import '../widgets/profile_compact_header_identity.dart';
 import '../widgets/profile_avatar_with_frame.dart';
 import '../widgets/profile_identity_info_line.dart';
 import '../widgets/store_verified_profile_card_backdrop.dart';
@@ -733,39 +734,39 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          ProfileAvatarWithFrame(
-            diameter: 110,
-            protectAvatarCenter: true,
-            userId: widget.userId,
-            verifyStoreFrame: true,
-            fallbackProfile: profile,
-            vipLevel: vip,
-            vipFrameLevel: vipFrameLevel,
-            useVipFallback: true,
-          ),
-          const SizedBox(height: 2),
-          VipStyledName(
-            vipLevel: vip,
-            name: name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 25,
-              fontWeight: FontWeight.w900,
+          ProfileCompactHeaderIdentity(
+            portraitHeight: 136,
+            portrait: ProfileAvatarWithFrame(
+              diameter: 110,
+              protectAvatarCenter: true,
+              userId: widget.userId,
+              verifyStoreFrame: true,
+              fallbackProfile: profile,
+              vipLevel: vip,
+              vipFrameLevel: vipFrameLevel,
+              useVipFallback: true,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 0),
-          ProfileIdentityInfoLine(
-            id: fancyId.isNotEmpty ? fancyId : publicId,
-            location: '',
-            copyKey: const Key('public-profile-copy-id'),
-            onCopy: () => _copyUserIds(
-              publicId: publicId,
-              fancyId: fancyId,
+            name: VipStyledName(
+              vipLevel: vip,
+              name: name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 25,
+                fontWeight: FontWeight.w900,
+              ),
+              textAlign: TextAlign.center,
             ),
+            identityId: ProfileIdentityInfoLine(
+              id: fancyId.isNotEmpty ? fancyId : publicId,
+              location: '',
+              copyKey: const Key('public-profile-copy-id'),
+              onCopy: () => _copyUserIds(
+                publicId: publicId,
+                fancyId: fancyId,
+              ),
+            ),
+            identityStatus: _identityStatusStrip(profile, vip),
           ),
-          const SizedBox(height: 0),
-          _identityStatusStrip(profile, vip),
           if (badges.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(

@@ -97,11 +97,11 @@ void main() {
         .readAsStringSync();
     final shared = File('lib/features/profile/widgets/profile_avatar_with_frame.dart')
         .readAsStringSync();
-    expect(own.contains('diameter: 102,\n                    frameScale: 1.12,\n                    protectAvatarCenter: true,'), isTrue);
-    expect(pub.contains('diameter: 110,\n            protectAvatarCenter: true,'), isTrue);
+    expect(own.contains('diameter: 102,\n              frameScale: 1.12,\n              protectAvatarCenter: true,'), isTrue);
+    expect(pub.contains('diameter: 110,\n              protectAvatarCenter: true,'), isTrue);
     expect(quick.contains('diameter: 96,\n                      protectAvatarCenter: true,'), isTrue);
-    expect(shared.contains('widget.diameter * 0.11'), isTrue);
-    expect(shared.contains('widget.diameter * 0.025'), isTrue);
+    expect(shared.contains('widget.diameter * 0.125'), isTrue);
+    expect(shared.contains('widget.diameter * 0.04'), isTrue);
     expect(shared.contains('child: _framedAvatar(profile)'), isTrue);
     final overlay = shared.substring(shared.indexOf('if (_frameActive('),
         shared.indexOf('if (widget.useVipFallback'));
