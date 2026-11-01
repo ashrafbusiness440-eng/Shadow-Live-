@@ -16,6 +16,7 @@ import '../../room/services/room_follow_navigation.dart';
 import '../../room/widgets/discovery_room_password_dialog.dart';
 import '../services/discovery_service.dart';
 import 'discovery_search_screen.dart';
+import 'home_more_rooms_screen.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/country_selector.dart';
 
@@ -344,6 +345,15 @@ class _HomeScreenState extends State<HomeScreen> {
     ));
   }
 
+  void _moreRooms() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => HomeMoreRoomsScreen(
+        initiallyShown: (_data?.suggested ?? const <DiscoveryRoom>[])
+            .take(4).map((room) => room.id).toSet(),
+      ),
+    ));
+  }
+
   void _search() {
     Navigator.push(
       context,
@@ -524,7 +534,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _hero(),
                   if (discovery != null || _error == null) ...[
                     const SizedBox(height: 16),
-                    _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن'),
+                    _sectionHeader('غرف مقترحة', 'اختيارات مناسبة الآن', onMore: _moreRooms),
                     const SizedBox(height: 8),
                     _roomRail(suggestedRooms),
                     if (activeRooms.isNotEmpty) ...[
