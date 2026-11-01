@@ -625,6 +625,15 @@ export class RoomRealtimeObject extends DurableObject {
     if (url.pathname === "/presence/identity" && request.method === "POST") {
       return this.#updatePresenceIdentity(request);
     }
+    if (url.pathname === "/presence/public-count" && request.method === "GET") {
+      // Public discovery must never reveal private/hidden occupancy. Unknown
+      // policy (legacy rooms not yet synchronized) fails closed by default.
+      const visibility = await this.ctx.storage.get("room_visibility_v1");
+      if (visibility !== "public") {
+        return Response.json({ ok: false, code: "room_private" }, { status: 403 });
+      }
+      return Response.json({ ok: true, onlineCount: this.#presenceSnapshot().length });
+    }
     if (url.pathname === "/presence/count" && request.method === "GET") {
       const onlineCount = this.#presenceSnapshot().length;
       recordRealtimeTelemetry(this.env, {
@@ -745,6 +754,18 @@ export class RoomRealtimeObject extends DurableObject {
 
     if (!roomId || !uid || !ticket || expiresAtMs <= Date.now()) {
       return Response.json({ ok: false, code: "invalid_ticket" }, { status: 400 });
+    }
+
+    if (mode === "room") {
+      const currentVisibility = await this.ctx.storage.get("room_visibility_v1");
+      if (currentVisibility === undefined) {
+        // Initialize once on a server-authorized ticket; subsequent settings
+        // updates own this policy. Never let a cached ticket overwrite them.
+        const supplied = String(body.roomVisibility || "");
+        const visibility = ["public", "password", "hidden"].includes(supplied)
+          ? supplied : "hidden";
+        await this.ctx.storage.put("room_visibility_v1", visibility);
+      }
     }
 
     const alreadyPresent =
@@ -1332,6 +1353,15 @@ export class RoomRealtimeObject extends DurableObject {
       );
     }
     const chatEnabled = body.chatEnabled !== false;
+    if (Object.hasOwn(body, "visibility")) {
+      const visibility = String(body.visibility || "");
+      if (!["public", "password", "hidden"].includes(visibility)) {
+        return Response.json({ ok: false, code: "invalid_visibility" }, { status: 400 });
+      }
+      // Durable Object is authoritative for discovery counts across Workers
+      // isolates; no Firestore fan-out or visibility polling is needed.
+      await this.ctx.storage.put("room_visibility_v1", visibility);
+    }
     let updated = 0;
     for (const socket of this.ctx.getWebSockets()) {
       let attachment = {};
