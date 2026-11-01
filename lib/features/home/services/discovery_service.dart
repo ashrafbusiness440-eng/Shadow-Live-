@@ -181,6 +181,21 @@ bool isPublicDiscoveryPerson(DiscoveryPerson person) {
       data['hideFromDiscovery'] != true;
 }
 
+class DiscoveryRoomPage {
+  const DiscoveryRoomPage({required this.rooms,required this.cursor,required this.hasMore});
+  final List<DiscoveryRoom> rooms;
+  final DocumentSnapshot<Map<String,dynamic>>? cursor;
+  final bool hasMore;
+}
+
+List<DiscoveryRoom> mergeHomeRoomPages(Iterable<DiscoveryRoom> oldRooms, Iterable<DiscoveryRoom> newRooms,{Set<String> exclude=const {}}) {
+  final merged=<String,DiscoveryRoom>{};
+  for(final room in oldRooms.followedBy(newRooms)){
+    if(!exclude.contains(room.id) && room.isPubliclyDiscoverable) merged[room.id]=room;
+  }
+  return merged.values.toList(growable:false);
+}
+
 class DiscoveryPeoplePage {
   const DiscoveryPeoplePage({
     required this.people,
@@ -324,6 +339,39 @@ class DiscoveryService {
       nextCursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
       hasMore: snapshot.docs.length == bounded,
     );
+  }
+
+  /// Bounded document-cursor browsing, not a globally presence-ranked index.
+  /// No full collection scans or per-room listeners.
+  Future<DiscoveryRoomPage> loadRoomPage({
+    DocumentSnapshot<Map<String,dynamic>>? after,
+    int limit=16,
+  }) async {
+    final uid=_auth.currentUser?.uid;
+    final count=limit.clamp(1,24);
+    Query<Map<String,dynamic>> query=_firestore.collection('rooms')
+        .orderBy(FieldPath.documentId).limit(count);
+    if(after!=null) query=query.startAfterDocument(after);
+    final snapshot=await query.get();
+    if(uid!=_auth.currentUser?.uid) return const DiscoveryRoomPage(rooms:[],cursor:null,hasMore:false);
+    final visible=snapshot.docs
+        .map((d)=>DiscoveryRoom(id:d.id,data:d.data()))
+        .where((r)=>r.isPubliclyDiscoverable).toList(growable:false);
+    final counted=await hydrateRealtimeCounts(visible);
+    if(uid!=_auth.currentUser?.uid) return const DiscoveryRoomPage(rooms:[],cursor:null,hasMore:false);
+    return DiscoveryRoomPage(
+      rooms:counted,
+      cursor:snapshot.docs.isEmpty?null:snapshot.docs.last,
+      hasMore:snapshot.docs.length==count,
+    );
+  }
+
+  Future<DiscoveryRoom?> recheckRoomForEntry(String id) async {
+    final uid=_auth.currentUser?.uid;
+    final snapshot=await _firestore.collection('rooms').doc(id).get();
+    if(uid!=_auth.currentUser?.uid || !snapshot.exists) return null;
+    final room=DiscoveryRoom(id:id,data:snapshot.data()!);
+    return room.isPubliclyDiscoverable?room:null;
   }
 
   Future<List<DiscoveryRoom>> hydrateRealtimeCounts(
