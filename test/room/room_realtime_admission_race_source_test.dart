@@ -12,7 +12,7 @@ void main() {
 
   test('parallel admission callers share the first join, not two sockets', () {
     final join = presence.substring(
-      presence.indexOf('Future<void> join(String roomId)'),
+      presence.indexOf('Future<void> join(String roomId, {String? roomPassword})'),
       presence.indexOf('Future<bool> ensureReady(String roomId)'),
     );
     expect(join, contains('if (pending != null && _joinRoomId == id) return pending;'));
@@ -54,7 +54,7 @@ void main() {
   test('old websocket callbacks cannot assert readiness in a new room', () {
     final connect = presence.substring(
       presence.indexOf('Future<void> _connect('),
-      presence.indexOf('Future<void> join(String roomId)'),
+      presence.indexOf('Future<void> join(String roomId, {String? roomPassword})'),
     );
     expect(connect, contains('generation == _generation'));
     expect(connect, contains('_desiredRoomId == roomId'));
@@ -89,7 +89,8 @@ void main() {
     expect(join, contains("..['presenceDegraded'] = true;"));
     expect(start, contains('if (!_active || roomId != targetRoomId ||'));
     expect(start, contains('_roomSessionGeneration != sessionGeneration) return;'));
-    expect(start, contains('await _presenceService.join(targetRoomId);'));
+    expect(start, contains('await _presenceService.join(targetRoomId,'));
+    expect(start, contains("roomPassword: (_roomArguments['roomPassword'] ?? '').toString()"));
     expect(start, contains('_roomSessionGeneration != sessionGeneration'));
     expect(join, contains('final sessionGeneration = ++_roomSessionGeneration;'));
     expect(join, contains('_startPresence(targetRoomId, sessionGeneration)'));
