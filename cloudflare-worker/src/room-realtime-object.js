@@ -540,6 +540,14 @@ export class RoomRealtimeObject extends DurableObject {
       return this.#connect(request, url);
     }
     if (url.pathname === "/presence" && request.method === "GET") {
+      // The public API passes the authenticated caller's UID. Check it here,
+      // atomically with roster construction, so a disconnected visitor cannot
+      // enumerate participants of a private or hidden room.
+      const requiredUid = String(url.searchParams.get("requiredUid") || "").trim();
+      if (requiredUid && !hasPresenceUid(this.#presenceAttachments(), requiredUid)) {
+        return Response.json({ ok: false, code: "room_presence_required" },
+          { status: 403 });
+      }
       const participants = this.#presenceSnapshot();
       return Response.json({
         ok: true,
