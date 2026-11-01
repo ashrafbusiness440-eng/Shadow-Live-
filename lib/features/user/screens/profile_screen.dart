@@ -1,3 +1,4 @@
+import '../../profile/services/profile_membership_days.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -549,6 +550,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
     final gender = _text(profile, 'gender', '');
     final bio = _text(profile, 'bio', '');
+    final membershipDays = verifiedMembershipDays(profile);
 
     return VipProfileIdentitySurface(
       vipLevel: _num(profile, ['effectiveVipLevel']),
@@ -619,6 +621,13 @@ class _ProfileScreenState extends State<ProfileScreen>
             copyKey: const Key('own-profile-copy-id'),
             onCopy: () => _copyId(profile),
           ),
+          if (membershipDays != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              'في التطبيق منذ $membershipDays يوم',
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
           if (bio.isNotEmpty) ...[
             const SizedBox(height: 7),
             Text(
