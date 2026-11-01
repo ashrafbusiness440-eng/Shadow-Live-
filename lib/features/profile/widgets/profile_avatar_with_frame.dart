@@ -187,9 +187,9 @@ class _ProfileAvatarWithFrameState extends State<ProfileAvatarWithFrame> {
   Widget _framedAvatar(Map<String, dynamic> profile) {
     if (!widget.protectAvatarCenter) return _baseAvatar(profile);
     return Padding(
-      padding: EdgeInsets.all(widget.diameter * 0.11),
+      padding: EdgeInsets.all(widget.diameter * 0.125),
       child: Transform.translate(
-        offset: Offset(0, widget.diameter * 0.025),
+        offset: Offset(0, widget.diameter * 0.04),
         child: ClipOval(child: _baseAvatar(profile)),
       ),
     );
