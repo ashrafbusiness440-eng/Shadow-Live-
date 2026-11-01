@@ -740,7 +740,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             vipFrameLevel: vipFrameLevel,
             useVipFallback: true,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           VipStyledName(
             vipLevel: vip,
             name: name,
@@ -751,7 +751,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 0),
           ProfileIdentityInfoLine(
             id: fancyId.isNotEmpty ? fancyId : publicId,
             location: '',
@@ -761,7 +761,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
               fancyId: fancyId,
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 0),
           _identityStatusStrip(profile, vip),
           if (badges.isNotEmpty) ...[
             const SizedBox(height: 8),
