@@ -1204,7 +1204,7 @@ async function updateRoomSettings(db,uid,body){
   // Mirror the independent chat-toggle path: active DO connections must obey
   // the new policy now, not only after their next reconnect.
   try{
-    await setRoomRealtimeChatPolicy(legacyEnv,roomId,chatEnabled);
+    await setRoomRealtimeChatPolicy(legacyEnv,roomId,chatEnabled,visibility);
   }catch(_){}
   return result;
 }
