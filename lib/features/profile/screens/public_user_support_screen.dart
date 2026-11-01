@@ -84,13 +84,13 @@ class _PublicUserSupportScreenState extends State<PublicUserSupportScreen> {
           body: TabBarView(
             children: [
               _PublicSupportTab(
-                key: ValueKey('wealth-$_viewerVersion'),
+                key: ValueKey('wealth-${widget.userId}-$_viewerVersion'),
                 userId: widget.userId,
                 metric: 'wealth',
                 loader: widget.loadPage,
               ),
               _PublicSupportTab(
-                key: ValueKey('attraction-$_viewerVersion'),
+                key: ValueKey('attraction-${widget.userId}-$_viewerVersion'),
                 userId: widget.userId,
                 metric: 'attraction',
                 loader: widget.loadPage,
