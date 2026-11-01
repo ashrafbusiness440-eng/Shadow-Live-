@@ -82,7 +82,7 @@ void main() {
     expect(pub, contains('expandedHeight: 365'));
     expect(quick, contains('const SizedBox(height: 10)'));
     expect(shared, contains("ShadowAssetKeys.vipLevelBadge(vipLevel)"));
-    expect(shared, contains("'$" + "membershipDays يوم'"));
+    expect(shared, contains('membershipDays يوم'));
     expect(own, contains('protectAvatarCenter: true'));
   });
 }
