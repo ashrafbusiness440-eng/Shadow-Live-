@@ -12,9 +12,14 @@ void main() {
     final shared = File('lib/features/profile/widgets/user_level_badges.dart')
         .readAsStringSync();
 
+    final strip = File('lib/features/profile/widgets/profile_identity_status_strip.dart')
+        .readAsStringSync();
     for (final source in [own, publicProfile]) {
-      expect(source.contains('iconOnly: true,'), isTrue);
+      expect(source.contains('ProfileIdentityStatusStrip('), isTrue);
     }
+    expect(strip.contains('UserLevelBadges.fromLevels('), isTrue);
+    expect(strip.contains('iconOnly: true,'), isTrue);
+    expect(strip.contains('gameLevel: 0,'), isTrue);
     expect(shared.contains('ShadowAssetKeys.levelMiniBadge('), isTrue);
     expect(shared.contains('if (iconOnly) {'), isTrue);
     expect(shared.contains('semanticsLabel: label'), isTrue);
