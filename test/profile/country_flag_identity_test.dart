@@ -52,7 +52,11 @@ void main() {
     }
     final quick = File('lib/features/profile/widgets/quick_profile_sheet.dart')
         .readAsStringSync();
-    expect(quick.contains('ShadowProfileCountryFlag('), isTrue);
+    expect(quick.contains('ProfileIdentityStatusStrip('), isTrue);
+    final strip = File('lib/features/profile/widgets/profile_identity_status_strip.dart')
+        .readAsStringSync();
+    expect(strip.contains('ShadowProfileCountryFlag('), isTrue);
+    expect(strip.contains('country_selector.dart'), isTrue);
     expect(quick.contains('ProfileAvatarWithFrame('), isTrue);
     final identity = File('lib/features/profile/widgets/profile_identity_info_line.dart')
         .readAsStringSync();
