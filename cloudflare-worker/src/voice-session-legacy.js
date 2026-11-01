@@ -41,6 +41,7 @@ import {
   invalidateRoomRealtimeAdmissionCache,
   publishRoomRealtimeEvent,
   setRoomRealtimeChatPolicy,
+  setRoomRealtimeVisibilityPolicy,
 } from "./room-realtime.js";
 
 class ApiError extends Error {
@@ -1204,7 +1205,8 @@ async function updateRoomSettings(db,uid,body){
   // Mirror the independent chat-toggle path: active DO connections must obey
   // the new policy now, not only after their next reconnect.
   try{
-    await setRoomRealtimeChatPolicy(legacyEnv,roomId,chatEnabled);
+    await setRoomRealtimeChatPolicy(legacyEnv,roomId,chatEnabled,visibility,
+      Number(result.room.passwordLockVersion||0));
   }catch(_){}
   return result;
 }
@@ -1695,7 +1697,7 @@ async function controlRoomPolicy(db,uid,body){
     throw new ApiError("invalid_request",400);
   }
 
-  return db.runTransaction(async tx=>{
+  const result=await db.runTransaction(async tx=>{
     const opRef=db.collection("control_operations").doc(operationId);
     const [opSnap,roomSnap]=await Promise.all([tx.get(opRef),tx.get(roomRef)]);
     if(opSnap.exists){
@@ -1875,6 +1877,7 @@ async function controlRoomPolicy(db,uid,body){
         description,
         coverImageUrl,
         visibility,
+        isHidden:visibility==="hidden",
         tags,
         roomType:officialType,
         hostUid,
@@ -1909,7 +1912,7 @@ async function controlRoomPolicy(db,uid,body){
       operationId,
       createdAt:now,
     });
-    const resultData={roomId,before,after};
+    const resultData={roomId,before,after,...(controlAction==="updateOfficialRoom"?{visibility:patch.visibility}:{})};
     tx.create(opRef,{
       action:controlAction,
       actorUid:uid,
@@ -1921,6 +1924,14 @@ async function controlRoomPolicy(db,uid,body){
     });
     return {ok:true,code:"ok",operationId,...resultData};
   });
+  if(controlAction==="updateOfficialRoom" &&
+      ["public","hidden"].includes(result.visibility)){
+    // Trust the committed operation result, not a duplicate caller's body.
+    invalidateRoomRealtimeAdmissionCache(result.roomId);
+    try{await setRoomRealtimeVisibilityPolicy(legacyEnv,result.roomId,result.visibility);}
+    catch(_){}
+  }
+  return result;
 }
 
 export async function announceRoomEntrance(db,uid,roomId){

@@ -1,4 +1,6 @@
 import { firestoreClient } from "./firestore.js";
+import { authorizeRoomRealtimeTicket } from "./room-realtime-admission.js";
+import { roomPasswordLockVersion } from "./room-invite-lock-policy.js";
 import {resolveStoreVisuals} from "./store-presentation.js";
 import { resolveRoomFollowTargets } from "./room-follow-lookup.js";
 import { roomEntryRestricted } from "./room-chat-restriction.js";
@@ -280,7 +282,7 @@ export function invalidateRoomRealtimeAdmissionCache(roomId) {
   if (normalized) roomAdmissionCache.clear(normalized);
 }
 
-export async function setRoomRealtimeChatPolicy(env, roomId, enabled) {
+export async function setRoomRealtimeChatPolicy(env, roomId, enabled, visibility = null, passwordLockVersion = null) {
   const normalized = normalizeRoomId(roomId);
   if (!normalized) return { ok: false, updated: 0 };
   const response = await roomObject(env, normalized).fetch(
@@ -291,11 +293,29 @@ export async function setRoomRealtimeChatPolicy(env, roomId, enabled) {
       body: JSON.stringify({
         roomId: normalized,
         chatEnabled: enabled !== false,
+        ...(visibility === null ? {} : { visibility }),
+        ...(passwordLockVersion === null ? {} : { passwordLockVersion }),
       }),
     },
   );
   if (!response.ok) return { ok: false, updated: 0 };
   return response.json().catch(() => ({ ok: true, updated: 0 }));
+}
+
+export async function setRoomRealtimeVisibilityPolicy(env, roomId, visibility) {
+  const normalized = normalizeRoomId(roomId);
+  if (!normalized || !["public", "password", "hidden"].includes(visibility)) {
+    return { ok: false };
+  }
+  const response = await roomObject(env, normalized).fetch(
+    "https://room-realtime.internal/chat/policy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomId: normalized, visibility }),
+    },
+  );
+  if (!response.ok) throw new Error("room_visibility_sync_failed");
+  return response.json();
 }
 
 export async function publishGlobalRocketEvents(env, rawEvents = []) {
@@ -394,9 +414,9 @@ export async function readPresence(stub, requesterUid) {
   };
 }
 
-async function readPresenceCount(stub) {
+export async function readPresenceCount(stub) {
   const response = await stub.fetch(
-    "https://room-realtime.internal/presence/count",
+    "https://room-realtime.internal/presence/public-count",
   );
   if (!response.ok) throw new Error("realtime_presence_failed");
   const body = await response.json().catch(() => ({}));
@@ -578,6 +598,19 @@ export async function roomRealtime(request, env) {
 
       const roomData = room.data || {};
       const profileData = user.data || {};
+      const admission = await authorizeRoomRealtimeTicket({
+        room: roomData,
+        roomId,
+        uid,
+        user: profileData,
+        roomPassword: body.roomPassword,
+        loadInvite: () => ticketFirestoreLimiter.run(
+          () => db.get(`room_invites/${roomId}/users/${uid}`),
+        ),
+      });
+      if (!admission.allowed) {
+        return json(request, env, { ok: false, code: admission.code }, 403);
+      }
       if (roomEntryRestricted(profileData)) {
         return json(request, env, { ok: false, code: "room_entry_restricted" }, 403);
       }
@@ -666,6 +699,10 @@ export async function roomRealtime(request, env) {
             Number(identityPresentation.gameLevel || 0),
           ),
           chatEnabled: roomData.chatEnabled !== false,
+          roomPasswordLockVersion: roomPasswordLockVersion(roomData),
+          roomVisibility: roomData.isHidden === true ? "hidden" :
+            (["public", "password", "hidden"].includes(roomData.visibility)
+              ? roomData.visibility : "public"),
           canModerateChat: canModerateRoomChat(
             roomData,
             profileData,

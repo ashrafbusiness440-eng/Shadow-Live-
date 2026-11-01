@@ -76,8 +76,8 @@ function fixture({ owner = true, failCommit = false } = {}) {
       absoluteRoomAccessAudit: () => ({}),
       roomResponse: (roomId, value) => ({ roomId, ...value }),
       invalidateRoomRealtimeAdmissionCache: id => calls.invalidations.push(id),
-      setRoomRealtimeChatPolicy: async (_env, id, enabled) =>
-        calls.sync.push({ id, enabled }),
+      setRoomRealtimeChatPolicy: async (_env, id, enabled, visibility) =>
+        calls.sync.push({ id, enabled, visibility }),
       legacyEnv: {},
     },
   );
@@ -98,6 +98,7 @@ test("a committed settings change invalidates admission and syncs DO chat policy
   assert.equal(calls.sync.length, 1);
   assert.equal(calls.sync[0].id, "room_101");
   assert.equal(calls.sync[0].enabled, false);
+  assert.equal(calls.sync[0].visibility, 'public');
 });
 
 test("failed writes and forbidden edits cause no DO or cache mutation", async () => {
@@ -128,4 +129,5 @@ test("password lock changes also evict previous admission metadata", async () =>
   assert.equal(result.room.passwordSalt, "salt");
   assert.deepEqual(calls.invalidations, ["room_101"]);
   assert.equal(calls.sync.length, 1);
+  assert.equal(calls.sync[0].visibility, 'password');
 });

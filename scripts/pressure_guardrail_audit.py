@@ -142,7 +142,7 @@ def main() -> int:
     if "_presenceTimer" in voice or ".heartbeat(" in voice:
         failures.append("Step 4 regression: Firestore presence heartbeat returned to the room session")
     check(lambda: require(
-        r"_presenceService\.join\(targetRoomId\)",
+        r"_presenceService\.join\(targetRoomId,\s*roomPassword:\s*",
         voice,
         "Step 4 regression: room session no longer starts WebSocket presence",
     ))

@@ -103,6 +103,8 @@ class RoomPresenceService {
   StreamSubscription<Object?>? _socketSubscription;
   Timer? _reconnectTimer;
   String _desiredRoomId = '';
+  // In-memory room credential for bounded automatic socket reconnects.
+  String _roomPassword = '';
   int _generation = 0;
   int _reconnectAttempt = 0;
   static const int _maxReconnectAttempts = 6;
@@ -415,6 +417,7 @@ class RoomPresenceService {
         'action': 'ticket',
         'roomId': roomId,
         'reconnectAttempt': _reconnectAttempt,
+        if (_roomPassword.isNotEmpty) 'roomPassword': _roomPassword,
       });
       if (_desiredRoomId != roomId || generation != _generation) return;
 
@@ -515,9 +518,14 @@ class RoomPresenceService {
     }
   }
 
-  Future<void> join(String roomId) {
+  Future<void> join(String roomId, {String? roomPassword}) {
     final id = roomId.trim();
     if (id.isEmpty) return Future<void>.error(StateError('room_id_missing'));
+    if (_desiredRoomId != id) {
+      _roomPassword = roomPassword ?? '';
+    } else if (roomPassword != null) {
+      _roomPassword = roomPassword;
+    }
     if (isReadyFor(id)) return Future<void>.value();
 
     final pending = _joinInFlight;
@@ -604,6 +612,7 @@ class RoomPresenceService {
     final id = roomId.trim();
     _generation += 1;
     _desiredRoomId = '';
+    _roomPassword = '';
     _readyRoomId = '';
     // Clear the flight so a rapid leave/rejoin of the SAME room doesn't
     // accidentally reuse a cancelled admission.
@@ -669,6 +678,7 @@ class RoomPresenceService {
   void close() {
     _generation += 1;
     _desiredRoomId = '';
+    _roomPassword = '';
     _readyRoomId = '';
     _joinInFlight = null;
     _joinRoomId = '';
