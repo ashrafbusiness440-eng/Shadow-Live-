@@ -455,7 +455,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           backgroundColor: const Color(0xFF07111F),
                           foregroundColor: Colors.white,
                           automaticallyImplyLeading: false,
-                          expandedHeight: 365,
+                          expandedHeight: 380,
                           pinned: true,
                           title: const Text(
                             'Shadow Live',
