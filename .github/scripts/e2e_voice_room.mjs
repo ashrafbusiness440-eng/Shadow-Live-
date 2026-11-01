@@ -84,6 +84,41 @@ for (const preview of previews) {
     }
   }
 }
+// Preserve the full 390px scenario coverage above and expand the real
+// Flutter room-stage screenshot matrix to every required mobile width.
+// These synthetic captures do not claim real-phone or ZEGO acceptance.
+for (const width of [320, 360, 430]) {
+  await stage.setViewportSize({ width, height: 844 });
+  for (const preview of previews.slice(0, 4)) {
+    const params = new URLSearchParams({
+      room_stage_preview: '1',
+      seats: String(preview.seats),
+      supporters: preview.supporters,
+      stars: preview.stars,
+    });
+    const ready = stage.waitForEvent('console', {
+      predicate: msg => msg.text().includes(
+        'ROOM_E2E_STAGE_READY:' + preview.seats + ':' + preview.supporters + ':',
+      ),
+      timeout: 30000,
+    });
+    await stage.goto('http://127.0.0.1:8089/?' + params.toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 120000,
+    });
+    await ready;
+    await stage.waitForTimeout(900);
+    const fileName = 'room-e2e-screenshots/stage-' + width + 'px-' +
+      preview.seats + 'seats.png';
+    const png = await stage.screenshot({path: fileName, fullPage: true});
+    // PNG IHDR width: an unexpected wider page signals horizontal overflow.
+    if (png.readUInt32BE(16) !== width) {
+      throw new Error('ROOM_STAGE_HORIZONTAL_OVERFLOW_' + width + '_' + preview.seats);
+    }
+    console.log('ROOM_STAGE_VIEWPORT_CAPTURED:' + width + ':' + preview.seats);
+  }
+}
+
 await stage.close();
 if (visualDiagnostics.length) {
   throw new Error('ROOM_STAGE_BROWSER_ERRORS: ' + visualDiagnostics.slice(0, 3).join(' | '));
