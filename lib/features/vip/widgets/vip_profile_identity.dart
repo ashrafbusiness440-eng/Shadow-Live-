@@ -8,6 +8,7 @@ class VipProfileIdentitySurface extends StatelessWidget {
     super.key,
     required this.vipLevel,
     required this.child,
+    this.foreground,
     this.borderRadius = BorderRadius.zero,
     this.backgroundOpacity = .24,
     this.dataCardOpacity = .34,
@@ -16,6 +17,9 @@ class VipProfileIdentitySurface extends StatelessWidget {
 
   final int vipLevel;
   final Widget child;
+  /// Draw identity, tappable badges and wallet above decorative VIP artwork.
+  /// Existing callers without a foreground retain the legacy behavior.
+  final Widget? foreground;
   final BorderRadius borderRadius;
   final double backgroundOpacity;
   final double dataCardOpacity;
@@ -29,7 +33,8 @@ class VipProfileIdentitySurface extends StatelessWidget {
     final decorationKey = VipCosmeticPolicy.profileDecorationKey(level);
     if (backgroundKey.isEmpty &&
         dataCardKey.isEmpty &&
-        decorationKey.isEmpty) {
+        decorationKey.isEmpty &&
+        foreground == null) {
       return child;
     }
 
@@ -62,6 +67,10 @@ class VipProfileIdentitySurface extends StatelessWidget {
                 fit: BoxFit.fill,
                 opacity: decorationOpacity,
               ),
+            ),
+          if (foreground != null)
+            Positioned.fill(
+              child: foreground!,
             ),
         ],
       ),

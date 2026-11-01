@@ -100,8 +100,8 @@ void main() {
     expect(own.contains('diameter: 102,\n              frameScale: 1.12,\n              protectAvatarCenter: true,'), isTrue);
     expect(pub.contains('diameter: 110,\n              protectAvatarCenter: true,'), isTrue);
     expect(quick.contains('diameter: 96,\n                      protectAvatarCenter: true,'), isTrue);
-    expect(shared.contains('widget.diameter * 0.125'), isTrue);
-    expect(shared.contains('widget.diameter * 0.04'), isTrue);
+    expect(shared.contains('widget.diameter * 0.085'), isTrue);
+    expect(shared.contains('widget.diameter * 0.035'), isTrue);
     expect(shared.contains('child: _framedAvatar(profile)'), isTrue);
     final overlay = shared.substring(shared.indexOf('if (_frameActive('),
         shared.indexOf('if (widget.useVipFallback'));
@@ -114,5 +114,7 @@ void main() {
     expect(shared.contains('FirebaseFirestore'), isFalse);
     expect(shared.contains('Timer.periodic'), isFalse);
     expect(own.contains('colors: [Color(0xFFFFC84A), Color(0xFF8A3DFF)]'), isFalse);
+    expect(own, contains('foreground: Stack('));
+    expect(pub, contains('foreground: Padding('));
   });
 }
