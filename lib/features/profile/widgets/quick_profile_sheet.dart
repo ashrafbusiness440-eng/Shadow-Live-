@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../screens/public_profile_screen.dart';
 import '../screens/user_level_screen.dart';
+import '../screens/public_user_support_screen.dart';
 import '../../gift/widgets/direct_gift_sheet.dart';
 import '../../vip/utils/vip_public_state.dart';
 import '../../vip/widgets/vip_profile_identity.dart';
@@ -177,10 +178,12 @@ class _QuickProfileSheetState extends State<_QuickProfileSheet> {
     Navigator.pop(context);
     navigator.push(
       MaterialPageRoute<void>(
-        builder: (_) => UserLevelScreen(
-          userId: widget.userId,
-          initialTabIndex: tabIndex,
-        ),
+        builder: (_) => _isSelf
+            ? UserLevelScreen(initialTabIndex: tabIndex)
+            : PublicUserSupportScreen(
+                userId: widget.userId,
+                initialTabIndex: tabIndex,
+              ),
       ),
     );
   }
