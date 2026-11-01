@@ -49,10 +49,10 @@ class ProfileIdentityStatusStrip extends StatelessWidget {
 
     return SizedBox(
       width: double.infinity,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
           child: Row(
             key: const Key('profile-identity-status-row'),
             mainAxisSize: MainAxisSize.min,
