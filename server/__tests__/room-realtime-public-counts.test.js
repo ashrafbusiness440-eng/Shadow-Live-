@@ -49,12 +49,15 @@ test("DO policy is synchronized by room settings and initialized only on first a
   assert.match(ticket, /currentVisibility === undefined/);
   assert.match(ticket, /storage\.put\("room_visibility_v1", visibility\)/);
   assert.match(ticket, /body\.roomVisibility/);
+  assert.match(ticket, /currentVersion !== undefined && currentVersion !== version/);
+  assert.match(ticket, /storage\.put\("room_lock_version_v1", version\)/);
 
   const policy = object.slice(object.indexOf("async #updateChatPolicy("),
     object.indexOf("async #contentFilterPolicy("));
   assert.match(policy, /Object\.hasOwn\(body, "visibility"\)/);
   assert.match(policy, /storage\.put\("room_visibility_v1", visibility\)/);
-  assert.match(legacy, /setRoomRealtimeChatPolicy\(legacyEnv,roomId,chatEnabled,visibility\)/);
+  assert.match(policy, /storage\.put\("room_lock_version_v1", version\)/);
+  assert.match(legacy, /setRoomRealtimeChatPolicy\(legacyEnv,roomId,chatEnabled,visibility,/);
   assert.match(realtime, /roomVisibility: roomData\.isHidden === true/);
   assert.match(realtime, /\.\.\.\(visibility === null \? \{\} : \{ visibility \}\)/);
 });
