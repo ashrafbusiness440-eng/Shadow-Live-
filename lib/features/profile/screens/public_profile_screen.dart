@@ -172,6 +172,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     if (oldWidget.userId != widget.userId) {
       // Never carry an in-flight relationship action into another identity.
       _sendingRelationship = false;
+      _changingFollow = false;
       _loadProfileFutures();
       unawaited(_recordVisit());
     }
@@ -548,15 +549,18 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                                             await _guestAction();
                                             return;
                                           }
+                                          final targetUserId = widget.userId;
                                           setState(() => _changingFollow = true);
                                           try {
-                                            await _follow.setFollowing(widget.userId, !following);
+                                            await _follow.setFollowing(targetUserId, !following);
                                           } catch (_) {
-                                            if (mounted) {
+                                            if (mounted && widget.userId == targetUserId) {
                                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر تحديث المتابعة')));
                                             }
                                           } finally {
-                                            if (mounted) setState(() => _changingFollow = false);
+                                            if (mounted && widget.userId == targetUserId) {
+                                              setState(() => _changingFollow = false);
+                                            }
                                           }
                                         },
                                   style: FilledButton.styleFrom(
