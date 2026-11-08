@@ -167,6 +167,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   void didUpdateWidget(covariant PublicProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.userId != widget.userId) {
+      // Never carry an in-flight relationship action into another identity.
+      _sendingRelationship = false;
       _loadProfileFutures();
       unawaited(_recordVisit());
     }
@@ -200,10 +202,11 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Future<void> _requestRelationship(String name) async {
     if (_sendingRelationship) return;
+    final targetUserId = widget.userId;
     setState(() => _sendingRelationship = true);
     try {
       final types = await _relationships.types();
-      if (!mounted) return;
+      if (!mounted || widget.userId != targetUserId) return;
       final enabled =
           types.where((type) => type.enabled).toList(growable: false);
       if (enabled.isEmpty) {
@@ -251,13 +254,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           ),
         ),
       );
-      if (selected == null || !mounted) return;
+      if (selected == null || !mounted || widget.userId != targetUserId) return;
 
       await _relationships.sendRequest(
-        targetUserId: widget.userId,
+        targetUserId: targetUserId,
         relationshipType: selected.key,
       );
-      if (!mounted) return;
+      if (!mounted || widget.userId != targetUserId) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -271,13 +274,16 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         SnackBar(content: Text(relationshipErrorMessage(error))),
       );
     } finally {
-      if (mounted) setState(() => _sendingRelationship = false);
+      if (mounted && widget.userId == targetUserId) {
+        setState(() => _sendingRelationship = false);
+      }
     }
   }
 
 
   Future<void> _reportProfile() async {
     if (_isSelf || _reportingProfile) return;
+    final targetUserId = widget.userId;
     if (_guest) {
       await _guestAction();
       return;
@@ -340,7 +346,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                   setDialogState(() => sending = true);
                   try {
                     await _reports.reportProfile(
-                      targetUserId: widget.userId,
+                      targetUserId: targetUserId,
                       reason: reason,
                       details: detailsController.text.trim(),
                     );
@@ -416,9 +422,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Widget _identityStatusStrip(Map<String, dynamic> profile, int vip) {
     return FutureBuilder<UserLevelSummary>(
+      key: ValueKey<String>('public-level-${widget.userId}'),
       future: _levelFuture,
       builder: (context, snapshot) {
-        final summary = snapshot.data;
+        final summary = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
         return ProfileIdentityStatusStrip(
           membershipDays: verifiedMembershipDays(profile),
           wealthLevel: summary?.wealth.level ?? 0,
@@ -440,8 +449,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          key: ValueKey<String>('public-profile-${widget.userId}'),
           future: _profileFuture,
           builder: (context, snapshot) {
+            // FutureBuilder may preserve previous data during a future swap.
+            // Never expose the prior account while the new UID is loading.
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
+            }
             if (snapshot.hasError) {
               return const Center(child: Text('تعذر تحميل الملف الشخصي', style: TextStyle(color: Colors.white60)));
             }
@@ -791,9 +806,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Widget _stats() {
     return FutureBuilder<FollowCounts>(
+      key: ValueKey<String>('public-follow-counts-${widget.userId}'),
       future: _followCountsFuture,
       builder: (context, snapshot) {
-        final counts = snapshot.data;
+        final counts = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 6, 16, 12),
           padding: const EdgeInsets.symmetric(vertical: 16),
