@@ -28,6 +28,8 @@ void main() {
     );
     expect(source, contains('stream: _followStateStream,'));
     expect(source, contains('onPressed: _changingFollow || !followReady'));
+    expect(source, contains('await _follow.setFollowing(targetUserId, !following);'));
+    expect(source, contains('if (mounted && widget.userId == targetUserId)'));
   });
 
   test('previous async profile values cannot be rendered while switching', () {
