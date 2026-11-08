@@ -319,7 +319,7 @@ jobs:
                   bootstrap_revision = f"flutter_bootstrap.js?v={expected_sha}"
                   if bootstrap_revision not in html:
                       raise AssertionError(f"{scope}: stale Flutter bootstrap in index")
-                  bootstrap = fetch(f"{scope}/flutter_bootstrap.js").decode("utf-8")
+                  bootstrap = fetch(f"{scope}/flutter_bootstrap.js?v={expected_sha}").decode("utf-8")
                   js_revision = f'"mainJsPath":"main.dart.js?v={expected_sha}"'
                   if js_revision not in bootstrap:
                       raise AssertionError(f"{scope}: stale Dart bundle revision")
