@@ -22,6 +22,12 @@ void main() {
       source,
       contains(r"key: ValueKey<String>('public-follow-counts-${widget.userId}')"),
     );
+    expect(
+      source,
+      contains(r"key: ValueKey<String>('public-follow-state-${widget.userId}')"),
+    );
+    expect(source, contains('stream: _followStateStream,'));
+    expect(source, contains('onPressed: _changingFollow || !followReady'));
   });
 
   test('previous async profile values cannot be rendered while switching', () {
