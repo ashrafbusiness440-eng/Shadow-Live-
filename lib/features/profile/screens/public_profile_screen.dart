@@ -49,6 +49,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
   late Future<UserLevelSummary> _levelFuture;
   late Future<FollowCounts> _followCountsFuture;
+  late Stream<bool> _followStateStream;
   bool _changingFollow = false;
   bool _sendingRelationship = false;
   bool _reportingProfile = false;
@@ -161,6 +162,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     _levelFuture = _levelService.loadForUser(widget.userId);
     // Reuse one aggregate future instead of querying followers on rebuild.
     _followCountsFuture = _follow.counts(widget.userId);
+    // Reuse one stream per profile UID; do not resubscribe on rebuild.
+    _followStateStream = _follow.isFollowing(widget.userId);
   }
 
   @override
@@ -269,7 +272,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         ),
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || widget.userId != targetUserId) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(relationshipErrorMessage(error))),
       );
@@ -530,11 +533,15 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                         if (!isSelf) ...[
                           Expanded(
                             child: StreamBuilder<bool>(
-                              stream: _follow.isFollowing(widget.userId),
+                              key: ValueKey<String>('public-follow-state-${widget.userId}'),
+                              stream: _followStateStream,
                               builder: (context, followSnapshot) {
-                                final following = followSnapshot.data == true;
+                                final followReady =
+                                    followSnapshot.connectionState == ConnectionState.active &&
+                                    followSnapshot.hasData;
+                                final following = followReady && followSnapshot.data == true;
                                 return FilledButton.icon(
-                                  onPressed: _changingFollow
+                                  onPressed: _changingFollow || !followReady
                                       ? null
                                       : () async {
                                           if (_guest) {
