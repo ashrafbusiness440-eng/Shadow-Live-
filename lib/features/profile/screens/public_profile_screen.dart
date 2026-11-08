@@ -49,6 +49,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
   late Future<DocumentSnapshot<Map<String, dynamic>>> _profileFuture;
   late Future<UserLevelSummary> _levelFuture;
   late Future<FollowCounts> _followCountsFuture;
+  late Stream<bool> _followStateStream;
   bool _changingFollow = false;
   bool _sendingRelationship = false;
   bool _reportingProfile = false;
@@ -161,12 +162,17 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
     _levelFuture = _levelService.loadForUser(widget.userId);
     // Reuse one aggregate future instead of querying followers on rebuild.
     _followCountsFuture = _follow.counts(widget.userId);
+    // Reuse one stream per profile UID; do not resubscribe on rebuild.
+    _followStateStream = _follow.isFollowing(widget.userId);
   }
 
   @override
   void didUpdateWidget(covariant PublicProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.userId != widget.userId) {
+      // Never carry an in-flight relationship action into another identity.
+      _sendingRelationship = false;
+      _changingFollow = false;
       _loadProfileFutures();
       unawaited(_recordVisit());
     }
@@ -200,10 +206,11 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Future<void> _requestRelationship(String name) async {
     if (_sendingRelationship) return;
+    final targetUserId = widget.userId;
     setState(() => _sendingRelationship = true);
     try {
       final types = await _relationships.types();
-      if (!mounted) return;
+      if (!mounted || widget.userId != targetUserId) return;
       final enabled =
           types.where((type) => type.enabled).toList(growable: false);
       if (enabled.isEmpty) {
@@ -251,13 +258,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
           ),
         ),
       );
-      if (selected == null || !mounted) return;
+      if (selected == null || !mounted || widget.userId != targetUserId) return;
 
       await _relationships.sendRequest(
-        targetUserId: widget.userId,
+        targetUserId: targetUserId,
         relationshipType: selected.key,
       );
-      if (!mounted) return;
+      if (!mounted || widget.userId != targetUserId) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -266,18 +273,21 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
         ),
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || widget.userId != targetUserId) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(relationshipErrorMessage(error))),
       );
     } finally {
-      if (mounted) setState(() => _sendingRelationship = false);
+      if (mounted && widget.userId == targetUserId) {
+        setState(() => _sendingRelationship = false);
+      }
     }
   }
 
 
   Future<void> _reportProfile() async {
     if (_isSelf || _reportingProfile) return;
+    final targetUserId = widget.userId;
     if (_guest) {
       await _guestAction();
       return;
@@ -340,7 +350,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                   setDialogState(() => sending = true);
                   try {
                     await _reports.reportProfile(
-                      targetUserId: widget.userId,
+                      targetUserId: targetUserId,
                       reason: reason,
                       details: detailsController.text.trim(),
                     );
@@ -416,9 +426,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Widget _identityStatusStrip(Map<String, dynamic> profile, int vip) {
     return FutureBuilder<UserLevelSummary>(
+      key: ValueKey<String>('public-level-${widget.userId}'),
       future: _levelFuture,
       builder: (context, snapshot) {
-        final summary = snapshot.data;
+        final summary = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
         return ProfileIdentityStatusStrip(
           membershipDays: verifiedMembershipDays(profile),
           wealthLevel: summary?.wealth.level ?? 0,
@@ -440,8 +453,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          key: ValueKey<String>('public-profile-${widget.userId}'),
           future: _profileFuture,
           builder: (context, snapshot) {
+            // FutureBuilder may preserve previous data during a future swap.
+            // Never expose the prior account while the new UID is loading.
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator(color: Color(0xFF8A3DFF)));
+            }
             if (snapshot.hasError) {
               return const Center(child: Text('تعذر تحميل الملف الشخصي', style: TextStyle(color: Colors.white60)));
             }
@@ -515,26 +534,33 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                         if (!isSelf) ...[
                           Expanded(
                             child: StreamBuilder<bool>(
-                              stream: _follow.isFollowing(widget.userId),
+                              key: ValueKey<String>('public-follow-state-${widget.userId}'),
+                              stream: _followStateStream,
                               builder: (context, followSnapshot) {
-                                final following = followSnapshot.data == true;
+                                final followReady =
+                                    followSnapshot.connectionState == ConnectionState.active &&
+                                    followSnapshot.hasData;
+                                final following = followReady && followSnapshot.data == true;
                                 return FilledButton.icon(
-                                  onPressed: _changingFollow
+                                  onPressed: _changingFollow || !followReady
                                       ? null
                                       : () async {
                                           if (_guest) {
                                             await _guestAction();
                                             return;
                                           }
+                                          final targetUserId = widget.userId;
                                           setState(() => _changingFollow = true);
                                           try {
-                                            await _follow.setFollowing(widget.userId, !following);
+                                            await _follow.setFollowing(targetUserId, !following);
                                           } catch (_) {
-                                            if (mounted) {
+                                            if (mounted && widget.userId == targetUserId) {
                                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر تحديث المتابعة')));
                                             }
                                           } finally {
-                                            if (mounted) setState(() => _changingFollow = false);
+                                            if (mounted && widget.userId == targetUserId) {
+                                              setState(() => _changingFollow = false);
+                                            }
                                           }
                                         },
                                   style: FilledButton.styleFrom(
@@ -791,9 +817,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
 
   Widget _stats() {
     return FutureBuilder<FollowCounts>(
+      key: ValueKey<String>('public-follow-counts-${widget.userId}'),
       future: _followCountsFuture,
       builder: (context, snapshot) {
-        final counts = snapshot.data;
+        final counts = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 6, 16, 12),
           padding: const EdgeInsets.symmetric(vertical: 16),
