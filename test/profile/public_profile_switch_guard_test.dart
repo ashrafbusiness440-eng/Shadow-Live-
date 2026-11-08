@@ -27,7 +27,7 @@ void main() {
       contains(r"key: ValueKey<String>('public-follow-state-${widget.userId}')"),
     );
     expect(source, contains('stream: _followStateStream,'));
-    expect(source, contains('onPressed: _changingFollow || !followReady'));
+    expect(source, contains('onPressed: _changingFollow || (!_guest && !followReady)'));
     expect(source, contains('await _follow.setFollowing(targetUserId, !following);'));
     expect(source, contains('if (mounted && widget.userId == targetUserId)'));
   });

@@ -542,7 +542,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> with SingleTi
                                     followSnapshot.hasData;
                                 final following = followReady && followSnapshot.data == true;
                                 return FilledButton.icon(
-                                  onPressed: _changingFollow || !followReady
+                                  onPressed: _changingFollow || (!_guest && !followReady)
                                       ? null
                                       : () async {
                                           if (_guest) {
