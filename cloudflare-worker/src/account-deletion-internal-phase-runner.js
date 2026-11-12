@@ -143,7 +143,7 @@ export async function runCertifiedInternalAccountErasurePage(db, {
   const args = { uid, requestId, limit };
   let result;
   if (step === "notifications") {
-    result = await drainAccountOwnedNotifications(db, args);
+    result = await drainAccountOwnedNotifications(db, { ...args, nowMs });
   } else if (step === "push_devices") {
     result = await drainAccountPrivateCallPushDevices(db, args);
   } else if (step === "diary_likes" || step === "diary_views") {

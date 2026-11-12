@@ -114,3 +114,36 @@ certification check in the **same stage commit transaction**, prove Firestore
 conflict/retry behavior under simultaneous revocation, and implement durable,
 audited stage leasing and independent real signoffs. The existing up-to-five
 batch size, 30-day grace and no-finalization guard remain unchanged.
+
+## Batch 1 — transactional revocation protection for notification records
+
+The existing **unrouted** `notifications` adapter now rechecks the six
+domain approval/audit pairs **inside the same Firestore transaction** that
+deletes an exact owned notice. It delegates to the shared transaction helper
+from PR #525, rather than reimplementing finance or legal policy. The helper
+normalizes the request timestamp, validates all six signoffs and uses
+transactional `getMany` (one 12-document batchGet RPC on the production REST
+adapter) when supported. An invalid, expired, revoked or appealed signoff
+rejects the write. This is independent of and in addition to the runner's
+pre-batch checks. The runner forwards its bounded test clock to that stage.
+
+The notification unit tests now seed explicit independently signed synthetic
+approval/audit documents and cover revocation of every domain; the emulator
+tests cover a revoked approval rejected within an actual Firestore SDK
+transaction, as well as existing bounded synthetic cleanup. The SDK test
+does **not** prove a deliberately synchronized concurrent update conflict:
+perform a separate locking/retry test before production activation.
+
+**NOT A COMPLETED SECURITY GATE OR PRODUCTION APPROVAL.** Other per-record
+stages (private chat text, call tokens, diary interactions, social links,
+support snapshots and profile) must use this same in-transaction certification
+check before their writes; audited phase leasing/retry and independent real
+financial/Play/room/agency/legal/retention signoffs remain missing.
+No changes were made to financial ledgers, purchase status, room ownership,
+appeal holdings, retention rules, Auth or R2. No account erasure was enabled;
+`destructiveAllowed=false` remains the only production behavior. No new
+route, listener, cron, global scan or APK build.
+
+This is the FIRST implementation item in the **fixed eight closure gates**
+(not a new ninth gate). Do not mark the financial, Play, legal or shared
+asset decisions cleared just because test fixtures contain approvals.

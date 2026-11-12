@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { eraseDeletedAccountNotification } from "../../cloudflare-worker/src/account-deletion-notification-stage.js";
+import { REQUIRED_ERASURE_ADMISSION_DOMAINS as domains }
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 const uid = "delete_user_234";
+const nowMs = Date.now();
+const requestedAtMs = nowMs - 40 * 86400_000;
+const ownerUid = "test_owner_123456";
 const requestId = "delete_request_123456789";
 const noticeId = "report_result_safe_123456789";
 const noticePath = "notifications/" + noticeId;
@@ -13,7 +18,8 @@ const otherPath = "notifications/diary_comment_other_user";
 class Db {
   constructor() {
     this.docs = new Map([
-      [reqPath, {uid, requestId, status: "processing"}],
+      [reqPath, {uid, requestId, status: "processing",
+        requestedAt:new Date(requestedAtMs)}],
       [cpPath, {requestId, phase: "notifications", destructiveAllowed: true,
         notificationRetentionCleared: true, legalEvidenceReviewComplete: true,
         financialSettlementApproved: true}],
@@ -21,6 +27,16 @@ class Db {
       [noticePath, {userId: uid, type: "report_status", body: "test"}],
       [otherPath, {userId: "other_user_444", type: "diary_comment"}],
     ]);
+    for (const domain of domains) {
+      this.docs.set("account_deletion_erasure_approvals/" + requestId +
+        "__" + domain, {uid,requestId,domain,decision:"approved",
+          signedByUid:ownerUid,signedAt:new Date(nowMs-10000),
+          expiresAt:new Date(nowMs+86400_000)});
+      this.docs.set("admin_audit_logs/erasure_domain_cert_" + requestId +
+        "__" + domain, {action:"accountErasureDomainCertified",
+          actorUid:ownerUid,targetId:uid,requestId,domain,
+          createdAt:new Date(nowMs-10000)});
+    }
     this.commits = []; this.reads = [];
   }
   async beginTransaction() { return "tx"; }
@@ -99,4 +115,30 @@ test("code never performs global scans, Auth removal or unrelated ledger writes"
   const s=readFileSync("cloudflare-worker/src/account-deletion-notification-stage.js","utf8");
   assert.doesNotMatch(s,/runQuery\(|deleteAuthUser\(|setInterval\(/);
   assert.match(s,/notificationRetentionCleared !== true/);
+});
+
+test("a late revoked independent certification blocks the same notification write transaction",async()=>{
+  for(const domain of domains){
+    const db=new Db();
+    const path="account_deletion_erasure_approvals/" + requestId + "__" + domain;
+    db.docs.get(path).appealStatus="open";
+    await assert.rejects(run(db,{nowMs}),
+      e=>e.code==="erasure_transactional_certification_blocked");
+    assert.equal(db.docs.has(noticePath),true);
+    assert.equal(db.commits.length,0);
+  }
+});
+
+test("stage never commits before reading all twelve independent signoff documents in its transaction",async()=>{
+  const db=new Db();
+  const get=db.get.bind(db);
+  const recorded=[];
+  db.get=async(path,tx)=>{recorded.push({path,tx});return get(path,tx);};
+  await run(db,{nowMs});
+  const signoffs=recorded.filter(x=>x.path.startsWith(
+    "account_deletion_erasure_approvals/")||x.path.startsWith(
+    "admin_audit_logs/erasure_domain_cert_"));
+  assert.equal(signoffs.length,12);
+  assert.ok(signoffs.every(x=>x.tx==="tx"));
+  assert.equal(db.commits.length,1);
 });

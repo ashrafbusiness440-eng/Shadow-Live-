@@ -125,3 +125,49 @@ test("emulator: production-style blocked checkpoint cannot remove disposable mes
     await Promise.all(refs.map(ref=>ref.delete()));
   }
 });
+
+import { recheckErasureCertificatesInTransaction as recheckTransactional }
+  from "../../cloudflare-worker/src/account-deletion-erasure-transactional-cert-gate.js";
+
+test("emulator: withdrawn financial approval is rejected inside an actual Firestore transaction",async()=>{
+  const suffix=sid();
+  const uid="erase_conflict_"+suffix, requestId="conflict_request_"+suffix;
+  const ownerUid="owner_erasure_test_123";
+  const requestedAtMs=Date.parse("2026-08-01T00:00:00Z");
+  const nowMs=Date.parse("2026-10-25T12:00:00Z");
+  const note=store.doc("notifications/conflict_notice_"+suffix);
+  const signoffs=domains.flatMap(domain=>[
+    store.doc("account_deletion_erasure_approvals/"+requestId+"__"+domain),
+    store.doc("admin_audit_logs/erasure_domain_cert_"+requestId+"__"+domain),
+  ]);
+  try {
+    await Promise.all([
+      note.set({userId:uid,body:"private notice must survive"}),
+      ...domains.flatMap((domain,i)=>[
+        signoffs[i*2].set({uid,requestId,domain,decision:"approved",
+          signedByUid:ownerUid,signedAt:new Date(nowMs-20000),
+          expiresAt:new Date(nowMs+86400_000)}),
+        signoffs[i*2+1].set({action:"accountErasureDomainCertified",
+          actorUid:ownerUid,targetId:uid,requestId,domain,
+          createdAt:new Date(nowMs-20000)}),
+      ]),
+    ]);
+    // Revocation is a separately committed change, visible before the
+    // transaction. Do not claim this is a real simultaneous race test.
+    await signoffs[0].update({decision:"revoked"});
+    const txDb={async get(path,tx){
+      const snapshot=await tx.get(store.doc(path));
+      return {exists:snapshot.exists,data:snapshot.exists?snapshot.data():null};
+    }};
+    await assert.rejects(store.runTransaction(async tx=>{
+      await recheckTransactional(txDb,tx,{
+        uid,requestId,requestedAtMs,nowMs,
+      });
+      tx.delete(note);
+    },{maxAttempts:3}),e=>
+      e.code==="erasure_transactional_certification_blocked");
+    assert.equal((await note.get()).exists,true);
+  } finally {
+    await Promise.all([note,...signoffs].map(ref=>ref.delete()));
+  }
+});

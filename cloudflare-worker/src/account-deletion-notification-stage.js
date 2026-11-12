@@ -1,4 +1,6 @@
 import { accountDeletionHasActiveHold as held } from "./account-deletion-active-holds.js";
+import { recheckErasureCertificatesInTransaction }
+  from "./account-deletion-erasure-transactional-cert-gate.js";
 // Account-owned notification cleanup, one pre-enumerated notification at a time.
 // Never deletes another recipient's notices or report/financial source records.
 // Internal only: no route, cron, or production executor currently invokes it.
@@ -17,12 +19,13 @@ export class AccountNotificationErasureError extends Error {
 }
 
 export async function eraseDeletedAccountNotification(db, {
-  uid, requestId, notificationId,
+  uid, requestId, notificationId, nowMs = Date.now(),
 } = {}) {
   uid = clean(uid);
   requestId = clean(requestId);
   notificationId = clean(notificationId);
-  if (!uidOk(uid) || !requestOk(requestId) || !noticeOk(notificationId)) {
+  if (!uidOk(uid) || !requestOk(requestId) || !noticeOk(notificationId) ||
+      !Number.isSafeInteger(nowMs) || nowMs <= 0) {
     throw new AccountNotificationErasureError("invalid_notification_erasure_target", 400);
   }
   const noticePath = "notifications/" + notificationId;
@@ -50,6 +53,13 @@ export async function eraseDeletedAccountNotification(db, {
         held(user.data) || held(notification.data)) {
       throw new AccountNotificationErasureError("notification_erasure_not_authorized");
     }
+    // No stage write may commit against a separately-read, subsequently
+    // revoked financial, Play, legal, shared-asset, storage or retention approval.
+    // These reads MUST share tx with the deletion below. Fail closed on missing
+    // signoff (including synthetic or legacy checkpoints).
+    await recheckErasureCertificatesInTransaction(db, tx, {
+      uid, requestId, requestedAt: request.data?.requestedAt, nowMs,
+    });
     if (!notification.exists) {
       await db.rollback(tx);
       return { ok: true, deleted: false, duplicate: true };

@@ -8,7 +8,12 @@ import {
   MAX_ACCOUNT_ERASURE_BATCH_ITEMS,
 } from "../../cloudflare-worker/src/account-deletion-bounded-drainers.js";
 
+import { REQUIRED_ERASURE_ADMISSION_DOMAINS as domains }
+  from "../../cloudflare-worker/src/account-deletion-processing-admission.js";
 const uid = "account_delete_123";
+const nowMs = Date.now();
+const requestedAtMs = nowMs - 40 * 86400_000;
+const ownerUid = "test_owner_123456";
 const otherUid = "other_user_456";
 const requestId = "request_delete_1234567890";
 const requestPath = "account_deletion_requests/" + uid;
@@ -17,12 +22,23 @@ const userPath = "users/" + uid;
 class Db {
   constructor(phase = "notifications") {
     this.docs = new Map([
-      [requestPath,{uid,requestId,status:"processing"}],
+      [requestPath,{uid,requestId,status:"processing",
+        requestedAt:new Date(requestedAtMs)}],
       [checkpointPath,{requestId,phase,destructiveAllowed:true,
         legalEvidenceReviewComplete:true,notificationRetentionCleared:true,
         financialSettlementApproved:true}],
       [userPath,{role:"user",accountStatus:"deletion_processing",coins:42}],
     ]);
+    for(const domain of domains){
+      this.docs.set("account_deletion_erasure_approvals/" + requestId +
+        "__" + domain, {uid,requestId,domain,decision:"approved",
+          signedByUid:ownerUid,signedAt:new Date(nowMs-10_000),
+          expiresAt:new Date(nowMs+86400_000)});
+      this.docs.set("admin_audit_logs/erasure_domain_cert_" + requestId +
+        "__" + domain, {action:"accountErasureDomainCertified",
+          actorUid:ownerUid,targetId:uid,requestId,domain,
+          createdAt:new Date(nowMs-10_000)});
+    }
     this.queries=[];this.commits=[];this.failAt=0;
   }
   addNotices(count) {
