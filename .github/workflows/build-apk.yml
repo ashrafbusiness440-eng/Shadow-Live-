@@ -1,11 +1,11 @@
-# Supabase bootstrap branch APK build
+# Isolated Shadow Live APK build
 name: Build Shadow Live APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - feature/supabase-backend-bootstrap
+      - apk-build-isolated
     paths:
       - '.github/workflows/build-apk.yml'
       - 'lib/**'
