@@ -2,6 +2,15 @@ name: Build Shadow Live APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/supabase-backend-bootstrap
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - 'lib/**'
+      - 'android/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
 
 jobs:
   build-apk:
