@@ -6,6 +6,7 @@ import 'widgets/bottom_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'features/chat/services/private_call_push_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -87,6 +88,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+  await Supabase.initialize(
+    url: const String.fromEnvironment(
+      'SUPABASE_URL',
+      defaultValue: 'https://pkqcxcfuelubonlkjgoq.supabase.co',
+    ),
+    publishableKey: const String.fromEnvironment(
+      'SUPABASE_PUBLISHABLE_KEY',
+      defaultValue: 'sb_publishable_rTPtpxMftXim8X_Re9LxMg_vZaF_ade',
+    ),
   );
   await FirebaseAuth.instance.setLanguageCode('ar');
 
